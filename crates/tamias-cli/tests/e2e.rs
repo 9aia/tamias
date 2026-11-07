@@ -399,3 +399,29 @@ fn driver_discovery_dispatches() {
         "driver not dispatched: {invoked:?}"
     );
 }
+
+#[test]
+fn install_registers_bundled_driver() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(pkg.join("drivers")).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: doodad\nversion: 1.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(
+        pkg.join("drivers/tamias-driver-doodad"),
+        "#!/bin/sh\nexit 0\n",
+    )
+    .unwrap();
+    let o = tamias(&home, &cache, &["install", pkg.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(
+        home.join("drivers/tamias-driver-doodad").is_file(),
+        "driver not registered: {}",
+        stdout(&o)
+    );
+}

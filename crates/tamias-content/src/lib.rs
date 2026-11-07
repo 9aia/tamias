@@ -310,6 +310,54 @@ pub fn dispatch(
     }
     Ok(false)
 }
+
+/// Register any **bundled drivers** the payload ships — a `drivers/` dir
+/// of executables copied into `<tamias-home>/drivers/` so tamias discovers
+/// them (driver registration). Returns action lines.
+///
+/// # Errors
+/// Propagates read/copy failures.
+pub fn register_bundled_drivers(payload_root: &Path) -> Result<Vec<String>, Error> {
+    let src = payload_root.join("drivers");
+    if !src.is_dir() {
+        return Ok(Vec::new());
+    }
+    let dest = tamias_home().join("drivers");
+    std::fs::create_dir_all(&dest).map_err(Error::io(format!("create {}", dest.display())))?;
+    let mut actions = Vec::new();
+    for entry in std::fs::read_dir(&src).map_err(Error::io(format!("read {}", src.display())))? {
+        let path = entry.map_err(Error::io("read driver entry"))?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path.file_name().unwrap_or_default();
+        let to = dest.join(name);
+        std::fs::copy(&path, &to).map_err(Error::io(format!("copy {}", path.display())))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o755));
+        }
+        actions.push(format!("driver: {}", to.display()));
+    }
+    Ok(actions)
+}
+
+/// `<tamias-home>` — `$TAMIAS_HOME` → `$XDG_DATA_HOME/tamias` →
+/// `~/.local/share/tamias`.
+fn tamias_home() -> std::path::PathBuf {
+    std::env::var_os("TAMIAS_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("XDG_DATA_HOME").map(|d| std::path::PathBuf::from(d).join("tamias"))
+        })
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|h| std::path::PathBuf::from(h).join(".local/share/tamias"))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from(".tamias"))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]

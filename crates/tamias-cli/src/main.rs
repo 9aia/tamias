@@ -289,6 +289,9 @@ fn install(env: &Env, reference: &str) -> Result<StoreEntry, Error> {
                     println!("  {action}");
                 }
             }
+            for action in tamias_content::register_bundled_drivers(&root)? {
+                println!("  {action}");
+            }
             tamias_content::dispatch(kind, "install", &root, &entry.record.name, None)?;
             Ok(entry)
         })
