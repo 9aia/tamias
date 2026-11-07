@@ -312,4 +312,20 @@ mod tests {
         let hex = "z".repeat(64);
         assert!(parse_ref(&format!("http://x/y.tgz#sha256:{hex}")).is_err());
     }
+
+    #[test]
+    fn shorthand_and_expand_arms() {
+        let SourceRef::Git(g) = parse_ref("git:9aia/peregrin/libraries/ci-gate").unwrap() else {
+            panic!("expected git");
+        };
+        assert_eq!(g.subdir.as_deref(), Some("libraries/ci-gate"));
+        assert!(matches!(
+            parse_ref("http://x/y.tar.gz").unwrap(),
+            SourceRef::Http(_)
+        ));
+        std::env::set_var("HOME", "/h");
+        assert_eq!(expand_path(Path::new("~")), PathBuf::from("/h"));
+        assert_eq!(expand_path(Path::new("plain")), PathBuf::from("plain"));
+        assert!(parse_ref("git:9aia/peregrin//").is_ok());
+    }
 }

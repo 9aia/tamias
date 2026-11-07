@@ -101,4 +101,24 @@ mod tests {
         assert!(dest.path().join("a.txt").exists());
         assert!(dest.path().join("tamias.yaml").exists());
     }
+
+    #[test]
+    fn fetch_tarball_and_unsupported() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\n").unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let tgz = out.path().join("x.tgz");
+        tamias_core::pack_tgz(src.path(), &tgz).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        let resolved = FsSource::new().resolve(&SourceRef::Fs(tgz)).unwrap();
+        let fetched = FsSource::new().fetch(&resolved, dest.path()).unwrap();
+        assert!(dest.path().join("a.txt").is_file());
+        assert!(fetched.resolved.starts_with("sha256:"));
+        let bad = out.path().join("x.zip");
+        std::fs::write(&bad, "x").unwrap();
+        let bresolved = FsSource::new().resolve(&SourceRef::Fs(bad)).unwrap();
+        let bdest = tempfile::tempdir().unwrap();
+        assert!(FsSource::new().fetch(&bresolved, bdest.path()).is_err());
+    }
 }

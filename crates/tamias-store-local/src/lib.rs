@@ -222,4 +222,17 @@ mod tests {
         assert!(store.remove("@acme/w@1.0.0").is_ok());
         assert_eq!(store.entries().unwrap().len(), 1);
     }
+
+    #[test]
+    fn verify_mismatch_and_missing() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path());
+        let p = tempfile::tempdir().unwrap();
+        std::fs::write(p.path().join("a.txt"), "a").unwrap();
+        store.install(p.path(), record("w", None)).unwrap();
+        std::fs::write(root.path().join("w@1.0.0/a.txt"), "b").unwrap();
+        assert!(!store.verify("w").unwrap().ok);
+        assert!(store.verify("ghost").is_err());
+        assert!(store.remove("ghost").is_err());
+    }
 }
