@@ -207,4 +207,15 @@ mod tests {
         assert!(cache.root().is_dir());
         assert!(cache.entry("k").is_dir());
     }
+
+    #[test]
+    fn scratch_reuse_clears_stale() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = FetchCache::new(root.path());
+        let s1 = cache.scratch().unwrap();
+        std::fs::write(s1.join("f"), "x").unwrap();
+        let s2 = cache.scratch().unwrap();
+        assert!(s2.is_dir());
+        assert!(!s1.join("f").exists());
+    }
 }

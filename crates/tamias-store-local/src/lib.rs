@@ -251,4 +251,18 @@ mod tests {
         assert_eq!(store.entries().unwrap().len(), 1);
         assert!(store.find("@acme/w@1.0.0").is_ok());
     }
+
+    #[test]
+    fn root_accessor_and_sha_label() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path());
+        assert_eq!(store.root(), root.path());
+        let p = tempfile::tempdir().unwrap();
+        std::fs::write(p.path().join("a.txt"), "a").unwrap();
+        let mut rec = record("w", None);
+        rec.version = None;
+        rec.resolved = "sha256:deadbeefcafe0000".into();
+        let entry = store.install(p.path(), rec).unwrap();
+        assert_eq!(entry.label(), "w@deadbeefcafe");
+    }
 }

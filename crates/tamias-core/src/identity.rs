@@ -146,4 +146,10 @@ mod tests {
         let id = Identity::new(Some("acme".into()), "pack", "2.3.4").unwrap();
         assert_eq!(Identity::parse(&id.to_string()).unwrap(), id);
     }
+
+    #[test]
+    fn segment_errors() {
+        assert!(Identity::new(None, "", "1.0.0").is_err());
+        assert!(Identity::new(Some("bad scope".into()), "x", "1.0.0").is_err());
+    }
 }

@@ -213,5 +213,10 @@ mod tests {
         ));
         let fs = tamias_core::parse_ref("./x").unwrap();
         assert!(HttpSource::new().resolve(&fs).is_err());
+        let resolved = tamias_source::Resolved::Fs {
+            path: std::path::PathBuf::from("/x"),
+        };
+        let dest = tempfile::tempdir().unwrap();
+        assert!(HttpSource::new().fetch(&resolved, dest.path()).is_err());
     }
 }

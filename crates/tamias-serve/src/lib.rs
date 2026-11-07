@@ -275,6 +275,36 @@ mod tests {
         assert!(dispatch(&env, "{}").is_err());
     }
 
+    #[test]
+    fn dispatch_install_git_arm() {
+        let env = env();
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(
+            repo.path().join("tamias.yaml"),
+            "name: sg\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        let git = |a: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(repo.path())
+                .args(a)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .status()
+                .unwrap()
+                .success()
+        };
+        assert!(git(&["init", "-q", "-b", "main"]));
+        assert!(git(&["add", "-A"]));
+        assert!(git(&["commit", "-q", "-m", "i"]));
+        let r = format!("git:file://{}#main", repo.path().display());
+        let refjson = format!("{{\"op\":\"install\",\"ref\":{r:?}}}");
+        let install = dispatch(&env, &refjson).unwrap();
+        assert!(install["label"].as_str().unwrap().contains("sg"));
+    }
+
     #[cfg(coverage)]
     #[test]
     fn serve_probe_is_covered() {

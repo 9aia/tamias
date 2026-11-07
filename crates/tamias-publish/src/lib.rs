@@ -35,4 +35,17 @@ mod tests {
         let packed = pack(src.path(), Some(&out)).unwrap();
         assert!(packed.is_file());
     }
+
+    #[test]
+    fn pack_without_version_uses_name() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: nv\n").unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let old = std::env::current_dir().unwrap();
+        std::env::set_current_dir(out.path()).unwrap();
+        let packed = pack(src.path(), None).unwrap();
+        std::env::set_current_dir(old).unwrap();
+        assert_eq!(packed.file_name().unwrap().to_str().unwrap(), "nv.tgz");
+    }
 }
