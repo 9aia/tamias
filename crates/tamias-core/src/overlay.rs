@@ -108,10 +108,22 @@ fn merge_documents(high: &Value, low: &Value) -> Value {
         (Value::Array(h), Value::Array(l)) => {
             let mut out = h.clone();
             out.extend(l.iter().cloned());
+            dedup_by_id(&mut out);
             Value::Array(out)
         }
         _ => high.clone(),
     }
+}
+
+/// Dedupe array elements by their string `id` — the higher-priority (earlier)
+/// occurrence wins, so a re-declared node replaces its base definition
+/// instead of double-firing. Elements without an `id` are left alone.
+fn dedup_by_id(items: &mut Vec<Value>) {
+    let mut seen = std::collections::HashSet::new();
+    items.retain(|item| match item.get("id").and_then(Value::as_str) {
+        Some(id) => seen.insert(id.to_string()),
+        None => true,
+    });
 }
 
 /// Lay one priority layer over `dest`. Files that both parse as docs
