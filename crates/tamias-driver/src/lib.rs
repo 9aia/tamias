@@ -227,4 +227,42 @@ mod tests {
         let _ = tamias_home();
         assert!(drivers_dir().ends_with("drivers"));
     }
+
+    fn write_driver(dir: &Path, name: &str, body: &str) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, body).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        path
+    }
+
+    #[test]
+    fn capability_and_error_paths() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        let dd = drivers_dir();
+        // capabilities exits 1 → not matched
+        write_driver(&dd, "tamias-driver-failcap", "#!/bin/sh\nexit 1\n");
+        assert!(find_driver("nomatch").is_none());
+        // capabilities returns non-json → not matched
+        write_driver(&dd, "tamias-driver-junk", "#!/bin/sh\necho nope\n");
+        assert!(find_driver("nomatch2").is_none());
+        // a capability match maps a type to a differently-named driver
+        write_driver(
+            &dd,
+            "tamias-driver-ok",
+            "#!/bin/sh\nif [ \"$1\" = capabilities ]; then echo '{\"types\":[\"thetype\"]}'; fi\n",
+        );
+        assert!(find_driver("thetype").is_some());
+        // dispatch: driver exits 1 → Err
+        write_driver(&dd, "tamias-driver-boom", "#!/bin/sh\nexit 1\n");
+        assert!(dispatch("boom", "install", tmp.path(), "n", None).is_err());
+        assert!(discovered_drivers().iter().any(|(k, _)| k == "ok"));
+        std::env::remove_var("TAMIAS_HOME");
+    }
 }
