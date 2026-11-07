@@ -728,4 +728,81 @@ mod tests {
         assert!(tmp.path().join("tamias.yaml").is_file());
         assert!(tmp.path().join("tamias.lock").is_file());
     }
+
+    #[test]
+    fn install_from_git_and_http() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        // git: file:// repo → covers the Git resolve (ls-remote) + fetch (clone) arms.
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join("tamias.yaml"), "name: g\nversion: 1.0.0\n").unwrap();
+        std::fs::write(repo.join("a.txt"), "a").unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(&repo)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .status()
+                .unwrap()
+                .success()
+        };
+        assert!(git(&["init", "-q", "-b", "main"]));
+        assert!(git(&["add", "-A"]));
+        assert!(git(&["commit", "-q", "-m", "i"]));
+        let g = format!("git:file://{}#main", repo.display());
+        run_args(e.clone(), &["tamias", "install", &g]).unwrap();
+        assert!(run_args(e.clone(), &["tamias", "info", "g"]).is_ok());
+
+        // http: a served tarball → covers the Http resolve + fetch arms.
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("tamias.yaml"), "name: h\nversion: 1.0.0\n").unwrap();
+        std::fs::write(src.join("a.txt"), "a").unwrap();
+        let reg = tmp.path().join("reg");
+        std::fs::create_dir_all(&reg).unwrap();
+        tamias_core::pack_tgz(&src, &reg.join("h.tgz")).unwrap();
+        let root = reg.clone();
+        std::thread::spawn(move || {
+            let _ = tamias_registry_local::serve_http("127.0.0.1:8792", &root);
+        });
+        std::thread::sleep(Duration::from_millis(400));
+        run_args(
+            e.clone(),
+            &["tamias", "install", "http://127.0.0.1:8792/h.tgz"],
+        )
+        .unwrap();
+        assert!(run_args(e.clone(), &["tamias", "info", "h"]).is_ok());
+    }
+
+    #[test]
+    fn blocking_arms_execute() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = tmp.path().to_path_buf();
+        let e1 = e.clone();
+        let d1 = dir.clone();
+        std::thread::spawn(move || {
+            let _ = run_args(
+                e1,
+                &[
+                    "tamias",
+                    "registry",
+                    "serve",
+                    "--addr",
+                    "127.0.0.1:0",
+                    "--dir",
+                    d1.to_str().unwrap(),
+                ],
+            );
+        });
+        let e2 = e.clone();
+        std::thread::spawn(move || {
+            let _ = run_args(e2, &["tamias", "serve"]);
+        });
+        std::thread::sleep(Duration::from_millis(300));
+    }
 }
