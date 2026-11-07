@@ -249,4 +249,14 @@ mod tests {
             "srv"
         );
     }
+
+    #[test]
+    fn dispatch_error_arms() {
+        let env = env();
+        assert!(dispatch(&env, r#"{"op":"install"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"info"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"verify","name":"ghost"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"remove","name":"ghost"}"#).is_err());
+        assert!(dispatch(&env, "{}").is_err());
+    }
 }

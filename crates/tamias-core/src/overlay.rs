@@ -221,4 +221,11 @@ mod overlay_tests {
         let cj = std::fs::read_to_string(dest.path().join("c.json")).unwrap();
         assert!(cj.contains('a') && cj.contains('b'));
     }
+
+    #[test]
+    fn payload_root_no_manifest_errors() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("f.txt"), "x").unwrap();
+        assert!(payload_root(d.path()).is_err());
+    }
 }

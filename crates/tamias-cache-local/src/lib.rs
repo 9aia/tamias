@@ -191,4 +191,20 @@ mod tests {
         assert_eq!(cache.entries().unwrap().len(), 1);
         assert_eq!(cache.clean(Duration::from_secs(0)).unwrap().len(), 1);
     }
+
+    #[test]
+    fn key_validation_and_existing_entry() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = FetchCache::new(root.path());
+        assert!(!cache.has("bad/key"));
+        assert!(!cache.has(".."));
+        let s1 = cache.scratch().unwrap();
+        std::fs::write(s1.join("f"), "x").unwrap();
+        cache.commit(&s1, "k").unwrap();
+        let s2 = cache.scratch().unwrap();
+        std::fs::write(s2.join("f"), "y").unwrap();
+        assert!(cache.commit(&s2, "k").unwrap().is_dir());
+        assert!(cache.root().is_dir());
+        assert!(cache.entry("k").is_dir());
+    }
 }

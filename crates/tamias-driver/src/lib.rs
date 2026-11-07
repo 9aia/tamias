@@ -265,4 +265,22 @@ mod tests {
         assert!(discovered_drivers().iter().any(|(k, _)| k == "ok"));
         std::env::remove_var("TAMIAS_HOME");
     }
+
+    #[test]
+    fn find_via_path() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        let bin = tmp.path().join("bin");
+        write_driver(&bin, "tamias-driver-onthepath", "#!/bin/sh\nexit 0\n");
+        let old = std::env::var_os("PATH");
+        std::env::set_var("PATH", &bin);
+        assert!(find_driver("onthepath").is_some());
+        if let Some(old) = old {
+            std::env::set_var("PATH", old);
+        } else {
+            std::env::remove_var("PATH");
+        }
+        std::env::remove_var("TAMIAS_HOME");
+    }
 }

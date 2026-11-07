@@ -235,4 +235,20 @@ mod tests {
         assert!(store.verify("ghost").is_err());
         assert!(store.remove("ghost").is_err());
     }
+
+    #[test]
+    fn scope_recursion_replace_and_manifest() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path());
+        let p = tempfile::tempdir().unwrap();
+        std::fs::write(p.path().join("a.txt"), "a").unwrap();
+        let entry = store.install(p.path(), record("w", Some("acme"))).unwrap();
+        assert_eq!(entry.label(), "@acme/w@1.0.0");
+        assert!(entry.size().is_ok());
+        assert!(entry.manifest().is_err());
+        let entry2 = store.install(p.path(), record("w", Some("acme"))).unwrap();
+        assert_eq!(entry2.label(), "@acme/w@1.0.0");
+        assert_eq!(store.entries().unwrap().len(), 1);
+        assert!(store.find("@acme/w@1.0.0").is_ok());
+    }
 }

@@ -272,4 +272,18 @@ mod tests {
         assert!(deploy.unit_dir().to_str().is_some());
         assert!(deploy.enable("nonexistent-unit-xyz").is_err());
     }
+
+    #[test]
+    fn render_with_workdir_and_env() {
+        let spec = ServiceSpec {
+            name: "x".into(),
+            description: "d".into(),
+            exec: "/bin/x".into(),
+            env: vec![("A".into(), "1".into())],
+            workdir: Some("/w".into()),
+        };
+        let text = render_unit(&spec);
+        assert!(text.contains("WorkingDirectory=/w"));
+        assert!(text.contains("Environment=A=1"));
+    }
 }
