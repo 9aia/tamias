@@ -29,3 +29,15 @@ impl Error {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn io_and_failed_display() {
+        let e = Error::io("read x")(std::io::Error::other("boom"));
+        assert!(e.to_string().contains("read x"));
+        assert!(Error::Failed("nope".into()).to_string().contains("nope"));
+    }
+}

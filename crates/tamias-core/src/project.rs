@@ -90,3 +90,36 @@ impl Lock {
             .sort_by(|a, b| (&a.scope, &a.name).cmp(&(&b.scope, &b.name)));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record() -> StoreRecord {
+        StoreRecord {
+            name: "x".into(),
+            scope: Some("acme".into()),
+            version: Some("1.0.0".into()),
+            kind: Some("files".into()),
+            source_ref: "./x".into(),
+            resolved: "sha256:abc".into(),
+            digest: "sha256:def".into(),
+            installed_at: 7,
+        }
+    }
+
+    #[test]
+    fn load_missing_is_empty_and_roundtrips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tamias.lock");
+        assert_eq!(Lock::load(&path).unwrap(), Lock::default());
+        let mut lock = Lock::default();
+        lock.upsert(LockEntry::from_record(&record()));
+        lock.upsert(LockEntry::from_record(&record()));
+        assert_eq!(lock.packages.len(), 1);
+        lock.save(&path).unwrap();
+        let back = Lock::load(&path).unwrap();
+        assert_eq!(back.packages[0].name, "x");
+        assert_eq!(back.packages[0].scope.as_deref(), Some("acme"));
+    }
+}
