@@ -303,3 +303,55 @@ fn registry_http_publish_and_search() {
     server.kill().ok();
     let _ = server.wait();
 }
+
+#[test]
+fn deploy_and_uninstall_use_the_provider() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: gate\nversion: 0.1.0\ntype: peregrin-bundle\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("main.yaml"), "name: gate\n").unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let provider = bin.join("peregrin");
+    std::fs::write(
+        &provider,
+        "#!/bin/sh\necho \"$1 $2\" >> \"$PROV_LOG\"\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&provider, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let log = tmp.path().join("prov.log");
+    let path_env = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_tamias"))
+            .args(args)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("PEREGRIN_HOME", tmp.path().join("peregrin"))
+            .env("PATH", &path_env)
+            .env("PROV_LOG", log.to_str().unwrap())
+            .output()
+            .unwrap()
+    };
+    assert!(run(&["install", pkg.to_str().unwrap()]).status.success());
+    assert!(run(&["deploy", "gate"]).status.success());
+    assert!(run(&["uninstall", "gate"]).status.success());
+    let calls = std::fs::read_to_string(&log).unwrap();
+    assert!(calls.contains("provision install"), "{calls}");
+    assert!(calls.contains("provision deploy"), "{calls}");
+    assert!(calls.contains("provision uninstall"), "{calls}");
+}
