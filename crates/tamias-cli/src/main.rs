@@ -604,7 +604,13 @@ fn doctor(env: &Env, json: bool) -> Result<(), Error> {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse(), Env::from_env()) {
+    run_main(Cli::parse(), Env::from_env())
+}
+
+/// Testable entry — `main` is a thin wrapper so the exit-code + error-print
+/// arms are covered in-process.
+fn run_main(cli: Cli, env: Env) -> ExitCode {
+    match run(cli, env) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("tamias: {e}");
@@ -817,6 +823,16 @@ mod tests {
         let _ = run_args(e.clone(), &["tamias", "service", "disable", "x"]);
         let _ = run_args(e.clone(), &["tamias", "service", "uninstall", "x"]);
         let _ = run_args(e.clone(), &["tamias", "service", "enable", "x"]);
+    }
+
+    #[test]
+    fn run_main_exit_codes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let ok = Cli::try_parse_from(["tamias", "version"]).unwrap();
+        assert!(matches!(run_main(ok, e.clone()), ExitCode::SUCCESS));
+        let bad = Cli::try_parse_from(["tamias", "info", "ghost"]).unwrap();
+        assert!(matches!(run_main(bad, e), ExitCode::FAILURE));
     }
 
     #[test]
