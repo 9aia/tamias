@@ -236,4 +236,10 @@ mod tests {
         let pinned = tamias_core::parse_ref(&format!("git:file:///r#{}", "a".repeat(40))).unwrap();
         assert!(GitSource::new().resolve(&pinned).is_ok());
     }
+
+    #[test]
+    fn tilde_url_expands() {
+        let reference = tamias_core::parse_ref("git:~/nonexistent-repo-xyz").unwrap();
+        assert!(GitSource::new().resolve(&reference).is_err());
+    }
 }

@@ -278,4 +278,23 @@ mod tests {
         std::fs::write(root.path().join("index.json"), "not json").unwrap();
         assert!(LocalRegistry::new(root.path()).entries().is_err());
     }
+
+    #[test]
+    fn serve_http_method_and_query() {
+        let root = tempfile::tempdir().unwrap();
+        let rp = root.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = serve_http("127.0.0.1:8794", &rp);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let del = raw("127.0.0.1:8794", b"DELETE /x HTTP/1.1\r\n\r\n");
+        assert!(del.contains("405"), "{del}");
+        let put = raw(
+            "127.0.0.1:8794",
+            b"PUT /k?v=1 HTTP/1.1\r\nContent-Length: 1\r\n\r\nz",
+        );
+        assert!(put.contains("200"), "{put}");
+        let get = raw("127.0.0.1:8794", b"GET /k?v=1 HTTP/1.1\r\n\r\n");
+        assert!(get.contains('z'), "{get}");
+    }
 }

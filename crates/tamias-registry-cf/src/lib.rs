@@ -179,4 +179,31 @@ mod tests {
         );
         assert_eq!(registry.entries().unwrap().len(), 1);
     }
+
+    fn serve_500() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            if let Ok((mut s, _)) = listener.accept() {
+                let mut buf = [0u8; 2048];
+                let _ = s.read(&mut buf);
+                let _ = s
+                    .write_all(b"HTTP/1.1 500 X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                let _ = s.flush();
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn server_error_status_paths() {
+        let base = format!("http://127.0.0.1:{}", serve_500());
+        let registry = HttpRegistry::new(&base);
+        assert!(registry.entries().unwrap().is_empty());
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        assert!(registry.publish(src.path(), &manifest).is_err());
+    }
 }
