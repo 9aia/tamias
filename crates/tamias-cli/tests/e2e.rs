@@ -91,3 +91,104 @@ fn peregrin_bundle_mirrors_into_peregrin_store() {
         "peregrin mirror missing"
     );
 }
+
+#[test]
+fn add_writes_manifest_and_lock() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget\nversion: 1.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["add", pkg.to_str().unwrap()])
+        .current_dir(&proj)
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let m = std::fs::read_to_string(proj.join("tamias.yaml")).unwrap();
+    assert!(m.contains("deps:"), "manifest: {m}");
+    let l = std::fs::read_to_string(proj.join("tamias.lock")).unwrap();
+    assert!(l.contains("widget"), "lock: {l}");
+    assert!(l.contains("sha256:"), "lock digest: {l}");
+}
+
+#[test]
+fn serve_ndjson_roundtrip() {
+    use std::io::Write;
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .arg("serve")
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"{\"op\":\"list\"}\n")
+        .unwrap();
+    drop(child.stdin.take());
+    let out = child.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("\"ok\":true"), "serve out: {text}");
+}
+
+#[test]
+fn publish_search_and_install_from_registry_tgz() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let reg = tmp.path().join("registry");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget\nversion: 2.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args([
+            "publish",
+            pkg.to_str().unwrap(),
+            "--registry",
+            reg.to_str().unwrap(),
+        ])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "publish: {}", stderr(&o));
+    assert!(reg.join("widget/2.0.0.tgz").is_file());
+
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["search", "widget", "--registry", reg.to_str().unwrap()])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .output()
+        .unwrap();
+    assert!(stdout(&o).contains("widget@2.0.0"), "{}", stdout(&o));
+
+    // install the published .tgz via an fs ref, then verify it landed.
+    let tgz = reg.join("widget/2.0.0.tgz");
+    let o = tamias(&home, &cache, &["install", tgz.to_str().unwrap()]);
+    assert!(o.status.success(), "install tgz: {}", stderr(&o));
+    let o = tamias(&home, &cache, &["list"]);
+    assert!(stdout(&o).contains("widget@2.0.0"));
+}

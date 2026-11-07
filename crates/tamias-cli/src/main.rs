@@ -8,7 +8,10 @@ use std::time::Duration;
 use clap::{Parser, Subcommand};
 use tamias_cache_local::FetchCache;
 use tamias_content::{self, InstallCtx};
-use tamias_core::{parse_ref, payload_root, Error, Manifest, StoreEntry, StoreRecord};
+use tamias_core::{
+    parse_ref, payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord,
+};
+use tamias_registry_local::Registry;
 use tamias_source::{Fetched, Resolved, Source};
 use tamias_source_fs::FsSource;
 use tamias_source_git::GitSource;
@@ -67,6 +70,29 @@ enum Command {
     Version,
     /// Print the machine-readable capability manifest.
     Manifest,
+    /// Run the ndjson JSON-RPC service over stdio.
+    Serve,
+    /// Publish a package dir to a registry.
+    Publish {
+        /// Payload dir (holds `tamias.yaml`).
+        dir: PathBuf,
+        /// Registry root (default `~/.local/share/tamias/registry`).
+        #[arg(long)]
+        registry: Option<PathBuf>,
+    },
+    /// Search a registry's index.
+    Search {
+        /// Name/scope substring.
+        query: String,
+        /// Registry root.
+        #[arg(long)]
+        registry: Option<PathBuf>,
+    },
+    /// Author-side packing.
+    Bundle {
+        #[command(subcommand)]
+        cmd: BundleCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -82,11 +108,24 @@ enum CacheCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum BundleCommand {
+    /// Pack a payload dir into a `.tgz`.
+    Pack {
+        /// The payload dir (holds `tamias.yaml`).
+        dir: PathBuf,
+        /// Output `.tgz` (default `<name>-<version>.tgz`).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+}
+
 /// Store + cache roots — `TAMIAS_HOME`/`TAMIAS_CACHE`/XDG, else the
 /// `~/.local/share` + `~/.cache` defaults.
 struct Env {
     store_root: PathBuf,
     cache_root: PathBuf,
+    registry_root: PathBuf,
 }
 
 impl Env {
@@ -94,6 +133,7 @@ impl Env {
         Self {
             store_root: store_root(),
             cache_root: cache_root(),
+            registry_root: registry_root(),
         }
     }
 }
@@ -118,6 +158,18 @@ fn cache_root() -> PathBuf {
         })
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/tamias/fetch")))
         .unwrap_or_else(|| PathBuf::from(".tamias/fetch"))
+}
+
+fn registry_root() -> PathBuf {
+    std::env::var_os("TAMIAS_REGISTRY")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("XDG_DATA_HOME").map(|d| PathBuf::from(d).join("tamias/registry"))
+        })
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share/tamias/registry"))
+        })
+        .unwrap_or_else(|| PathBuf::from(".tamias/registry"))
 }
 
 /// Dispatch the parsed ref to its source impl.
@@ -199,10 +251,32 @@ fn short(digest: &str) -> &str {
 fn run(cli: Cli) -> Result<(), Error> {
     let env = Env::from_env();
     match cli.command {
-        Some(Command::Install { reference }) | Some(Command::Add { reference }) => {
+        Some(Command::Install { reference }) => {
             let entry = install(&env, &reference)?;
             println!(
                 "installed {} ({})",
+                entry.label(),
+                short(&entry.record.digest)
+            );
+        }
+        Some(Command::Add { reference }) => {
+            let entry = install(&env, &reference)?;
+            let manifest_path = PathBuf::from("tamias.yaml");
+            let mut project = if manifest_path.is_file() {
+                Manifest::load_at(&manifest_path)?
+            } else {
+                Manifest::default()
+            };
+            if !project.deps.contains(&reference) {
+                project.deps.push(reference.clone());
+            }
+            project.save(&manifest_path)?;
+            let lock_path = PathBuf::from("tamias.lock");
+            let mut lock = Lock::load(&lock_path)?;
+            lock.upsert(LockEntry::from_record(&entry.record));
+            lock.save(&lock_path)?;
+            println!(
+                "added {} → tamias.yaml + tamias.lock ({})",
                 entry.label(),
                 short(&entry.record.digest)
             );
@@ -266,6 +340,34 @@ fn run(cli: Cli) -> Result<(), Error> {
                 ))?
             };
             println!("evicted {} cache entries", evicted.len());
+        }
+        Some(Command::Serve) => {
+            tamias_serve::serve(tamias_serve::Env {
+                store_root: env.store_root.clone(),
+                cache_root: env.cache_root.clone(),
+            })?;
+        }
+        Some(Command::Publish { dir, registry }) => {
+            let registry = Registry::new(registry.unwrap_or_else(|| env.registry_root.clone()));
+            let root = payload_root(&dir)?;
+            let manifest = Manifest::load(&root)?;
+            let entry = registry.publish(&root, &manifest)?;
+            println!(
+                "published {} → {}",
+                entry.label(),
+                registry.root().display()
+            );
+        }
+        Some(Command::Search { query, registry }) => {
+            let registry = Registry::new(registry.unwrap_or_else(|| env.registry_root.clone()));
+            for e in registry.search(&query)? {
+                println!("{}  {}  {}", e.label(), short(&e.digest), e.file);
+            }
+        }
+        Some(Command::Bundle { cmd }) => {
+            let BundleCommand::Pack { dir, out } = cmd;
+            let packed = tamias_publish::pack(&dir, out.as_deref())?;
+            println!("packed → {}", packed.display());
         }
         Some(Command::Version) | None => {
             println!("tamias {}", env!("CARGO_PKG_VERSION"));

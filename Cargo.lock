@@ -649,6 +649,9 @@ dependencies = [
  "tamias-cache-local",
  "tamias-content",
  "tamias-core",
+ "tamias-publish",
+ "tamias-registry-local",
+ "tamias-serve",
  "tamias-source",
  "tamias-source-fs",
  "tamias-source-git",
@@ -747,15 +750,25 @@ dependencies = [
 name = "tamias-registry-local"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "tamias-core",
- "tamias-registry",
+ "tempfile",
 ]
 
 [[package]]
 name = "tamias-serve"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
+ "tamias-cache-local",
+ "tamias-content",
  "tamias-core",
+ "tamias-source",
+ "tamias-source-fs",
+ "tamias-source-git",
+ "tamias-source-http",
+ "tamias-store-local",
 ]
 
 [[package]]

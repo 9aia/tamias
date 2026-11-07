@@ -29,6 +29,8 @@ pub struct Manifest {
     /// names or installable source refs. Local wins; earlier includes
     /// win over later ones.
     pub include: Vec<String>,
+    /// Direct dependencies — refs this project wants installed.
+    pub deps: Vec<String>,
 }
 
 impl Manifest {
@@ -89,7 +91,7 @@ impl Manifest {
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
                 && s.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
         };
-        if !valid(&self.name) {
+        if !self.name.is_empty() && !valid(&self.name) {
             return Err(Error::Failed(format!(
                 "invalid package name '{}' — expected [A-Za-z0-9][A-Za-z0-9._-]*",
                 self.name
@@ -101,5 +103,15 @@ impl Manifest {
             }
         }
         Ok(())
+    }
+
+    /// Write this manifest to `path` as YAML.
+    ///
+    /// # Errors
+    /// Propagates serialize + write failures.
+    pub fn save(&self, path: &Path) -> Result<(), Error> {
+        let text = serde_yaml_ng::to_string(self)
+            .map_err(|e| Error::Failed(format!("serialize manifest: {e}")))?;
+        std::fs::write(path, text).map_err(Error::io(format!("write {}", path.display())))
     }
 }

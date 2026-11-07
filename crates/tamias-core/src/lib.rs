@@ -14,6 +14,7 @@ pub mod error;
 pub mod identity;
 pub mod manifest;
 pub mod overlay;
+pub mod project;
 pub mod records;
 pub mod refs;
 
@@ -23,5 +24,6 @@ pub use error::Error;
 pub use identity::{Identity, IdentityError};
 pub use manifest::{Manifest, MANIFEST_NAMES};
 pub use overlay::{overlay, payload_root};
+pub use project::{Lock, LockEntry};
 pub use records::{copy_tree, StoreEntry, StoreRecord, RECORD_FILE};
 pub use refs::{expand_path, parse_ref, GitRef, HttpRef, RefError, SourceRef};
