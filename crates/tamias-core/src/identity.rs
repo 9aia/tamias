@@ -112,6 +112,7 @@ impl fmt::Display for Identity {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
 

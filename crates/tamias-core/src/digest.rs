@@ -95,6 +95,7 @@ pub fn dir_size(dir: &Path) -> Result<u64, Error> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
 

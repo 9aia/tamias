@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-deploy-local — the `deploy` port's local adapter: manage a
 //! **per-user service unit** (systemd on Linux; launchd on macOS). tamias
 //! owns the host-service *mechanism*; a content type's provider supplies
@@ -195,6 +196,7 @@ fn unit_dir() -> PathBuf {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     use std::sync::Mutex;
 

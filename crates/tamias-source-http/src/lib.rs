@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-source-http — the tarball arm of the ref grammar:
 //! `http(s)://….tgz|.tar.gz` GETs, verified against the optional
 //! `#sha256:` pin, unpacked into the fetch dir. The tarball's sha256 is
@@ -98,6 +99,7 @@ impl Source for HttpSource {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-registry — the registry port: an index of published packages plus
 //! publish. Adapters: `-local` (a directory, optionally served over HTTP)
 //! and `-cf` (a Cloudflare Worker + R2).
@@ -93,6 +94,7 @@ pub fn parse_registry_ref(value: &str) -> RegistryRef {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

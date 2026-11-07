@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-source-git — the `git:` arm of the ref grammar: any clone URL,
 //! `//subdir`, and `#<branch|tag|sha>` pins. `resolve` pins the ref to a
 //! commit sha via `ls-remote` — the resolved sha is the content key
@@ -162,6 +163,7 @@ impl Source for GitSource {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

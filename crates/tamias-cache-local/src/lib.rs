@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-cache-local — the content-addressed fetch cache:
 //! `<root>/<key>/` payloads (`git-<sha>`, `sha256-<hex>`). Install is
 //! fetch→unpack, so a warm cache makes repeat installs and air-gapped
@@ -148,6 +149,7 @@ impl FetchCache {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

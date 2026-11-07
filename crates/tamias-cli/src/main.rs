@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias — the CLI. P2b: the distribution verbs over the source port, the
 //! content-addressed cache, and the local store.
 
@@ -620,6 +621,7 @@ fn run_main(cli: Cli, env: Env) -> ExitCode {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

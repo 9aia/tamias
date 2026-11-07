@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-publish — author-side packing: a payload dir + manifest → a
 //! `.tgz` (the registry stores these; the http source fetches them).
 
@@ -20,6 +21,7 @@ pub fn pack(dir: &Path, out: Option<&Path>) -> Result<PathBuf, Error> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

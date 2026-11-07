@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! tamias-source-fs — the filepath arm of the ref grammar: `./path`,
 //! `/path`, `~/path`, `nested/path`. A dir copies its payload (`.git/`
@@ -81,6 +82,7 @@ fn unpack_tarball(path: &Path, dest_dir: &Path) -> Result<String, Error> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
 

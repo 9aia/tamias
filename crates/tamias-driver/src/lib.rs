@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-driver — the content **driver** host: discovery + dispatch of
 //! `tamias-driver-<type>` executables, with **no product knowledge** in
 //! tamias.
@@ -178,6 +179,7 @@ pub fn register_bundled_drivers(payload_root: &Path) -> Result<Vec<String>, Erro
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

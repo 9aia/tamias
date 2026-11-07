@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-registry-cf — a registry over an HTTP blob store: the Cloudflare
 //! Worker (`worker/index.js`) backed by R2, or any host speaking the same
 //! protocol (`GET /<key>`, `PUT /<key>`). The **client** maintains the
@@ -135,6 +136,7 @@ impl Registry for HttpRegistry {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

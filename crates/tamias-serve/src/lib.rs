@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-serve — the ndjson JSON-RPC surface for embedding: read one JSON
 //! request per line on stdin, write one JSON response per line on stdout.
 //! Same wire as `sepia serve` / `arca serve` / `myco serve`.
@@ -195,6 +196,7 @@ fn install(env: &Env, reference: &str) -> Result<tamias_core::StoreEntry, Error>
 pub const DEFAULT_CACHE_MAX_AGE: Duration = Duration::from_secs(30 * 86_400);
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

@@ -105,6 +105,7 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<(), Error> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
 

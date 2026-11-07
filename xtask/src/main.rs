@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! xtask — repo chores. `cargo xtask <verb>` via the alias in
 //! `.cargo/config.toml`.
 //!

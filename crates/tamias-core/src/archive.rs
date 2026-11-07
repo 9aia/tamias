@@ -149,6 +149,7 @@ fn write_symlink<R: Read>(_entry: &tar::Entry<'_, R>, target: &Path) -> Result<(
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod archive_tests {
     use std::io::Cursor;
 

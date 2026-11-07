@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-shell — run a command in a working directory with extra env
 //! vars injected. Two modes back `tamias run`: a single string arg
 //! goes through `bash -c` (shell syntax, quoting, pipes); multiple

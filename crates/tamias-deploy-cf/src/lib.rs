@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-deploy-cf — materializes the Cloudflare registry: the Worker
 //! (`index.js`) + `wrangler.toml` (R2 binding), and the secret step. Runs
 //! `wrangler deploy` for the operator; requires their CF account.
@@ -33,6 +34,7 @@ impl Deploy for CfDeploy {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
 

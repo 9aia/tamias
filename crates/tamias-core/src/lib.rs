@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! tamias-core — pure domain + the bundle engine for the package/content
 //! manager.

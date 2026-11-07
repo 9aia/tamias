@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-registry-local — a **directory** registry: published packages as
 //! `.tgz` blobs plus an `index.json`. It can also be `serve`d over a tiny
 //! HTTP surface (`GET /<key>`, `PUT /<key>`) so a remote client (and the
@@ -202,6 +203,7 @@ fn respond(stream: &mut std::net::TcpStream, code: u16, body: &[u8]) -> Result<(
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
 

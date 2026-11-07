@@ -238,6 +238,7 @@ fn home_dir() -> PathBuf {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
 

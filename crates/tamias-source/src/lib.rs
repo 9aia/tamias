@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-source — the source port: turn a **ref** into bytes.
 //!
 //! `resolve` turns a ref into a [`Resolved`] fetch spec (git pins `#rev`

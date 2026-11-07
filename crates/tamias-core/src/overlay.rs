@@ -154,6 +154,7 @@ fn apply_layer(layer: &Path, dest: &Path) -> Result<(), Error> {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod tests {
     use super::*;
 
@@ -171,6 +172,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 mod overlay_tests {
     use super::*;
 

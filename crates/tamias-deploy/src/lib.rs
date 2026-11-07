@@ -1,3 +1,4 @@
+#![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-deploy — the deploy port: provision a remote registry.
 
 use std::path::Path;
