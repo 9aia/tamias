@@ -76,6 +76,7 @@ tamias-publish   author side: pack + push
 tamias-config    port (+ -toml) # kept from the seed
 tamias-shell     bash -c helper # kept
 tamias-testkit   conformance for every adapter
+tamias-serve     ndjson JSON-RPC over stdio — the embedding surface
 tamias-cli       the `tamias` binary
 xtask            check / test / coverage / install / site
 ```
@@ -116,7 +117,7 @@ branches; `cargo xtask check` green.
    domain + TUI); keep+rename `-deploy*` as the `deploy` port.
 2. **Add** empty crates: `core`, `source{,-fs,-git,-http}`,
    `store{,-local}`, `cache{,-local}`, `registry{,-local}`,
-   `deploy{,-cf}`, `content`, `cli` (wired into the workspace).
+   `deploy{,-cf}`, `content`, `serve`, `cli` (wired into the workspace).
 *Gate:* `cargo xtask check/test` green (empty crates; nothing regressed).
 
 ### P2b — Engine core
@@ -129,6 +130,9 @@ branches; `cargo xtask check` green.
 5. **CLI**: `install/add/remove/list/info/update/pin/verify/cache clean/
    doctor` with `--json` + `manifest`/`schema`.
 6. **Tests**: fixtures + adapter conformance.
+7. **`serve`**: `tamias-serve` — ndjson JSON-RPC over stdio exposing
+   `install/list/info/verify/remove/publish` (the embedding surface; same
+   wire as `sepia`/`arca`/`myco serve`).
 *Gate:* `cargo xtask check/test` green; `tamias install ./fixture` then
 `verify` passes; lockfile stable across re-runs.
 
@@ -139,9 +143,9 @@ schema validation.
 *Gate:* installing a peregrin bundle yields the same store as today.
 
 ### P4 — peregrin cutover (no compat)
-Repoint peregrin's `install/…` onto `tamias-*` (shell out to the CLI at
-v1); delete `peregrin-source` + `peregrin-bundle` + `distribution.rs`. No
-shims.
+Repoint peregrin's `install/…` onto `tamias-*` — via `tamias serve`
+(ndjson) or CLI shell-out; delete `peregrin-source` + `peregrin-bundle` +
+`distribution.rs`. No shims.
 *Gate:* peregrin `check/test` green; `peregrin install` works through
 `tamias`.
 
@@ -184,8 +188,8 @@ conventional-prefix commits. Branches: `main` (code) · `project`
 
 ## Open decisions
 
-- `tamias serve` (ndjson service mode) — build in v1 or later? (leaning:
-  later; peregrin shells out at v1)
+All prior open decisions are resolved (see **Locked decisions**). New
+ones land here as they arise.
 
 ## Risks & mitigations
 
@@ -197,6 +201,7 @@ conventional-prefix commits. Branches: `main` (code) · `project`
 
 ## Definition of done (v1)
 
-`tamias install git:…` + `verify` + lockfile; peregrin uses tamias as its
-only distribution; a local registry publishes + installs; a private
-Cloudflare registry works with an arca token; the `myco` pm pack installs.
+`tamias install git:…` + `verify` + lockfile; `tamias serve` exposes the
+verbs over an ndjson wire; peregrin uses tamias as its only distribution;
+a local registry publishes + installs; a private Cloudflare registry works
+with an arca token; the `myco` pm pack installs.
