@@ -10,5 +10,8 @@ repository.workspace = true
 tamias-core.workspace = true
 tamias-source.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

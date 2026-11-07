@@ -8,7 +8,10 @@ repository.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
-tamias-store.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

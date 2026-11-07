@@ -70,6 +70,10 @@ schemars = "1"
 semver = { version = "1", features = ["serde"] }
 sha2 = "0.10"
 hex = "0.4"
+serde_yaml_ng = "0.10"
+tar = "0.4"
+flate2 = "1"
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

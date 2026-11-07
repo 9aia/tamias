@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 tamias-core.workspace = true
 tamias-source.workspace = true
+ureq.workspace = true
 
 [lints]
 workspace = true
