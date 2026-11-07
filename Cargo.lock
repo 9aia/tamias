@@ -189,259 +189,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tamias"
-version = "0.1.0"
-dependencies = [
- "tamias-config",
- "tamias-config-toml",
- "tamias-core",
- "tamias-ops",
- "tamias-serve",
- "tamias-shell",
- "tamias-testkit",
- "tamias-tui",
- "tamias-vault",
- "clap",
- "clap-markdown",
- "rpassword",
- "schemars",
- "serde_json",
- "sigpipe",
- "temp-env",
- "tempfile",
-]
-
-[[package]]
-name = "tamias-config"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
-]
-
-[[package]]
-name = "tamias-config-toml"
-version = "0.1.0"
-dependencies = [
- "tamias-config",
- "tamias-core",
- "temp-env",
- "toml 0.8.23",
-]
-
-[[package]]
-name = "tamias-core"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
- "schemars",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "toml 0.8.23",
- "zeroize",
-]
-
-[[package]]
-name = "tamias-deploy"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "tamias-deploy-cf"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
- "tamias-deploy",
- "tamias-testkit",
- "serde_json",
- "temp-env",
- "ureq",
-]
-
-[[package]]
-name = "tamias-identity"
-version = "0.1.0"
-dependencies = [
- "age",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "tamias-identity-file"
-version = "0.1.0"
-dependencies = [
- "age",
- "tamias-identity",
- "temp-env",
- "tempfile",
- "time",
-]
-
-[[package]]
-name = "tamias-identity-keyring"
-version = "0.1.0"
-dependencies = [
- "age",
- "apple-native-keyring-store",
- "tamias-identity",
- "dbus-secret-service-keyring-store",
- "keyring-core",
- "windows-native-keyring-store",
-]
-
-[[package]]
-name = "tamias-ops"
-version = "0.1.0"
-dependencies = [
- "age",
- "tamias-config",
- "tamias-config-toml",
- "tamias-core",
- "tamias-deploy",
- "tamias-deploy-cf",
- "tamias-identity",
- "tamias-identity-file",
- "tamias-identity-keyring",
- "tamias-testkit",
- "tamias-vault",
- "tamias-vault-age",
- "tamias-vault-cached",
- "tamias-vault-cf",
- "keyring-core",
- "serde",
- "serde_json",
- "temp-env",
- "tempfile",
- "thiserror 2.0.21",
- "time",
-]
-
-[[package]]
-name = "tamias-serve"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
- "tamias-identity",
- "tamias-identity-file",
- "tamias-ops",
- "tamias-shell",
- "tamias-vault",
- "tamias-vault-age",
- "serde",
- "serde_json",
- "temp-env",
- "tempfile",
-]
-
-[[package]]
-name = "tamias-shell"
-version = "0.1.0"
-dependencies = [
- "temp-env",
-]
-
-[[package]]
-name = "tamias-testkit"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
- "tamias-vault",
- "hmac",
- "serde_json",
- "sha2 0.10.9",
- "time",
-]
-
-[[package]]
-name = "tamias-tui"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
- "tamias-identity",
- "tamias-identity-file",
- "tamias-ops",
- "tamias-testkit",
- "tamias-vault",
- "tamias-vault-age",
- "crossterm",
- "ratatui",
- "temp-env",
- "tempfile",
- "time",
-]
-
-[[package]]
-name = "tamias-vault"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
- "thiserror 2.0.21",
- "time",
-]
-
-[[package]]
-name = "tamias-vault-age"
-version = "0.1.0"
-dependencies = [
- "age",
- "tamias-core",
- "tamias-identity",
- "tamias-identity-file",
- "tamias-testkit",
- "tamias-vault",
- "serde",
- "serde_json",
- "temp-env",
- "tempfile",
- "time",
- "zeroize",
-]
-
-[[package]]
-name = "tamias-vault-cached"
-version = "0.1.0"
-dependencies = [
- "age",
- "tamias-core",
- "tamias-testkit",
- "tamias-vault",
- "tamias-vault-age",
- "serde",
- "serde_json",
- "temp-env",
- "tempfile",
- "time",
- "zeroize",
-]
-
-[[package]]
-name = "tamias-vault-cf"
-version = "0.1.0"
-dependencies = [
- "age",
- "tamias-core",
- "tamias-testkit",
- "tamias-vault",
- "base64 0.23.1",
- "hmac",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "temp-env",
- "tempfile",
- "time",
- "ureq",
- "zeroize",
-]
-
-[[package]]
-name = "tamias-xtask"
-version = "0.1.0"
-
-[[package]]
 name = "atomic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3110,6 +2857,259 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "tamias"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "clap-markdown",
+ "rpassword",
+ "schemars",
+ "serde_json",
+ "sigpipe",
+ "tamias-config",
+ "tamias-config-toml",
+ "tamias-core",
+ "tamias-ops",
+ "tamias-serve",
+ "tamias-shell",
+ "tamias-testkit",
+ "tamias-tui",
+ "tamias-vault",
+ "temp-env",
+ "tempfile",
+]
+
+[[package]]
+name = "tamias-config"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+]
+
+[[package]]
+name = "tamias-config-toml"
+version = "0.1.0"
+dependencies = [
+ "tamias-config",
+ "tamias-core",
+ "temp-env",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "tamias-core"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "tamias-core",
+ "thiserror 2.0.21",
+ "toml 0.8.23",
+ "zeroize",
+]
+
+[[package]]
+name = "tamias-deploy"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tamias-deploy-cf"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tamias-core",
+ "tamias-deploy",
+ "tamias-testkit",
+ "temp-env",
+ "ureq",
+]
+
+[[package]]
+name = "tamias-identity"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "tamias-identity-file"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "tamias-identity",
+ "temp-env",
+ "tempfile",
+ "time",
+]
+
+[[package]]
+name = "tamias-identity-keyring"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "apple-native-keyring-store",
+ "dbus-secret-service-keyring-store",
+ "keyring-core",
+ "tamias-identity",
+ "windows-native-keyring-store",
+]
+
+[[package]]
+name = "tamias-ops"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "keyring-core",
+ "serde",
+ "serde_json",
+ "tamias-config",
+ "tamias-config-toml",
+ "tamias-core",
+ "tamias-deploy",
+ "tamias-deploy-cf",
+ "tamias-identity",
+ "tamias-identity-file",
+ "tamias-identity-keyring",
+ "tamias-testkit",
+ "tamias-vault",
+ "tamias-vault-age",
+ "tamias-vault-cached",
+ "tamias-vault-cf",
+ "temp-env",
+ "tempfile",
+ "thiserror 2.0.21",
+ "time",
+]
+
+[[package]]
+name = "tamias-serve"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tamias-core",
+ "tamias-identity",
+ "tamias-identity-file",
+ "tamias-ops",
+ "tamias-shell",
+ "tamias-vault",
+ "tamias-vault-age",
+ "temp-env",
+ "tempfile",
+]
+
+[[package]]
+name = "tamias-shell"
+version = "0.1.0"
+dependencies = [
+ "temp-env",
+]
+
+[[package]]
+name = "tamias-testkit"
+version = "0.1.0"
+dependencies = [
+ "hmac",
+ "serde_json",
+ "sha2 0.10.9",
+ "tamias-core",
+ "tamias-vault",
+ "time",
+]
+
+[[package]]
+name = "tamias-tui"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "tamias-core",
+ "tamias-identity",
+ "tamias-identity-file",
+ "tamias-ops",
+ "tamias-testkit",
+ "tamias-vault",
+ "tamias-vault-age",
+ "temp-env",
+ "tempfile",
+ "time",
+]
+
+[[package]]
+name = "tamias-vault"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+ "thiserror 2.0.21",
+ "time",
+]
+
+[[package]]
+name = "tamias-vault-age"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "serde",
+ "serde_json",
+ "tamias-core",
+ "tamias-identity",
+ "tamias-identity-file",
+ "tamias-testkit",
+ "tamias-vault",
+ "temp-env",
+ "tempfile",
+ "time",
+ "zeroize",
+]
+
+[[package]]
+name = "tamias-vault-cached"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "serde",
+ "serde_json",
+ "tamias-core",
+ "tamias-testkit",
+ "tamias-vault",
+ "tamias-vault-age",
+ "temp-env",
+ "tempfile",
+ "time",
+ "zeroize",
+]
+
+[[package]]
+name = "tamias-vault-cf"
+version = "0.1.0"
+dependencies = [
+ "age",
+ "base64 0.23.1",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tamias-core",
+ "tamias-testkit",
+ "tamias-vault",
+ "temp-env",
+ "tempfile",
+ "time",
+ "ureq",
+ "zeroize",
+]
+
+[[package]]
+name = "tamias-xtask"
+version = "0.1.0"
 
 [[package]]
 name = "temp-env"
