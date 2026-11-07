@@ -172,6 +172,7 @@ enum BundleCommand {
 
 /// Store + cache roots — `TAMIAS_HOME`/`TAMIAS_CACHE`/XDG, else the
 /// `~/.local/share` + `~/.cache` defaults.
+#[derive(Clone, Debug)]
 struct Env {
     store_root: PathBuf,
     cache_root: PathBuf,
@@ -314,8 +315,7 @@ fn open_registry(env: &Env, value: Option<&str>) -> Box<dyn Registry> {
     }
 }
 
-fn run(cli: Cli) -> Result<(), Error> {
-    let env = Env::from_env();
+fn run(cli: Cli, env: Env) -> Result<(), Error> {
     match cli.command {
         Some(Command::Install { reference }) => {
             let entry = install(&env, &reference)?;
@@ -610,11 +610,94 @@ fn doctor(env: &Env, json: bool) -> Result<(), Error> {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    match run(Cli::parse(), Env::from_env()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("tamias: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    fn env(root: &std::path::Path) -> Env {
+        Env {
+            store_root: root.join("store"),
+            cache_root: root.join("cache"),
+            registry_root: root.join("registry"),
+        }
+    }
+
+    fn run_args(env: Env, args: &[&str]) -> Result<(), Error> {
+        run(Cli::try_parse_from(args).unwrap(), env)
+    }
+
+    fn pkg(root: &std::path::Path) -> std::path::PathBuf {
+        let dir = root.join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("tamias.yaml"), "name: w\nversion: 1.0.0\n").unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        dir
+    }
+
+    #[test]
+    fn verbs_happy_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        run_args(e.clone(), &["tamias", "version"]).unwrap();
+        run_args(e.clone(), &["tamias", "manifest"]).unwrap();
+        run_args(e.clone(), &["tamias", "list"]).unwrap();
+        run_args(e.clone(), &["tamias", "cache", "clean"]).unwrap();
+        run_args(e.clone(), &["tamias", "doctor"]).unwrap();
+        run_args(e.clone(), &["tamias", "doctor", "--json"]).unwrap();
+        let out = tmp.path().join("w.tgz");
+        run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "bundle",
+                "pack",
+                dir.to_str().unwrap(),
+                "--out",
+                out.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        run_args(e.clone(), &["tamias", "publish", dir.to_str().unwrap()]).unwrap();
+        run_args(e.clone(), &["tamias", "search", "w"]).unwrap();
+        let worker = tmp.path().join("worker");
+        run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "deploy-registry",
+                "--out",
+                worker.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        run_args(e.clone(), &["tamias", "info", "w"]).unwrap();
+        run_args(e.clone(), &["tamias", "verify", "w"]).unwrap();
+        run_args(e.clone(), &["tamias", "deploy", "w"]).unwrap();
+        run_args(e.clone(), &["tamias", "remove", "w"]).unwrap();
+    }
+
+    #[test]
+    fn verbs_error_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        assert!(run_args(e.clone(), &["tamias", "info", "ghost"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "verify", "ghost"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "remove", "ghost"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "install", "not-a-ref"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "deploy", "ghost"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "uninstall", "ghost"]).is_err());
     }
 }
