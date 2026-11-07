@@ -143,6 +143,7 @@ fn add_writes_manifest_and_lock() {
     assert!(l.contains("sha256:"), "lock digest: {l}");
 }
 
+#[cfg(not(coverage))]
 #[test]
 fn serve_ndjson_roundtrip() {
     use std::io::Write;
