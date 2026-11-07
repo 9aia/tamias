@@ -1,5 +1,0 @@
----
-source: crates/tamias-testkit/tests/invalid.rs
-expression: err.to_string()
----
-handoffs/invalid/bad-heading.md:7:1: bad entry date "yesterday" — expected YYYY-MM-DD

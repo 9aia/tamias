@@ -1,0 +1,13 @@
+[package]
+name = "tamias-source"
+description = "source port — turn a ref into bytes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tamias-core.workspace = true
+
+[lints]
+workspace = true

@@ -1,5 +1,0 @@
----
-source: crates/tamias-testkit/tests/invalid.rs
-expression: err.to_string()
----
-items/invalid/missing-fence.md:1:1: expected `+++` TOML frontmatter fence on line 1

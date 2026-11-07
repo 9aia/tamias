@@ -1,5 +1,0 @@
----
-source: crates/tamias-testkit/tests/invalid.rs
-expression: err.to_string()
----
-TODO.md:3:1: unexpected block under item — only a nested `-` list is allowed

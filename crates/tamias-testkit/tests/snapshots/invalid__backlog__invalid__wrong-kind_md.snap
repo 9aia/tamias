@@ -1,5 +1,0 @@
----
-source: crates/tamias-testkit/tests/invalid.rs
-expression: err.to_string()
----
-BACKLOG.md:3:1: wrong item kind I-001 — BACKLOG.md holds T items only

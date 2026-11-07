@@ -1,8 +1,3 @@
-//! Config port — where the `Config` value comes from.
-//! Impl: `tamias-config-toml` (file); env/remote sources = new impls.
-
-/// A config source — returns the loaded `Config`.
-pub trait ConfigSource: Send + Sync {
-    /// Load + validate the config; Err carries a readable message.
-    fn load(&self) -> Result<tamias_core::Config, String>;
-}
+//! Config port — where tamias.toml-shaped config comes from.
+//!
+//! Rebuilt in P2b (see `project/plans/pl-0001-*`, phase P2b).

@@ -1,5 +1,0 @@
----
-source: crates/tamias-testkit/tests/invalid.rs
-expression: err.to_string()
----
-handoffs/invalid/stray-content.md:7:1: content before the first `##` entry heading

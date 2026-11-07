@@ -1,5 +1,0 @@
----
-source: crates/tamias-testkit/tests/invalid.rs
-expression: err.to_string()
----
-TODO.md:3:1: invalid item id "just" — expected <prefix>-<number> like T-012 or ADR-0004

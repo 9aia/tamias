@@ -1,7 +1,0 @@
----
-source: crates/tamias-testkit/tests/golden.rs
-expression: out
----
-# Backlog
-
-- T-001 Loose idea

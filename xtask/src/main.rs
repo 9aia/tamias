@@ -2,11 +2,7 @@
 //! `.cargo/config.toml`.
 //!
 //! - `check`    — `cargo fmt --check` + `cargo clippy -D warnings`
-//! - `test`     — `cargo nextest run` when installed, else `cargo test`;
-//!   plus the worker smoke test when `bun` is installed
-//! - `worker`   — the worker smoke test: `bun test` in
-//!   crates/tamias-vault-cf/worker — executes the REAL index.js over
-//!   a bun:sqlite D1 shim (the Rust mock can't catch worker bugs)
+//! - `test`     — `cargo nextest run` when installed, else `cargo test`
 //! - `coverage` — `cargo llvm-cov` (HTML → target/llvm-cov/html);
 //!   extra args pass through, e.g. `--fail-under-lines 100`
 //! - `install`  — release-install `tamias` into ~/.cargo/bin
@@ -23,8 +19,6 @@ fn run(args: &[&str]) -> ExitStatus {
     })
 }
 
-/// `run` with a working directory — for commands that must execute
-/// inside a child tree (the docs/ worktree).
 fn run_in(dir: &str, args: &[&str]) -> ExitStatus {
     let empty: &[&str] = &[];
     let (prog, rest) = args.split_first().unwrap_or((&"true", empty));
@@ -70,44 +64,16 @@ fn check() -> i32 {
             "warnings",
         ])
         .success();
-    if ok {
-        0
-    } else {
-        1
-    }
+    i32::from(!ok)
 }
 
 fn test() -> i32 {
-    let code = if have_cargo_sub("nextest") {
+    let status = if have_cargo_sub("nextest") {
         run(&["cargo", "nextest", "run", "--workspace"])
     } else {
         run(&["cargo", "test", "--workspace"])
-    }
-    .code()
-    .unwrap_or(1);
-    // The worker smoke test rides the suite when bun is around —
-    // skipped (with a note) in lean envs so the Rust tests still
-    // run everywhere.
-    if have("bun") {
-        let w = run_in("crates/tamias-vault-cf/worker", &["bun", "test"])
-            .code()
-            .unwrap_or(1);
-        return if code == 0 { w } else { code };
-    }
-    eprintln!("xtask: bun not installed — skipping the worker smoke test (cargo xtask worker)");
-    code
-}
-
-/// `bun test` in the worker dir — the smoke test imports the real
-/// index.js and drives it over a bun:sqlite D1 shim.
-fn worker() -> i32 {
-    if !have("bun") {
-        eprintln!("bun not installed — needed for the worker smoke test");
-        return 1;
-    }
-    run_in("crates/tamias-vault-cf/worker", &["bun", "test"])
-        .code()
-        .unwrap_or(1)
+    };
+    status.code().unwrap_or(1)
 }
 
 fn coverage(extra: &[String]) -> i32 {
@@ -138,11 +104,9 @@ fn install() -> i32 {
 
 fn site() -> i32 {
     if !std::path::Path::new("docs/package.json").exists() {
-        eprintln!("no docs/ worktree — `git worktree add docs docs` first");
+        eprintln!("no docs/ worktree — `git worktree add --orphan -b docs docs` first");
         return 1;
     }
-    // run inside docs/ — works for bun and npm alike (`bun --cwd`
-    // isn't a `bun run` flag, so flag plumbing gets fragile)
     let pkg = if have("bun") { "bun" } else { "npm" };
     let _ = run_in("docs", &[pkg, "install"]).success();
     run_in("docs", &[pkg, "run", "docs:build"])
@@ -157,13 +121,12 @@ fn main() {
     let code = match cmd.as_str() {
         "check" => check(),
         "test" => test(),
-        "worker" => worker(),
         "coverage" => coverage(&rest),
         "install" => install(),
         "site" => site(),
         other => {
             eprintln!(
-                "usage: cargo xtask <check|test|worker|coverage|install|site>\n  unknown verb: {other:?}"
+                "usage: cargo xtask <check|test|coverage|install|site>\n  unknown verb: {other:?}"
             );
             2
         }

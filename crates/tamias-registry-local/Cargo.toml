@@ -1,0 +1,14 @@
+[package]
+name = "tamias-registry-local"
+description = "dir registry impl — a folder index"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tamias-core.workspace = true
+tamias-registry.workspace = true
+
+[lints]
+workspace = true
