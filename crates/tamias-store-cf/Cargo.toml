@@ -1,0 +1,13 @@
+[package]
+name = "tamias-store-cf"
+description = "Cloudflare adapter (P6)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tamias-core.workspace = true
+
+[lints]
+workspace = true

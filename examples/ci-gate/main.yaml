@@ -1,0 +1,9 @@
+name: ci-gate
+# A degenerate peregrin campaign — one ingress, one run, one sink.
+# See peregrin libraries/ci-gate for the full bundle.
+nodes:
+  - id: gate.run
+    driver: shell
+    on: [start]
+    params:
+      cmd: "bash scripts/ci.sh"

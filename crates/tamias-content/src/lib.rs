@@ -80,10 +80,45 @@ impl ContentType for PeregrinBundle {
     }
 }
 
+/// myco project-management configs — kinds/views/templates. Placed under
+/// the myco packs dir so `myco` can pick them up.
+pub struct MycoConfig;
+
+impl ContentType for MycoConfig {
+    fn name(&self) -> &'static str {
+        "myco-config"
+    }
+    fn install(&self, ctx: &InstallCtx) -> Result<Report, Error> {
+        let dest = myco_packs_root().join(&ctx.entry.record.name);
+        if dest.exists() {
+            std::fs::remove_dir_all(&dest)
+                .map_err(Error::io(format!("clear {}", dest.display())))?;
+        }
+        copy_tree(ctx.payload_root, &dest)?;
+        Ok(Report {
+            actions: vec![format!("myco pack: {}", dest.display())],
+        })
+    }
+}
+
+/// `$MYCO_HOME` → `$XDG_CONFIG_HOME/myco` → `~/.config/myco`, then `packs`.
+fn myco_packs_root() -> PathBuf {
+    std::env::var_os("MYCO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("XDG_CONFIG_HOME").map(|d| PathBuf::from(d).join("myco")))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/myco")))
+        .unwrap_or_else(|| PathBuf::from(".myco"))
+        .join("packs")
+}
+
 /// Registered content types.
 #[must_use]
 pub fn registry() -> Vec<Box<dyn ContentType>> {
-    vec![Box::new(Files), Box::new(PeregrinBundle)]
+    vec![
+        Box::new(Files),
+        Box::new(PeregrinBundle),
+        Box::new(MycoConfig),
+    ]
 }
 
 /// Look up a content type by its `type:` name.

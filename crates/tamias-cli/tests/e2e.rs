@@ -192,3 +192,35 @@ fn publish_search_and_install_from_registry_tgz() {
     let o = tamias(&home, &cache, &["list"]);
     assert!(stdout(&o).contains("widget@2.0.0"));
 }
+
+#[test]
+fn myco_config_type_installs_a_pack() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let myco = tmp.path().join("myco");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: pm\nversion: 1.0.0\ntype: myco-config\n",
+    )
+    .unwrap();
+    std::fs::write(
+        pkg.join("kinds.toml"),
+        "[[kinds]]\nname = \"spike\"\nprefix = \"S\"\nstorage = \"dir\"\n",
+    )
+    .unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["install", pkg.to_str().unwrap()])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .env("MYCO_HOME", &myco)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(
+        myco.join("packs/pm/kinds.toml").is_file(),
+        "myco pack missing"
+    );
+}

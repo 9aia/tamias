@@ -1,0 +1,4 @@
+name: ci-gate
+version: 0.1.0
+description: Push-to-verdict CI gate — a peregrin bundle.
+type: peregrin-bundle

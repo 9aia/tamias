@@ -113,9 +113,12 @@ updates).
 
 ## Status
 
-v0.1 seed — copied from `arca` and renamed. The distribution engine is
-being lifted from peregrin (ADR-0079): source, store, cache, content
-port, registry. Not yet usable as a package manager.
+Working v0.1 — `install` · `add` · `remove` · `list` · `info` · `verify` ·
+`cache` · `publish` · `search` · `bundle pack` · `serve` over fs/git/http
+sources, a content-addressed fetch cache + local store, a `ContentType`
+port (`files`, `peregrin-bundle`, `myco-config`), a local dir registry, and
+an ndjson `serve` surface. Remaining: the Cloudflare adapters (P6) and the
+peregrin cutover (P4).
 
 ## Install
 

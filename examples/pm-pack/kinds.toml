@@ -1,0 +1,9 @@
+# Extra myco item kinds shipped by the `pm` pack.
+[[kinds]]
+name = "spike"
+prefix = "S"
+storage = "dir"
+dir = "spikes"
+file_prefix = "spike"
+done_state = "done"
+zero_pad = 3

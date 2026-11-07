@@ -1,0 +1,4 @@
+name: pm
+version: 1.0.0
+description: Project-management kinds preset for myco.
+type: myco-config

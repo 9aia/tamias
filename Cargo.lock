@@ -668,6 +668,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tamias-cache-cf"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+]
+
+[[package]]
 name = "tamias-cache-local"
 version = "0.1.0"
 dependencies = [
@@ -747,6 +754,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tamias-registry-cf"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+]
+
+[[package]]
 name = "tamias-registry-local"
 version = "0.1.0"
 dependencies = [
@@ -813,6 +827,13 @@ dependencies = [
 
 [[package]]
 name = "tamias-store"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+]
+
+[[package]]
+name = "tamias-store-cf"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
