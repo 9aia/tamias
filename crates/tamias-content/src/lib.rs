@@ -404,4 +404,87 @@ mod tests {
         assert!(!dispatch("files", "deploy", dir.path(), "n", None).unwrap());
         assert!(!dispatch("unknown-type", "install", dir.path(), "n", None).unwrap());
     }
+
+    fn sample_entry(payload: &Path, name: &str) -> tamias_core::StoreEntry {
+        tamias_core::StoreEntry {
+            dir: payload.to_path_buf(),
+            record: tamias_core::StoreRecord {
+                name: name.into(),
+                scope: None,
+                version: Some("1.0.0".into()),
+                kind: None,
+                source_ref: "./x".into(),
+                resolved: "sha256:x".into(),
+                digest: String::new(),
+                installed_at: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn typed_install_places_payloads() {
+        static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _g = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let peregrin = tmp.path().join("peregrin");
+        let myco = tmp.path().join("myco");
+        let kuda = tmp.path().join("kuda");
+        let mimus = tmp.path().join("mimus");
+        std::env::set_var("PEREGRIN_HOME", &peregrin);
+        std::env::set_var("MYCO_HOME", &myco);
+        std::env::set_var("KUDA_HOME", &kuda);
+        std::env::set_var("MIMUS_HOME", &mimus);
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join("a.txt"), "a").unwrap();
+
+        let cb = sample_entry(&payload, "cb");
+        let report = by_name("peregrin-bundle")
+            .unwrap()
+            .install(&InstallCtx {
+                payload_root: &payload,
+                reference: "./x",
+                entry: &cb,
+            })
+            .unwrap();
+        assert!(!report.actions.is_empty());
+        assert!(peregrin.join("store/cb@1.0.0/a.txt").is_file());
+
+        let pm = sample_entry(&payload, "pm");
+        let mctx = InstallCtx {
+            payload_root: &payload,
+            reference: "./x",
+            entry: &pm,
+        };
+        by_name("myco-config").unwrap().install(&mctx).unwrap();
+        by_name("myco-config").unwrap().install(&mctx).unwrap();
+        assert!(myco.join("packs/pm/a.txt").is_file());
+
+        let kd = sample_entry(&payload, "kd");
+        by_name("kuda-domain")
+            .unwrap()
+            .install(&InstallCtx {
+                payload_root: &payload,
+                reference: "./x",
+                entry: &kd,
+            })
+            .unwrap();
+        assert!(kuda.join("domains/kd/a.txt").is_file());
+
+        let mr = sample_entry(&payload, "mr");
+        by_name("mimus-rules")
+            .unwrap()
+            .install(&InstallCtx {
+                payload_root: &payload,
+                reference: "./x",
+                entry: &mr,
+            })
+            .unwrap();
+        assert!(mimus.join("rules/mr/a.txt").is_file());
+
+        std::env::remove_var("PEREGRIN_HOME");
+        std::env::remove_var("MYCO_HOME");
+        std::env::remove_var("KUDA_HOME");
+        std::env::remove_var("MIMUS_HOME");
+    }
 }

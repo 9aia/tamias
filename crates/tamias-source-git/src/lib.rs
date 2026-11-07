@@ -226,4 +226,14 @@ mod tests {
         let reference = tamias_core::parse_ref("git:file:///nonexistent/xyz#main").unwrap();
         assert!(GitSource::new().resolve(&reference).is_err());
     }
+
+    #[test]
+    fn sha_and_prefix_helpers() {
+        assert!(is_full_sha(&"a".repeat(40)));
+        assert!(!is_full_sha("short"));
+        assert!(is_hex_prefix("abc1234"));
+        assert!(!is_hex_prefix("xyzxyzxyz"));
+        let pinned = tamias_core::parse_ref(&format!("git:file:///r#{}", "a".repeat(40))).unwrap();
+        assert!(GitSource::new().resolve(&pinned).is_ok());
+    }
 }
