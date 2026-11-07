@@ -1,6 +1,6 @@
 [package]
-name = "tamias-content"
-description = "content-type port — where a package installs"
+name = "tamias-driver"
+description = "content driver host — discovery + dispatch of tamias-driver-<type> (no product knowledge)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,9 +8,10 @@ repository.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
-
-[lints]
-workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[lints]
+workspace = true

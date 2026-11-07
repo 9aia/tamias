@@ -647,11 +647,11 @@ dependencies = [
  "clap",
  "serde_json",
  "tamias-cache-local",
- "tamias-content",
  "tamias-core",
  "tamias-deploy",
  "tamias-deploy-cf",
  "tamias-deploy-local",
+ "tamias-driver",
  "tamias-publish",
  "tamias-registry",
  "tamias-registry-cf",
@@ -705,14 +705,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tamias-content"
-version = "0.1.0"
-dependencies = [
- "tamias-core",
- "tempfile",
-]
-
-[[package]]
 name = "tamias-core"
 version = "0.1.0"
 dependencies = [
@@ -749,6 +741,15 @@ dependencies = [
 name = "tamias-deploy-local"
 version = "0.1.0"
 dependencies = [
+ "tamias-core",
+ "tempfile",
+]
+
+[[package]]
+name = "tamias-driver"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
  "tamias-core",
  "tempfile",
 ]
@@ -797,8 +798,8 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "tamias-cache-local",
- "tamias-content",
  "tamias-core",
+ "tamias-driver",
  "tamias-source",
  "tamias-source-fs",
  "tamias-source-git",

@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use tamias_cache_local::FetchCache;
-use tamias_content::{self, InstallCtx};
 use tamias_core::{parse_ref, payload_root, Error, Manifest, StoreRecord};
 use tamias_source::{Fetched, Resolved, Source};
 use tamias_source_fs::FsSource;
@@ -171,13 +170,8 @@ fn install(env: &Env, reference: &str) -> Result<tamias_core::StoreEntry, Error>
     };
     let entry = Store::new(&env.store_root).install(&root, record)?;
     let kind = manifest.kind.as_deref().unwrap_or("files");
-    if let Some(content) = tamias_content::by_name(kind) {
-        let _ = content.install(&InstallCtx {
-            payload_root: &root,
-            reference,
-            entry: &entry,
-        })?;
-    }
+    let _ = tamias_driver::register_bundled_drivers(&root);
+    let _ = tamias_driver::dispatch(kind, "install", &root, &entry.record.name, None);
     Ok(entry)
 }
 

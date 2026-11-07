@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use tamias_cache_local::FetchCache;
-use tamias_content::{self, InstallCtx};
 use tamias_core::{
     parse_ref, payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord,
 };
@@ -280,20 +279,10 @@ fn install(env: &Env, reference: &str) -> Result<StoreEntry, Error> {
         .install(&root, record)
         .and_then(|entry| {
             let kind = manifest.kind.as_deref().unwrap_or("files");
-            if let Some(content) = tamias_content::by_name(kind) {
-                let report = content.install(&InstallCtx {
-                    payload_root: &root,
-                    reference,
-                    entry: &entry,
-                })?;
-                for action in report.actions {
-                    println!("  {action}");
-                }
-            }
-            for action in tamias_content::register_bundled_drivers(&root)? {
+            for action in tamias_driver::register_bundled_drivers(&root)? {
                 println!("  {action}");
             }
-            tamias_content::dispatch(kind, "install", &root, &entry.record.name, None)?;
+            tamias_driver::dispatch(kind, "install", &root, &entry.record.name, None)?;
             Ok(entry)
         })
 }
@@ -503,7 +492,7 @@ enum ServiceCommand {
 fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Error> {
     let entry = Store::new(&env.store_root).find(name)?;
     let kind = entry.record.kind.as_deref().unwrap_or("files");
-    if tamias_content::dispatch(kind, "deploy", &entry.dir, &entry.record.name, config)? {
+    if tamias_driver::dispatch(kind, "deploy", &entry.dir, &entry.record.name, config)? {
         println!("deployed {}", entry.label());
     } else {
         println!("{}: nothing to deploy (type {kind})", entry.label());
@@ -515,7 +504,7 @@ fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Er
 fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
     let entry = Store::new(&env.store_root).find(name)?;
     let kind = entry.record.kind.as_deref().unwrap_or("files");
-    let _ = tamias_content::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None);
+    let _ = tamias_driver::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None);
     let record = Store::new(&env.store_root).remove(name)?;
     println!("uninstalled {}@{}", record.name, record.resolved);
     Ok(())
@@ -575,10 +564,7 @@ fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
 fn doctor(env: &Env, json: bool) -> Result<(), Error> {
     let store = Store::new(&env.store_root).entries()?;
     let cache = FetchCache::new(&env.cache_root).entries()?;
-    let provider = |name: &str| -> bool {
-        std::env::var_os("PATH")
-            .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(name).is_file()))
-    };
+    let drivers = tamias_driver::discovered_drivers();
     let checks: Vec<(&str, String, bool)> = vec![
         ("tamias", env!("CARGO_PKG_VERSION").to_string(), true),
         ("store", env.store_root.display().to_string(), true),
@@ -587,9 +573,17 @@ fn doctor(env: &Env, json: bool) -> Result<(), Error> {
         ("cache entries", cache.len().to_string(), true),
         ("registry", env.registry_root.display().to_string(), true),
         (
-            "peregrin driver",
-            "peregrin".to_string(),
-            provider("peregrin"),
+            "drivers",
+            if drivers.is_empty() {
+                "(none)".to_string()
+            } else {
+                drivers
+                    .iter()
+                    .map(|(k, _)| k.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+            true,
         ),
     ];
     if json {

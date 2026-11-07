@@ -65,7 +65,7 @@ fn install_list_info_verify_remove() {
 }
 
 #[test]
-fn peregrin_bundle_mirrors_into_peregrin_store() {
+fn peregrin_bundle_uses_the_peregrin_driver() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     let cache = tmp.path().join("cache");
@@ -78,22 +78,21 @@ fn peregrin_bundle_mirrors_into_peregrin_store() {
     )
     .unwrap();
     std::fs::write(pkg.join("main.yaml"), "name: ci-gate\n").unwrap();
-    // A stub `peregrin` provider on PATH — the content type shells
-    // `peregrin provision install …`; it records the call.
+    // A stub `tamias-driver-peregrin` — found by capability; installs into
+    // PEREGRIN_HOME.
     let bin = tmp.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    let provider = bin.join("peregrin");
+    let driver = bin.join("tamias-driver-peregrin");
     std::fs::write(
-        &provider,
-        "#!/bin/sh\necho \"$@\" > \"$PROV_MARKER\"\nexit 0\n",
+        &driver,
+        "#!/bin/sh\ncase \"$1\" in\n  capabilities) echo '{\"types\":[\"peregrin-bundle\"]}' ;;\n  install) mkdir -p \"$PEREGRIN_HOME/store/ci-gate@0.2.0\"; echo x > \"$PEREGRIN_HOME/store/ci-gate@0.2.0/main.yaml\" ;;\nesac\nexit 0\n",
     )
     .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&provider, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let marker = tmp.path().join("prov.marker");
     let path_env = format!(
         "{}:{}",
         bin.display(),
@@ -105,18 +104,12 @@ fn peregrin_bundle_mirrors_into_peregrin_store() {
         .env("TAMIAS_CACHE", &cache)
         .env("PEREGRIN_HOME", &peregrin)
         .env("PATH", path_env)
-        .env("PROV_MARKER", marker.to_str().unwrap())
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(
         peregrin.join("store/ci-gate@0.2.0/main.yaml").exists(),
-        "peregrin mirror missing"
-    );
-    let invoked = std::fs::read_to_string(&marker).unwrap();
-    assert!(
-        invoked.starts_with("provision install"),
-        "provider not invoked: {invoked:?}"
+        "driver mirror missing"
     );
 }
 
@@ -222,38 +215,6 @@ fn publish_search_and_install_from_registry_tgz() {
 }
 
 #[test]
-fn myco_config_type_installs_a_pack() {
-    let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path().join("home");
-    let cache = tmp.path().join("cache");
-    let myco = tmp.path().join("myco");
-    let pkg = tmp.path().join("pkg");
-    std::fs::create_dir_all(&pkg).unwrap();
-    std::fs::write(
-        pkg.join("tamias.yaml"),
-        "name: pm\nversion: 1.0.0\ntype: myco-config\n",
-    )
-    .unwrap();
-    std::fs::write(
-        pkg.join("kinds.toml"),
-        "[[kinds]]\nname = \"spike\"\nprefix = \"S\"\nstorage = \"dir\"\n",
-    )
-    .unwrap();
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
-        .args(["install", pkg.to_str().unwrap()])
-        .env("TAMIAS_HOME", &home)
-        .env("TAMIAS_CACHE", &cache)
-        .env("MYCO_HOME", &myco)
-        .output()
-        .unwrap();
-    assert!(o.status.success(), "{}", stderr(&o));
-    assert!(
-        myco.join("packs/pm/kinds.toml").is_file(),
-        "myco pack missing"
-    );
-}
-
-#[test]
 fn registry_http_publish_and_search() {
     use std::time::Duration;
     let tmp = tempfile::tempdir().unwrap();
@@ -305,7 +266,7 @@ fn registry_http_publish_and_search() {
 }
 
 #[test]
-fn deploy_and_uninstall_use_the_provider() {
+fn deploy_and_uninstall_use_the_driver() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     let cache = tmp.path().join("cache");
@@ -319,18 +280,18 @@ fn deploy_and_uninstall_use_the_provider() {
     std::fs::write(pkg.join("main.yaml"), "name: gate\n").unwrap();
     let bin = tmp.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
-    let provider = bin.join("peregrin");
+    let driver = bin.join("tamias-driver-peregrin");
     std::fs::write(
-        &provider,
-        "#!/bin/sh\necho \"$1 $2\" >> \"$PROV_LOG\"\nexit 0\n",
+        &driver,
+        "#!/bin/sh\ncase \"$1\" in\n  capabilities) echo '{\"types\":[\"peregrin-bundle\"]}' ;;\n  *) echo \"$1\" >> \"$DRV_LOG\" ;;\nesac\nexit 0\n",
     )
     .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&provider, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    let log = tmp.path().join("prov.log");
+    let log = tmp.path().join("drv.log");
     let path_env = format!(
         "{}:{}",
         bin.display(),
@@ -343,7 +304,7 @@ fn deploy_and_uninstall_use_the_provider() {
             .env("TAMIAS_CACHE", &cache)
             .env("PEREGRIN_HOME", tmp.path().join("peregrin"))
             .env("PATH", &path_env)
-            .env("PROV_LOG", log.to_str().unwrap())
+            .env("DRV_LOG", log.to_str().unwrap())
             .output()
             .unwrap()
     };
@@ -351,9 +312,9 @@ fn deploy_and_uninstall_use_the_provider() {
     assert!(run(&["deploy", "gate"]).status.success());
     assert!(run(&["uninstall", "gate"]).status.success());
     let calls = std::fs::read_to_string(&log).unwrap();
-    assert!(calls.contains("provision install"), "{calls}");
-    assert!(calls.contains("provision deploy"), "{calls}");
-    assert!(calls.contains("provision uninstall"), "{calls}");
+    assert!(calls.contains("install"), "{calls}");
+    assert!(calls.contains("deploy"), "{calls}");
+    assert!(calls.contains("uninstall"), "{calls}");
 }
 
 #[test]
@@ -427,45 +388,54 @@ fn install_registers_bundled_driver() {
 }
 
 #[test]
-fn kuda_and_mimus_types_place_packs() {
+fn kuda_and_mimus_have_their_own_drivers() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     let cache = tmp.path().join("cache");
-    let kuda = tmp.path().join("kuda");
-    let mimus = tmp.path().join("mimus");
-    let kpkg = tmp.path().join("kd");
-    std::fs::create_dir_all(&kpkg).unwrap();
-    std::fs::write(
-        kpkg.join("tamias.yaml"),
-        "name: kd\nversion: 1.0.0\ntype: kuda-domain\n",
-    )
-    .unwrap();
-    std::fs::write(kpkg.join("d.toml"), "x").unwrap();
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
-        .args(["install", kpkg.to_str().unwrap()])
-        .env("TAMIAS_HOME", &home)
-        .env("TAMIAS_CACHE", &cache)
-        .env("KUDA_HOME", &kuda)
-        .output()
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for (driver, types) in [("kuda", "kuda-domain"), ("mimus", "mimus-rules")] {
+        let path = bin.join(format!("tamias-driver-{driver}"));
+        let body = format!(
+            "#!/bin/sh\ncase \"$1\" in\n  capabilities) echo '{{\"types\":[\"{types}\"]}}' ;;\n  install) mkdir -p \"$HOME_TARGET\"; echo x > \"$HOME_TARGET/marker\" ;;\nesac\nexit 0\n"
+        );
+        std::fs::write(&path, body).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    let path_env = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    for (name, kind, target) in [
+        ("kd", "kuda-domain", "kuda"),
+        ("mr", "mimus-rules", "mimus"),
+    ] {
+        let pkg = tmp.path().join(name);
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(
+            pkg.join("tamias.yaml"),
+            format!("name: {name}\nversion: 1.0.0\ntype: {kind}\n"),
+        )
         .unwrap();
-    assert!(o.status.success(), "{}", stderr(&o));
-    assert!(kuda.join("domains/kd/d.toml").is_file());
-
-    let mpkg = tmp.path().join("mr");
-    std::fs::create_dir_all(&mpkg).unwrap();
-    std::fs::write(
-        mpkg.join("tamias.yaml"),
-        "name: mr\nversion: 1.0.0\ntype: mimus-rules\n",
-    )
-    .unwrap();
-    std::fs::write(mpkg.join("r.toml"), "x").unwrap();
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
-        .args(["install", mpkg.to_str().unwrap()])
-        .env("TAMIAS_HOME", &home)
-        .env("TAMIAS_CACHE", &cache)
-        .env("MIMUS_HOME", &mimus)
-        .output()
-        .unwrap();
-    assert!(o.status.success(), "{}", stderr(&o));
-    assert!(mimus.join("rules/mr/r.toml").is_file());
+        std::fs::write(pkg.join("x.toml"), "x").unwrap();
+        let target = tmp.path().join(target);
+        let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+            .args(["install", pkg.to_str().unwrap()])
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("PATH", &path_env)
+            .env("HOME_TARGET", &target)
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{}", stderr(&o));
+        assert!(
+            target.join("marker").is_file(),
+            "driver {kind} not dispatched"
+        );
+    }
 }

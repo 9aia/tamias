@@ -14,7 +14,7 @@ tamias-source-http.workspace = true
 tamias-source-git.workspace = true
 tamias-store-local.workspace = true
 tamias-cache-local.workspace = true
-tamias-content.workspace = true
+tamias-driver.workspace = true
 serde_json.workspace = true
 
 [lints]
