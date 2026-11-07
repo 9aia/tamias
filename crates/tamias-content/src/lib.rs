@@ -111,6 +111,58 @@ fn myco_packs_root() -> PathBuf {
         .join("packs")
 }
 
+/// kuda domain/language packs — placed under kuda's domains dir.
+pub struct KudaDomain;
+
+impl ContentType for KudaDomain {
+    fn name(&self) -> &'static str {
+        "kuda-domain"
+    }
+    fn install(&self, ctx: &InstallCtx) -> Result<Report, Error> {
+        let dest = config_root("KUDA_HOME", "kuda")
+            .join("domains")
+            .join(&ctx.entry.record.name);
+        place_pack(ctx.payload_root, &dest)
+    }
+}
+
+/// mimus rule packs — placed under mimus's rules dir.
+pub struct MimusRules;
+
+impl ContentType for MimusRules {
+    fn name(&self) -> &'static str {
+        "mimus-rules"
+    }
+    fn install(&self, ctx: &InstallCtx) -> Result<Report, Error> {
+        let dest = config_root("MIMUS_HOME", "mimus")
+            .join("rules")
+            .join(&ctx.entry.record.name);
+        place_pack(ctx.payload_root, &dest)
+    }
+}
+
+/// Copy `payload_root` into `dest` (replacing it), reporting the placement.
+fn place_pack(payload_root: &Path, dest: &Path) -> Result<Report, Error> {
+    if dest.exists() {
+        std::fs::remove_dir_all(dest).map_err(Error::io(format!("clear {}", dest.display())))?;
+    }
+    copy_tree(payload_root, dest)?;
+    Ok(Report {
+        actions: vec![format!("placed: {}", dest.display())],
+    })
+}
+
+/// `<env_var>` → `$XDG_CONFIG_HOME/<app>` → `~/.config/<app>` → `./.<app>`.
+fn config_root(env_var: &str, app: &str) -> PathBuf {
+    std::env::var_os(env_var)
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("XDG_CONFIG_HOME").map(|d| PathBuf::from(d).join(app)))
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| PathBuf::from(h).join(format!(".config/{app}")))
+        })
+        .unwrap_or_else(|| PathBuf::from(format!(".{app}")))
+}
+
 /// Registered content types.
 #[must_use]
 pub fn registry() -> Vec<Box<dyn ContentType>> {
@@ -118,6 +170,8 @@ pub fn registry() -> Vec<Box<dyn ContentType>> {
         Box::new(Files),
         Box::new(PeregrinBundle),
         Box::new(MycoConfig),
+        Box::new(KudaDomain),
+        Box::new(MimusRules),
     ]
 }
 

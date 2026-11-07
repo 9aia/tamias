@@ -649,7 +649,11 @@ dependencies = [
  "tamias-cache-local",
  "tamias-content",
  "tamias-core",
+ "tamias-deploy",
+ "tamias-deploy-cf",
  "tamias-publish",
+ "tamias-registry",
+ "tamias-registry-cf",
  "tamias-registry-local",
  "tamias-serve",
  "tamias-source",
@@ -727,14 +731,12 @@ name = "tamias-deploy"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
- "thiserror",
 ]
 
 [[package]]
 name = "tamias-deploy-cf"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "tamias-core",
  "tamias-deploy",
 ]
@@ -750,6 +752,8 @@ dependencies = [
 name = "tamias-registry"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "tamias-core",
 ]
 
@@ -757,16 +761,19 @@ dependencies = [
 name = "tamias-registry-cf"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "tamias-core",
+ "tamias-registry",
+ "ureq",
 ]
 
 [[package]]
 name = "tamias-registry-local"
 version = "0.1.0"
 dependencies = [
- "serde",
  "serde_json",
  "tamias-core",
+ "tamias-registry",
  "tempfile",
 ]
 

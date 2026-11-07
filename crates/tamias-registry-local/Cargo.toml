@@ -1,6 +1,6 @@
 [package]
 name = "tamias-registry-local"
-description = "dir registry impl — a folder index"
+description = "dir registry impl — a folder index, servable over HTTP"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
-serde.workspace = true
+tamias-registry.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

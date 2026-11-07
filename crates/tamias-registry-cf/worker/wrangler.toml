@@ -1,0 +1,9 @@
+name = "tamias-registry"
+main = "index.js"
+compatibility_date = "2026-11-01"
+
+[[r2_buckets]]
+binding = "REGISTRY"
+bucket_name = "tamias-registry"
+
+# Set the token with:  wrangler secret put REGISTRY_TOKEN

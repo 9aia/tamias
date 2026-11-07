@@ -1,13 +1,12 @@
 [package]
 name = "tamias-deploy-cf"
-description = "Cloudflare deploy impl"
+description = "Cloudflare deploy impl — the registry Worker + wrangler config"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-serde_json.workspace = true
 tamias-core.workspace = true
 tamias-deploy.workspace = true
 

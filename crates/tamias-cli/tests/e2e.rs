@@ -224,3 +224,54 @@ fn myco_config_type_installs_a_pack() {
         "myco pack missing"
     );
 }
+
+#[test]
+fn registry_http_publish_and_search() {
+    use std::time::Duration;
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let reg = tmp.path().join("registry");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget\nversion: 3.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let addr = "127.0.0.1:8799";
+    let mut server = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args([
+            "registry",
+            "serve",
+            "--addr",
+            addr,
+            "--dir",
+            reg.to_str().unwrap(),
+        ])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(700));
+    let url = format!("http://{addr}");
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["publish", pkg.to_str().unwrap(), "--registry", &url])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "publish http: {}", stderr(&o));
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["search", "widget", "--registry", &url])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .output()
+        .unwrap();
+    assert!(stdout(&o).contains("widget@3.0.0"), "{}", stdout(&o));
+    server.kill().ok();
+    let _ = server.wait();
+}

@@ -1,58 +1,23 @@
 //! tamias-registry-local — a **directory** registry: published packages as
-//! `.tgz` blobs plus an `index.json` mapping identity → file + digest.
-//! `publish` packs and indexes; `entries`/`search` read the index. Publish
-//! is immutable per version (a re-publish replaces the entry, matching the
-//! "latest wins" upgrade path).
+//! `.tgz` blobs plus an `index.json`. It can also be `serve`d over a tiny
+//! HTTP surface (`GET /<key>`, `PUT /<key>`) so a remote client (and the
+//! Cloudflare Worker, which speaks the same protocol) can publish/read.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use tamias_core::{dir_digest, pack_tgz, Error, Manifest};
-
-/// One indexed package.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RegistryEntry {
-    /// Bare name.
-    pub name: String,
-    /// Scope, when namespaced.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scope: Option<String>,
-    /// Declared version.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    /// Content type.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    /// `sha256:<hex>` of the packed payload.
-    pub digest: String,
-    /// Path to the `.tgz`, relative to the registry root.
-    pub file: String,
-}
-
-impl RegistryEntry {
-    /// `@scope/name@version` (or name-only fallbacks).
-    #[must_use]
-    pub fn label(&self) -> String {
-        let scoped = match &self.scope {
-            Some(scope) => format!("@{scope}/{}", self.name),
-            None => self.name.clone(),
-        };
-        match &self.version {
-            Some(v) => format!("{scoped}@{v}"),
-            None => scoped,
-        }
-    }
-}
+use tamias_registry::{Registry, RegistryEntry};
 
 /// A dir-backed registry.
 #[derive(Clone, Debug)]
-pub struct Registry {
+pub struct LocalRegistry {
     root: PathBuf,
 }
 
-impl Registry {
+impl LocalRegistry {
     /// A registry under `root` (created lazily on first publish).
     #[must_use]
     pub fn new(root: impl Into<PathBuf>) -> Self {
@@ -68,40 +33,21 @@ impl Registry {
     fn index_path(&self) -> PathBuf {
         self.root.join("index.json")
     }
+}
 
-    /// Every indexed entry.
-    ///
-    /// # Errors
-    /// Propagates read/parse failures.
-    pub fn entries(&self) -> Result<Vec<RegistryEntry>, Error> {
+impl Registry for LocalRegistry {
+    fn entries(&self) -> Result<Vec<RegistryEntry>, Error> {
         let path = self.index_path();
         if !path.is_file() {
             return Ok(Vec::new());
         }
-        let text = std::fs::read_to_string(&path)
-            .map_err(Error::io(format!("read {}", path.display())))?;
+        let text =
+            fs::read_to_string(&path).map_err(Error::io(format!("read {}", path.display())))?;
         serde_json::from_str(&text)
             .map_err(|e| Error::Failed(format!("parse {}: {e}", path.display())))
     }
 
-    fn save(&self, entries: &[RegistryEntry]) -> Result<(), Error> {
-        std::fs::create_dir_all(&self.root)
-            .map_err(Error::io(format!("create {}", self.root.display())))?;
-        let text = serde_json::to_string_pretty(entries)
-            .map_err(|e| Error::Failed(format!("serialize index: {e}")))?;
-        let path = self.index_path();
-        std::fs::write(&path, text).map_err(Error::io(format!("write {}", path.display())))
-    }
-
-    /// Pack `payload_root` into the registry and index it.
-    ///
-    /// # Errors
-    /// Propagates pack/write failures.
-    pub fn publish(
-        &self,
-        payload_root: &Path,
-        manifest: &Manifest,
-    ) -> Result<RegistryEntry, Error> {
+    fn publish(&self, payload_root: &Path, manifest: &Manifest) -> Result<RegistryEntry, Error> {
         let scoped = match &manifest.scope {
             Some(scope) => format!("@{scope}/{}", manifest.name),
             None => manifest.name.clone(),
@@ -113,7 +59,7 @@ impl Registry {
         let rel = format!("{scoped}/{version}.tgz");
         let out = self.root.join(&rel);
         if let Some(parent) = out.parent() {
-            std::fs::create_dir_all(parent)
+            fs::create_dir_all(parent)
                 .map_err(Error::io(format!("create {}", parent.display())))?;
         }
         pack_tgz(payload_root, &out)?;
@@ -132,25 +78,127 @@ impl Registry {
         entries.push(entry.clone());
         entries
             .sort_by(|a, b| (&a.scope, &a.name, &a.version).cmp(&(&b.scope, &b.name, &b.version)));
-        self.save(&entries)?;
+        fs::create_dir_all(&self.root)
+            .map_err(Error::io(format!("create {}", self.root.display())))?;
+        let text = serde_json::to_string_pretty(&entries)
+            .map_err(|e| Error::Failed(format!("serialize index: {e}")))?;
+        fs::write(self.index_path(), text)
+            .map_err(Error::io(format!("write {}", self.index_path().display())))?;
         Ok(entry)
     }
+}
 
-    /// Entries whose name/scope contains `query` (case-insensitive).
-    ///
-    /// # Errors
-    /// Propagates read failures.
-    pub fn search(&self, query: &str) -> Result<Vec<RegistryEntry>, Error> {
-        let q = query.to_lowercase();
-        Ok(self
-            .entries()?
-            .into_iter()
-            .filter(|e| {
-                e.name.to_lowercase().contains(&q)
-                    || e.scope.as_deref().unwrap_or("").to_lowercase().contains(&q)
-            })
-            .collect())
+/// Serve `root` over a tiny blocking HTTP surface until the process stops.
+/// `GET /<key>` reads a blob; `PUT /<key>` writes one. The registry root is
+/// the blob namespace (paths sanitized — no traversal).
+///
+/// # Errors
+/// Propagates the bind failure; per-request errors are logged, not fatal.
+pub fn serve_http(addr: &str, root: &Path) -> Result<(), Error> {
+    let listener = std::net::TcpListener::bind(addr).map_err(Error::io(format!("bind {addr}")))?;
+    fs::create_dir_all(root).map_err(Error::io(format!("create {}", root.display())))?;
+    eprintln!(
+        "tamias registry serving {} at http://{addr}/",
+        root.display()
+    );
+    for stream in listener.incoming() {
+        match stream {
+            Ok(mut stream) => {
+                if let Err(e) = handle(&mut stream, root) {
+                    eprintln!("tamias registry: {e}");
+                }
+            }
+            Err(e) => eprintln!("tamias registry: accept: {e}"),
+        }
     }
+    Ok(())
+}
+
+fn handle(stream: &mut std::net::TcpStream, root: &Path) -> Result<(), Error> {
+    use std::io::{BufRead, BufReader, Read};
+
+    let clone = stream.try_clone().map_err(Error::io("clone stream"))?;
+    let mut reader = BufReader::new(clone);
+    let mut request_line = String::new();
+    reader
+        .read_line(&mut request_line)
+        .map_err(Error::io("read request"))?;
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("").to_string();
+    let raw_path = parts.next().unwrap_or("/").to_string();
+    let mut content_length = 0usize;
+    loop {
+        let mut line = String::new();
+        reader
+            .read_line(&mut line)
+            .map_err(Error::io("read header"))?;
+        if line == "\r\n" || line == "\n" || line.is_empty() {
+            break;
+        }
+        if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            content_length = v.trim().parse().unwrap_or(0);
+        }
+    }
+    let Some(key) = sanitize_key(&raw_path) else {
+        return respond(stream, 400, b"bad path");
+    };
+    match method.as_str() {
+        "GET" => match fs::read(root.join(&key)) {
+            Ok(bytes) => respond(stream, 200, &bytes),
+            Err(_) => respond(stream, 404, b"not found"),
+        },
+        "PUT" => {
+            let mut body = vec![0u8; content_length];
+            reader
+                .read_exact(&mut body)
+                .map_err(Error::io("read body"))?;
+            let path = root.join(&key);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(Error::io("create blob dir"))?;
+            }
+            fs::write(&path, &body).map_err(Error::io(format!("write {}", path.display())))?;
+            respond(stream, 200, b"ok")
+        }
+        _ => respond(stream, 405, b"method not allowed"),
+    }
+}
+
+/// A request path → a safe relative key (no traversal; `/` → `index.json`).
+fn sanitize_key(raw: &str) -> Option<PathBuf> {
+    let trimmed = raw.split('?').next().unwrap_or(raw).trim_start_matches('/');
+    let mut rel = PathBuf::new();
+    for component in Path::new(trimmed).components() {
+        match component {
+            std::path::Component::Normal(p) => rel.push(p),
+            std::path::Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    if rel.as_os_str().is_empty() {
+        rel.push("index.json");
+    }
+    Some(rel)
+}
+
+fn respond(stream: &mut std::net::TcpStream, code: u16, body: &[u8]) -> Result<(), Error> {
+    use std::io::Write;
+    let reason = match code {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        _ => "Error",
+    };
+    let head = format!(
+        "HTTP/1.1 {code} {reason}\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream
+        .write_all(head.as_bytes())
+        .map_err(Error::io("write head"))?;
+    stream.write_all(body).map_err(Error::io("write body"))?;
+    stream.flush().map_err(Error::io("flush"))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -167,13 +215,11 @@ mod tests {
         .unwrap();
         std::fs::write(src.path().join("main.yaml"), "x").unwrap();
         let reg_dir = tempfile::tempdir().unwrap();
-        let registry = Registry::new(reg_dir.path());
+        let registry = LocalRegistry::new(reg_dir.path());
         let manifest = Manifest::load(src.path()).unwrap();
         let entry = registry.publish(src.path(), &manifest).unwrap();
         assert_eq!(entry.label(), "ci-gate@0.2.0");
         assert!(reg_dir.path().join("ci-gate/0.2.0.tgz").is_file());
-        assert_eq!(registry.entries().unwrap().len(), 1);
         assert_eq!(registry.search("gate").unwrap().len(), 1);
-        assert_eq!(registry.search("nope").unwrap().len(), 0);
     }
 }

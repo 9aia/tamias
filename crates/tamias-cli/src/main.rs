@@ -11,7 +11,9 @@ use tamias_content::{self, InstallCtx};
 use tamias_core::{
     parse_ref, payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord,
 };
-use tamias_registry_local::Registry;
+use tamias_registry::{parse_registry_ref, Registry, RegistryRef};
+use tamias_registry_cf::HttpRegistry;
+use tamias_registry_local::{serve_http, LocalRegistry};
 use tamias_source::{Fetched, Resolved, Source};
 use tamias_source_fs::FsSource;
 use tamias_source_git::GitSource;
@@ -76,22 +78,46 @@ enum Command {
     Publish {
         /// Payload dir (holds `tamias.yaml`).
         dir: PathBuf,
-        /// Registry root (default `~/.local/share/tamias/registry`).
+        /// Registry root or http(s) base URL (default `~/.local/share/tamias/registry`).
         #[arg(long)]
-        registry: Option<PathBuf>,
+        registry: Option<String>,
     },
     /// Search a registry's index.
     Search {
         /// Name/scope substring.
         query: String,
-        /// Registry root.
+        /// Registry root or http(s) base URL.
         #[arg(long)]
-        registry: Option<PathBuf>,
+        registry: Option<String>,
     },
     /// Author-side packing.
     Bundle {
         #[command(subcommand)]
         cmd: BundleCommand,
+    },
+    /// Registry operations.
+    Registry {
+        #[command(subcommand)]
+        cmd: RegistryCommand,
+    },
+    /// Deploy a remote registry Worker.
+    Deploy {
+        /// Output dir (default `./tamias-registry-worker`).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum RegistryCommand {
+    /// Serve a local registry over HTTP.
+    Serve {
+        /// Bind address.
+        #[arg(long, default_value = "127.0.0.1:8788")]
+        addr: String,
+        /// Registry root (default `~/.local/share/tamias/registry`).
+        #[arg(long)]
+        dir: Option<PathBuf>,
     },
 }
 
@@ -248,6 +274,18 @@ fn short(digest: &str) -> &str {
     s.get(..12).unwrap_or(s)
 }
 
+/// Open a registry from a `--registry` value (dir or http URL) — the local
+/// dir by default.
+fn open_registry(env: &Env, value: Option<&str>) -> Box<dyn Registry> {
+    let value = value
+        .map(str::to_string)
+        .unwrap_or_else(|| env.registry_root.display().to_string());
+    match parse_registry_ref(&value) {
+        RegistryRef::Local(path) => Box::new(LocalRegistry::new(path)),
+        RegistryRef::Http(base) => Box::new(HttpRegistry::from_env(base)),
+    }
+}
+
 fn run(cli: Cli) -> Result<(), Error> {
     let env = Env::from_env();
     match cli.command {
@@ -348,18 +386,14 @@ fn run(cli: Cli) -> Result<(), Error> {
             })?;
         }
         Some(Command::Publish { dir, registry }) => {
-            let registry = Registry::new(registry.unwrap_or_else(|| env.registry_root.clone()));
+            let registry = open_registry(&env, registry.as_deref());
             let root = payload_root(&dir)?;
             let manifest = Manifest::load(&root)?;
             let entry = registry.publish(&root, &manifest)?;
-            println!(
-                "published {} → {}",
-                entry.label(),
-                registry.root().display()
-            );
+            println!("published {}", entry.label());
         }
         Some(Command::Search { query, registry }) => {
-            let registry = Registry::new(registry.unwrap_or_else(|| env.registry_root.clone()));
+            let registry = open_registry(&env, registry.as_deref());
             for e in registry.search(&query)? {
                 println!("{}  {}  {}", e.label(), short(&e.digest), e.file);
             }
@@ -368,6 +402,17 @@ fn run(cli: Cli) -> Result<(), Error> {
             let BundleCommand::Pack { dir, out } = cmd;
             let packed = tamias_publish::pack(&dir, out.as_deref())?;
             println!("packed → {}", packed.display());
+        }
+        Some(Command::Registry { cmd }) => {
+            let RegistryCommand::Serve { addr, dir } = cmd;
+            let root = dir.unwrap_or_else(|| env.registry_root.clone());
+            serve_http(&addr, &root)?;
+        }
+        Some(Command::Deploy { out }) => {
+            let out = out.unwrap_or_else(|| PathBuf::from("tamias-registry-worker"));
+            for action in tamias_deploy::Deploy::deploy(&tamias_deploy_cf::CfDeploy, &out)? {
+                println!("{action}");
+            }
         }
         Some(Command::Version) | None => {
             println!("tamias {}", env!("CARGO_PKG_VERSION"));
