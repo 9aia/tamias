@@ -818,4 +818,77 @@ mod tests {
         let _ = run_args(e.clone(), &["tamias", "service", "uninstall", "x"]);
         let _ = run_args(e.clone(), &["tamias", "service", "enable", "x"]);
     }
+
+    #[test]
+    fn env_root_fallbacks() {
+        for key in [
+            "TAMIAS_HOME",
+            "TAMIAS_CACHE",
+            "TAMIAS_REGISTRY",
+            "XDG_DATA_HOME",
+            "XDG_CACHE_HOME",
+            "HOME",
+        ] {
+            std::env::remove_var(key);
+        }
+        std::env::set_var("TAMIAS_HOME", "/th");
+        std::env::set_var("TAMIAS_CACHE", "/tc");
+        std::env::set_var("TAMIAS_REGISTRY", "/tr");
+        let _ = (store_root(), cache_root(), registry_root());
+        std::env::remove_var("TAMIAS_HOME");
+        std::env::remove_var("TAMIAS_CACHE");
+        std::env::remove_var("TAMIAS_REGISTRY");
+        std::env::set_var("XDG_DATA_HOME", "/xd");
+        std::env::set_var("XDG_CACHE_HOME", "/xc");
+        let _ = (store_root(), cache_root(), registry_root());
+        std::env::remove_var("XDG_DATA_HOME");
+        std::env::remove_var("XDG_CACHE_HOME");
+        std::env::set_var("HOME", "/h");
+        let _ = (store_root(), cache_root(), registry_root());
+        std::env::remove_var("HOME");
+        let _ = (store_root(), cache_root(), registry_root());
+    }
+
+    #[test]
+    fn cache_hit_fetch_error_and_scoped_info() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = tmp.path().join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            "name: w\nscope: acme\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        run_args(e.clone(), &["tamias", "info", "w"]).unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join("tamias.yaml"), "name: g\nversion: 1.0.0\n").unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(&repo)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .status()
+                .unwrap()
+                .success()
+        };
+        assert!(git(&["init", "-q", "-b", "main"]));
+        assert!(git(&["add", "-A"]));
+        assert!(git(&["commit", "-q", "-m", "i"]));
+        let g = format!("git:file://{}#main", repo.display());
+        run_args(e.clone(), &["tamias", "install", &g]).unwrap();
+        run_args(e.clone(), &["tamias", "install", &g]).unwrap();
+        assert!(run_args(
+            e.clone(),
+            &["tamias", "install", "http://127.0.0.1:1/x.tgz"]
+        )
+        .is_err());
+        run_args(e.clone(), &["tamias", "cache", "clean", "--all"]).unwrap();
+    }
 }
