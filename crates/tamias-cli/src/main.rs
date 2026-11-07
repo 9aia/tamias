@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use tamias_cache_local::FetchCache;
+use tamias_content::{self, InstallCtx};
 use tamias_core::{parse_ref, payload_root, Error, Manifest, StoreEntry, StoreRecord};
 use tamias_source::{Fetched, Resolved, Source};
 use tamias_source_fs::FsSource;
@@ -172,7 +173,22 @@ fn install(env: &Env, reference: &str) -> Result<StoreEntry, Error> {
         digest: String::new(),
         installed_at: 0,
     };
-    Store::new(&env.store_root).install(&root, record)
+    Store::new(&env.store_root)
+        .install(&root, record)
+        .and_then(|entry| {
+            let kind = manifest.kind.as_deref().unwrap_or("files");
+            if let Some(content) = tamias_content::by_name(kind) {
+                let report = content.install(&InstallCtx {
+                    payload_root: &root,
+                    reference,
+                    entry: &entry,
+                })?;
+                for action in report.actions {
+                    println!("  {action}");
+                }
+            }
+            Ok(entry)
+        })
 }
 
 fn short(digest: &str) -> &str {

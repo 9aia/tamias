@@ -647,6 +647,7 @@ dependencies = [
  "clap",
  "serde_json",
  "tamias-cache-local",
+ "tamias-content",
  "tamias-core",
  "tamias-source",
  "tamias-source-fs",

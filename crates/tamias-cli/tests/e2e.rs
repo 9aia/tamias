@@ -63,3 +63,31 @@ fn install_list_info_verify_remove() {
     let o = tamias(&home, &cache, &["list"]);
     assert!(stdout(&o).contains("no packages installed"));
 }
+
+#[test]
+fn peregrin_bundle_mirrors_into_peregrin_store() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let peregrin = tmp.path().join("peregrin");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: ci-gate\nversion: 0.2.0\ntype: peregrin-bundle\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("main.yaml"), "name: ci-gate\n").unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["install", pkg.to_str().unwrap()])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .env("PEREGRIN_HOME", &peregrin)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(
+        peregrin.join("store/ci-gate@0.2.0/main.yaml").exists(),
+        "peregrin mirror missing"
+    );
+}
