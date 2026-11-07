@@ -176,4 +176,33 @@ mod tests {
         let dest = tempfile::tempdir().unwrap();
         assert!(HttpSource::new().fetch(&resolved, dest.path()).is_err());
     }
+
+    #[test]
+    fn http_error_status_errors() {
+        let port = serve_status(500, b"boom");
+        let reference = tamias_core::parse_ref(&format!("http://127.0.0.1:{port}/x.tgz")).unwrap();
+        let resolved = HttpSource::new().resolve(&reference).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(HttpSource::new().fetch(&resolved, dest.path()).is_err());
+    }
+
+    fn serve_status(code: u16, body: &[u8]) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let body = body.to_vec();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let head = format!(
+                    "HTTP/1.1 {code} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(&body);
+                let _ = stream.flush();
+            }
+        });
+        port
+    }
 }

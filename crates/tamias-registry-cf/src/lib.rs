@@ -159,4 +159,24 @@ mod tests {
         let registry = HttpRegistry::new("http://127.0.0.1:1");
         assert!(registry.publish(src.path(), &manifest).is_err());
     }
+
+    #[test]
+    fn publish_and_read_roundtrip() {
+        use tamias_registry_local::serve_http;
+        let reg = tempfile::tempdir().unwrap();
+        let root = reg.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = serve_http("127.0.0.1:8793", &root);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        let registry = HttpRegistry::new("http://127.0.0.1:8793");
+        assert_eq!(
+            registry.publish(src.path(), &manifest).unwrap().label(),
+            "x@1.0.0"
+        );
+        assert_eq!(registry.entries().unwrap().len(), 1);
+    }
 }

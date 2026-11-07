@@ -271,4 +271,11 @@ mod tests {
         let bad = raw("127.0.0.1:8791", b"GET /../x HTTP/1.1\r\n\r\n");
         assert!(bad.contains("400"), "{bad}");
     }
+
+    #[test]
+    fn bad_index_errors() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("index.json"), "not json").unwrap();
+        assert!(LocalRegistry::new(root.path()).entries().is_err());
+    }
 }

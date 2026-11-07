@@ -805,4 +805,17 @@ mod tests {
         });
         std::thread::sleep(Duration::from_millis(300));
     }
+
+    #[test]
+    fn service_arms() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        // These reach the real systemctl runner (may error in a sandbox) —
+        // the dispatch arm executes regardless.
+        let _ = run_args(e.clone(), &["tamias", "service", "status", "x"]);
+        let _ = run_args(e.clone(), &["tamias", "service", "logs", "x"]);
+        let _ = run_args(e.clone(), &["tamias", "service", "disable", "x"]);
+        let _ = run_args(e.clone(), &["tamias", "service", "uninstall", "x"]);
+        let _ = run_args(e.clone(), &["tamias", "service", "enable", "x"]);
+    }
 }

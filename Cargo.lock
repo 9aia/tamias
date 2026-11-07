@@ -778,6 +778,7 @@ dependencies = [
  "serde_json",
  "tamias-core",
  "tamias-registry",
+ "tamias-registry-local",
  "tempfile",
  "ureq",
 ]
