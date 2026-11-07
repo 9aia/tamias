@@ -1,4 +1,5 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 //! tamias-source — the source port: turn a **ref** into bytes.
 //!
 //! `resolve` turns a ref into a [`Resolved`] fetch spec (git pins `#rev`
@@ -83,4 +84,30 @@ pub trait Source: Send + Sync {
     /// # Errors
     /// Transport/validation failures.
     fn fetch(&self, resolved: &Resolved, dest_dir: &Path) -> Result<Fetched, Error>;
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefetch_identity_arms() {
+        let fs = Resolved::Fs {
+            path: std::path::PathBuf::from("/x"),
+        };
+        assert!(fs.prefetch_identity().is_none());
+        let git = Resolved::Git {
+            url: "u".into(),
+            subdir: None,
+            rev: None,
+            sha: Some("abc".into()),
+        };
+        assert_eq!(git.prefetch_identity().unwrap().0, "git-abc");
+        let http = Resolved::Http {
+            url: "u".into(),
+            digest: Some("deadbeef".into()),
+        };
+        assert_eq!(http.prefetch_identity().unwrap().0, "sha256-deadbeef");
+    }
 }

@@ -307,6 +307,13 @@ mod tests {
         assert!(install["label"].as_str().unwrap().contains("sg"));
     }
 
+    #[test]
+    fn dispatch_install_http_dead() {
+        let env = env();
+        let refjson = r#"{"op":"install","ref":"http://127.0.0.1:1/x.tgz"}"#;
+        assert!(dispatch(&env, refjson).is_err());
+    }
+
     #[cfg(coverage)]
     #[test]
     fn serve_probe_is_covered() {

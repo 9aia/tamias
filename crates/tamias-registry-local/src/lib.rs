@@ -299,4 +299,20 @@ mod tests {
         let get = raw("127.0.0.1:8794", b"GET /k?v=1 HTTP/1.1\r\n\r\n");
         assert!(get.contains('z'), "{get}");
     }
+
+    #[test]
+    fn search_scoped_entry() {
+        let reg = tempfile::tempdir().unwrap();
+        let registry = LocalRegistry::new(reg.path());
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("tamias.yaml"),
+            "name: s\nscope: acme\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        registry.publish(src.path(), &manifest).unwrap();
+        assert_eq!(registry.search("acme").unwrap().len(), 1);
+        assert_eq!(registry.search("s").unwrap().len(), 1);
+    }
 }

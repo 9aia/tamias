@@ -221,4 +221,9 @@ mod tests {
         let dest = tempfile::tempdir().unwrap();
         assert!(HttpSource::new().fetch(&resolved, dest.path()).is_err());
     }
+
+    #[test]
+    fn default_impl() {
+        let _ = HttpSource::default();
+    }
 }

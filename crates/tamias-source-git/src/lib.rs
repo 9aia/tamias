@@ -244,4 +244,21 @@ mod tests {
         let reference = tamias_core::parse_ref("git:~/nonexistent-repo-xyz").unwrap();
         assert!(GitSource::new().resolve(&reference).is_err());
     }
+
+    #[test]
+    fn bad_ref_and_wrong_kind_fetch() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("a.txt"), "a").unwrap();
+        git(repo.path(), &["init", "-q", "-b", "main"]);
+        git(repo.path(), &["add", "-A"]);
+        git(repo.path(), &["commit", "-q", "-m", "i"]);
+        let r =
+            tamias_core::parse_ref(&format!("git:file://{}#nope", repo.path().display())).unwrap();
+        assert!(GitSource::new().resolve(&r).is_err());
+        let fs = tamias_source::Resolved::Fs {
+            path: std::path::PathBuf::from("/x"),
+        };
+        let dest = tempfile::tempdir().unwrap();
+        assert!(GitSource::new().fetch(&fs, dest.path()).is_err());
+    }
 }

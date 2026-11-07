@@ -137,4 +137,10 @@ mod tests {
         let dest = tempfile::tempdir().unwrap();
         assert!(FsSource::new().fetch(&resolved, dest.path()).is_err());
     }
+
+    #[test]
+    fn missing_path_errors() {
+        let r = SourceRef::Fs(std::path::PathBuf::from("/nonexistent-xyz-123"));
+        assert!(FsSource::new().resolve(&r).is_err());
+    }
 }
