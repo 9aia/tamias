@@ -31,3 +31,19 @@ impl Deploy for CfDeploy {
         ])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn deploy_writes_worker_and_config() {
+        let out = tempfile::tempdir().unwrap();
+        let actions = CfDeploy.deploy(out.path()).unwrap();
+        assert!(out.path().join("index.js").is_file());
+        assert!(out.path().join("wrangler.toml").is_file());
+        assert!(actions.iter().any(|a| a.contains("wrangler deploy")));
+    }
+}

@@ -146,3 +146,37 @@ impl FetchCache {
         self.clean(Duration::ZERO)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn scratch_commit_has_clean() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = FetchCache::new(root.path());
+        assert!(!cache.has("sha256-x"));
+        let scratch = cache.scratch().unwrap();
+        std::fs::write(scratch.join("f"), "x").unwrap();
+        cache.commit(&scratch, "sha256-x").unwrap();
+        assert!(cache.has("sha256-x"));
+        assert_eq!(cache.entries().unwrap().len(), 1);
+        assert_eq!(cache.clean_all().unwrap().len(), 1);
+        assert!(!cache.has("sha256-x"));
+    }
+
+    #[test]
+    fn invalid_key_and_discard() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = FetchCache::new(root.path().join("fetch"));
+        assert!(cache
+            .commit(std::path::Path::new("/nope"), "bad/key")
+            .is_err());
+        let scratch = cache.scratch().unwrap();
+        cache.discard(&scratch);
+        assert!(!scratch.exists());
+        cache.discard(std::path::Path::new("/nonexistent"));
+    }
+}

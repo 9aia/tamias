@@ -96,3 +96,59 @@ impl Source for HttpSource {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    use super::*;
+    use tamias_core::pack_tgz;
+
+    /// Serve `bytes` once on a random port; return the port.
+    fn serve_once(bytes: Vec<u8>) -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 2048];
+                let _ = stream.read(&mut buf);
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    bytes.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(&bytes);
+                let _ = stream.flush();
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn fetch_and_verify_a_tgz() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\n").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("x.tgz");
+        pack_tgz(src.path(), &out).unwrap();
+        let bytes = std::fs::read(&out).unwrap();
+        let port = serve_once(bytes);
+        let reference = tamias_core::parse_ref(&format!("http://127.0.0.1:{port}/x.tgz")).unwrap();
+        let source = HttpSource::new();
+        let resolved = source.resolve(&reference).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        let fetched = source.fetch(&resolved, dest.path()).unwrap();
+        assert!(dest.path().join("tamias.yaml").exists());
+        assert!(fetched.resolved.starts_with("sha256:"));
+        assert!(fetched.content_key.starts_with("sha256-"));
+    }
+
+    #[test]
+    fn resolves_only_http() {
+        let reference = tamias_core::parse_ref("./x").unwrap();
+        assert!(HttpSource::new().resolve(&reference).is_err());
+    }
+}

@@ -684,6 +684,7 @@ name = "tamias-cache-local"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
+ "tempfile",
 ]
 
 [[package]]
@@ -740,6 +741,7 @@ version = "0.1.0"
 dependencies = [
  "tamias-core",
  "tamias-deploy",
+ "tempfile",
 ]
 
 [[package]]
@@ -755,6 +757,7 @@ name = "tamias-publish"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
+ "tempfile",
 ]
 
 [[package]]
@@ -830,6 +833,7 @@ version = "0.1.0"
 dependencies = [
  "tamias-core",
  "tamias-source",
+ "tempfile",
 ]
 
 [[package]]
@@ -838,6 +842,7 @@ version = "0.1.0"
 dependencies = [
  "tamias-core",
  "tamias-source",
+ "tempfile",
  "ureq",
 ]
 

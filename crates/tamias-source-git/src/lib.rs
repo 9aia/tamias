@@ -160,3 +160,50 @@ impl Source for GitSource {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::process::Command;
+
+    use super::*;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+
+    #[test]
+    fn clone_a_file_url() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("sub")).unwrap();
+        std::fs::write(repo.path().join("sub/main.yaml"), "name: x\n").unwrap();
+        git(repo.path(), &["init", "-q", "-b", "main"]);
+        git(repo.path(), &["add", "-A"]);
+        git(repo.path(), &["commit", "-q", "-m", "init"]);
+        let git_ref =
+            tamias_core::parse_ref(&format!("git:file://{}//sub", repo.path().display())).unwrap();
+        let source = GitSource::new();
+        let resolved = source.resolve(&git_ref).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        let fetched = source.fetch(&resolved, dest.path()).unwrap();
+        assert!(dest.path().join("main.yaml").exists());
+        assert!(fetched.content_key.starts_with("git-"));
+    }
+
+    #[test]
+    fn resolves_only_git() {
+        let reference = tamias_core::parse_ref("./x").unwrap();
+        assert!(GitSource::new().resolve(&reference).is_err());
+    }
+}
