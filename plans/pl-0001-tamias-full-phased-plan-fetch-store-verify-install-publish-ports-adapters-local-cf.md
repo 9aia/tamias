@@ -112,13 +112,24 @@ Org proposal **P-002** + this plan; repo **ADR-0001**. *Gate:* committed.
 Copy `arca` → `tamias`; rename; docs; `myco init`; private repo; three
 branches; `cargo xtask check` green.
 
-### P2a — Skeleton
-1. **Prune** the seed: drop `tamias-vault*`, `-identity*`, `-tui` (secret
-   domain + TUI); keep+rename `-deploy*` as the `deploy` port.
+### P2a — Skeleton (keep it compiling)
+Pruning the secret domain drags the seed's `cli`/`ops`/`serve`/`config`
+with it — they depend on `tamias-vault*`/`-identity*` (verified). So this
+phase **strips to a minimal compiling core first**, then adds stubs.
+1. **Strip to a compiling core:**
+   - remove `tamias-vault*`, `tamias-identity*`, `tamias-tui`;
+   - strip `tamias-cli` → a minimal `main` (clap shell, no domain verbs);
+   - remove `tamias-ops` + `tamias-serve` (rebuilt fresh in P2b);
+   - reshape `tamias-config*` to the new config (`[store]/[cache]/
+     [registries]`), keeping the port/impl split; keep `tamias-shell` +
+     `tamias-testkit`;
+   - delete arca leftovers (`campaigns/adversarial/`); `docs/gen-*.py`
+     get repointed when the config code lands.
 2. **Add** empty crates: `core`, `source{,-fs,-git,-http}`,
    `store{,-local}`, `cache{,-local}`, `registry{,-local}`,
-   `deploy{,-cf}`, `content`, `serve`, `cli` (wired into the workspace).
-*Gate:* `cargo xtask check/test` green (empty crates; nothing regressed).
+   `deploy{,-cf}`, `content`, `publish`, `serve`, `cli` (wired).
+*Gate:* `cargo xtask check/test` green on the stripped skeleton + the new
+empty crates.
 
 ### P2b — Engine core
 1. **Lift** the set above into the new crates; strip peregrin specifics.
