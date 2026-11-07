@@ -1,7 +1,7 @@
 //! tamias — the CLI. P2b: the distribution verbs over the source port, the
 //! content-addressed cache, and the local store.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -110,6 +110,9 @@ enum Command {
     Deploy {
         /// `@scope/name` or `name`.
         name: String,
+        /// Node/config file the provider reads operator params from.
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
     /// Uninstall — provider teardown + drop the store entry.
     Uninstall {
@@ -438,8 +441,8 @@ fn run(cli: Cli) -> Result<(), Error> {
                 println!("{action}");
             }
         }
-        Some(Command::Deploy { name }) => {
-            deploy_package(&env, &name)?;
+        Some(Command::Deploy { name, config }) => {
+            deploy_package(&env, &name, config.as_deref())?;
         }
         Some(Command::Uninstall { name }) => {
             uninstall_package(&env, &name)?;
@@ -500,12 +503,18 @@ fn content_type(kind: Option<&str>) -> Result<Box<dyn tamias_content::ContentTyp
 }
 
 /// `deploy <name>` — run the installed package's provider deploy step.
-fn deploy_package(env: &Env, name: &str) -> Result<(), Error> {
+fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Error> {
     let entry = Store::new(&env.store_root).find(name)?;
     let content = content_type(entry.record.kind.as_deref())?;
     match content.provider() {
         Some(provider) => {
-            tamias_content::run_provider(provider, "deploy", &entry.dir, &entry.record.name, None)?;
+            tamias_content::run_provider(
+                provider,
+                "deploy",
+                &entry.dir,
+                &entry.record.name,
+                config,
+            )?;
             println!("deployed {}", entry.label());
         }
         None => println!(
