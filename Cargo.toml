@@ -67,6 +67,9 @@ tempfile = "3"
 temp-env = "0.3"
 sigpipe = "0.1"
 schemars = "1"
+semver = { version = "1", features = ["serde"] }
+sha2 = "0.10"
+hex = "0.4"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
