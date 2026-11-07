@@ -72,6 +72,12 @@ enum Command {
     Version,
     /// Print the machine-readable capability manifest.
     Manifest,
+    /// Diagnose the host metaservice (store, cache, registry, drivers).
+    Doctor {
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
+    },
     /// Run the ndjson JSON-RPC service over stdio.
     Serve,
     /// Publish a package dir to a registry.
@@ -453,6 +459,9 @@ fn run(cli: Cli) -> Result<(), Error> {
         Some(Command::Version) | None => {
             println!("tamias {}", env!("CARGO_PKG_VERSION"));
         }
+        Some(Command::Doctor { json }) => {
+            doctor(&env, json)?;
+        }
         Some(Command::Manifest) => {
             println!(
                 "{{\"name\":\"tamias\",\"version\":\"{}\",\"verbs\":[\"install\",\"add\",\"remove\",\"list\",\"info\",\"verify\",\"cache\"]}}",
@@ -588,6 +597,44 @@ fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
         ServiceCommand::Uninstall { unit } => {
             deploy.uninstall(&unit)?;
             println!("removed unit {unit}");
+        }
+    }
+    Ok(())
+}
+
+/// `doctor` — diagnose the host metaservice.
+fn doctor(env: &Env, json: bool) -> Result<(), Error> {
+    let store = Store::new(&env.store_root).entries()?;
+    let cache = FetchCache::new(&env.cache_root).entries()?;
+    let provider = |name: &str| -> bool {
+        std::env::var_os("PATH")
+            .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(name).is_file()))
+    };
+    let checks: Vec<(&str, String, bool)> = vec![
+        ("tamias", env!("CARGO_PKG_VERSION").to_string(), true),
+        ("store", env.store_root.display().to_string(), true),
+        ("packages", store.len().to_string(), true),
+        ("cache", env.cache_root.display().to_string(), true),
+        ("cache entries", cache.len().to_string(), true),
+        ("registry", env.registry_root.display().to_string(), true),
+        (
+            "peregrin driver",
+            "peregrin".to_string(),
+            provider("peregrin"),
+        ),
+    ];
+    if json {
+        let value: Vec<serde_json::Value> = checks
+            .iter()
+            .map(|(k, v, ok)| serde_json::json!({"check": k, "detail": v, "ok": ok}))
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string(&value).map_err(|e| Error::Failed(e.to_string()))?
+        );
+    } else {
+        for (k, v, ok) in &checks {
+            println!("{} {k}: {v}", if *ok { "ok " } else { "!! " });
         }
     }
     Ok(())
