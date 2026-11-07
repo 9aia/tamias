@@ -700,4 +700,38 @@ mod tests {
         assert!(run_args(e.clone(), &["tamias", "deploy", "ghost"]).is_err());
         assert!(run_args(e.clone(), &["tamias", "uninstall", "ghost"]).is_err());
     }
+
+    #[test]
+    fn more_verbs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        run_args(e.clone(), &["tamias", "cache", "clean", "--days", "1"]).unwrap();
+        let f = e.store_root.join("w@1.0.0/a.txt");
+        std::fs::write(&f, "tampered").unwrap();
+        assert!(run_args(e.clone(), &["tamias", "verify", "w"]).is_err());
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(run_args(
+            e.clone(),
+            &["tamias", "bundle", "pack", empty.to_str().unwrap()]
+        )
+        .is_err());
+        assert!(run_args(e.clone(), &["tamias", "publish", empty.to_str().unwrap()]).is_err());
+    }
+
+    #[test]
+    fn add_records_manifest_and_lock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let result = run_args(e.clone(), &["tamias", "add", dir.to_str().unwrap()]);
+        std::env::set_current_dir(prev).unwrap();
+        result.unwrap();
+        assert!(tmp.path().join("tamias.yaml").is_file());
+        assert!(tmp.path().join("tamias.lock").is_file());
+    }
 }
