@@ -241,4 +241,34 @@ mod tests {
         assert_eq!(registry.entries().unwrap().len(), 1);
         assert!(registry.root().is_dir());
     }
+
+    fn raw(addr: &str, req: &[u8]) -> String {
+        use std::io::{Read, Write};
+        let mut s = std::net::TcpStream::connect(addr).unwrap();
+        s.write_all(req).unwrap();
+        let mut out = Vec::new();
+        s.read_to_end(&mut out).unwrap();
+        String::from_utf8_lossy(&out).to_string()
+    }
+
+    #[test]
+    fn serve_http_roundtrip() {
+        let root = tempfile::tempdir().unwrap();
+        let rp = root.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = serve_http("127.0.0.1:8791", &rp);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let put = raw(
+            "127.0.0.1:8791",
+            b"PUT /index.json HTTP/1.1\r\nContent-Length: 3\r\n\r\n[1]",
+        );
+        assert!(put.starts_with("HTTP/1.1 200"), "{put}");
+        let get = raw("127.0.0.1:8791", b"GET /index.json HTTP/1.1\r\n\r\n");
+        assert!(get.contains("[1]"), "{get}");
+        let nf = raw("127.0.0.1:8791", b"GET /nope HTTP/1.1\r\n\r\n");
+        assert!(nf.contains("404"), "{nf}");
+        let bad = raw("127.0.0.1:8791", b"GET /../x HTTP/1.1\r\n\r\n");
+        assert!(bad.contains("400"), "{bad}");
+    }
 }

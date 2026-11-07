@@ -179,4 +179,16 @@ mod tests {
         assert!(!scratch.exists());
         cache.discard(std::path::Path::new("/nonexistent"));
     }
+
+    #[test]
+    fn clean_by_age_and_hidden_excluded() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = FetchCache::new(root.path());
+        let scratch = cache.scratch().unwrap();
+        std::fs::write(scratch.join("f"), "x").unwrap();
+        cache.commit(&scratch, "k1").unwrap();
+        std::fs::create_dir_all(root.path().join(".hidden")).unwrap();
+        assert_eq!(cache.entries().unwrap().len(), 1);
+        assert_eq!(cache.clean(Duration::from_secs(0)).unwrap().len(), 1);
+    }
 }

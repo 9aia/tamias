@@ -103,3 +103,35 @@ pub fn copy_tree(src: &Path, dest: &Path) -> Result<(), Error> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rec(scope: Option<&str>, version: Option<&str>, resolved: &str) -> StoreRecord {
+        StoreRecord {
+            name: "w".into(),
+            scope: scope.map(str::to_string),
+            version: version.map(str::to_string),
+            kind: None,
+            source_ref: "./x".into(),
+            resolved: resolved.into(),
+            digest: "sha256:d".into(),
+            installed_at: 0,
+        }
+    }
+
+    #[test]
+    fn label_scoped_and_sha_fallback() {
+        let e = StoreEntry {
+            dir: PathBuf::from("/x"),
+            record: rec(Some("a"), Some("1.0.0"), "sha"),
+        };
+        assert_eq!(e.label(), "@a/w@1.0.0");
+        let e2 = StoreEntry {
+            dir: PathBuf::from("/x"),
+            record: rec(None, None, "sha256:deadbeefcafe0000"),
+        };
+        assert_eq!(e2.label(), "w@deadbeefcafe");
+    }
+}

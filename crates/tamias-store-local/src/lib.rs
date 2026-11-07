@@ -180,3 +180,46 @@ fn unix_now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    fn record(name: &str, scope: Option<&str>) -> StoreRecord {
+        StoreRecord {
+            name: name.into(),
+            scope: scope.map(str::to_string),
+            version: Some("1.0.0".into()),
+            kind: None,
+            source_ref: "./x".into(),
+            resolved: "sha256:abc".into(),
+            digest: String::new(),
+            installed_at: 0,
+        }
+    }
+
+    fn payload(dir: &std::path::Path) {
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+    }
+
+    #[test]
+    fn install_find_verify_remove_and_ambiguity() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path());
+        assert!(store.entries().unwrap().is_empty());
+        let p = tempfile::tempdir().unwrap();
+        payload(p.path());
+        store.install(p.path(), record("w", None)).unwrap();
+        assert_eq!(store.entries().unwrap().len(), 1);
+        assert!(store.verify("w").unwrap().ok);
+        let p2 = tempfile::tempdir().unwrap();
+        payload(p2.path());
+        store.install(p2.path(), record("w", Some("acme"))).unwrap();
+        assert!(store.find("w").is_err());
+        assert!(store.find("@acme/w@1.0.0").is_ok());
+        assert!(store.remove("@acme/w@1.0.0").is_ok());
+        assert_eq!(store.entries().unwrap().len(), 1);
+    }
+}

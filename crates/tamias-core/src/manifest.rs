@@ -115,3 +115,42 @@ impl Manifest {
         std::fs::write(path, text).map_err(Error::io(format!("write {}", path.display())))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn load_yaml_toml_and_validate() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("tamias.toml"),
+            "name = \"x\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let manifest = Manifest::load(dir.path()).unwrap();
+        assert_eq!(manifest.name, "x");
+        assert!(Manifest::path_in(dir.path()).is_some());
+        let saved = dir.path().join("saved.yaml");
+        manifest.save(&saved).unwrap();
+        assert_eq!(Manifest::load_at(&saved).unwrap().name, "x");
+        let empty = tempfile::tempdir().unwrap();
+        assert!(Manifest::load(empty.path()).is_err());
+        assert!(Manifest {
+            name: "bad name".into(),
+            ..Default::default()
+        }
+        .validate()
+        .is_err());
+        assert!(Manifest {
+            name: "x".into(),
+            scope: Some("bad scope".into()),
+            ..Default::default()
+        }
+        .validate()
+        .is_err());
+        assert!(Manifest::default().validate().is_ok());
+    }
+}

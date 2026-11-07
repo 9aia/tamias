@@ -300,4 +300,16 @@ mod tests {
         );
         assert_eq!(expand_path(Path::new("/abs")), PathBuf::from("/abs"));
     }
+
+    #[test]
+    fn scp_style_and_more_errors() {
+        let SourceRef::Git(g) = parse_ref("git:git@github.com:9aia/x.git").unwrap() else {
+            panic!("expected git");
+        };
+        assert!(g.url.contains("git@github.com"));
+        assert!(parse_ref("git:x/y#a#b").is_err());
+        assert!(parse_ref("http://x/y.tgz#nope:1").is_err());
+        let hex = "z".repeat(64);
+        assert!(parse_ref(&format!("http://x/y.tgz#sha256:{hex}")).is_err());
+    }
 }
