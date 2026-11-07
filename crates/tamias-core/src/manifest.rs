@@ -153,4 +153,12 @@ mod tests {
         .is_err());
         assert!(Manifest::default().validate().is_ok());
     }
+
+    #[test]
+    fn load_at_parse_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.yaml");
+        std::fs::write(&path, ": not valid [ yaml").unwrap();
+        assert!(Manifest::load_at(&path).is_err());
+    }
 }

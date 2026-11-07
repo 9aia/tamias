@@ -246,4 +246,18 @@ mod archive_tests {
         let dest = tempfile::tempdir().unwrap();
         assert!(untar(Cursor::new(bytes), dest.path()).is_err());
     }
+
+    #[test]
+    fn unsafe_symlink_errors() {
+        let mut builder = Builder::new(Vec::new());
+        let mut link = tar::Header::new_gnu();
+        link.set_entry_type(tar::EntryType::Symlink);
+        link.set_size(0);
+        link.set_mode(0o777);
+        link.set_cksum();
+        builder.append_link(&mut link, "link", "../escape").unwrap();
+        let bytes = builder.into_inner().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(untar(Cursor::new(bytes), dest.path()).is_err());
+    }
 }
