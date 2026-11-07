@@ -651,6 +651,7 @@ dependencies = [
  "tamias-core",
  "tamias-deploy",
  "tamias-deploy-cf",
+ "tamias-deploy-local",
  "tamias-publish",
  "tamias-registry",
  "tamias-registry-cf",
@@ -739,6 +740,14 @@ version = "0.1.0"
 dependencies = [
  "tamias-core",
  "tamias-deploy",
+]
+
+[[package]]
+name = "tamias-deploy-local"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+ "tempfile",
 ]
 
 [[package]]

@@ -39,6 +39,14 @@ pub trait ContentType: Send + Sync {
     /// # Errors
     /// Propagates I/O failures placing the payload.
     fn install(&self, ctx: &InstallCtx) -> Result<Report, Error>;
+
+    /// Optional provider binary — tamias shells
+    /// `<provider> provision {install,deploy,uninstall} --dir <dir> --name <name>`
+    /// for the domain bits (node config, service unit, webhooks) beyond the
+    /// generic store install. `None` = nothing beyond the store.
+    fn provider(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 /// The escape hatch — the store install already satisfied it.
@@ -60,6 +68,9 @@ pub struct PeregrinBundle;
 impl ContentType for PeregrinBundle {
     fn name(&self) -> &'static str {
         "peregrin-bundle"
+    }
+    fn provider(&self) -> Option<&'static str> {
+        Some("peregrin")
     }
     fn install(&self, ctx: &InstallCtx) -> Result<Report, Error> {
         let rec = &ctx.entry.record;
@@ -192,4 +203,40 @@ fn peregrin_store_root() -> PathBuf {
         })
         .unwrap_or_else(|| PathBuf::from(".peregrin"))
         .join("store")
+}
+
+/// Run a content type's **provider**:
+/// `<provider> provision <verb> --dir <dir> --name <name> [--config <cfg>]`.
+/// The provider does the domain work (node config, service unit, webhooks);
+/// tamias never links the product crate.
+///
+/// # Errors
+/// Fails when the provider is missing or exits non-zero.
+pub fn run_provider(
+    provider: &str,
+    verb: &str,
+    dir: &Path,
+    name: &str,
+    config: Option<&Path>,
+) -> Result<(), Error> {
+    let mut cmd = std::process::Command::new(provider);
+    cmd.arg("provision")
+        .arg(verb)
+        .arg("--dir")
+        .arg(dir)
+        .arg("--name")
+        .arg(name);
+    if let Some(config) = config {
+        cmd.arg("--config").arg(config);
+    }
+    let out = cmd
+        .output()
+        .map_err(Error::io(format!("run provider '{provider}'")))?;
+    if !out.status.success() {
+        return Err(Error::Failed(format!(
+            "provider '{provider}' {verb} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(())
 }

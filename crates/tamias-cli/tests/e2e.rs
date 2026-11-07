@@ -78,17 +78,45 @@ fn peregrin_bundle_mirrors_into_peregrin_store() {
     )
     .unwrap();
     std::fs::write(pkg.join("main.yaml"), "name: ci-gate\n").unwrap();
+    // A stub `peregrin` provider on PATH — the content type shells
+    // `peregrin provision install …`; it records the call.
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let provider = bin.join("peregrin");
+    std::fs::write(
+        &provider,
+        "#!/bin/sh\necho \"$@\" > \"$PROV_MARKER\"\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&provider, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let marker = tmp.path().join("prov.marker");
+    let path_env = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
     let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
         .args(["install", pkg.to_str().unwrap()])
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
         .env("PEREGRIN_HOME", &peregrin)
+        .env("PATH", path_env)
+        .env("PROV_MARKER", marker.to_str().unwrap())
         .output()
         .unwrap();
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(
         peregrin.join("store/ci-gate@0.2.0/main.yaml").exists(),
         "peregrin mirror missing"
+    );
+    let invoked = std::fs::read_to_string(&marker).unwrap();
+    assert!(
+        invoked.starts_with("provision install"),
+        "provider not invoked: {invoked:?}"
     );
 }
 

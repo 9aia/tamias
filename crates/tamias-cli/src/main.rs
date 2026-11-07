@@ -100,11 +100,26 @@ enum Command {
         #[command(subcommand)]
         cmd: RegistryCommand,
     },
-    /// Deploy a remote registry Worker.
-    Deploy {
+    /// Deploy the registry Worker (Cloudflare).
+    DeployRegistry {
         /// Output dir (default `./tamias-registry-worker`).
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+    /// Deploy an installed package's service/runtime (via its provider).
+    Deploy {
+        /// `@scope/name` or `name`.
+        name: String,
+    },
+    /// Uninstall — provider teardown + drop the store entry.
+    Uninstall {
+        /// `@scope/name` or `name`.
+        name: String,
+    },
+    /// Manage a per-user service unit (systemd).
+    Service {
+        #[command(subcommand)]
+        cmd: ServiceCommand,
     },
 }
 
@@ -264,6 +279,15 @@ fn install(env: &Env, reference: &str) -> Result<StoreEntry, Error> {
                 for action in report.actions {
                     println!("  {action}");
                 }
+                if let Some(provider) = content.provider() {
+                    tamias_content::run_provider(
+                        provider,
+                        "install",
+                        &root,
+                        &entry.record.name,
+                        None,
+                    )?;
+                }
             }
             Ok(entry)
         })
@@ -408,11 +432,20 @@ fn run(cli: Cli) -> Result<(), Error> {
             let root = dir.unwrap_or_else(|| env.registry_root.clone());
             serve_http(&addr, &root)?;
         }
-        Some(Command::Deploy { out }) => {
+        Some(Command::DeployRegistry { out }) => {
             let out = out.unwrap_or_else(|| PathBuf::from("tamias-registry-worker"));
             for action in tamias_deploy::Deploy::deploy(&tamias_deploy_cf::CfDeploy, &out)? {
                 println!("{action}");
             }
+        }
+        Some(Command::Deploy { name }) => {
+            deploy_package(&env, &name)?;
+        }
+        Some(Command::Uninstall { name }) => {
+            uninstall_package(&env, &name)?;
+        }
+        Some(Command::Service { cmd }) => {
+            run_service(cmd)?;
         }
         Some(Command::Version) | None => {
             println!("tamias {}", env!("CARGO_PKG_VERSION"));
@@ -422,6 +455,130 @@ fn run(cli: Cli) -> Result<(), Error> {
                 "{{\"name\":\"tamias\",\"version\":\"{}\",\"verbs\":[\"install\",\"add\",\"remove\",\"list\",\"info\",\"verify\",\"cache\"]}}",
                 env!("CARGO_PKG_VERSION")
             );
+        }
+    }
+    Ok(())
+}
+
+#[derive(Subcommand)]
+enum ServiceCommand {
+    /// Write a per-user systemd unit (does not enable it).
+    Install {
+        /// Unit base name.
+        #[arg(long)]
+        unit: String,
+        /// `ExecStart`.
+        #[arg(long)]
+        exec: String,
+        /// Unit description.
+        #[arg(long, default_value = "tamias service")]
+        description: String,
+        /// `K=V` environment — repeatable.
+        #[arg(long = "env")]
+        envs: Vec<String>,
+        /// Working directory.
+        #[arg(long)]
+        workdir: Option<String>,
+    },
+    /// Enable + start the unit.
+    Enable { unit: String },
+    /// Disable + stop the unit.
+    Disable { unit: String },
+    /// Unit status.
+    Status { unit: String },
+    /// Follow the unit's logs.
+    Logs { unit: String },
+    /// Disable + remove the unit file.
+    Uninstall { unit: String },
+}
+
+/// A content type by its `type:` name.
+fn content_type(kind: Option<&str>) -> Result<Box<dyn tamias_content::ContentType>, Error> {
+    let kind = kind.unwrap_or("files");
+    tamias_content::by_name(kind)
+        .ok_or_else(|| Error::Failed(format!("unknown content type '{kind}'")))
+}
+
+/// `deploy <name>` — run the installed package's provider deploy step.
+fn deploy_package(env: &Env, name: &str) -> Result<(), Error> {
+    let entry = Store::new(&env.store_root).find(name)?;
+    let content = content_type(entry.record.kind.as_deref())?;
+    match content.provider() {
+        Some(provider) => {
+            tamias_content::run_provider(provider, "deploy", &entry.dir, &entry.record.name, None)?;
+            println!("deployed {}", entry.label());
+        }
+        None => println!(
+            "{}: nothing to deploy (type {})",
+            entry.label(),
+            entry.record.kind.as_deref().unwrap_or("files")
+        ),
+    }
+    Ok(())
+}
+
+/// `uninstall <name>` — provider teardown + drop the store entry.
+fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
+    let entry = Store::new(&env.store_root).find(name)?;
+    if let Some(provider) = content_type(entry.record.kind.as_deref())?.provider() {
+        let _ = tamias_content::run_provider(
+            provider,
+            "uninstall",
+            &entry.dir,
+            &entry.record.name,
+            None,
+        );
+    }
+    let record = Store::new(&env.store_root).remove(name)?;
+    println!("uninstalled {}@{}", record.name, record.resolved);
+    Ok(())
+}
+
+/// `service …` — the per-user unit (systemd) mechanism.
+fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
+    use tamias_deploy_local::{LocalDeploy, ServiceSpec};
+    let deploy = LocalDeploy::new();
+    match cmd {
+        ServiceCommand::Install {
+            unit,
+            exec,
+            description,
+            envs,
+            workdir,
+        } => {
+            let env = envs
+                .iter()
+                .filter_map(|kv| {
+                    kv.split_once('=')
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                })
+                .collect();
+            let spec = ServiceSpec {
+                name: unit.clone(),
+                description,
+                exec,
+                env,
+                workdir,
+            };
+            let path = deploy.install(&spec)?;
+            println!(
+                "wrote {} (enable: tamias service enable {unit})",
+                path.display()
+            );
+        }
+        ServiceCommand::Enable { unit } => {
+            deploy.enable(&unit)?;
+            println!("enabled {unit}");
+        }
+        ServiceCommand::Disable { unit } => {
+            deploy.disable(&unit)?;
+            println!("disabled {unit}");
+        }
+        ServiceCommand::Status { unit } => deploy.status(&unit)?,
+        ServiceCommand::Logs { unit } => deploy.logs(&unit)?,
+        ServiceCommand::Uninstall { unit } => {
+            deploy.uninstall(&unit)?;
+            println!("removed unit {unit}");
         }
     }
     Ok(())
