@@ -216,4 +216,43 @@ mod tests {
         let e = handle(&env, r#"{"op":"nope"}"#);
         assert!(e.contains("false") && e.contains("error"));
     }
+
+    #[test]
+    fn dispatch_install_list_info_verify_remove() {
+        let env = env();
+        let pkg = tempfile::tempdir().unwrap();
+        std::fs::write(
+            pkg.path().join("tamias.yaml"),
+            "name: srv\nversion: 1.0.0\ntype: files\n",
+        )
+        .unwrap();
+        std::fs::write(pkg.path().join("a.txt"), "a").unwrap();
+        let ref_json = format!(
+            "{{\"op\":\"install\",\"ref\":{:?}}}",
+            pkg.path().to_str().unwrap()
+        );
+        let install = dispatch(&env, &ref_json).unwrap();
+        assert!(install["label"].as_str().unwrap().contains("srv"));
+        assert_eq!(
+            dispatch(&env, r#"{"op":"list"}"#)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            dispatch(&env, r#"{"op":"info","name":"srv"}"#).unwrap()["size"]
+                .as_u64()
+                .is_some()
+        );
+        assert_eq!(
+            dispatch(&env, r#"{"op":"verify","name":"srv"}"#).unwrap()["ok"],
+            true
+        );
+        assert_eq!(
+            dispatch(&env, r#"{"op":"remove","name":"srv"}"#).unwrap()["name"],
+            "srv"
+        );
+    }
 }

@@ -220,4 +220,10 @@ mod tests {
         let dest = tempfile::tempdir().unwrap();
         assert!(GitSource::new().fetch(&resolved, dest.path()).is_err());
     }
+
+    #[test]
+    fn resolve_remote_error() {
+        let reference = tamias_core::parse_ref("git:file:///nonexistent/xyz#main").unwrap();
+        assert!(GitSource::new().resolve(&reference).is_err());
+    }
 }

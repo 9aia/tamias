@@ -389,4 +389,19 @@ mod tests {
         );
         assert!(err.is_err());
     }
+
+    #[test]
+    fn run_provider_success_and_dispatch_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("prov.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        run_provider(script.to_str().unwrap(), "install", dir.path(), "n", None).unwrap();
+        assert!(!dispatch("files", "deploy", dir.path(), "n", None).unwrap());
+        assert!(!dispatch("unknown-type", "install", dir.path(), "n", None).unwrap());
+    }
 }
