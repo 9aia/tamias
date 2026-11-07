@@ -121,4 +121,18 @@ mod tests {
         let bdest = tempfile::tempdir().unwrap();
         assert!(FsSource::new().fetch(&bresolved, bdest.path()).is_err());
     }
+
+    #[test]
+    fn wrong_kind_errors() {
+        let git = tamias_core::parse_ref("git:o/r").unwrap();
+        assert!(FsSource::new().resolve(&git).is_err());
+        let resolved = tamias_source::Resolved::Git {
+            url: "x".into(),
+            subdir: None,
+            rev: None,
+            sha: None,
+        };
+        let dest = tempfile::tempdir().unwrap();
+        assert!(FsSource::new().fetch(&resolved, dest.path()).is_err());
+    }
 }

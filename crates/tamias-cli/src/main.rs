@@ -907,4 +907,35 @@ mod tests {
         .is_err());
         run_args(e.clone(), &["tamias", "cache", "clean", "--all"]).unwrap();
     }
+
+    #[test]
+    fn service_install_and_doctor_with_driver() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("cfg"));
+        let r = run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "service",
+                "install",
+                "--unit",
+                "ufx",
+                "--exec",
+                "/bin/true",
+                "--env",
+                "A=1",
+            ],
+        );
+        std::env::remove_var("XDG_CONFIG_HOME");
+        r.unwrap();
+        assert!(tmp.path().join("cfg/systemd/user/ufx.service").is_file());
+        let _ = run_args(e.clone(), &["tamias", "cache", "clean"]);
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        let dd = tmp.path().join("th/drivers");
+        std::fs::create_dir_all(&dd).unwrap();
+        std::fs::write(dd.join("tamias-driver-x"), "#!/bin/sh\n").unwrap();
+        run_args(e.clone(), &["tamias", "doctor"]).unwrap();
+        std::env::remove_var("TAMIAS_HOME");
+    }
 }

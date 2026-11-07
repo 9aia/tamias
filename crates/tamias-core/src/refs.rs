@@ -328,4 +328,14 @@ mod tests {
         assert_eq!(expand_path(Path::new("plain")), PathBuf::from("plain"));
         assert!(parse_ref("git:9aia/peregrin//").is_ok());
     }
+
+    #[test]
+    fn parse_more_errors() {
+        assert!(parse_ref("git:").is_err());
+        assert!(parse_ref("git:#rev").is_err());
+        assert!(parse_ref("git:x#a#b").is_err());
+        assert!(parse_ref("https://x/y.zip").is_err());
+        assert!(parse_ref("https://x/y.tgz#sha256:short").is_err());
+        assert!(parse_ref("git:x/y//a/../b").is_err());
+    }
 }

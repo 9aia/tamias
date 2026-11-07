@@ -205,4 +205,13 @@ mod tests {
         });
         port
     }
+
+    #[test]
+    fn with_agent_and_wrong_kind() {
+        let _ = HttpSource::with_agent(ureq::Agent::new_with_config(
+            ureq::Agent::config_builder().build(),
+        ));
+        let fs = tamias_core::parse_ref("./x").unwrap();
+        assert!(HttpSource::new().resolve(&fs).is_err());
+    }
 }

@@ -91,3 +91,39 @@ pub fn parse_registry_ref(value: &str) -> RegistryRef {
         RegistryRef::Local(PathBuf::from(value))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::path::PathBuf;
+
+    use super::*;
+
+    #[test]
+    fn label_and_ref_parse() {
+        let entry = RegistryEntry {
+            name: "n".into(),
+            scope: None,
+            version: None,
+            kind: None,
+            digest: "sha256:d".into(),
+            file: "n/0.0.0.tgz".into(),
+        };
+        assert_eq!(entry.label(), "n");
+        let scoped = RegistryEntry {
+            scope: Some("s".into()),
+            version: Some("1.0.0".into()),
+            ..entry
+        };
+        assert_eq!(scoped.label(), "@s/n@1.0.0");
+        assert_eq!(
+            parse_registry_ref("./x"),
+            RegistryRef::Local(PathBuf::from("./x"))
+        );
+        assert_eq!(
+            parse_registry_ref("http://h/x/"),
+            RegistryRef::Http("http://h/x".into())
+        );
+    }
+}
