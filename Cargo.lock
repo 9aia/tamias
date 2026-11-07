@@ -709,6 +709,7 @@ name = "tamias-content"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
+ "tempfile",
 ]
 
 [[package]]
@@ -802,6 +803,7 @@ dependencies = [
  "tamias-source-git",
  "tamias-source-http",
  "tamias-store-local",
+ "tempfile",
 ]
 
 [[package]]

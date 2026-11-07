@@ -240,3 +240,36 @@ pub fn run_provider(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn provider_map() {
+        assert_eq!(
+            by_name("peregrin-bundle").unwrap().provider(),
+            Some("peregrin")
+        );
+        assert_eq!(by_name("files").unwrap().provider(), None);
+        assert_eq!(by_name("myco-config").unwrap().provider(), None);
+        assert!(by_name("nope").is_none());
+        assert!(registry().len() >= 5);
+    }
+
+    #[test]
+    fn run_provider_missing_binary_errors() {
+        let err = run_provider(
+            "definitely-not-a-cmd-xyz",
+            "install",
+            Path::new("/x"),
+            "n",
+            None,
+        );
+        assert!(err.is_err());
+    }
+}

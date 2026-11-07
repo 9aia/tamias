@@ -184,3 +184,36 @@ fn install(env: &Env, reference: &str) -> Result<tamias_core::StoreEntry, Error>
 /// A convenience default cache eviction window re-exported for callers that
 /// embed the loop and manage their own cache.
 pub const DEFAULT_CACHE_MAX_AGE: Duration = Duration::from_secs(30 * 86_400);
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    fn env() -> Env {
+        let dir = tempfile::tempdir().unwrap();
+        Env {
+            store_root: dir.path().join("store"),
+            cache_root: dir.path().join("cache"),
+        }
+    }
+
+    #[test]
+    fn dispatch_ops() {
+        let env = env();
+        let list = dispatch(&env, r#"{"op":"list"}"#).unwrap();
+        assert!(list.is_array());
+        assert!(dispatch(&env, r#"{"op":"nope"}"#).is_err());
+        assert!(dispatch(&env, "not json").is_err());
+        assert!(dispatch(&env, r#"{"op":"install"}"#).is_err());
+    }
+
+    #[test]
+    fn handle_wraps_ok_and_err() {
+        let env = env();
+        assert!(handle(&env, r#"{"op":"list"}"#).contains("true"));
+        let e = handle(&env, r#"{"op":"nope"}"#);
+        assert!(e.contains("false") && e.contains("error"));
+    }
+}
