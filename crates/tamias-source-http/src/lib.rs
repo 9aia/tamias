@@ -151,4 +151,29 @@ mod tests {
         let reference = tamias_core::parse_ref("./x").unwrap();
         assert!(HttpSource::new().resolve(&reference).is_err());
     }
+
+    #[test]
+    fn fetch_http_error() {
+        let reference = tamias_core::parse_ref("http://127.0.0.1:1/x.tgz").unwrap();
+        let resolved = HttpSource::new().resolve(&reference).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(HttpSource::new().fetch(&resolved, dest.path()).is_err());
+    }
+
+    #[test]
+    fn digest_mismatch_errors() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\n").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("x.tgz");
+        pack_tgz(src.path(), &out).unwrap();
+        let bytes = std::fs::read(&out).unwrap();
+        let port = serve_once(bytes);
+        let hex = "0".repeat(64);
+        let reference =
+            tamias_core::parse_ref(&format!("http://127.0.0.1:{port}/x.tgz#sha256:{hex}")).unwrap();
+        let resolved = HttpSource::new().resolve(&reference).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(HttpSource::new().fetch(&resolved, dest.path()).is_err());
+    }
 }

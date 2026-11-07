@@ -133,3 +133,30 @@ impl Registry for HttpRegistry {
         Ok(entry)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    #[test]
+    fn entries_without_server_is_empty_and_env_token() {
+        let registry = HttpRegistry::new("http://127.0.0.1:1");
+        assert!(registry.entries().unwrap().is_empty());
+        assert!(HttpRegistry::from_env("http://127.0.0.1:1")
+            .with_token("t")
+            .entries()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn publish_without_server_errors() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        let registry = HttpRegistry::new("http://127.0.0.1:1");
+        assert!(registry.publish(src.path(), &manifest).is_err());
+    }
+}

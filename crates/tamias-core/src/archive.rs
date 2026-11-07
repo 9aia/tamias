@@ -199,4 +199,51 @@ mod archive_tests {
             PathBuf::from("a/b")
         );
     }
+
+    #[test]
+    fn untar_dirs_and_symlinks() {
+        let mut builder = Builder::new(Vec::new());
+        let mut dir = tar::Header::new_gnu();
+        dir.set_entry_type(tar::EntryType::Directory);
+        dir.set_size(0);
+        dir.set_mode(0o755);
+        dir.set_cksum();
+        builder
+            .append_data(&mut dir, "d/", std::io::empty())
+            .unwrap();
+        let mut file = tar::Header::new_gnu();
+        file.set_size(1);
+        file.set_mode(0o644);
+        file.set_cksum();
+        builder
+            .append_data(&mut file, "d/f.txt", &b"x"[..])
+            .unwrap();
+        let mut link = tar::Header::new_gnu();
+        link.set_entry_type(tar::EntryType::Symlink);
+        link.set_size(0);
+        link.set_mode(0o777);
+        link.set_cksum();
+        builder.append_link(&mut link, "link", "d/f.txt").unwrap();
+        let bytes = builder.into_inner().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        untar(Cursor::new(bytes), dest.path()).unwrap();
+        assert!(dest.path().join("d/f.txt").is_file());
+        assert!(dest.path().join("link").exists());
+    }
+
+    #[test]
+    fn untar_unsupported_entry_errors() {
+        let mut builder = Builder::new(Vec::new());
+        let mut fifo = tar::Header::new_gnu();
+        fifo.set_entry_type(tar::EntryType::Fifo);
+        fifo.set_size(0);
+        fifo.set_mode(0o644);
+        fifo.set_cksum();
+        builder
+            .append_data(&mut fifo, "p", std::io::empty())
+            .unwrap();
+        let bytes = builder.into_inner().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(untar(Cursor::new(bytes), dest.path()).is_err());
+    }
 }

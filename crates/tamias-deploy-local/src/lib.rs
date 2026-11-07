@@ -265,4 +265,11 @@ mod tests {
         rec.uninstall("missing").unwrap();
         assert_eq!(rec.unit_dir(), dir.path());
     }
+
+    #[test]
+    fn default_uses_system_runner() {
+        let deploy = LocalDeploy::new();
+        assert!(deploy.unit_dir().to_str().is_some());
+        assert!(deploy.enable("nonexistent-unit-xyz").is_err());
+    }
 }
