@@ -288,16 +288,8 @@ fn install(env: &Env, reference: &str) -> Result<StoreEntry, Error> {
                 for action in report.actions {
                     println!("  {action}");
                 }
-                if let Some(provider) = content.provider() {
-                    tamias_content::run_provider(
-                        provider,
-                        "install",
-                        &root,
-                        &entry.record.name,
-                        None,
-                    )?;
-                }
             }
+            tamias_content::dispatch(kind, "install", &root, &entry.record.name, None)?;
             Ok(entry)
         })
 }
@@ -504,33 +496,14 @@ enum ServiceCommand {
     Uninstall { unit: String },
 }
 
-/// A content type by its `type:` name.
-fn content_type(kind: Option<&str>) -> Result<Box<dyn tamias_content::ContentType>, Error> {
-    let kind = kind.unwrap_or("files");
-    tamias_content::by_name(kind)
-        .ok_or_else(|| Error::Failed(format!("unknown content type '{kind}'")))
-}
-
 /// `deploy <name>` — run the installed package's provider deploy step.
 fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Error> {
     let entry = Store::new(&env.store_root).find(name)?;
-    let content = content_type(entry.record.kind.as_deref())?;
-    match content.provider() {
-        Some(provider) => {
-            tamias_content::run_provider(
-                provider,
-                "deploy",
-                &entry.dir,
-                &entry.record.name,
-                config,
-            )?;
-            println!("deployed {}", entry.label());
-        }
-        None => println!(
-            "{}: nothing to deploy (type {})",
-            entry.label(),
-            entry.record.kind.as_deref().unwrap_or("files")
-        ),
+    let kind = entry.record.kind.as_deref().unwrap_or("files");
+    if tamias_content::dispatch(kind, "deploy", &entry.dir, &entry.record.name, config)? {
+        println!("deployed {}", entry.label());
+    } else {
+        println!("{}: nothing to deploy (type {kind})", entry.label());
     }
     Ok(())
 }
@@ -538,15 +511,8 @@ fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Er
 /// `uninstall <name>` — provider teardown + drop the store entry.
 fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
     let entry = Store::new(&env.store_root).find(name)?;
-    if let Some(provider) = content_type(entry.record.kind.as_deref())?.provider() {
-        let _ = tamias_content::run_provider(
-            provider,
-            "uninstall",
-            &entry.dir,
-            &entry.record.name,
-            None,
-        );
-    }
+    let kind = entry.record.kind.as_deref().unwrap_or("files");
+    let _ = tamias_content::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None);
     let record = Store::new(&env.store_root).remove(name)?;
     println!("uninstalled {}@{}", record.name, record.resolved);
     Ok(())

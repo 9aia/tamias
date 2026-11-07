@@ -355,3 +355,47 @@ fn deploy_and_uninstall_use_the_provider() {
     assert!(calls.contains("provision deploy"), "{calls}");
     assert!(calls.contains("provision uninstall"), "{calls}");
 }
+
+#[test]
+fn driver_discovery_dispatches() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: fx\nversion: 1.0.0\ntype: fixture\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let driver = bin.join("tamias-driver-fixture");
+    std::fs::write(&driver, "#!/bin/sh\necho \"$1\" >> \"$DRV_LOG\"\nexit 0\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let log = tmp.path().join("drv.log");
+    let path_env = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["install", pkg.to_str().unwrap()])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .env("PATH", &path_env)
+        .env("DRV_LOG", log.to_str().unwrap())
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    let invoked = std::fs::read_to_string(&log).unwrap();
+    assert!(
+        invoked.contains("install"),
+        "driver not dispatched: {invoked:?}"
+    );
+}

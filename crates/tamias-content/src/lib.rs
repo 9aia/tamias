@@ -241,6 +241,75 @@ pub fn run_provider(
     Ok(())
 }
 
+/// Find a **driver** for a content type — the executable
+/// `tamias-driver-<kind>` on `PATH`, then `<tamias-home>/drivers/`.
+/// This is the discovery half of the driver system (org-ledger `P10`).
+#[must_use]
+pub fn find_driver(kind: &str) -> Option<std::path::PathBuf> {
+    let name = format!("tamias-driver-{kind}");
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join(&name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    let home = std::env::var_os("TAMIAS_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("XDG_DATA_HOME").map(|d| std::path::PathBuf::from(d).join("tamias"))
+        })
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(|h| std::path::PathBuf::from(h).join(".local/share/tamias"))
+        });
+    home.map(|home| home.join("drivers").join(&name))
+        .filter(|candidate| candidate.is_file())
+}
+
+/// Dispatch a verb to the content type's **driver** (discovered) or, failing
+/// that, its declared **provider** (back-compat). Returns whether anything
+/// ran.
+///
+/// - driver: `<tamias-driver-<kind>> <verb> --dir <dir> --name <name> [--config <f>]`
+/// - provider: `<provider> provision <verb> --dir <dir> --name <name> [--config <f>]`
+///
+/// # Errors
+/// Fails when the driver/provider is found but exits non-zero.
+pub fn dispatch(
+    kind: &str,
+    verb: &str,
+    dir: &Path,
+    name: &str,
+    config: Option<&Path>,
+) -> Result<bool, Error> {
+    if let Some(driver) = find_driver(kind) {
+        let mut cmd = std::process::Command::new(&driver);
+        cmd.arg(verb).arg("--dir").arg(dir).arg("--name").arg(name);
+        if let Some(config) = config {
+            cmd.arg("--config").arg(config);
+        }
+        let out = cmd
+            .output()
+            .map_err(Error::io(format!("run driver {}", driver.display())))?;
+        if !out.status.success() {
+            return Err(Error::Failed(format!(
+                "driver {} {verb} failed: {}",
+                driver.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        return Ok(true);
+    }
+    if let Some(content) = by_name(kind) {
+        if let Some(provider) = content.provider() {
+            run_provider(provider, verb, dir, name, config)?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
