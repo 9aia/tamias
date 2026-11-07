@@ -1,0 +1,32 @@
+# kuda.toml — per-repo index config. Secrets (LLM provider keys)
+# resolve via env var -> OS keyring -> ~/.config/kuda/env; never here.
+
+[repo]
+# name = "kuda"                    # default: directory basename
+# root = "."                       # repo root (default: toml's dir)
+
+[extract]
+kinds = ["manifest", "treesitter"] # adapter crates, tried in order
+# lsp_server = "rust-analyzer"     # kuda-lsp adapter: server cmd per lang
+
+[summarize]
+kind = "template"                  # deterministic cards, zero-model
+# kind = "acp"                     # adapter: kuda-acp — any ACP agent
+# acp_cmd = "cline --acp"          # prefer lightweight/no-tool agents:
+                                  # heavyweight clients (e.g. `devin acp`
+                                  # boots a full MCP stack per spawn) work
+                                  # but are overkill for batch card prose
+# kind = "llm"                     # adapter: kuda-llm
+# provider = "anthropic"           # key via KUDA_LLM_KEY env/keyring
+# model = "..."
+
+[store]
+kind = "sqlite"                    # adapter: kuda-store-sqlite
+path = ".kuda/index.sqlite"        # L2 graph — rebuildable, gitignored
+
+[cards]
+dir = ".kuda"                      # index.yaml + modules/*.yaml — committed
+
+[workspace]
+# roots = ["../cli", "../lsp"]     # sibling repos indexed together
+# resolve_git_deps = true          # git deps -> sibling checkouts

@@ -1,0 +1,242 @@
+name: tamias-vault-age
+path: crates/tamias-vault-age/Cargo.toml
+purpose: 'Local vault impl: one age-x25519-encrypted JSON doc — the v1 default backend'
+api:
+- name: AgeVault
+  kind: type
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 170
+  module: tamias-vault-age
+- name: Entry
+  kind: type
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 63
+  module: tamias-vault-age
+- name: FORMAT_VERSION
+  kind: const
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 46
+  module: tamias-vault-age
+- name: LOCK_STALE
+  kind: const
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 82
+  module: tamias-vault-age
+- name: LOCK_WAIT
+  kind: const
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 79
+  module: tamias-vault-age
+- name: Payload
+  kind: type
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 52
+  module: tamias-vault-age
+- name: VaultLock
+  kind: type
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 90
+  module: tamias-vault-age
+- name: a_held_lock_fails_the_write_and_a_stale_one_is_reclaimed
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 746
+  module: tamias-vault-age
+- name: a_mutate_reread_surfaces_a_broken_on_disk_vault
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 768
+  module: tamias-vault-age
+- name: a_parentless_vault_path_skips_dir_setup
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 702
+  module: tamias-vault-age
+- name: acquire
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 95
+  module: tamias-vault-age
+- name: tamias-vault-age
+  kind: module
+  file: crates/tamias-vault-age/Cargo.toml
+  line: 1
+  module: tamias-vault-age
+- name: ciphertext_hides_values
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 469
+  module: tamias-vault-age
+- name: data_home
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 443
+  module: tamias-vault-age
+- name: decrypt
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 232
+  module: tamias-vault-age
+- name: decrypt_reports_every_failure_mode
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 589
+  module: tamias-vault-age
+- name: default_vault_path
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 180
+  module: tamias-vault-age
+- name: default_vault_path_follows_xdg_then_home
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 508
+  module: tamias-vault-age
+- name: drop
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 153
+  module: tamias-vault-age
+- name: encrypt_payload
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 264
+  module: tamias-vault-age
+- name: encrypt_to
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 489
+  module: tamias-vault-age
+- name: entries_without_version_fields_default_to_one
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 621
+  module: tamias-vault-age
+- name: get
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 360
+  module: tamias-vault-age
+- name: held_is_stale
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 135
+  module: tamias-vault-age
+- name: home
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 437
+  module: tamias-vault-age
+- name: list
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 403
+  module: tamias-vault-age
+- name: list_rejects_a_stored_key_that_isnt_a_ref
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 787
+  module: tamias-vault-age
+- name: mutate
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 325
+  module: tamias-vault-age
+- name: one
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 73
+  module: tamias-vault-age
+- name: open
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 189
+  module: tamias-vault-age
+- name: open_or_init
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 217
+  module: tamias-vault-age
+- name: open_or_init_bootstraps_then_opens
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 568
+  module: tamias-vault-age
+- name: open_validates_recipients_and_vault_reads
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 547
+  module: tamias-vault-age
+- name: poisoned_state_is_an_error_not_a_panic
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 640
+  module: tamias-vault-age
+- name: public_recipient
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 228
+  module: tamias-vault-age
+- name: put
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 368
+  module: tamias-vault-age
+- name: read_disk
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 312
+  module: tamias-vault-age
+- name: record
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 159
+  module: tamias-vault-age
+- name: rm
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 392
+  module: tamias-vault-age
+- name: rotate
+  kind: function
+  file: crates/tamias-vault-age/src/lib.rs
+  line: 418
+  module: tamias-vault-age
+api_omitted: 11
+deps:
+- age
+- tamias-core
+- tamias-identity
+- tamias-vault
+- serde
+- serde_json
+- time
+- zeroize
+- tamias-identity-file
+- tamias-testkit
+- temp-env
+- tempfile
+- age
+- tamias-core
+- tamias-identity
+- tamias-vault
+- serde
+- time
+- zeroize
+notes: ''
+verify:
+- crates/tamias-vault-age/Cargo.toml
+- crates/tamias-vault-age/src/lib.rs
+- crates/tamias-vault-age/tests/conformance.rs
+provenance:
+  files:
+  - crates/tamias-vault-age/Cargo.toml
+  - crates/tamias-vault-age/src/lib.rs
+  - crates/tamias-vault-age/tests/conformance.rs
+  hashes:
+  - 96fdab5840dab381baa9f5260b2023f08fc7e3f5
+  - edefcd74e5b2619616470b609912f5f4ef19bb31
+  - 66339b7c1daef157139bc5db279219daa893f95f
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

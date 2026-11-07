@@ -1,0 +1,221 @@
+# adversarial — tamias's self-testing campaign: attack → triage → fix →
+# verify, with findings registered in the project ledger (myco) and
+# the repo's own secrets materialized by `tamias run` (dogfooding).
+#
+# Pipeline:
+#   attack    — run the adversarial battery (campaigns/adversarial/
+#               attack.sh): tamias serve PDP-wire repros, wire bounds,
+#               env scrubs, audit redaction + `cargo xtask test`
+#   triage    — each finding → `myco issue new` + `myco todo add`
+#               (registered in the project/ ledger, dedup'd)
+#   fix       — a fix agent per open campaign issue
+#   verify    — `cargo xtask check` + re-run the battery → the issues
+#               close, or stay open and loop back to fix (max_fires 3)
+#
+# Run it (from the repo root — paths are relative):
+#   tamias run --env dev -- peregrin campaign run campaigns/adversarial/main.yaml
+# Dry-run the wiring:
+#   peregrin campaign validate campaigns/adversarial/main.yaml
+#   peregrin campaign run campaigns/adversarial/main.yaml --dry-run
+#
+# Format notes (peregrin-loader-yaml / v2 engine):
+#   · `params.emit` maps the child's exit code to an event type —
+#     attack.sh uses 0=clean, 1=findings, 2=setup error.
+#   · the v2 `shell` driver has a hardcoded 30 s timeout (TS
+#     spawnSync parity), so every step heavier than ~30 s goes
+#     through an `agent` node, whose params.timeout is honored.
+#   · `${config.*}`/`${state.*}`/`${event.*}` scope lookups pass
+#     through unresolved in the Rust port (deferred-pass gap), so
+#     inter-node state travels over files under target/adversarial/
+#     and `${env("VAR", "default")}` is the only templating used —
+#     which is also how `tamias run`-injected vars arrive.
+#
+# See campaigns/adversarial/README.md for the full story.
+
+name: adversarial
+
+annotations:
+  title: Adversarial test → triage → fix → verify
+  description: >
+    Run the tamias adversarial battery, register each finding as a myco
+    issue + todo in the project ledger, dispatch a fix agent, then
+    re-verify: lint gate plus the same battery must be green before
+    the issues close. Secrets the run needs arrive via `tamias run`,
+    never inline.
+  author: devin
+  tags: [tamias, security, adversarial, campaign, dogfood]
+  see: campaigns/adversarial/README.md
+
+config:
+  repo: "."
+
+# `capabilities.env` whitelists `${env(...)}` — the channel through
+# which `tamias run`-injected values (AGENT_RUNNER etc.) reach params.
+capabilities:
+  env: true
+
+events:
+  - type: start
+  - type: attack.clean
+  - type: attack.findings
+    fields: { stdout: string, rc: integer }
+  - type: attack.error
+    fields: { stdout: string, rc: integer }
+  - type: triage.done
+  - type: triage.failed
+  - type: fix.done
+  - type: fix.failed
+  - type: verify.passed
+  - type: verify.failed
+  - type: close.done
+  - type: adversarial.complete
+  - type: adversarial.aborted
+  - type: node.exhausted
+
+stop_on: [adversarial.complete, adversarial.aborted]
+
+nodes:
+  # --- attack: run the battery ------------------------------------
+  # agent driver — the battery builds tamias and (in --full) runs
+  # `cargo xtask test`; far past the shell driver's 30 s cap.
+  - id: adversarial.attack
+    driver: agent
+    on: [start]
+    emits: [attack.clean, attack.findings, attack.error]
+    max_fires: 1
+    params:
+      runner: '${env("AGENT_RUNNER", "devin")}'
+      permission_mode: normal
+      trust: false
+      timeout: 3600
+      cwd: "."
+      prompt: |
+        You are the `attack` node of tamias's adversarial campaign, cwd
+        = the repo root. Run exactly:
+
+            bash campaigns/adversarial/attack.sh --full
+
+        Propagate its exit code as your own: 0 when the battery is
+        clean, 1 when it records findings, 2 on setup error. This is
+        a probing step — make NO code changes.
+      emit:
+        0: attack.clean
+        1: attack.findings
+        default: attack.error
+
+  # --- triage: findings → myco issues + todos ---------------------
+  # shell driver — myco verbs are local git ops, well under 30 s.
+  - id: adversarial.triage
+    driver: shell
+    on: [attack.findings]
+    emits: [triage.done, triage.failed]
+    max_fires: 1
+    params:
+      cmd: bash campaigns/adversarial/triage.sh
+      emit:
+        0: triage.done
+        default: triage.failed
+
+  # --- fix: dispatch a fix agent over the registered issues -------
+  - id: adversarial.fix
+    driver: agent
+    on: [triage.done, verify.failed]
+    emits: [fix.done, fix.failed]
+    max_fires: 3
+    retry:
+      max_attempts: 1
+      delay: 0
+      backoff: fixed
+    params:
+      runner: '${env("AGENT_RUNNER", "devin")}'
+      permission_mode: dangerous
+      trust: false
+      timeout: 3600
+      cwd: "."
+      prompt: |
+        You are the `fix` node of tamias's adversarial campaign, cwd =
+        the repo root. The triage node registered each attack finding
+        as a myco issue — the id↔title list is
+        target/adversarial/issues.txt and the raw findings are
+        target/adversarial/findings.ndjson.
+
+        For every id in issues.txt, fix the underlying defect in this
+        workspace — read the check's repro in
+        campaigns/adversarial/attack.sh first; the fix belongs where
+        the invariant lives (crate code, worker, docs — never the
+        battery, unless the battery itself is wrong).
+
+        Keep `cargo xtask check` green. Do NOT commit, push, or touch
+        the project/ ledger — git is the human's call. Exit 0 when
+        the fixes are in place, nonzero if you could not finish.
+      emit:
+        0: fix.done
+        default: fix.failed
+
+  # --- verify: lint gate + battery re-run → close or reopen -------
+  - id: adversarial.verify
+    driver: agent
+    on: [fix.done]
+    emits: [verify.passed, verify.failed]
+    max_fires: 1
+    params:
+      runner: '${env("AGENT_RUNNER", "devin")}'
+      permission_mode: normal
+      trust: false
+      timeout: 3600
+      cwd: "."
+      prompt: |
+        You are the `verify` node of tamias's adversarial campaign, cwd
+        = the repo root. Run exactly:
+
+            bash campaigns/adversarial/verify.sh
+
+        and exit with its exit code (0 = green, 1 = findings remain,
+        2 = infra error). Make NO code changes.
+      emit:
+        0: verify.passed
+        2: verify.failed
+        default: verify.failed
+
+  # --- close: green run → resolve the registered issues -----------
+  - id: adversarial.close
+    driver: shell
+    on: [verify.passed]
+    emits: [close.done]
+    max_fires: 1
+    params:
+      cmd: bash campaigns/adversarial/close.sh
+      emit:
+        0: close.done
+        default: close.done   # closing is best-effort bookkeeping
+
+  # --- report: terminal success banner ----------------------------
+  - id: adversarial.report
+    driver: shell
+    on: [attack.clean, close.done]
+    emits: [adversarial.complete]
+    max_fires: 1
+    params:
+      cmd: |
+        echo "========================================"
+        echo "  ADVERSARIAL CAMPAIGN COMPLETE"
+        echo "  findings: $(wc -l < target/adversarial/findings.ndjson 2>/dev/null || echo 0)"
+        echo "  issues:   target/adversarial/issues.txt"
+        echo "========================================"
+      emit:
+        0: adversarial.complete
+
+  # --- abort: hard failures + fix-loop exhaustion -----------------
+  - id: adversarial.abort
+    driver: shell
+    on: [attack.error, triage.failed, fix.failed, node.exhausted]
+    emits: [adversarial.aborted]
+    max_fires: 1
+    params:
+      cmd: |
+        echo "========================================"
+        echo "  ADVERSARIAL CAMPAIGN ABORTED"
+        echo "  See the event log + target/adversarial/"
+        echo "========================================"
+      emit:
+        0: adversarial.aborted

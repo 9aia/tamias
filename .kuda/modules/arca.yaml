@@ -1,0 +1,299 @@
+name: tamias
+path: Cargo.toml
+purpose: '*Secrets broker for agents — sealed, not spilled.*'
+api:
+- name: Cli
+  kind: type
+  file: crates/tamias-cli/src/main.rs
+  line: 30
+  module: tamias
+- name: Cmd
+  kind: type
+  file: crates/tamias-cli/src/main.rs
+  line: 56
+  module: tamias
+- name: FAKE
+  kind: const
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 14
+  module: tamias
+- name: FAKE
+  kind: const
+  file: crates/tamias-cli/tests/edges.rs
+  line: 11
+  module: tamias
+- name: FAKE
+  kind: const
+  file: crates/tamias-cli/tests/smoke.rs
+  line: 11
+  module: tamias
+- name: FAKE
+  kind: const
+  file: crates/tamias-cli/tests/verbs.rs
+  line: 11
+  module: tamias
+- name: TOKEN
+  kind: const
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 15
+  module: tamias
+- name: TOKEN_ENV
+  kind: const
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 16
+  module: tamias
+- name: a_deleted_cwd_is_a_clean_error_not_a_panic
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 324
+  module: tamias
+- name: tamias
+  kind: module
+  file: Cargo.toml
+  line: 1
+  module: tamias
+- name: tamias
+  kind: module
+  file: crates/tamias-cli/Cargo.toml
+  line: 1
+  module: tamias
+- name: tamias
+  kind: function
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 18
+  module: tamias
+- name: tamias
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 13
+  module: tamias
+- name: tamias
+  kind: function
+  file: crates/tamias-cli/tests/smoke.rs
+  line: 13
+  module: tamias
+- name: tamias
+  kind: function
+  file: crates/tamias-cli/tests/verbs.rs
+  line: 13
+  module: tamias
+- name: audit_fallback
+  kind: function
+  file: crates/tamias-cli/src/main.rs
+  line: 280
+  module: tamias
+- name: audit_fallback_covers_every_actor_and_ref_arm
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 476
+  module: tamias
+- name: bad_ref_args_fail_before_touching_the_vault
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 161
+  module: tamias
+- name: cf_resolution_without_an_explicit_file_notes_the_missing_keyring
+  kind: function
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 305
+  module: tamias
+- name: cf_vault_roundtrips_through_the_wire
+  kind: function
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 82
+  module: tamias
+- name: check_prints_findings_for_humans
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 394
+  module: tamias
+- name: check_reports_findings_and_exit_codes
+  kind: function
+  file: crates/tamias-cli/tests/verbs.rs
+  line: 332
+  module: tamias
+- name: check_reports_unreachable_cf_vault_not_panic
+  kind: function
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 277
+  module: tamias
+- name: cmd_op
+  kind: function
+  file: crates/tamias-cli/src/main.rs
+  line: 229
+  module: tamias
+- name: cmd_op_maps_every_variant
+  kind: function
+  file: crates/tamias-cli/src/main.rs
+  line: 887
+  module: tamias
+- name: cmd_rref
+  kind: function
+  file: crates/tamias-cli/src/main.rs
+  line: 254
+  module: tamias
+- name: config
+  kind: function
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 63
+  module: tamias
+- name: config
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 100
+  module: tamias
+- name: config
+  kind: function
+  file: crates/tamias-cli/tests/verbs.rs
+  line: 70
+  module: tamias
+- name: config_named
+  kind: function
+  file: crates/tamias-cli/tests/verbs.rs
+  line: 63
+  module: tamias
+- name: deploy_prints_created_then_updated
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 429
+  module: tamias
+- name: deploy_pushes_the_value_to_the_sink
+  kind: function
+  file: crates/tamias-cli/tests/cloud.rs
+  line: 195
+  module: tamias
+- name: deploy_requires_an_unambiguous_target
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 587
+  module: tamias
+- name: env_and_run_reject_invalid_var_names
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 559
+  module: tamias
+- name: env_output_is_shell_quote_safe
+  kind: function
+  file: crates/tamias-cli/tests/verbs.rs
+  line: 234
+  module: tamias
+- name: env_pin_and_declared_surface
+  kind: function
+  file: crates/tamias-cli/tests/verbs.rs
+  line: 381
+  module: tamias
+- name: env_writes_fail_cleanly_on_a_full_device
+  kind: function
+  file: crates/tamias-cli/tests/edges.rs
+  line: 304
+  module: tamias
+- name: fail
+  kind: function
+  file: crates/tamias-cli/src/main.rs
+  line: 872
+  module: tamias
+- name: guardrails_deny_ops_advisedly
+  kind: function
+  file: crates/tamias-cli/tests/verbs.rs
+  line: 100
+  module: tamias
+- name: happy_path
+  kind: function
+  file: crates/tamias-cli/tests/smoke.rs
+  line: 58
+  module: tamias
+api_omitted: 60
+deps:
+- tamias-config
+- tamias-config-toml
+- tamias-core
+- tamias-ops
+- tamias-serve
+- tamias-shell
+- tamias-tui
+- tamias-vault
+- clap
+- clap-markdown
+- rpassword
+- schemars
+- serde_json
+- sigpipe
+- tamias-testkit
+- temp-env
+- tempfile
+- tamias-testkit
+- tamias-core
+- tamias-ops
+- clap
+notes: ''
+verify:
+- .agents/skills/skill-creator/scripts/__init__.py
+- .claude/skills/skill-creator/scripts/__init__.py
+- Cargo.toml
+- crates/tamias-cli/Cargo.toml
+- crates/tamias-cli/src/main.rs
+- .agents/skills/skill-creator/eval-viewer/generate_review.py
+- .agents/skills/skill-creator/scripts/aggregate_benchmark.py
+- .agents/skills/skill-creator/scripts/generate_report.py
+- .agents/skills/skill-creator/scripts/improve_description.py
+- .agents/skills/skill-creator/scripts/package_skill.py
+provenance:
+  files:
+  - .agents/skills/skill-creator/eval-viewer/generate_review.py
+  - .agents/skills/skill-creator/scripts/__init__.py
+  - .agents/skills/skill-creator/scripts/aggregate_benchmark.py
+  - .agents/skills/skill-creator/scripts/generate_report.py
+  - .agents/skills/skill-creator/scripts/improve_description.py
+  - .agents/skills/skill-creator/scripts/package_skill.py
+  - .agents/skills/skill-creator/scripts/quick_validate.py
+  - .agents/skills/skill-creator/scripts/run_eval.py
+  - .agents/skills/skill-creator/scripts/run_loop.py
+  - .agents/skills/skill-creator/scripts/utils.py
+  - .claude/skills/skill-creator/eval-viewer/generate_review.py
+  - .claude/skills/skill-creator/scripts/__init__.py
+  - .claude/skills/skill-creator/scripts/aggregate_benchmark.py
+  - .claude/skills/skill-creator/scripts/generate_report.py
+  - .claude/skills/skill-creator/scripts/improve_description.py
+  - .claude/skills/skill-creator/scripts/package_skill.py
+  - .claude/skills/skill-creator/scripts/quick_validate.py
+  - .claude/skills/skill-creator/scripts/run_eval.py
+  - .claude/skills/skill-creator/scripts/run_loop.py
+  - .claude/skills/skill-creator/scripts/utils.py
+  - Cargo.toml
+  - crates/tamias-cli/Cargo.toml
+  - crates/tamias-cli/src/main.rs
+  - crates/tamias-cli/tests/cloud.rs
+  - crates/tamias-cli/tests/edges.rs
+  - crates/tamias-cli/tests/smoke.rs
+  - crates/tamias-cli/tests/verbs.rs
+  hashes:
+  - 7fa5978631fed1ed545591dbb2b0eb21ce3f3d08
+  - e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+  - 3e66e8c105be9bab9f0e9c61f0d1482619401580
+  - 959e30a0014ec165c41a2bb7420b7dfe1416bbac
+  - 06bcec76122446986e3610c20a39c466de36f495
+  - f48eac444656ddc41204aac1760a217951ce609e
+  - ed8e1dddce77b16af13c6f36b3fe86c4ac7c590c
+  - e58c70bea39d5b252a1e819f242bbdcdf20e8b87
+  - 30a263d674ef19de11c756d6f7537f91a421909e
+  - 51b6a07dd57174197a937034b7eecebd5768ff8a
+  - 7fa5978631fed1ed545591dbb2b0eb21ce3f3d08
+  - e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+  - 3e66e8c105be9bab9f0e9c61f0d1482619401580
+  - 959e30a0014ec165c41a2bb7420b7dfe1416bbac
+  - 06bcec76122446986e3610c20a39c466de36f495
+  - f48eac444656ddc41204aac1760a217951ce609e
+  - ed8e1dddce77b16af13c6f36b3fe86c4ac7c590c
+  - e58c70bea39d5b252a1e819f242bbdcdf20e8b87
+  - 30a263d674ef19de11c756d6f7537f91a421909e
+  - 51b6a07dd57174197a937034b7eecebd5768ff8a
+  - 65f4dae5d073ddbbf1475e1be2024fb99919eb84
+  - 4f6c201493139ae473e54824ef6afa0a9572e431
+  - 372c4ef098f044e0b3e2bb5285039c541a8a5b36
+  - 25e6f9d7ecd3f9a5d18e368995260653cd6c195e
+  - 16894c768d3ce800d9f64c0d97e6766e72d9328d
+  - e3f4c1be3f3883f8f851baf55fed8a6bfce330f0
+  - 716a30714b1f1cdaa7900e4abf70d7553d57c147
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

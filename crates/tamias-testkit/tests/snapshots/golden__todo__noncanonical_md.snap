@@ -1,0 +1,9 @@
+---
+source: crates/tamias-testkit/tests/golden.rs
+expression: out
+---
+# TODO — tamias
+
+## Now
+
+- [ ] T-007 Short id

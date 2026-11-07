@@ -1,0 +1,107 @@
+name: tamias-identity
+path: crates/tamias-identity/Cargo.toml
+purpose: 'Identity port: where the age identity (master key) comes from — file, keyring, later sealed variants'
+api:
+- name: IdentityError
+  kind: type
+  file: crates/tamias-identity/src/lib.rs
+  line: 69
+  module: tamias-identity
+- name: IdentitySource
+  kind: trait
+  file: crates/tamias-identity/src/lib.rs
+  line: 30
+  module: tamias-identity
+- name: Mem
+  kind: type
+  file: crates/tamias-identity/src/lib.rs
+  line: 99
+  module: tamias-identity
+- name: tamias-identity
+  kind: module
+  file: crates/tamias-identity/Cargo.toml
+  line: 1
+  module: tamias-identity
+- name: describe
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 138
+  module: tamias-identity
+- name: ensure
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 55
+  module: tamias-identity
+- name: ensure_generates_once_then_loads
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 144
+  module: tamias-identity
+- name: ensure_propagates_store_failures
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 154
+  module: tamias-identity
+- name: failing
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 112
+  module: tamias-identity
+- name: from
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 87
+  module: tamias-identity
+- name: io_error_maps_to_the_io_variant
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 170
+  module: tamias-identity
+- name: kind
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 134
+  module: tamias-identity
+- name: load
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 121
+  module: tamias-identity
+- name: mem_names_itself_like_any_source
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 163
+  module: tamias-identity
+- name: new
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 105
+  module: tamias-identity
+- name: store
+  kind: function
+  file: crates/tamias-identity/src/lib.rs
+  line: 126
+  module: tamias-identity
+- name: tests
+  kind: module
+  file: crates/tamias-identity/src/lib.rs
+  line: 94
+  module: tamias-identity
+deps:
+- age
+- thiserror
+- age
+notes: ''
+verify:
+- crates/tamias-identity/Cargo.toml
+- crates/tamias-identity/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-identity/Cargo.toml
+  - crates/tamias-identity/src/lib.rs
+  hashes:
+  - d68fda81cc69983fbbdb3b9130c7c2e9540ea1a7
+  - a36d384d85f08322d78495c7d4c53a2e395ba5ab
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

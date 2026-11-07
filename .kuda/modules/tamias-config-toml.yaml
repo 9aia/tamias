@@ -1,0 +1,79 @@
+name: tamias-config-toml
+path: crates/tamias-config-toml/Cargo.toml
+purpose: 'Config impl: tamias.toml file (explicit path, env, ./, ~/.config)'
+api:
+- name: TomlSource
+  kind: type
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 8
+  module: tamias-config-toml
+- name: tamias-config-toml
+  kind: module
+  file: crates/tamias-config-toml/Cargo.toml
+  line: 1
+  module: tamias-config-toml
+- name: candidates
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 15
+  module: tamias-config-toml
+- name: default_search_builds_candidates
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 111
+  module: tamias-config-toml
+- name: explicit_missing_file_errors
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 57
+  module: tamias-config-toml
+- name: load
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 39
+  module: tamias-config-toml
+- name: locate
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 33
+  module: tamias-config-toml
+- name: located_but_unreadable_errors
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 66
+  module: tamias-config-toml
+- name: parses_secrets_table
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 82
+  module: tamias-config-toml
+- name: tests
+  kind: module
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 53
+  module: tamias-config-toml
+- name: unknown_fields_fail_loud
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 98
+  module: tamias-config-toml
+deps:
+- tamias-config
+- tamias-core
+- toml
+- temp-env
+- tamias-config
+notes: ''
+verify:
+- crates/tamias-config-toml/Cargo.toml
+- crates/tamias-config-toml/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-config-toml/Cargo.toml
+  - crates/tamias-config-toml/src/lib.rs
+  hashes:
+  - 3bb6412ec59f79642d32c9aa8f4c45e38be95068
+  - 8cfdb3b79ab4cb773fe7fe5342c91d8388847253
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

@@ -1,0 +1,5 @@
+---
+source: crates/tamias-testkit/tests/invalid.rs
+expression: err.to_string()
+---
+items/invalid/unclosed-fence.md:1:1: unclosed `+++` frontmatter fence

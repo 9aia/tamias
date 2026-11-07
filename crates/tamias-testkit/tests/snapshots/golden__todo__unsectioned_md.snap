@@ -1,0 +1,11 @@
+---
+source: crates/tamias-testkit/tests/golden.rs
+expression: out
+---
+# TODO — tamias
+
+- [ ] T-001 Loose task
+
+## Now
+
+- [ ] T-002 Sectioned

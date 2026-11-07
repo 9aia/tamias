@@ -1,0 +1,5 @@
+---
+source: crates/tamias-testkit/tests/invalid.rs
+expression: err.to_string()
+---
+items/invalid/bad-id.md:2:1: invalid item id "X-001" — expected <prefix>-<number> like T-012 or ADR-0004

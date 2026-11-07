@@ -1,0 +1,96 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tamias-cli",
+    "crates/tamias-config",
+    "crates/tamias-config-toml",
+    "crates/tamias-core",
+    "crates/tamias-deploy",
+    "crates/tamias-deploy-cf",
+    "crates/tamias-identity",
+    "crates/tamias-identity-file",
+    "crates/tamias-identity-keyring",
+    "crates/tamias-ops",
+    "crates/tamias-serve",
+    "crates/tamias-shell",
+    "crates/tamias-testkit",
+    "crates/tamias-tui",
+    "crates/tamias-vault",
+    "crates/tamias-vault-age",
+    "crates/tamias-vault-cached",
+    "crates/tamias-vault-cf",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/9aia/tamias"
+description = "Package & content manager for the agent factory — fetch, store, cache, dispense"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[workspace.dependencies]
+tamias = { path = "crates/tamias-cli", version = "0.1.0" }
+tamias-config = { path = "crates/tamias-config", version = "0.1.0" }
+tamias-config-toml = { path = "crates/tamias-config-toml", version = "0.1.0" }
+tamias-core = { path = "crates/tamias-core", version = "0.1.0" }
+tamias-deploy = { path = "crates/tamias-deploy", version = "0.1.0" }
+tamias-deploy-cf = { path = "crates/tamias-deploy-cf", version = "0.1.0" }
+tamias-identity = { path = "crates/tamias-identity", version = "0.1.0" }
+tamias-identity-file = { path = "crates/tamias-identity-file", version = "0.1.0" }
+tamias-identity-keyring = { path = "crates/tamias-identity-keyring", version = "0.1.0" }
+tamias-ops = { path = "crates/tamias-ops", version = "0.1.0" }
+tamias-serve = { path = "crates/tamias-serve", version = "0.1.0" }
+tamias-shell = { path = "crates/tamias-shell", version = "0.1.0" }
+tamias-testkit = { path = "crates/tamias-testkit", version = "0.1.0" }
+tamias-tui = { path = "crates/tamias-tui", version = "0.1.0" }
+tamias-vault = { path = "crates/tamias-vault", version = "0.1.0" }
+tamias-vault-age = { path = "crates/tamias-vault-age", version = "0.1.0" }
+tamias-vault-cached = { path = "crates/tamias-vault-cached", version = "0.1.0" }
+tamias-vault-cf = { path = "crates/tamias-vault-cf", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+time = { version = "0.3", features = ["serde", "parsing", "formatting", "macros"] }
+schemars = "1"
+tempfile = "3"
+temp-env = "0.3"
+sigpipe = "0.1"
+rpassword = "7"
+# `serde` so Zeroizing<String> can sit inside serde structs
+# (tamias-vault-age's Entry) — values still scrub on drop.
+zeroize = { version = "1", features = ["serde"] }
+# age (rage's Rust impl) — the fixed crypto choice per ADR-0001.
+# default-features off: no async/armor/plugin/ssh — binary
+# ciphertext, sync API, light dep tree.
+age = { version = "0.12", default-features = false }
+# Blocking HTTP for remote vaults/deploys — sync only, no async
+# runtime (AGENTS.md). Pinned to a >7-day-old release on purpose.
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
+base64 = "0.23"
+# keyring-core + one native store per platform — the sync
+# `CredentialStore` model (no async runtime; the dbus store is the
+# synchronous libdbus client, `vendored` so no system -dev needed).
+keyring-core = "1"
+dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", "vendored"] }
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+windows-native-keyring-store = "1"
+hmac = "0.12"
+sha2 = "0.10"
+ratatui = "0.30"
+crossterm = "0.29"
+clap-markdown = "0.1.5"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] }
+
+[workspace.lints.clippy]
+unwrap_used = "warn"

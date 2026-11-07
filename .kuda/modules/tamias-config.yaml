@@ -1,0 +1,30 @@
+name: tamias-config
+path: crates/tamias-config/Cargo.toml
+purpose: 'Config port: where tamias.toml-shaped config comes from'
+api:
+- name: ConfigSource
+  kind: trait
+  file: crates/tamias-config/src/lib.rs
+  line: 5
+  module: tamias-config
+- name: tamias-config
+  kind: module
+  file: crates/tamias-config/Cargo.toml
+  line: 1
+  module: tamias-config
+deps:
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-config/Cargo.toml
+- crates/tamias-config/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-config/Cargo.toml
+  - crates/tamias-config/src/lib.rs
+  hashes:
+  - cf00672b233762c2e1aa7121fa3921782757a2df
+  - bfeab7ce177cba4fff075d6fa993e58005e13278
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

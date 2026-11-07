@@ -1,0 +1,5 @@
+---
+source: crates/tamias-testkit/tests/invalid.rs
+expression: err.to_string()
+---
+items/invalid/wrong-kind.md:2:1: id P-001 doesn't belong in this file (expected a I id)

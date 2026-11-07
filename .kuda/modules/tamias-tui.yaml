@@ -1,0 +1,243 @@
+name: tamias-tui
+path: crates/tamias-tui/Cargo.toml
+purpose: tamias — interactive vault TUI; a thin front-end over tamias-ops (phase 5 polish)
+api:
+- name: ACCENT
+  kind: const
+  file: crates/tamias-tui/src/render.rs
+  line: 15
+  module: tamias-tui
+- name: Entry
+  kind: type
+  file: crates/tamias-tui/src/app.rs
+  line: 28
+  module: tamias-tui
+- name: EnvTab
+  kind: type
+  file: crates/tamias-tui/src/app.rs
+  line: 15
+  module: tamias-tui
+- name: Guard
+  kind: type
+  file: crates/tamias-tui/src/lib.rs
+  line: 31
+  module: tamias-tui
+- name: Listing
+  kind: type
+  file: crates/tamias-tui/src/app.rs
+  line: 41
+  module: tamias-tui
+- name: MUTED
+  kind: const
+  file: crates/tamias-tui/src/render.rs
+  line: 16
+  module: tamias-tui
+- name: Model
+  kind: type
+  file: crates/tamias-tui/src/app.rs
+  line: 49
+  module: tamias-tui
+- name: WARN
+  kind: const
+  file: crates/tamias-tui/src/render.rs
+  line: 17
+  module: tamias-tui
+- name: app
+  kind: module
+  file: crates/tamias-tui/src/lib.rs
+  line: 16
+  module: tamias-tui
+- name: tamias-tui
+  kind: module
+  file: crates/tamias-tui/Cargo.toml
+  line: 1
+  module: tamias-tui
+- name: broken_vault_renders_error_not_panic
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 199
+  module: tamias-tui
+- name: clear_value
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 305
+  module: tamias-tui
+- name: code
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 262
+  module: tamias-tui
+- name: current
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 169
+  module: tamias-tui
+- name: custom_envs_and_unlisted_selection_get_tabs
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 473
+  module: tamias-tui
+- name: custom_envs_open_sorted
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 236
+  module: tamias-tui
+- name: detail_pane_shows_default_paths_when_unconfigured
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 493
+  module: tamias-tui
+- name: draw
+  kind: function
+  file: crates/tamias-tui/src/render.rs
+  line: 20
+  module: tamias-tui
+- name: draw_detail
+  kind: function
+  file: crates/tamias-tui/src/render.rs
+  line: 164
+  module: tamias-tui
+- name: draw_footer
+  kind: function
+  file: crates/tamias-tui/src/render.rs
+  line: 227
+  module: tamias-tui
+- name: draw_help
+  kind: function
+  file: crates/tamias-tui/src/render.rs
+  line: 258
+  module: tamias-tui
+- name: draw_list
+  kind: function
+  file: crates/tamias-tui/src/render.rs
+  line: 82
+  module: tamias-tui
+- name: draw_main
+  kind: function
+  file: crates/tamias-tui/src/render.rs
+  line: 71
+  module: tamias-tui
+- name: draw_tabs
+  kind: function
+  file: crates/tamias-tui/src/render.rs
+  line: 50
+  module: tamias-tui
+- name: drop
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 34
+  module: tamias-tui
+- name: empty_and_tiny_and_narrow_frames_render
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 536
+  module: tamias-tui
+- name: env_tabs_and_filter_and_help
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 165
+  module: tamias-tui
+- name: every_key_in_the_map_behaves
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 280
+  module: tamias-tui
+- name: filter_editing_keys_all_do_something
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 362
+  module: tamias-tui
+- name: filter_key
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 261
+  module: tamias-tui
+- name: fmt_ts
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 349
+  module: tamias-tui
+- name: install_panic_hook
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 43
+  module: tamias-tui
+- name: key
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 181
+  module: tamias-tui
+- name: key
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 132
+  module: tamias-tui
+- name: non_tty_declines
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 256
+  module: tamias-tui
+- name: open
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 77
+  module: tamias-tui
+- name: ops_on_config
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 268
+  module: tamias-tui
+- name: ops_with_secrets
+  kind: function
+  file: crates/tamias-tui/src/lib.rs
+  line: 94
+  module: tamias-tui
+- name: reload
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 130
+  module: tamias-tui
+- name: render
+  kind: module
+  file: crates/tamias-tui/src/lib.rs
+  line: 17
+  module: tamias-tui
+api_omitted: 13
+deps:
+- tamias-core
+- tamias-ops
+- tamias-vault
+- crossterm
+- ratatui
+- time
+- tamias-identity
+- tamias-identity-file
+- tamias-testkit
+- tamias-vault-age
+- temp-env
+- tempfile
+- tamias-core
+- tamias-ops
+- ratatui
+- crossterm
+- tamias-vault
+notes: ''
+verify:
+- crates/tamias-tui/Cargo.toml
+- crates/tamias-tui/src/app.rs
+- crates/tamias-tui/src/lib.rs
+- crates/tamias-tui/src/render.rs
+provenance:
+  files:
+  - crates/tamias-tui/Cargo.toml
+  - crates/tamias-tui/src/app.rs
+  - crates/tamias-tui/src/lib.rs
+  - crates/tamias-tui/src/render.rs
+  hashes:
+  - 98c2adeaee57801617a05341fcfba6228dabd630
+  - 4fa212caf389787e30f1d3c0c420de4385c9ffa4
+  - 8e15c3c81f6c162974bb7a724a5f4658cb9d260d
+  - c7cc95281e4e982c3d5b5ed0cdd81de935322d96
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

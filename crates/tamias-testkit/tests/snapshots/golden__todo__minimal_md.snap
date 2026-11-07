@@ -1,0 +1,5 @@
+---
+source: crates/tamias-testkit/tests/golden.rs
+expression: out
+---
+# TODO — tamias

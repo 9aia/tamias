@@ -1,0 +1,5 @@
+---
+source: crates/tamias-testkit/tests/invalid.rs
+expression: err.to_string()
+---
+handoffs/invalid/title-mismatch.md:5:1: title id T-002 doesn't match item = "T-001"

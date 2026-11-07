@@ -1,0 +1,14 @@
+---
+source: crates/tamias-testkit/tests/golden.rs
+expression: out
+---
+# TODO — tamias
+
+## Now
+
+- [ ] T-012 Rewrite the index · status:in-progress · pri:high · owner:devin · created:2026-02-09 · #core · #index · blocks:T-010,I-002 · epic:v2 · ms:1.0
+- [ ] T-013 Wire item verbs
+
+## Later
+
+- [ ] T-020 Explore org views

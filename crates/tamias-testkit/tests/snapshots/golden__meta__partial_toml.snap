@@ -1,0 +1,12 @@
+---
+source: crates/tamias-testkit/tests/golden.rs
+expression: out
+---
+name = "tamias"
+
+[next]
+t = 9
+i = 1
+p = 1
+adr = 1
+pl = 1

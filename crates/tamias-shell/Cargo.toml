@@ -1,0 +1,17 @@
+[package]
+name = "tamias-shell"
+description = "Run a command in a working directory via bash -c — the generic shell-out helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["secrets", "tamias"]
+categories = ["development-tools"]
+
+[dependencies]
+
+[dev-dependencies]
+temp-env.workspace = true
+
+[lints]
+workspace = true

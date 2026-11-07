@@ -1,0 +1,9 @@
+---
+source: crates/tamias-testkit/tests/invalid.rs
+expression: err.to_string()
+---
+items/invalid/bad-status.md:4:10: TOML parse error at line 3, column 10
+  |
+3 | status = "wip"
+  |          ^^^^^
+unknown variant `wip`, expected one of `open`, `claimed`, `in-progress`, `blocked`, `done`, `deferred`

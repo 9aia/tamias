@@ -1,0 +1,16 @@
+[package]
+name = "tamias-identity"
+description = "Identity port: where the age identity (master key) comes from — file, keyring, later sealed variants"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["secrets", "tamias", "age", "identity"]
+categories = ["development-tools"]
+
+[dependencies]
+age.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

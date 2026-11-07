@@ -1,0 +1,32 @@
+[package]
+name = "tamias-vault-cf"
+description = "Remote vault impl: self-hosted Cloudflare Worker + D1 holding per-secret age ciphertext — the Worker never sees plaintext"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["secrets", "tamias", "age", "cloudflare"]
+categories = ["development-tools"]
+
+[dependencies]
+age.workspace = true
+tamias-core.workspace = true
+tamias-vault.workspace = true
+base64.workspace = true
+hmac.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+ureq.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tamias-testkit.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+temp-env.workspace = true
+time.workspace = true
+
+[lints]
+workspace = true

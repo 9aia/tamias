@@ -1,0 +1,24 @@
+# serve.pdp.toml — example `tamias serve` config wiring the campaign's
+# policy decision point. NOT loaded by default — point at it with
+# `tamias serve --config campaigns/adversarial/serve.pdp.toml` (or
+# $TAMIAS_CONFIG) when you want the campaign's ops gated.
+#
+# `[serve.pdp] exec` is trust-root config: it authorizes shell exec on
+# every vault-touching op, so tamias warns when it loads one from an
+# implicit ./tamias.toml — pin it explicitly, like this file intends.
+#
+# The exec contract (ADR-0003): one JSON request line on stdin —
+# {actor, attestation?, op, env, ref?} — one JSON verdict on stdout —
+# {"allow": bool, "reason"?, "obligations"?}. Unreachable, hung past
+# timeout_ms, flooding, or unparseable → fail CLOSED (allow_on_error
+# stays off).
+#
+# pdp-campaign.sh is the stand-in decider. When peregrin grows a
+# policy-decide verb this line becomes `peregrin policy decide`
+# unchanged — that swap is the real integration, tracked in the
+# project ledger.
+
+[serve.pdp]
+exec = "sh campaigns/adversarial/pdp-campaign.sh"
+timeout_ms = 5000
+allow_on_error = false

@@ -1,0 +1,241 @@
+name: tamias-serve
+path: crates/tamias-serve/Cargo.toml
+purpose: tamias serve — the ndjson request/response IPC surface orchestrators embed, with the external policy-decision consult (P-005)
+api:
+- name: Ctx
+  kind: type
+  file: crates/tamias-serve/src/lib.rs
+  line: 209
+  module: tamias-serve
+- name: DEFAULT_TIMEOUT
+  kind: const
+  file: crates/tamias-serve/src/pdp.rs
+  line: 52
+  module: tamias-serve
+- name: DRAIN_GRACE
+  kind: const
+  file: crates/tamias-serve/src/pdp.rs
+  line: 57
+  module: tamias-serve
+- name: Decision
+  kind: type
+  file: crates/tamias-serve/src/pdp.rs
+  line: 86
+  module: tamias-serve
+- name: ExecPdp
+  kind: type
+  file: crates/tamias-serve/src/pdp.rs
+  line: 106
+  module: tamias-serve
+- name: MAX_ACTOR_BYTES
+  kind: const
+  file: crates/tamias-serve/src/lib.rs
+  line: 75
+  module: tamias-serve
+- name: MAX_ATTESTATION_BYTES
+  kind: const
+  file: crates/tamias-serve/src/lib.rs
+  line: 76
+  module: tamias-serve
+- name: MAX_ID_BYTES
+  kind: const
+  file: crates/tamias-serve/src/lib.rs
+  line: 79
+  module: tamias-serve
+- name: MAX_LINE_BYTES
+  kind: const
+  file: crates/tamias-serve/src/lib.rs
+  line: 70
+  module: tamias-serve
+- name: MAX_REF_BYTES
+  kind: const
+  file: crates/tamias-serve/src/lib.rs
+  line: 77
+  module: tamias-serve
+- name: MAX_VALUE_BYTES
+  kind: const
+  file: crates/tamias-serve/src/lib.rs
+  line: 78
+  module: tamias-serve
+- name: MAX_VERDICT_BYTES
+  kind: const
+  file: crates/tamias-serve/src/pdp.rs
+  line: 49
+  module: tamias-serve
+- name: POLL
+  kind: const
+  file: crates/tamias-serve/src/pdp.rs
+  line: 60
+  module: tamias-serve
+- name: PdpRequest
+  kind: type
+  file: crates/tamias-serve/src/pdp.rs
+  line: 64
+  module: tamias-serve
+- name: Reply
+  kind: type
+  file: crates/tamias-serve/src/lib.rs
+  line: 217
+  module: tamias-serve
+- name: Request
+  kind: type
+  file: crates/tamias-serve/src/lib.rs
+  line: 181
+  module: tamias-serve
+- name: Verdict
+  kind: type
+  file: crates/tamias-serve/src/pdp.rs
+  line: 218
+  module: tamias-serve
+- name: a_doomed_request_never_consults_the_pdp
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 1117
+  module: tamias-serve
+- name: a_flooding_pdp_stays_bounded_and_dies
+  kind: function
+  file: crates/tamias-serve/src/pdp.rs
+  line: 388
+  module: tamias-serve
+- name: a_hung_pdp_is_killed_at_the_deadline
+  kind: function
+  file: crates/tamias-serve/src/pdp.rs
+  line: 373
+  module: tamias-serve
+- name: allow_deny_and_obligations_parse
+  kind: function
+  file: crates/tamias-serve/src/pdp.rs
+  line: 260
+  module: tamias-serve
+- name: allow_on_error
+  kind: function
+  file: crates/tamias-serve/src/pdp.rs
+  line: 126
+  module: tamias-serve
+- name: allow_on_error_flag_passthrough
+  kind: function
+  file: crates/tamias-serve/src/pdp.rs
+  line: 434
+  module: tamias-serve
+- name: allow_on_error_runs_with_a_degraded_verdict
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 1148
+  module: tamias-serve
+- name: tamias-serve
+  kind: module
+  file: crates/tamias-serve/Cargo.toml
+  line: 1
+  module: tamias-serve
+- name: check_json
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 699
+  module: tamias-serve
+- name: check_manifest_shutdown_and_unknown_ops
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 987
+  module: tamias-serve
+- name: consult
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 467
+  module: tamias-serve
+- name: decide
+  kind: function
+  file: crates/tamias-serve/src/pdp.rs
+  line: 133
+  module: tamias-serve
+- name: discard_to_newline
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 159
+  module: tamias-serve
+- name: dispatch
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 277
+  module: tamias-serve
+- name: eof_is_a_clean_exit
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 1234
+  module: tamias-serve
+- name: err_reply
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 242
+  module: tamias-serve
+- name: every_failure_shape_is_unreachable
+  kind: function
+  file: crates/tamias-serve/src/pdp.rs
+  line: 296
+  module: tamias-serve
+- name: execute
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 616
+  module: tamias-serve
+- name: field_caps_are_bad_request
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 1202
+  module: tamias-serve
+- name: field_validation_is_bad_request
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 915
+  module: tamias-serve
+- name: fixture
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 825
+  module: tamias-serve
+- name: guardrail_reply
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 441
+  module: tamias-serve
+- name: guardrails_still_deny_advisory
+  kind: function
+  file: crates/tamias-serve/src/lib.rs
+  line: 1168
+  module: tamias-serve
+api_omitted: 31
+deps:
+- tamias-core
+- tamias-ops
+- tamias-shell
+- tamias-vault
+- serde
+- serde_json
+- tamias-identity
+- tamias-identity-file
+- tamias-vault-age
+- temp-env
+- tempfile
+- tamias-core
+- serde
+- tamias-ops
+- tamias-vault
+- pdp
+- tamias-identity-file
+- tamias-vault-age
+notes: ''
+verify:
+- crates/tamias-serve/Cargo.toml
+- crates/tamias-serve/src/lib.rs
+- crates/tamias-serve/src/pdp.rs
+provenance:
+  files:
+  - crates/tamias-serve/Cargo.toml
+  - crates/tamias-serve/src/lib.rs
+  - crates/tamias-serve/src/pdp.rs
+  hashes:
+  - 3b2a5797b7f36f6269b6a5eb1ecbe1e70d8b5a6b
+  - 90b09fe9f7790627beccef1e07eb84098c7a0949
+  - 603d7fbd8da6925cd3415c5301f348f32351680d
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

@@ -1,0 +1,21 @@
+[package]
+name = "tamias-testkit"
+description = "Vault conformance suite — every tamias-vault impl passes the same contract tests (fake values only)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+keywords = ["secrets", "tamias"]
+categories = ["development-tools"]
+
+[dependencies]
+tamias-core.workspace = true
+tamias-vault.workspace = true
+hmac.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+
+[lints]
+workspace = true

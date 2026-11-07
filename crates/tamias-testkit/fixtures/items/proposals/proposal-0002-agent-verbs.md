@@ -1,0 +1,15 @@
++++
+id = "P-002"
+title = "Agent verbs"
+status = "open"
+created = "2026-02-02"
+priority = "medium"
++++
+
+## Goal
+
+Agents call tamias verbs, never hand-edit.
+
+## Requirements
+
+## Design

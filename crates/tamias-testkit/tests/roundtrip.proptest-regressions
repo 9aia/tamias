@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5a8e22ca68c2338377dc0efdec7419058e389ee5e9c176a666caf21afab49d2a # shrinks to id = ItemId { kind: Task, number: 1 }, entries = [HandoffEntry { date: 2000-01-01, actor: Actor("_0_"), session: None, note: "" }]

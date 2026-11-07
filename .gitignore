@@ -1,0 +1,11 @@
+/target
+coverage/
+*.profraw
+.env
+
+# worktrees (orphan branches — created by `myco init` / repo tooling)
+project/
+docs/
+
+.kuda/index.sqlite
+.kuda/meta.json

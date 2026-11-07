@@ -1,0 +1,5 @@
+---
+source: crates/tamias-testkit/tests/invalid.rs
+expression: err.to_string()
+---
+TODO.md:3:1: invalid status "wip" — expected open|claimed|in-progress|blocked|done|deferred

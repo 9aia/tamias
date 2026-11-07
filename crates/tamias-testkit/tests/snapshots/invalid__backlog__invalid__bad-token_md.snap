@@ -1,0 +1,5 @@
+---
+source: crates/tamias-testkit/tests/invalid.rs
+expression: err.to_string()
+---
+BACKLOG.md:3:1: invalid priority "max" — expected low|med|high|crit (or medium|critical)

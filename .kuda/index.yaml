@@ -1,0 +1,73 @@
+name: tamias
+root: /home/luis/GitHub/9aia/tamias
+purpose: '*Package & content manager for the agent factory — fetch, store, cache, dispense.*'
+modules:
+- tamias
+- tamias-config
+- tamias-config-toml
+- tamias-core
+- tamias-deploy
+- tamias-deploy-cf
+- tamias-identity
+- tamias-identity-file
+- tamias-identity-keyring
+- tamias-ops
+- tamias-serve
+- tamias-shell
+- tamias-testkit
+- tamias-tui
+- tamias-vault
+- tamias-vault-age
+- tamias-vault-cf
+- tamias-xtask
+commands:
+- cargo check
+- cargo test --workspace
+tree_digest: b546d6f89c61c6e5b37ea74a5ff30d15bf4185cf
+files_total: 80
+provenance:
+  files:
+  - Cargo.toml
+  - README.md
+  - crates/tamias-cli/Cargo.toml
+  - crates/tamias-config/Cargo.toml
+  - crates/tamias-config-toml/Cargo.toml
+  - crates/tamias-core/Cargo.toml
+  - crates/tamias-deploy/Cargo.toml
+  - crates/tamias-deploy-cf/Cargo.toml
+  - crates/tamias-identity/Cargo.toml
+  - crates/tamias-identity-file/Cargo.toml
+  - crates/tamias-identity-keyring/Cargo.toml
+  - crates/tamias-ops/Cargo.toml
+  - crates/tamias-serve/Cargo.toml
+  - crates/tamias-shell/Cargo.toml
+  - crates/tamias-testkit/Cargo.toml
+  - crates/tamias-tui/Cargo.toml
+  - crates/tamias-vault/Cargo.toml
+  - crates/tamias-vault-age/Cargo.toml
+  - crates/tamias-vault-cf/Cargo.toml
+  - xtask/Cargo.toml
+  hashes:
+  - 65f4dae5d073ddbbf1475e1be2024fb99919eb84
+  - 704abb17c3c236de7f53e0767040dc521c3ce81e
+  - 4f6c201493139ae473e54824ef6afa0a9572e431
+  - cf00672b233762c2e1aa7121fa3921782757a2df
+  - 3bb6412ec59f79642d32c9aa8f4c45e38be95068
+  - 6dcc3b1198677927e82d542e41e26fab610796b1
+  - fc4e4318276c49bf88d4c39a46e2f04b1aeff9a4
+  - 7a61cefca5b4664322a3b081cbc36b30130bf13d
+  - d68fda81cc69983fbbdb3b9130c7c2e9540ea1a7
+  - 1b8e235789058404a28e464ce18bcf798558876a
+  - 2834df38f1023d6910c9c16960ab325e6b5254ef
+  - d7beff3210026cccf25ab65b01f2f181424e5681
+  - 3b2a5797b7f36f6269b6a5eb1ecbe1e70d8b5a6b
+  - d1e286873314306b3ec3e30cd61cc9db964378d0
+  - 714ef5eddf2c1868b02fd1eac622b2f2c3737911
+  - 98c2adeaee57801617a05341fcfba6228dabd630
+  - e58ba1bc7da3c98491c89cf9d751bb9cf3858afb
+  - 96fdab5840dab381baa9f5260b2023f08fc7e3f5
+  - b46d583411dc1b18a9083b85f11b657f92017a4b
+  - 9c55ec755d27dd29ba8bd214918b0213f0283c14
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda/0.1.0

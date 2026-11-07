@@ -1,0 +1,27 @@
+# tamias.toml — package & content manager config. Every section
+# optional; zero-config = the local store + local cache under
+# ~/.local/share/tamias and ~/.cache/tamias.
+
+[store]
+kind = "local"                 # local larder (v1). A `cf` store is later.
+# root = "~/.local/share/tamias/store"
+
+[cache]
+kind = "local"                 # content-addressed fetch cache
+# root = "~/.cache/tamias/fetch"
+
+# Registries — where published content lives. A directory today; a
+# self-hosted Cloudflare Worker + R2 + D1/KV at P6.
+[registries.local]
+kind = "dir"
+# path = "~/.local/share/tamias/registry"
+
+# [registries.cloud]
+# kind = "cf"
+# url = "https://tamias-registry.you.workers.dev"
+# token_env = "TAMIAS_CF_TOKEN"   # env var NAME — the token is never here
+
+# Content-type overrides — where a type installs (rarely needed).
+# [content.peregrin-bundle]
+# store = "~/.local/share/peregrin/store"
+# enable = false                 # `create --template` is a separate step

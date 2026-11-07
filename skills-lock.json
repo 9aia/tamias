@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "skills": {
+    "skill-creator": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/skill-creator/SKILL.md",
+      "computedHash": "5ea13a6d9f0d4bb694405d79acd00cadec0d21bb138c4dd10fcf3c500cb835c2"
+    },
+    "writing-documentation-with-diataxis": {
+      "source": "sammcj/agentic-coding",
+      "sourceType": "github",
+      "skillPath": "Skills_disabled/diataxis-documentation/SKILL.md",
+      "computedHash": "80b05e3bf8a65e2d22b2861e6d39d7d47b643a17f27a7c6c91aa76b99a84cd8c"
+    },
+    "myco": {
+      "source": "/home/luis/GitHub/9aia/myco/.agents/skills/myco",
+      "sourceType": "local",
+      "computedHash": "1bf3b14f1961053d170092458bab1e961f08fdad7b557bce399b4cc3f9b7c398"
+    },
+    "tamias": {
+      "source": "9aia/tamias",
+      "sourceType": "local",
+      "skillPath": ".agents/skills/tamias/SKILL.md",
+      "computedHash": "a34920131ae5eebe3487b26714f142469d0698b727db0c6ffe33bd62ec9bb4d2"
+    }
+  }
+}

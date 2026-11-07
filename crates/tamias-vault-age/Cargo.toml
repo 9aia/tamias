@@ -1,0 +1,28 @@
+[package]
+name = "tamias-vault-age"
+description = "Local vault impl: one age-x25519-encrypted JSON doc — the v1 default backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["secrets", "tamias", "age"]
+categories = ["development-tools"]
+
+[dependencies]
+age.workspace = true
+tamias-core.workspace = true
+tamias-identity.workspace = true
+tamias-vault.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tamias-identity-file.workspace = true
+tamias-testkit.workspace = true
+tempfile.workspace = true
+temp-env.workspace = true
+
+[lints]
+workspace = true

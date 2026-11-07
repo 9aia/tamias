@@ -1,0 +1,5 @@
+---
+source: crates/tamias-testkit/tests/invalid.rs
+expression: err.to_string()
+---
+items/invalid/bad-date.md:2:1: bad created date — the 'year' component could not be parsed

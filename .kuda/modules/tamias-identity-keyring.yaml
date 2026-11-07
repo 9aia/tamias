@@ -1,0 +1,170 @@
+name: tamias-identity-keyring
+path: crates/tamias-identity-keyring/Cargo.toml
+purpose: 'Identity impl: the platform session secret store (secret-service / Keychain / Credential Manager) via keyring-core'
+api:
+- name: DeadStore
+  kind: type
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 225
+  module: tamias-identity-keyring
+- name: KeyringIdentity
+  kind: type
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 35
+  module: tamias-identity-keyring
+- name: SERVICE
+  kind: const
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 30
+  module: tamias-identity-keyring
+- name: USER
+  kind: const
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 32
+  module: tamias-identity-keyring
+- name: tamias-identity-keyring
+  kind: module
+  file: crates/tamias-identity-keyring/Cargo.toml
+  line: 1
+  module: tamias-identity-keyring
+- name: as_any
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 237
+  module: tamias-identity-keyring
+- name: build
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 234
+  module: tamias-identity-keyring
+- name: describe
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 94
+  module: tamias-identity-keyring
+- name: entry
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 57
+  module: tamias-identity-keyring
+- name: entry_build_failures_surface_as_store_errors
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 243
+  module: tamias-identity-keyring
+- name: id
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 231
+  module: tamias-identity-keyring
+- name: kind
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 90
+  module: tamias-identity-keyring
+- name: load
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 67
+  module: tamias-identity-keyring
+- name: load_rejects_garbage_material
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 184
+  module: tamias-identity-keyring
+- name: mock
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 162
+  module: tamias-identity-keyring
+- name: platform
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 46
+  module: tamias-identity-keyring
+- name: platform_probe_never_panics
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 208
+  module: tamias-identity-keyring
+- name: platform_store
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 107
+  module: tamias-identity-keyring
+- name: platform_store
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 121
+  module: tamias-identity-keyring
+- name: platform_store
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 128
+  module: tamias-identity-keyring
+- name: platform_store
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 135
+  module: tamias-identity-keyring
+- name: platform_store
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 149
+  module: tamias-identity-keyring
+- name: store
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 83
+  module: tamias-identity-keyring
+- name: store_error_tests
+  kind: module
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 218
+  module: tamias-identity-keyring
+- name: store_failures_are_store_errors_not_none
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 192
+  module: tamias-identity-keyring
+- name: store_then_load_roundtrips
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 171
+  module: tamias-identity-keyring
+- name: tests
+  kind: module
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 157
+  module: tamias-identity-keyring
+- name: vendor
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 228
+  module: tamias-identity-keyring
+- name: with_store
+  kind: function
+  file: crates/tamias-identity-keyring/src/lib.rs
+  line: 52
+  module: tamias-identity-keyring
+deps:
+- age
+- tamias-identity
+- keyring-core
+- age
+- tamias-identity
+- keyring_core
+notes: ''
+verify:
+- crates/tamias-identity-keyring/Cargo.toml
+- crates/tamias-identity-keyring/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-identity-keyring/Cargo.toml
+  - crates/tamias-identity-keyring/src/lib.rs
+  hashes:
+  - 2834df38f1023d6910c9c16960ab325e6b5254ef
+  - bbfdff869f2b848fca107b3f1a7bfca6eeb400a2
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

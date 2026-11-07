@@ -1,0 +1,15 @@
+[package]
+name = "tamias-config"
+description = "Config port: where tamias.toml-shaped config comes from"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["secrets", "tamias"]
+categories = ["development-tools"]
+
+[dependencies]
+tamias-core.workspace = true
+
+[lints]
+workspace = true

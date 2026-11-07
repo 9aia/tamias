@@ -1,0 +1,152 @@
+name: tamias-identity-file
+path: crates/tamias-identity-file/Cargo.toml
+purpose: 'Identity impl: the ~/.config/tamias/identity.txt age keyfile (0600) — the headless/CI default'
+api:
+- name: FileIdentity
+  kind: type
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 22
+  module: tamias-identity-file
+- name: tamias-identity-file
+  kind: module
+  file: crates/tamias-identity-file/Cargo.toml
+  line: 1
+  module: tamias-identity-file
+- name: config_home
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 144
+  module: tamias-identity-file
+- name: default
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 58
+  module: tamias-identity-file
+- name: default_path
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 36
+  module: tamias-identity-file
+- name: default_path_follows_env_xdg_then_home
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 280
+  module: tamias-identity-file
+- name: describe
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 132
+  module: tamias-identity-file
+- name: exists
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 46
+  module: tamias-identity-file
+- name: home
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 138
+  module: tamias-identity-file
+- name: kind
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 128
+  module: tamias-identity-file
+- name: load
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 69
+  module: tamias-identity-file
+- name: load_rejects_garbage_and_missing
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 208
+  module: tamias-identity-file
+- name: load_skips_comment_and_blank_lines
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 194
+  module: tamias-identity-file
+- name: load_surfaces_non_notfound_io_errors
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 270
+  module: tamias-identity-file
+- name: new
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 29
+  module: tamias-identity-file
+- name: path
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 51
+  module: tamias-identity-file
+- name: set_private
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 152
+  module: tamias-identity-file
+- name: set_private
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 159
+  module: tamias-identity-file
+- name: set_private_on_missing_file_is_an_error
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 252
+  module: tamias-identity-file
+- name: store
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 97
+  module: tamias-identity-file
+- name: store_surfaces_parent_dir_failures
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 236
+  module: tamias-identity-file
+- name: store_surfaces_write_failures
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 222
+  module: tamias-identity-file
+- name: store_then_load_roundtrips_0600
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 169
+  module: tamias-identity-file
+- name: tests
+  kind: module
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 165
+  module: tamias-identity-file
+- name: the_source_names_and_defaults_itself
+  kind: function
+  file: crates/tamias-identity-file/src/lib.rs
+  line: 257
+  module: tamias-identity-file
+deps:
+- age
+- tamias-identity
+- time
+- temp-env
+- tempfile
+- age
+- tamias-identity
+- time
+notes: ''
+verify:
+- crates/tamias-identity-file/Cargo.toml
+- crates/tamias-identity-file/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-identity-file/Cargo.toml
+  - crates/tamias-identity-file/src/lib.rs
+  hashes:
+  - 1b8e235789058404a28e464ce18bcf798558876a
+  - 037f9b4989fc675246ffb81f85cbda0e0876f7c3
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2

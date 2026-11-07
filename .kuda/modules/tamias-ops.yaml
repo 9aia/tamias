@@ -1,0 +1,263 @@
+name: tamias-ops
+path: crates/tamias-ops/Cargo.toml
+purpose: 'tamias ops I/O: config load, env/ref resolution, vault open, verb plumbing, audit emission'
+api:
+- name: AuditEvent
+  kind: type
+  file: crates/tamias-ops/src/audit.rs
+  line: 65
+  module: tamias-ops
+- name: CheckReport
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 137
+  module: tamias-ops
+- name: Dead
+  kind: type
+  file: crates/tamias-ops/src/audit.rs
+  line: 219
+  module: tamias-ops
+- name: DeployReport
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 96
+  module: tamias-ops
+- name: EMITTED
+  kind: const
+  file: crates/tamias-ops/src/lib.rs
+  line: 1037
+  module: tamias-ops
+- name: InitInfo
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 57
+  module: tamias-ops
+- name: InitOpts
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 49
+  module: tamias-ops
+- name: LoadOpts
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 38
+  module: tamias-ops
+- name: MigrateReport
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 111
+  module: tamias-ops
+- name: Ops
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 155
+  module: tamias-ops
+- name: OpsError
+  kind: type
+  file: crates/tamias-ops/src/error.rs
+  line: 9
+  module: tamias-ops
+- name: Outcome
+  kind: type
+  file: crates/tamias-ops/src/audit.rs
+  line: 53
+  module: tamias-ops
+- name: PolicyVerdict
+  kind: type
+  file: crates/tamias-ops/src/audit.rs
+  line: 35
+  module: tamias-ops
+- name: SecretCheck
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 124
+  module: tamias-ops
+- name: StubSource
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 1852
+  module: tamias-ops
+- name: VaultCheck
+  kind: type
+  file: crates/tamias-ops/src/lib.rs
+  line: 80
+  module: tamias-ops
+- name: a_failing_writer_propagates_the_io_error
+  kind: function
+  file: crates/tamias-ops/src/audit.rs
+  line: 218
+  module: tamias-ops
+- name: actor
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 215
+  module: tamias-ops
+- name: tamias-ops
+  kind: module
+  file: crates/tamias-ops/Cargo.toml
+  line: 1
+  module: tamias-ops
+- name: audit
+  kind: module
+  file: crates/tamias-ops/src/lib.rs
+  line: 11
+  module: tamias-ops
+- name: audit
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 991
+  module: tamias-ops
+- name: cf_backend_errors_propagate_through_verbs
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1764
+  module: tamias-ops
+- name: cf_tokens_cant_resolve_against_a_cf_local
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 2284
+  module: tamias-ops
+- name: check
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 840
+  module: tamias-ops
+- name: check_flags_bad_var_names_and_routes
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1100
+  module: tamias-ops
+- name: check_flags_cf_only_fields_on_other_kinds
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 2301
+  module: tamias-ops
+- name: check_flags_kind_and_deploy_problems
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1692
+  module: tamias-ops
+- name: check_reports_open_ok_but_list_fails_and_secret_findings
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1722
+  module: tamias-ops
+- name: check_reports_resolving_secrets
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1142
+  module: tamias-ops
+- name: config
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 200
+  module: tamias-ops
+- name: config_path
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 205
+  module: tamias-ops
+- name: deny_adhoc_blocks_dash_s_but_not_the_declared_surface
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1662
+  module: tamias-ops
+- name: deploy
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 699
+  module: tamias-ops
+- name: deploy_cfg
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1246
+  module: tamias-ops
+- name: deploy_target_selection_errors
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1581
+  module: tamias-ops
+- name: describe
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 2006
+  module: tamias-ops
+- name: emit
+  kind: function
+  file: crates/tamias-ops/src/audit.rs
+  line: 120
+  module: tamias-ops
+- name: emit
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 984
+  module: tamias-ops
+- name: emit_to
+  kind: function
+  file: crates/tamias-ops/src/audit.rs
+  line: 132
+  module: tamias-ops
+- name: emit_writes_an_op_scoped_event
+  kind: function
+  file: crates/tamias-ops/src/lib.rs
+  line: 1842
+  module: tamias-ops
+api_omitted: 82
+deps:
+- age
+- tamias-config
+- tamias-config-toml
+- tamias-core
+- tamias-deploy
+- tamias-deploy-cf
+- tamias-identity
+- tamias-identity-file
+- tamias-identity-keyring
+- tamias-vault
+- tamias-vault-age
+- tamias-vault-cf
+- serde
+- serde_json
+- thiserror
+- time
+- tamias-testkit
+- keyring-core
+- temp-env
+- tempfile
+- tamias-core
+- tamias-deploy
+- tamias-vault
+- serde
+- time
+- audit
+- error
+- age
+- tamias-config
+- tamias-config-toml
+- tamias-deploy-cf
+- tamias-identity
+- tamias-identity-file
+- tamias-identity-keyring
+- tamias-vault-age
+- tamias-vault-cf
+- tamias-testkit
+notes: ''
+verify:
+- crates/tamias-ops/Cargo.toml
+- crates/tamias-ops/src/audit.rs
+- crates/tamias-ops/src/error.rs
+- crates/tamias-ops/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-ops/Cargo.toml
+  - crates/tamias-ops/src/audit.rs
+  - crates/tamias-ops/src/error.rs
+  - crates/tamias-ops/src/lib.rs
+  hashes:
+  - d7beff3210026cccf25ab65b01f2f181424e5681
+  - e89c652d2bc28ea339f9851a33fb36e6493846b9
+  - 8efdca54bad2e40f68bcd318f6db0487f49c69cd
+  - 594f993c7c6025bbcd02f410efc725a18a99924e
+  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
+  generated_at: '1793684916'
+  generator: kuda-template/0.1.2
