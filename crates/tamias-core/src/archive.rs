@@ -147,3 +147,56 @@ fn write_symlink<R: Read>(_entry: &tar::Entry<'_, R>, target: &Path) -> Result<(
         target.display()
     )))
 }
+
+#[cfg(test)]
+mod archive_tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn pack_and_unpack_tgz_roundtrip() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        std::fs::create_dir_all(src.path().join("sub")).unwrap();
+        std::fs::write(src.path().join("sub/b.txt"), "b").unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let tgz = out.path().join("x.tgz");
+        pack_tgz(src.path(), &tgz).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        untar_gz(std::fs::File::open(&tgz).unwrap(), dest.path()).unwrap();
+        assert!(dest.path().join("a.txt").is_file());
+        assert!(dest.path().join("sub/b.txt").is_file());
+    }
+
+    #[test]
+    fn untar_plain_stream() {
+        let mut builder = Builder::new(Vec::new());
+        let data = b"hello";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "f.txt", &data[..])
+            .unwrap();
+        let tar_bytes = builder.into_inner().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        untar(Cursor::new(tar_bytes), dest.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dest.path().join("f.txt")).unwrap(),
+            "hello"
+        );
+    }
+
+    #[test]
+    fn sanitize_rejects_and_skips() {
+        assert!(sanitize(Path::new("../x")).is_err());
+        assert!(sanitize(Path::new("/abs")).is_err());
+        assert!(sanitize(Path::new(".")).unwrap().is_none());
+        assert_eq!(
+            sanitize(Path::new("./a/b")).unwrap().unwrap(),
+            PathBuf::from("a/b")
+        );
+    }
+}

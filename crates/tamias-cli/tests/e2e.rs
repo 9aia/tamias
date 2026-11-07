@@ -425,3 +425,47 @@ fn install_registers_bundled_driver() {
         stdout(&o)
     );
 }
+
+#[test]
+fn kuda_and_mimus_types_place_packs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let kuda = tmp.path().join("kuda");
+    let mimus = tmp.path().join("mimus");
+    let kpkg = tmp.path().join("kd");
+    std::fs::create_dir_all(&kpkg).unwrap();
+    std::fs::write(
+        kpkg.join("tamias.yaml"),
+        "name: kd\nversion: 1.0.0\ntype: kuda-domain\n",
+    )
+    .unwrap();
+    std::fs::write(kpkg.join("d.toml"), "x").unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["install", kpkg.to_str().unwrap()])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .env("KUDA_HOME", &kuda)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(kuda.join("domains/kd/d.toml").is_file());
+
+    let mpkg = tmp.path().join("mr");
+    std::fs::create_dir_all(&mpkg).unwrap();
+    std::fs::write(
+        mpkg.join("tamias.yaml"),
+        "name: mr\nversion: 1.0.0\ntype: mimus-rules\n",
+    )
+    .unwrap();
+    std::fs::write(mpkg.join("r.toml"), "x").unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["install", mpkg.to_str().unwrap()])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .env("MIMUS_HOME", &mimus)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(mimus.join("rules/mr/r.toml").is_file());
+}

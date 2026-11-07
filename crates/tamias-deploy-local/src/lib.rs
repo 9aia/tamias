@@ -244,4 +244,25 @@ mod tests {
         deploy.uninstall("peregrin").unwrap();
         assert!(!deploy.unit_path("peregrin").exists());
     }
+
+    struct FailRunner;
+    impl Runner for FailRunner {
+        fn run(&self, _program: &str, _args: &[&str]) -> Result<(), Error> {
+            Err(Error::Failed("boom".into()))
+        }
+    }
+
+    #[test]
+    fn error_arm_and_extra_verbs() {
+        let dir = tempfile::tempdir().unwrap();
+        let fail = LocalDeploy::with_default(dir.path().to_path_buf(), Box::new(FailRunner));
+        assert!(fail.enable("p").is_err());
+        let rec =
+            LocalDeploy::with_default(dir.path().to_path_buf(), Box::new(Recorder::default()));
+        rec.status("p").unwrap();
+        rec.logs("p").unwrap();
+        rec.disable("p").unwrap();
+        rec.uninstall("missing").unwrap();
+        assert_eq!(rec.unit_dir(), dir.path());
+    }
 }

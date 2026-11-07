@@ -222,4 +222,23 @@ mod tests {
         assert!(reg_dir.path().join("ci-gate/0.2.0.tgz").is_file());
         assert_eq!(registry.search("gate").unwrap().len(), 1);
     }
+
+    #[test]
+    fn entries_publish_twice_and_label() {
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry = LocalRegistry::new(reg_dir.path());
+        assert!(registry.entries().unwrap().is_empty());
+        assert!(registry.search("x").unwrap().is_empty());
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: ci\nversion: 0.2.0\n").unwrap();
+        std::fs::write(src.path().join("main.yaml"), "x").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        assert_eq!(
+            registry.publish(src.path(), &manifest).unwrap().label(),
+            "ci@0.2.0"
+        );
+        let _ = registry.publish(src.path(), &manifest).unwrap();
+        assert_eq!(registry.entries().unwrap().len(), 1);
+        assert!(registry.root().is_dir());
+    }
 }

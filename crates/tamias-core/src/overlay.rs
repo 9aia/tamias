@@ -169,3 +169,56 @@ mod tests {
         assert_eq!(m["nested"]["y"], 4);
     }
 }
+
+#[cfg(test)]
+mod overlay_tests {
+    use super::*;
+
+    #[test]
+    fn payload_root_direct_nested_and_missing() {
+        let direct = tempfile::tempdir().unwrap();
+        std::fs::write(direct.path().join("tamias.yaml"), "name: x\n").unwrap();
+        assert_eq!(payload_root(direct.path()).unwrap(), direct.path());
+
+        let nested = tempfile::tempdir().unwrap();
+        let inner = nested.path().join("pkg-1.0");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::fs::write(inner.join("tamias.yaml"), "name: x\n").unwrap();
+        assert_eq!(payload_root(nested.path()).unwrap(), inner);
+
+        let missing = tempfile::tempdir().unwrap();
+        std::fs::write(missing.path().join("a.txt"), "a").unwrap();
+        std::fs::create_dir_all(missing.path().join("b")).unwrap();
+        assert!(payload_root(missing.path()).is_err());
+    }
+
+    #[test]
+    fn overlay_merges_yaml_and_json_and_copies() {
+        let base = tempfile::tempdir().unwrap();
+        std::fs::write(
+            base.path().join("main.yaml"),
+            "a: 1\nnodes:\n  - id: g\n    x: 0\n",
+        )
+        .unwrap();
+        std::fs::write(base.path().join("only-base.txt"), "b").unwrap();
+        std::fs::write(base.path().join("c.json"), "{\"a\": 1}").unwrap();
+
+        let local = tempfile::tempdir().unwrap();
+        std::fs::write(
+            local.path().join("main.yaml"),
+            "b: 2\nnodes:\n  - id: g\n    x: 1\n",
+        )
+        .unwrap();
+        std::fs::write(local.path().join("c.json"), "{\"b\": 2}").unwrap();
+
+        let dest = tempfile::tempdir().unwrap();
+        overlay(&[base.path()], local.path(), dest.path()).unwrap();
+        let merged = std::fs::read_to_string(dest.path().join("main.yaml")).unwrap();
+        assert!(merged.contains("a: 1") && merged.contains("b: 2"));
+        // node dedupe by id
+        assert_eq!(merged.matches("id: g").count(), 1);
+        assert!(dest.path().join("only-base.txt").is_file());
+        let cj = std::fs::read_to_string(dest.path().join("c.json")).unwrap();
+        assert!(cj.contains('a') && cj.contains('b'));
+    }
+}

@@ -206,4 +206,18 @@ mod tests {
         let reference = tamias_core::parse_ref("./x").unwrap();
         assert!(GitSource::new().resolve(&reference).is_err());
     }
+
+    #[test]
+    fn bad_subdir_errors_on_fetch() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("a.txt"), "a").unwrap();
+        git(repo.path(), &["init", "-q", "-b", "main"]);
+        git(repo.path(), &["add", "-A"]);
+        git(repo.path(), &["commit", "-q", "-m", "i"]);
+        let reference =
+            tamias_core::parse_ref(&format!("git:file://{}//nope", repo.path().display())).unwrap();
+        let resolved = GitSource::new().resolve(&reference).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(GitSource::new().fetch(&resolved, dest.path()).is_err());
+    }
 }
