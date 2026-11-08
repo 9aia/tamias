@@ -134,6 +134,22 @@ impl Store {
         })
     }
 
+    /// Retarget an install's recorded source ref (payload untouched).
+    ///
+    /// # Errors
+    /// Fails when not installed or on I/O error.
+    pub fn retarget(&self, name_or_label: &str, new_ref: &str) -> Result<StoreRecord, Error> {
+        let entry = self.find(name_or_label)?;
+        let mut record = entry.record.clone();
+        record.source_ref = new_ref.to_string();
+        let record_path = entry.dir.join(RECORD_FILE);
+        let json = serde_json::to_string_pretty(&record)
+            .map_err(|e| Error::Failed(format!("serialize record: {e}")))?;
+        fs::write(&record_path, json)
+            .map_err(Error::io(format!("write {}", record_path.display())))?;
+        Ok(record)
+    }
+
     fn entry_dir(&self, record: &StoreRecord) -> PathBuf {
         let base = match &record.scope {
             Some(scope) => self.root.join(format!("@{scope}")),

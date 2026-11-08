@@ -66,7 +66,7 @@ cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry (P6)
 | `tamias bundle pack` | dir + manifest → `.tgz` |
 | `tamias doctor` | store / cache / registry / content-type diagnostics |
 
-`--json` on every verb; `tamias manifest` / `tamias schema` self-discover.
+`--json` on `doctor`; `tamias manifest` / `tamias schema` self-discover.
 
 ## Stores — local and Cloudflare
 
@@ -91,6 +91,8 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `tamias-store` + `-local,-cf` | install store port + impls |
 | `tamias-cache` + `-local,-cf` | content-addressed fetch cache |
 | `tamias-content` (+ `-peregrin,-myco,…`) | the `ContentType` port + impls |
+| `tamias-driver` | discoverable content drivers (`tamias-driver-<type>`, JSON over stdio) |
+| `tamias-deploy` + `-local,-cf` | the service / deploy port + impls |
 | `tamias-registry` + `-local,-cf` | index + publish port + impls |
 | `tamias-publish` | author-side orchestration |
 | `tamias-testkit` | impl conformance |
@@ -113,12 +115,14 @@ updates).
 
 ## Status
 
-Working v0.1 — `install` · `add` · `remove` · `list` · `info` · `verify` ·
-`cache` · `publish` · `search` · `bundle pack` · `serve` over fs/git/http
-sources, a content-addressed fetch cache + local store, a `ContentType`
-port (`files`, `peregrin-bundle`, `myco-config`), a local dir registry, and
-an ndjson `serve` surface. Remaining: the Cloudflare adapters (P6) and the
-peregrin cutover (P4).
+Working v0.1 — `install` · `add` · `remove` · `list [--type]` · `info` ·
+`verify` · `update` · `pin` · `cache` · `publish` · `search` · `bundle
+pack` · `registry serve` · `deploy-registry` · `deploy` · `uninstall` ·
+`service` · `doctor` · `schema` · `gen-cli-docs` · `serve` over fs/git/http
+sources, a content-addressed fetch cache, a local **and Cloudflare**
+store / registry / deploy, a discoverable **driver** system
+(`tamias-driver-<type>`, JSON over stdio) with the peregrin provider
+cutover complete. Remaining: `cf:` source refs (T-009).
 
 ## Install
 

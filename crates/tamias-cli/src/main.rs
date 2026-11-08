@@ -52,7 +52,11 @@ enum Command {
         name: String,
     },
     /// List installed packages.
-    List,
+    List {
+        /// Only entries of this content type.
+        #[arg(long = "type")]
+        kind: Option<String>,
+    },
     /// Show one package's manifest + provenance.
     Info {
         /// `@scope/name` or `name`.
@@ -63,6 +67,21 @@ enum Command {
         /// `@scope/name` or `name`.
         name: String,
     },
+    /// Re-resolve + re-install a package from its recorded ref.
+    Update {
+        /// `@scope/name` or `name` (omit with `--all`).
+        name: Option<String>,
+        /// Update every installed package.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Retarget an installed package's recorded source ref.
+    Pin {
+        /// `@scope/name` or `name`.
+        name: String,
+        /// The new ref to record.
+        reference: String,
+    },
     /// Fetch-cache maintenance.
     Cache {
         #[command(subcommand)]
@@ -72,6 +91,10 @@ enum Command {
     Version,
     /// Print the machine-readable capability manifest.
     Manifest,
+    /// Print the `tamias.yaml` JSON Schema.
+    Schema,
+    /// Print the CLI reference (markdown) generated from the parser.
+    GenCliDocs,
     /// Diagnose the host metaservice (store, cache, registry, drivers).
     Doctor {
         /// JSON output.
@@ -293,6 +316,32 @@ fn short(digest: &str) -> &str {
     s.get(..12).unwrap_or(s)
 }
 
+/// The `tamias.yaml` JSON Schema.
+fn manifest_schema() -> serde_json::Value {
+    serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "tamias manifest",
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "scope": {"type": ["string", "null"]},
+            "version": {"type": ["string", "null"]},
+            "description": {"type": ["string", "null"]},
+            "type": {"type": ["string", "null"]},
+            "include": {"type": "array", "items": {"type": "string"}},
+            "deps": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["name"]
+    })
+}
+
+/// The CLI reference (markdown), generated from the clap parser.
+fn cli_docs() -> String {
+    use clap::CommandFactory;
+    let mut cmd = Cli::command();
+    format!("# tamias CLI\n\n```\n{}\n```\n", cmd.render_long_help())
+}
+
 /// Open a registry from a `--registry` value (dir or http URL) — the local
 /// dir by default.
 fn open_registry(env: &Env, value: Option<&str>) -> Box<dyn Registry> {
@@ -341,8 +390,15 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             let record = Store::new(&env.store_root).remove(&name)?;
             println!("removed {}@{}", record.name, record.resolved);
         }
-        Some(Command::List) => {
-            let entries = Store::new(&env.store_root).entries()?;
+        Some(Command::List { kind }) => {
+            let entries: Vec<StoreEntry> = Store::new(&env.store_root)
+                .entries()?
+                .into_iter()
+                .filter(|e| {
+                    kind.as_deref()
+                        .is_none_or(|k| e.record.kind.as_deref() == Some(k))
+                })
+                .collect();
             if entries.is_empty() {
                 println!("no packages installed");
             }
@@ -384,6 +440,27 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                     short(&report.computed)
                 )));
             }
+        }
+        Some(Command::Update { name, all }) => {
+            let store = Store::new(&env.store_root);
+            let refs: Vec<String> = if all {
+                store
+                    .entries()?
+                    .into_iter()
+                    .map(|e| e.record.source_ref)
+                    .collect()
+            } else {
+                let n = name.ok_or_else(|| Error::Failed("update: pass a name or --all".into()))?;
+                vec![store.find(&n)?.record.source_ref]
+            };
+            for r in refs {
+                let entry = install(&env, &r)?;
+                println!("updated {}", entry.label());
+            }
+        }
+        Some(Command::Pin { name, reference }) => {
+            let record = Store::new(&env.store_root).retarget(&name, &reference)?;
+            println!("pinned {} → {}", record.name, record.source_ref);
         }
         Some(Command::Cache { cmd }) => {
             let cache = FetchCache::new(&env.cache_root);
@@ -449,10 +526,12 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
         }
         Some(Command::Manifest) => {
             println!(
-                "{{\"name\":\"tamias\",\"version\":\"{}\",\"verbs\":[\"install\",\"add\",\"remove\",\"list\",\"info\",\"verify\",\"cache\"]}}",
+                "{{\"name\":\"tamias\",\"version\":\"{}\",\"verbs\":[\"install\",\"add\",\"remove\",\"list\",\"info\",\"verify\",\"update\",\"pin\",\"cache\",\"publish\",\"search\",\"bundle\",\"registry\",\"deploy\",\"uninstall\",\"service\",\"doctor\",\"serve\",\"schema\"]}}",
                 env!("CARGO_PKG_VERSION")
             );
         }
+        Some(Command::Schema) => println!("{}", manifest_schema()),
+        Some(Command::GenCliDocs) => println!("{}", cli_docs()),
     }
     Ok(())
 }
@@ -1153,5 +1232,36 @@ mod tests {
         r1.unwrap();
         r2.unwrap();
         r3.unwrap();
+    }
+
+    #[test]
+    fn update_pin_schema_and_cli_docs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        // list --type filters (match + non-match)
+        run_args(e.clone(), &["tamias", "list", "--type", "files"]).unwrap();
+        run_args(e.clone(), &["tamias", "list", "--type", "none"]).unwrap();
+        // update one / all
+        run_args(e.clone(), &["tamias", "update", "w"]).unwrap();
+        run_args(e.clone(), &["tamias", "update", "--all"]).unwrap();
+        // pin retargets the recorded ref
+        run_args(e.clone(), &["tamias", "pin", "w", "git:9aia/x//y#v1"]).unwrap();
+        assert_eq!(
+            Store::new(&e.store_root)
+                .find("w")
+                .unwrap()
+                .record
+                .source_ref,
+            "git:9aia/x//y#v1"
+        );
+        // schema + gen-cli-docs
+        run_args(e.clone(), &["tamias", "schema"]).unwrap();
+        run_args(e.clone(), &["tamias", "gen-cli-docs"]).unwrap();
+        // update with neither a name nor --all → error
+        assert!(run_args(e.clone(), &["tamias", "update"]).is_err());
+        // pin a ghost → error
+        assert!(run_args(e.clone(), &["tamias", "pin", "ghost", "./x"]).is_err());
     }
 }
