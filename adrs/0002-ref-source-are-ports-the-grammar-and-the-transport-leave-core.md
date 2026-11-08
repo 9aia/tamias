@@ -1,7 +1,7 @@
 +++
 id = "ADR-0002"
 title = "ref + source are ports — the grammar and the transport leave core"
-status = "in-progress"
+status = "done"
 created = "2026-11-08"
 priority = "high"
 +++
