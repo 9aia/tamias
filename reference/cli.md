@@ -28,6 +28,7 @@ and service-manage content — plus a local/Cloudflare registry.
 | `tamias bundle pack <dir>` | dir + manifest → `.tgz` |
 | `tamias serve` | ndjson JSON-RPC over stdio (embedding surface) |
 | `tamias doctor [--json]` | host diagnostics — store, cache, registry, driver |
+| `tamias config [--file f] [--json]` | show the effective config (YAML standard, TOML alt) |
 | `tamias version` / `manifest` | machine-readable surface |
 | `tamias schema` | print the `tamias.yaml` JSON Schema |
 | `tamias gen-cli-docs` | print this CLI reference (markdown) from the parser |
