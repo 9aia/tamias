@@ -1,7 +1,7 @@
 +++
 id = "PL-001"
 title = "tamias — full phased plan (fetch/store/verify/install/publish; ports+adapters; local+cf)"
-status = "in-progress"
+status = "done"
 created = "2026-11-07"
 owner = "human:luis"
 priority = "high"
