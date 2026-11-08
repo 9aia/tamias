@@ -103,7 +103,7 @@ multi-actor arbitration belongs to peregrin.
 cargo xtask check          # fmt + clippy -D warnings
 cargo xtask test           # whole suite (nextest if present)
 cargo xtask coverage       # llvm-cov report (HTML → target/llvm-cov/html);
-                           # extra args pass through, e.g. --fail-under-lines 97
+                           # extra args pass through, e.g. --fail-under-lines 98
 cargo xtask install        # release-install tamias → ~/.cargo/bin
 cargo xtask site           # build the docs site (needs docs/ worktree)
 ```

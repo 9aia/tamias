@@ -133,13 +133,13 @@ fn apply_layer(layer: &Path, dest: &Path) -> Result<(), Error> {
         let src = layer.join(&rel);
         let target = dest.join(&rel);
         if target.is_file() {
-            if let Some(format) = doc_format(&rel) {
-                if let (Some(incoming), Some(existing)) =
-                    (parse_doc(&src, format), parse_doc(&target, format))
-                {
-                    write_doc(&target, format, &merge_documents(&incoming, &existing))?;
-                    continue;
-                }
+            if let (Some(format), Some(incoming), Some(existing)) = (
+                doc_format(&rel),
+                doc_format(&rel).and_then(|f| parse_doc(&src, f)),
+                doc_format(&rel).and_then(|f| parse_doc(&target, f)),
+            ) {
+                write_doc(&target, format, &merge_documents(&incoming, &existing))?;
+                continue;
             }
         }
         let parent = target.parent().unwrap_or(dest);

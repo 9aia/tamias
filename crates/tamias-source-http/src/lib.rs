@@ -82,12 +82,10 @@ impl Source for HttpSource {
             .read_to_vec()
             .map_err(|e| Error::Failed(format!("read {url}: {e}")))?;
         let hex = sha256_hex(&bytes);
-        if let Some(want) = digest {
-            if hex != *want {
-                return Err(Error::Failed(format!(
-                    "digest mismatch for {url}: sha256:{hex} ≠ pinned sha256:{want}"
-                )));
-            }
+        if let Some(want) = digest.as_deref().filter(|want| hex.as_str() != *want) {
+            return Err(Error::Failed(format!(
+                "digest mismatch for {url}: sha256:{hex} ≠ pinned sha256:{want}"
+            )));
         }
         untar_gz(bytes.as_slice(), dest_dir)?;
         Ok(Fetched {

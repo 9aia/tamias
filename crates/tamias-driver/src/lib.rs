@@ -54,16 +54,15 @@ pub fn find_driver(kind: &str) -> Option<PathBuf> {
 
 /// `<name>` on `PATH`, then `<tamias-home>/drivers/`.
 fn lookup(name: &str) -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&path) {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    let candidate = drivers_dir().join(name);
-    candidate.is_file().then_some(candidate)
+    let on_path = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join(name))
+            .find(|candidate| candidate.is_file())
+    });
+    on_path.or_else(|| {
+        let candidate = drivers_dir().join(name);
+        candidate.is_file().then_some(candidate)
+    })
 }
 
 /// Whether `driver` reports handling `kind` (its `capabilities` `types`).
@@ -91,23 +90,27 @@ fn driver_handles(driver: &Path, kind: &str) -> bool {
 pub fn discovered_drivers() -> Vec<(String, PathBuf)> {
     let mut found: Vec<(String, PathBuf)> = Vec::new();
     let mut scan = |dir: &Path| {
-        if let Ok(read) = std::fs::read_dir(dir) {
-            for entry in read.flatten() {
-                let path = entry.path();
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if let Some(kind) = name.strip_prefix("tamias-driver-") {
-                        if path.is_file() && !found.iter().any(|(k, _)| k == kind) {
-                            found.push((kind.to_string(), path));
-                        }
-                    }
+        let Some(read) = std::fs::read_dir(dir).ok() else {
+            return;
+        };
+        for entry in read.flatten() {
+            let path = entry.path();
+            let kind = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix("tamias-driver-"));
+            if let Some(kind) = kind {
+                if path.is_file() && !found.iter().any(|(k, _)| k == kind) {
+                    found.push((kind.to_string(), path));
                 }
             }
         }
     };
-    if let Some(path) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&path) {
-            scan(&dir);
-        }
+    for dir in std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+        .unwrap_or_default()
+    {
+        scan(&dir);
     }
     scan(&drivers_dir());
     found.sort();

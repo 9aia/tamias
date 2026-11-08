@@ -59,10 +59,8 @@ impl Registry for LocalRegistry {
             .unwrap_or_else(|| "0.0.0".to_string());
         let rel = format!("{scoped}/{version}.tgz");
         let out = self.root.join(&rel);
-        if let Some(parent) = out.parent() {
-            fs::create_dir_all(parent)
-                .map_err(Error::io(format!("create {}", parent.display())))?;
-        }
+        let parent = out.parent().unwrap_or(Path::new("."));
+        fs::create_dir_all(parent).map_err(Error::io(format!("create {}", parent.display())))?;
         pack_tgz(payload_root, &out)?;
         let entry = RegistryEntry {
             name: manifest.name.clone(),
@@ -154,9 +152,8 @@ fn handle(stream: &mut std::net::TcpStream, root: &Path) -> Result<(), Error> {
                 .read_exact(&mut body)
                 .map_err(Error::io("read body"))?;
             let path = root.join(&key);
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(Error::io("create blob dir"))?;
-            }
+            let parent = path.parent().unwrap_or(Path::new("."));
+            fs::create_dir_all(parent).map_err(Error::io("create blob dir"))?;
             fs::write(&path, &body).map_err(Error::io(format!("write {}", path.display())))?;
             respond(stream, 200, b"ok")
         }
