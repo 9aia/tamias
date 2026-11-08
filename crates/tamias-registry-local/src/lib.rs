@@ -358,4 +358,27 @@ mod tests {
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("999 Error"), "{text}");
     }
+
+    #[test]
+    fn serve_io_error_arms() {
+        let root = tempfile::tempdir().unwrap();
+        let rp = root.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = serve_http("127.0.0.1:8797", &rp);
+        });
+        for _ in 0..100 {
+            if std::net::TcpStream::connect("127.0.0.1:8797").is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        use std::io::Write;
+        // short body vs Content-Length → read_exact fails
+        let mut s = std::net::TcpStream::connect("127.0.0.1:8797").unwrap();
+        let _ = s.write_all(b"PUT /k HTTP/1.1\r\nContent-Length: 10\r\n\r\nab");
+        drop(s);
+        // connect + immediate close → server write → broken pipe
+        let _ = std::net::TcpStream::connect("127.0.0.1:8797");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
 }

@@ -355,4 +355,18 @@ mod tests {
         let _ = dispatch(&env, &rj);
         let _ = dispatch(&env, &rj);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_error_arms() {
+        use std::os::unix::fs::PermissionsExt;
+        let env = env();
+        std::fs::create_dir_all(&env.store_root).unwrap();
+        std::fs::set_permissions(&env.store_root, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(dispatch(&env, r#"{"op":"list"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"info","name":"x"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"verify","name":"x"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"remove","name":"x"}"#).is_err());
+        std::fs::set_permissions(&env.store_root, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }

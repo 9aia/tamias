@@ -154,4 +154,35 @@ mod tests {
         let dest = tempfile::tempdir().unwrap();
         FsSource::new().fetch(&resolved, dest.path()).unwrap();
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn fetch_error_arms() {
+        use std::os::unix::fs::PermissionsExt;
+        let src = tempfile::tempdir().unwrap();
+        // garbage .tgz → untar_gz fails
+        let tgz = src.path().join("x.tgz");
+        std::fs::write(&tgz, b"not gzip").unwrap();
+        let resolved = FsSource::new().resolve(&SourceRef::Fs(tgz)).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(FsSource::new().fetch(&resolved, dest.path()).is_err());
+        // garbage .tar → untar fails
+        let tar = src.path().join("x.tar");
+        std::fs::write(&tar, b"not tar").unwrap();
+        let r2 = FsSource::new().resolve(&SourceRef::Fs(tar)).unwrap();
+        let d2 = tempfile::tempdir().unwrap();
+        assert!(FsSource::new().fetch(&r2, d2.path()).is_err());
+        // unwritable dest → create_dir_all fails
+        let ds = tempfile::tempdir().unwrap();
+        let pkg = ds.path().join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(pkg.join("tamias.yaml"), "name: x\n").unwrap();
+        let dres = FsSource::new().resolve(&SourceRef::Fs(pkg)).unwrap();
+        let ro = tempfile::tempdir().unwrap();
+        let rodest = ro.path().join("dest");
+        std::fs::create_dir_all(&rodest).unwrap();
+        std::fs::set_permissions(&rodest, std::fs::Permissions::from_mode(0o555)).unwrap();
+        assert!(FsSource::new().fetch(&dres, &rodest.join("child")).is_err());
+        std::fs::set_permissions(&rodest, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }

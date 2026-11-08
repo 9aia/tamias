@@ -983,4 +983,103 @@ mod tests {
         r1.unwrap();
         r2.unwrap();
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn error_arms_unreadable_and_unwritable() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("store");
+        std::fs::create_dir_all(&store).unwrap();
+        std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let e = Env {
+            store_root: store.clone(),
+            cache_root: tmp.path().join("cache"),
+            registry_root: tmp.path().join("reg"),
+        };
+        assert!(run_args(e.clone(), &["tamias", "list"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "doctor"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "info", "w"]).is_err());
+        std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let ro = tmp.path().join("ro");
+        std::fs::create_dir_all(&ro).unwrap();
+        std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let e2 = Env {
+            store_root: tmp.path().join("store2"),
+            cache_root: ro.join("cache"),
+            registry_root: tmp.path().join("reg2"),
+        };
+        let pkgdir = pkg(tmp.path());
+        assert!(run_args(e2.clone(), &["tamias", "install", pkgdir.to_str().unwrap()]).is_err());
+        std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        let e3 = env(tmp.path());
+        assert!(run_args(e3.clone(), &["tamias", "publish", empty.to_str().unwrap()]).is_err());
+        assert!(run_args(e3.clone(), &["tamias", "install", empty.to_str().unwrap()]).is_err());
+        assert!(run_args(e3.clone(), &["tamias", "verify", "ghost"]).is_err());
+        assert!(run_args(e3.clone(), &["tamias", "remove", "ghost"]).is_err());
+    }
+
+    #[test]
+    fn more_error_arms() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        // unresolvable git ref
+        assert!(run_args(
+            e.clone(),
+            &["tamias", "install", "git:file:///nonexistent-xyz-999#main"]
+        )
+        .is_err());
+        // bad manifest → install + publish
+        let badm = tmp.path().join("badm");
+        std::fs::create_dir_all(&badm).unwrap();
+        std::fs::write(badm.join("tamias.yaml"), "name: \"-bad\"\n").unwrap();
+        assert!(run_args(e.clone(), &["tamias", "install", badm.to_str().unwrap()]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "publish", badm.to_str().unwrap()]).is_err());
+        // publish to a dead http registry
+        assert!(run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "publish",
+                dir.to_str().unwrap(),
+                "--registry",
+                "http://127.0.0.1:1"
+            ]
+        )
+        .is_err());
+        // search a registry with a broken index
+        let reg = tmp.path().join("reg");
+        std::fs::create_dir_all(&reg).unwrap();
+        std::fs::write(reg.join("index.json"), "nope").unwrap();
+        assert!(run_args(
+            e.clone(),
+            &["tamias", "search", "w", "--registry", reg.to_str().unwrap()]
+        )
+        .is_err());
+        // add: pre-existing bad manifest, then a bad lock
+        {
+            let _g = CWD.lock().unwrap();
+            let prev = std::env::current_dir().unwrap();
+            std::env::set_current_dir(tmp.path()).unwrap();
+            std::fs::write(tmp.path().join("tamias.yaml"), "name: \"-x\"\n").unwrap();
+            let r = run_args(e.clone(), &["tamias", "add", dir.to_str().unwrap()]);
+            std::env::set_current_dir(prev).unwrap();
+            assert!(r.is_err());
+        }
+        {
+            let _g = CWD.lock().unwrap();
+            let prev = std::env::current_dir().unwrap();
+            std::env::set_current_dir(tmp.path()).unwrap();
+            std::fs::write(tmp.path().join("tamias.yaml"), "name: proj\n").unwrap();
+            std::fs::write(tmp.path().join("tamias.lock"), ": bad : yaml :").unwrap();
+            let r = run_args(e.clone(), &["tamias", "add", dir.to_str().unwrap()]);
+            std::env::set_current_dir(prev).unwrap();
+            assert!(r.is_err());
+        }
+    }
 }

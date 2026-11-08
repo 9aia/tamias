@@ -280,4 +280,17 @@ mod archive_tests {
         untar(Cursor::new(bytes), dest.path()).unwrap();
         assert!(dest.path().join("ok.txt").is_file());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn untar_create_dest_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let ro = tempfile::tempdir().unwrap();
+        let rodest = ro.path().join("d");
+        std::fs::create_dir_all(&rodest).unwrap();
+        std::fs::set_permissions(&rodest, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let bytes = vec![0u8; 1024];
+        assert!(untar(Cursor::new(bytes), &rodest.join("child")).is_err());
+        std::fs::set_permissions(&rodest, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }

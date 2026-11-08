@@ -123,4 +123,13 @@ mod tests {
         assert!(d1.starts_with("sha256:"));
         assert_eq!(dir_size(dir.path()).unwrap(), 2);
     }
+
+    #[test]
+    fn io_error_arms() {
+        let missing = Path::new("/nonexistent-xyz-123");
+        assert!(file_digest(missing).is_err());
+        assert!(payload_files(missing).is_err());
+        assert!(dir_digest(missing).is_err());
+        assert!(dir_size(missing).is_err());
+    }
 }

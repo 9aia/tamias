@@ -226,4 +226,26 @@ mod tests {
     fn default_impl() {
         let _ = HttpSource::default();
     }
+
+    #[test]
+    fn fetch_untar_and_body_error_arms() {
+        // a 200 with a garbage body → untar_gz fails
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            if let Ok((mut s, _)) = listener.accept() {
+                let mut b = [0u8; 4096];
+                let _ = s.read(&mut b);
+                let _ = s.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\njunk",
+                );
+                let _ = s.flush();
+            }
+        });
+        let r = tamias_core::parse_ref(&format!("http://127.0.0.1:{port}/x.tgz")).unwrap();
+        let resolved = HttpSource::new().resolve(&r).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(HttpSource::new().fetch(&resolved, dest.path()).is_err());
+    }
 }

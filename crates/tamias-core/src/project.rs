@@ -123,4 +123,17 @@ mod tests {
         assert_eq!(back.packages[0].name, "x");
         assert_eq!(back.packages[0].scope.as_deref(), Some("acme"));
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_error_arms() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("tamias.lock");
+        std::fs::write(&p, ": not : yaml :").unwrap();
+        assert!(Lock::load(&p).is_err());
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(Lock::load(&p).is_err());
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
 }

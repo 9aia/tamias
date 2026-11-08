@@ -239,4 +239,14 @@ mod overlay_tests {
         );
         assert!(doc_format(Path::new("x.txt")).is_none());
     }
+
+    #[test]
+    fn apply_layer_copy_error() {
+        let base = tempfile::tempdir().unwrap();
+        std::fs::write(base.path().join("x"), "b").unwrap();
+        let local = tempfile::tempdir().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dest.path().join("x")).unwrap();
+        assert!(overlay(&[base.path()], local.path(), dest.path()).is_err());
+    }
 }

@@ -261,4 +261,38 @@ mod tests {
         let dest = tempfile::tempdir().unwrap();
         assert!(GitSource::new().fetch(&fs, dest.path()).is_err());
     }
+
+    #[test]
+    fn resolve_and_fetch_error_arms() {
+        let repo = tempfile::tempdir().unwrap();
+        let g = |a: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(repo.path())
+                .args(a)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .status()
+                .unwrap()
+                .success()
+        };
+        assert!(g(&["init", "-q", "-b", "main"]));
+        std::fs::write(repo.path().join("a"), "a").unwrap();
+        assert!(g(&["add", "-A"]));
+        assert!(g(&["commit", "-q", "-m", "i"]));
+        // unknown rev on a real repo → NotFound error
+        let r = tamias_core::parse_ref(&format!("git:file://{}#nosuchrev", repo.path().display()))
+            .unwrap();
+        assert!(GitSource::new().resolve(&r).is_err());
+        // clone of a nonexistent url → fetch error
+        let resolved = tamias_source::Resolved::Git {
+            url: "file:///nonexistent-xyz-999".into(),
+            subdir: None,
+            rev: Some("main".into()),
+            sha: Some("0".repeat(40)),
+        };
+        let dest = tempfile::tempdir().unwrap();
+        assert!(GitSource::new().fetch(&resolved, dest.path()).is_err());
+    }
 }

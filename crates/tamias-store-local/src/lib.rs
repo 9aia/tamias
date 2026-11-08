@@ -278,4 +278,29 @@ mod tests {
         store.install(p.path(), record("w", None)).unwrap();
         assert_eq!(store.entries().unwrap().len(), 1);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn io_error_arms() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("store");
+        std::fs::create_dir_all(&root).unwrap();
+        let store = Store::new(&root);
+        let p = tempfile::tempdir().unwrap();
+        std::fs::write(p.path().join("a.txt"), "a").unwrap();
+        store.install(p.path(), record("w", None)).unwrap();
+        // unreadable root → entries()/find() read fail
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(store.entries().is_err());
+        assert!(store.find("w").is_err());
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // read-only root → install / remove fail
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let p2 = tempfile::tempdir().unwrap();
+        std::fs::write(p2.path().join("a.txt"), "a").unwrap();
+        assert!(store.install(p2.path(), record("z", None)).is_err());
+        assert!(store.remove("w").is_err());
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }

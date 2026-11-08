@@ -162,4 +162,16 @@ mod tests {
         std::fs::write(&path, ": not valid [ yaml").unwrap();
         assert!(Manifest::load_at(&path).is_err());
     }
+
+    #[test]
+    fn load_error_arms() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(Manifest::load_at(&dir.path().join("nope.yaml")).is_err());
+        let bad = dir.path().join("bad.toml");
+        std::fs::write(&bad, "name = = broken").unwrap();
+        assert!(Manifest::load_at(&bad).is_err());
+        let inv = dir.path().join("inv.yaml");
+        std::fs::write(&inv, "name: \"-bad\"\n").unwrap();
+        assert!(Manifest::load_at(&inv).is_err());
+    }
 }

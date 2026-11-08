@@ -228,4 +228,28 @@ mod tests {
         let missing = root.path().join("nope");
         assert!(cache.commit(&missing, "sha256-abc").is_err());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn io_error_arms() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        // root's parent read-only → scratch() create fails
+        let ro = base.path().join("ro");
+        std::fs::create_dir_all(&ro).unwrap();
+        std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let cache = FetchCache::new(ro.join("cache"));
+        assert!(cache.scratch().is_err());
+        // unreadable root → entries()/clean() read fail; commit rename fails
+        let r2 = base.path().join("r2");
+        std::fs::create_dir_all(r2.join("k1")).unwrap();
+        let c2 = FetchCache::new(&r2);
+        assert_eq!(c2.entries().unwrap().len(), 1);
+        std::fs::set_permissions(&r2, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(c2.entries().is_err());
+        assert!(c2.clean(Duration::from_secs(0)).is_err());
+        assert!(c2.commit(&c2.entry("nope"), "k2").is_err());
+        std::fs::set_permissions(&r2, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
