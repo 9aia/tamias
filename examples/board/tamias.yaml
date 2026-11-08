@@ -1,0 +1,4 @@
+name: board
+version: 0.1.0
+description: Example package that ships a pavo view driver — installing it drops tamias-driver-board into <tamias-home>/drivers/ (consent-gated).
+type: files

@@ -21,14 +21,20 @@ use std::path::{Path, PathBuf};
 use tamias_core::Error;
 
 /// `<tamias-home>` — `$TAMIAS_HOME` → `$XDG_DATA_HOME/tamias` →
-/// `~/.local/share/tamias` → `./tamias`.
+/// `~/.local/share/tamias` → `./.tamias`.
+///
+/// The no-env fallback is `./.tamias` — the same project-local home the
+/// CLI's `store_root()`/`cache_root()`/`registry_root()` fall back to
+/// (`./.tamias/store`, `./.tamias/fetch`, `./.tamias/registry`), so the
+/// drivers dir lands at `./.tamias/drivers` beside them. (`./tamias`
+/// would collide with a `tamias` source checkout or package dir.)
 #[must_use]
 pub fn tamias_home() -> PathBuf {
     std::env::var_os("TAMIAS_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("XDG_DATA_HOME").map(|d| PathBuf::from(d).join("tamias")))
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share/tamias")))
-        .unwrap_or_else(|| PathBuf::from("./tamias"))
+        .unwrap_or_else(|| PathBuf::from("./.tamias"))
 }
 
 /// The `<tamias-home>/drivers` dir.
@@ -231,6 +237,24 @@ mod tests {
         std::env::remove_var("TAMIAS_HOME");
         let _ = tamias_home();
         assert!(drivers_dir().ends_with("drivers"));
+    }
+
+    #[test]
+    fn home_fallback_is_dot_tamias() {
+        let _guard = ENV.lock().unwrap();
+        // The no-env fallback must match the CLI's `./.tamias/*` roots —
+        // `./tamias` would collide with a source checkout/package dir.
+        let saved = ["TAMIAS_HOME", "XDG_DATA_HOME", "HOME"].map(|k| (k, std::env::var_os(k)));
+        for (k, _) in &saved {
+            std::env::remove_var(*k);
+        }
+        assert_eq!(tamias_home(), PathBuf::from("./.tamias"));
+        assert_eq!(drivers_dir(), PathBuf::from("./.tamias/drivers"));
+        for (k, v) in saved {
+            if let Some(v) = v {
+                std::env::set_var(k, v);
+            }
+        }
     }
 
     fn write_driver(dir: &Path, name: &str, body: &str) -> PathBuf {

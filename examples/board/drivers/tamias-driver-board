@@ -1,0 +1,211 @@
+#!/usr/bin/env python3
+"""tamias-driver-board — example pavo view driver shipped *inside* a
+tamias package (`examples/board`).
+
+`tamias install --allow-drivers <pkg>` copies this file into
+`<tamias-home>/drivers/`, after which pavo discovers it like any
+other driver. It is a self-contained Python 3 stdlib script — the
+honest v1 for driver distribution: the payload's `drivers/` dir
+carries ready-to-run executables, so interpreted drivers ship as
+source; compiled (Rust) drivers need a prebuilt per-platform binary,
+which is the release-path TODO.
+
+This driver is a *pavo* driver, not a content-type driver: its
+`capabilities` claims `["pavo"]` and `types: []`, so tamias's
+content-driver lookup can never route a `type:` install through it.
+
+Wire surface (ndjson JSON-RPC over `serve`, one JSON object/line):
+
+    {"op":"manifest"}                        -> DriverManifest
+    {"op":"views"}                           -> [ViewSummary, ...]
+    {"op":"view","view":"status",...}        -> ViewResult
+    {"op":"query","query":"items",...}       -> QueryResult
+
+`tamias-driver-board manifest` and `... capabilities` answer the
+discovery probes.
+"""
+
+import json
+import sys
+
+NAME = "board"
+
+# ---------------------------------------------------------------- data
+
+ITEMS = [
+    {"id": "B-001", "title": "ship the package", "status": "done", "owner": "tamias"},
+    {"id": "B-002", "title": "register the driver", "status": "done", "owner": "tamias"},
+    {"id": "B-003", "title": "pavo discovers it", "status": "wip", "owner": "pavo"},
+    {"id": "B-004", "title": "rust drivers as binaries", "status": "open", "owner": "todo"},
+]
+
+QUERIES = {"items": ITEMS}
+
+
+def counts():
+    out = {}
+    for item in ITEMS:
+        out[item["status"]] = out.get(item["status"], 0) + 1
+    out["total"] = len(ITEMS)
+    return out
+
+
+def query_data(name, params):
+    if name == "counts":
+        return counts()
+    if name == "items" and params.get("status"):
+        wanted = params["status"]
+        return [i for i in ITEMS if i["status"] == wanted]
+    return QUERIES.get(name)
+
+
+# ---------------------------------------------------------------- views
+
+VIEWS = [
+    {
+        "id": "status",
+        "title": "Status",
+        "route": "/board/status",
+        "description": "Canned board items with status counts — proves a package-shipped driver renders in pavo.",
+        "queries": [
+            {"name": "items", "op": "query", "params": {}},
+            {"name": "counts", "op": "query", "params": {}},
+        ],
+        "root": {
+            "kind": "column",
+            "title": "Board",
+            "children": [
+                {"kind": "kv", "title": "Counts", "query": "counts", "pairs": []},
+                {
+                    "kind": "table",
+                    "title": "Items",
+                    "query": "items",
+                    "sortable": True,
+                    "columns": [
+                        {"key": "id", "title": "ID", "width": 6},
+                        {"key": "title", "title": "Title"},
+                        {"key": "status", "title": "Status", "width": 8},
+                        {"key": "owner", "title": "Owner", "width": 8},
+                    ],
+                },
+            ],
+        },
+    }
+]
+
+MANIFEST = {
+    "name": NAME,
+    "title": "Board",
+    "icon": "▦",
+    "version": "0.1.0",
+    "verbs": ["manifest", "serve"],
+    "capabilities": ["pavo"],
+    "contributes": {},
+    "views": VIEWS,
+}
+
+
+def summary(spec):
+    return {
+        "id": spec["id"],
+        "title": spec["title"],
+        "route": spec["route"],
+        "description": spec.get("description"),
+        "queries": [b["name"] for b in spec.get("queries", [])],
+    }
+
+
+def view_result(view_id, params):
+    for spec in VIEWS:
+        if spec["id"] == view_id:
+            data = {}
+            for binding in spec.get("queries", []):
+                data[binding["name"]] = query_data(binding["name"], params)
+            return {"view": spec, "data": data}
+    return None
+
+
+# ---------------------------------------------------------------- wire
+
+
+def emit(obj):
+    sys.stdout.write(json.dumps(obj, separators=(",", ":")) + "\n")
+    sys.stdout.flush()
+
+
+def respond_ok(result):
+    emit({"ok": True, "result": result})
+
+
+def respond_err(msg):
+    emit({"ok": False, "error": str(msg)})
+
+
+def dispatch(obj):
+    op = obj.get("op")
+    if op == "manifest":
+        respond_ok(MANIFEST)
+    elif op == "views":
+        respond_ok([summary(v) for v in VIEWS])
+    elif op == "view":
+        result = view_result(obj.get("view"), obj.get("params") or {})
+        if result is None:
+            respond_err("unknown view: %s" % obj.get("view"))
+        else:
+            respond_ok(result)
+    elif op == "query":
+        name = obj.get("query")
+        respond_ok({"query": name, "data": query_data(name, obj.get("params") or {})})
+    elif op == "render":
+        respond_err("tamias-driver-board claims no renderers")
+    else:
+        respond_err("unknown op: %s" % op)
+
+
+def serve():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            respond_err("invalid JSON request")
+            continue
+        if not isinstance(obj, dict):
+            respond_err("request must be a JSON object")
+            continue
+        dispatch(obj)
+    return 0
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        sys.stderr.write("usage: tamias-driver-board manifest|capabilities|serve\n")
+        return 1
+    verb = args[0]
+    if verb == "manifest":
+        sys.stdout.write(json.dumps(MANIFEST, indent=2) + "\n")
+        return 0
+    if verb == "capabilities":
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "capabilities": MANIFEST["capabilities"],
+                    "verbs": MANIFEST["verbs"],
+                    # pavo driver, not a content-type driver — tamias's
+                    # `type:` lookup must never claim types through us.
+                    "types": [],
+                }
+            )
+            + "\n"
+        )
+        return 0
+    if verb == "serve":
+        return serve()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

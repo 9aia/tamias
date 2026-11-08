@@ -24,10 +24,10 @@
 //!   → `~/.local/share/tamias` for home+store+registry+drivers;
 //!   `$TAMIAS_CACHE` → `$XDG_CACHE_HOME/tamias/fetch` →
 //!   `~/.cache/tamias/fetch` for the cache; `./.tamias/*` is the
-//!   CLI's no-env fallback (note: `tamias-driver::tamias_home()`
-//!   falls back to `./tamias` instead — a known seed-state quirk;
-//!   the store/cache/registry roots here follow the CLI, which is
-//!   what actually reads them).
+//!   no-env fallback for all of them — the store/cache/registry roots
+//!   here follow the CLI, and `tamias-driver::tamias_home()` falls
+//!   back to `./.tamias` too, so `./.tamias/drivers` is where the
+//!   drivers scan lands.
 //!
 //! When the store can't be read at all, [`Snapshot::error`] carries
 //! the reason and every query degrades to an `{"error": …}` payload

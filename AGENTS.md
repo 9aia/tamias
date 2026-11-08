@@ -67,6 +67,8 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `crates/tamias-content` (+ `-peregrin`/`-myco`/…) | the `ContentType` port + impls |
 | `crates/tamias-registry` + `-local`/`-cf` | index + publish port + impls |
 | `crates/tamias-publish` | author-side orchestration |
+| `crates/tamias-driver` | content-driver host — discovers `tamias-driver-<type>` on PATH/`<tamias-home>/drivers/`, dispatches install/deploy/uninstall, registers payload-bundled drivers (consent-gated) |
+| `crates/tamias-driver-tamias` | the *pavo* view driver for the tamias product itself (bin `tamias-driver-tamias`, manifest `name: "tamias"`, `types: []` — read-only over store/cache/registry/drivers). The `tamias-driver-` prefix is required for pavo discovery; it is **not** a content-type driver — a hypothetical `type: tamias` package would fail loudly on the unknown verb, never silently |
 | `crates/tamias-testkit` | fixtures + impl conformance |
 | `crates/tamias-cli` | the `tamias` binary — clap, `--json`, `manifest`/`schema` |
 | `xtask` (pkg `tamias-xtask`) | check / test / coverage / install / package / smoke / site |
