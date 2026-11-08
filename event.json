@@ -1,1 +1,1 @@
-{"id":"","ws":"main","actor":"luis","ts":1794176195,"op":{"op":"presence","status":"left"}}
+{"id":"","ws":"main","actor":"luis","ts":1794176231,"op":{"op":"claim","glob":"crates/tamias-core/src/** crates/tamias-store-local/src/** crates/tamias-registry-local/src/**","ttl_secs":3600}}
