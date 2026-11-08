@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-driver-conformance","actor":"luis","ts":1794179163,"op":{"op":"release","glob":"crates/tamias-driver/**"}}
+{"id":"","ws":"devin-driver-conformance","actor":"luis","ts":1794179163,"op":{"op":"release","glob":"examples/**"}}
