@@ -1,7 +1,7 @@
 +++
 id = "ADR-0001"
 title = "seed tamias from arca + re-derive peregrin's distribution engine"
-status = "open"
+status = "in-progress"
 created = "2026-11-07"
 priority = "high"
 +++
