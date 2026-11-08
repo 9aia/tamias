@@ -6,7 +6,7 @@ concern.
 
 | Sibling | Owns | Relationship |
 | --- | --- | --- |
-| **peregrin** | orchestration | `install/remove/list/…` become thin wrappers over `tamias-*`; ADR-0079's impl moves here |
+| **peregrin** | orchestration | `install/remove/list/…` become thin wrappers over `tamias-*`; peregrin's distribution impl moves here |
 | **myco** | work memory | kinds/views/templates ship as a `myco-config` content type |
 | **kuda** | code memory | `kuda-domain` packs |
 | **mimus** | critic | `mimus-rules` packs |

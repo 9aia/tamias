@@ -10,7 +10,7 @@ A content type is *data first*: the package's manifest names its `type`
 (`kind`). The manager never links a product crate. When a product must do
 real work (materialize a node config, enable a systemd unit), it ships a
 **driver** binary the manager launches over a pipe — "no plugin system:
-files" (peregrin ADR-0082 #3).
+files" (peregrin’s own ADR).
 
 ## The roster
 
