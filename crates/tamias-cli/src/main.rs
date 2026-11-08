@@ -98,6 +98,12 @@ enum Command {
     Schema,
     /// Print the CLI reference (markdown) generated from the parser.
     GenCliDocs,
+    /// Print a shell completion script.
+    Completions {
+        /// The shell to generate completions for.
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
     /// Diagnose the host metaservice (store, cache, registry, drivers).
     Doctor {
         /// JSON output.
@@ -334,25 +340,6 @@ fn short(digest: &str) -> &str {
     s.get(..12).unwrap_or(s)
 }
 
-/// The `tamias.yaml` JSON Schema.
-fn manifest_schema() -> serde_json::Value {
-    serde_json::json!({
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "title": "tamias manifest",
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "scope": {"type": ["string", "null"]},
-            "version": {"type": ["string", "null"]},
-            "description": {"type": ["string", "null"]},
-            "type": {"type": ["string", "null"]},
-            "include": {"type": "array", "items": {"type": "string"}},
-            "deps": {"type": "array", "items": {"type": "string"}}
-        },
-        "required": ["name"]
-    })
-}
-
 /// The CLI reference (markdown), generated from the clap parser.
 fn cli_docs() -> String {
     use clap::CommandFactory;
@@ -571,8 +558,19 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 env!("CARGO_PKG_VERSION")
             );
         }
-        Some(Command::Schema) => println!("{}", manifest_schema()),
+        Some(Command::Schema) => {
+            let schema = schemars::schema_for!(Manifest);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&schema).map_err(|e| Error::Failed(e.to_string()))?
+            );
+        }
         Some(Command::GenCliDocs) => println!("{}", cli_docs()),
+        Some(Command::Completions { shell }) => {
+            use clap::CommandFactory;
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "tamias", &mut std::io::stdout());
+        }
     }
     Ok(())
 }
@@ -725,6 +723,8 @@ fn doctor(env: &Env, json: bool) -> Result<(), Error> {
 }
 
 fn main() -> ExitCode {
+    // A broken pipe on stdout (`tamias list | head`) must not abort the run.
+    sigpipe::reset();
     // Opt-in OTLP export; with no endpoint this is the plain tracing setup.
     let _telemetry = tamias_telemetry::init();
     run_main(Cli::parse(), Env::from_env())
@@ -1299,9 +1299,11 @@ mod tests {
                 .source_ref,
             "git:9aia/x//y#v1"
         );
-        // schema + gen-cli-docs
+        // schema + gen-cli-docs + completions
         run_args(e.clone(), &["tamias", "schema"]).unwrap();
         run_args(e.clone(), &["tamias", "gen-cli-docs"]).unwrap();
+        run_args(e.clone(), &["tamias", "completions", "bash"]).unwrap();
+        run_args(e.clone(), &["tamias", "completions", "zsh"]).unwrap();
         // update with neither a name nor --all → error
         assert!(run_args(e.clone(), &["tamias", "update"]).is_err());
         // pin a ghost → error

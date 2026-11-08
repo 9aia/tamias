@@ -44,8 +44,17 @@ for c in $order; do
     grep -qw "$c" <<<"$touched" || continue
     p="${c}"; [ "$c" = tamias-cli ] && p="tamias"   # cli package name
     cargo set-version -p "$p" --bump patch
-    for i in 1 2 3 4 5; do
-        cargo publish -p "$p" --allow-dirty && break || sleep 30
+    # crates.io rate-limits *new* crates (a time window per push); retry
+    # through it rather than failing the release.
+    for i in $(seq 1 60); do
+        out="$(cargo publish -p "$p" --allow-dirty 2>&1)" && break
+        if grep -q '429\|too many new crates' <<<"$out"; then
+            echo "rate-limited on $p — sleeping 60s"; sleep 60
+        elif grep -q 'already exists\|already uploaded' <<<"$out"; then
+            break
+        else
+            echo "$out" | tail -3; sleep 30
+        fi
     done
     published="$published $p"
     # Per-crate tag — versions diverge independently in a monorepo.

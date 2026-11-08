@@ -11,7 +11,7 @@ use crate::Error;
 pub const MANIFEST_NAMES: [&str; 3] = ["tamias.yaml", "tamias.yml", "tamias.toml"];
 
 /// The package manifest.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
 pub struct Manifest {
     /// Bare package name — charset `[A-Za-z0-9][A-Za-z0-9._-]*`.
