@@ -1,1 +1,1 @@
-{"id":"","ws":"main","actor":"luis","ts":1794173612,"op":{"op":"release","glob":"crates/tamias-registry-local/src/lib.rs"}}
+{"id":"","ws":"main","actor":"luis","ts":1794173612,"op":{"op":"release","glob":"crates/tamias-registry-cf/src/lib.rs"}}
