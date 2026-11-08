@@ -12,7 +12,7 @@ pure domain (no I/O); `tamias-source`/`tamias-store`/`tamias-cache`/
 composition root. `xtask/` is repo chores.
 
 > Seeded from `cuora`; the crate set is being re-derived per org-ledger
-> P-002.
+> the org-ledger seed proposal.
 
 ## Rules of thumb
 
@@ -37,8 +37,10 @@ composition root. `xtask/` is repo chores.
 
 ## Releasing
 
-No crates.io publish, no git tags — the install path is
-`cargo install --git https://github.com/9aia/tamias tamias`.
+Crates publish to **crates.io** in dependency order via `scripts/release.sh`
+(bupha-triggered on push). The binary is also installable from source:
+`cargo install --git https://github.com/9aia/tamias tamias`. The script needs
+`cargo-edit` (`cargo set-version`) and, for artifacts, `cargo-dist` (`dist`) + `gh`.
 
 ## Docs
 

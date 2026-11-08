@@ -44,7 +44,7 @@ enum Command {
         /// ./path | git:<url>[//subdir][#rev] | https://….tgz[#sha256:…]
         reference: String,
     },
-    /// Same as `install` (manifest write lands later).
+    /// Install a ref and record it in `tamias.yaml` + `tamias.lock`.
     Add {
         /// The ref to add.
         reference: String,
@@ -281,9 +281,11 @@ fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Er
     let cache = FetchCache::new(&env.cache_root);
     if let Some((key, resolved_id)) = planned.prefetch_identity() {
         if cache.has(&key) {
+            tracing::debug!(cache_key = %key, "fetch-cache hit");
             return Ok((cache.entry(&key), resolved_id));
         }
     }
+    tracing::debug!("fetch-cache miss — fetching");
     let scratch = cache.scratch()?;
     let fetched = match planned.fetch(&scratch) {
         Ok(fetched) => fetched,
@@ -293,10 +295,13 @@ fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Er
         }
     };
     let committed = cache.commit(&scratch, &fetched.content_key)?;
+    tracing::debug!(content_key = %fetched.content_key, "fetched + cached");
     Ok((committed, fetched.resolved))
 }
 
 fn install(env: &Env, reference: &str) -> Result<StoreEntry, Error> {
+    let span = tracing::info_span!("install", reference);
+    let _enter = span.enter();
     let spec = refs().parse(reference)?;
     let planned = sources().plan(&*spec)?;
     let (payload_dir, resolved_id) = fetch_or_cached(env, &planned)?;
@@ -720,6 +725,8 @@ fn doctor(env: &Env, json: bool) -> Result<(), Error> {
 }
 
 fn main() -> ExitCode {
+    // Opt-in OTLP export; with no endpoint this is the plain tracing setup.
+    let _telemetry = tamias_telemetry::init();
     run_main(Cli::parse(), Env::from_env())
 }
 

@@ -17,6 +17,10 @@ Do not open public issues for security reports.
 - `tamias.yaml` / `tamias.lock` hold names, refs, and digests — never
   secret values. Publish tokens resolve via env var → keyring → cuora
   (`cuora://` refs), never inline.
+- **Registry installs (`cf:`)** are TLS-authenticated, *not* sha-pinned: a
+  registry records a payload *directory* digest, not the tarball's sha256, so it
+  can't be checked at transport. Prefer `git:` or an http ref with `#sha256:`
+  when you need end-to-end integrity.
 - Refs and names are validated before they touch store keys — strict
   segment rules, bounded length, no path traversal.
 

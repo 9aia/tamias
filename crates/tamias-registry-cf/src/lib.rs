@@ -30,6 +30,8 @@ impl HttpRegistry {
             agent: ureq::Agent::new_with_config(
                 ureq::Agent::config_builder()
                     .http_status_as_error(false)
+                    .timeout_connect(Some(std::time::Duration::from_secs(15)))
+                    .timeout_global(Some(std::time::Duration::from_secs(300)))
                     .build(),
             ),
             token: None,

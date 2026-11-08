@@ -9,3 +9,8 @@ docs/
 
 .kuda/index.sqlite
 .kuda/meta.json
+
+# fuzzing artifacts
+fuzz/target
+fuzz/artifacts
+fuzz/corpus

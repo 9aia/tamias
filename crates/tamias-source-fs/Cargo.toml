@@ -8,12 +8,17 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
 tamias-source.workspace = true
 
 [dev-dependencies]
+tamias-source.workspace = true
+proptest.workspace = true
 tempfile.workspace = true
 tar.workspace = true
 

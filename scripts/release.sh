@@ -4,6 +4,10 @@
 # run via cancel_running, so only the last push in a quiet window
 # releases. Runs inside a detached worktree — commits/tags are pushed
 # from here, not from the main checkout.
+#
+# Publishes to crates.io in dependency order (a crate's path deps must
+# already be on the registry). Needs: `cargo-edit` (cargo set-version)
+# and, for binary artifacts, `cargo-dist` (dist) + `gh`.
 set -euo pipefail
 # worktree-local secrets (gitignored); the service env file is canonical
 [ -f ./.env ] && { set -a; source ./.env; set +a; }
@@ -16,38 +20,45 @@ if [ -z "$last" ]; then
 fi
 changed="$(git diff --name-only "${last}..HEAD")"
 
+# Publish order — dependencies first (dir names; the cli dir is
+# tamias-cli but its package is `tamias`).
+order="tamias-core tamias-deploy tamias-deploy-cf tamias-deploy-local \
+       tamias-driver tamias-publish tamias-registry tamias-registry-local \
+       tamias-shell tamias-source tamias-source-fs tamias-source-git \
+       tamias-source-http tamias-store tamias-store-cf tamias-store-local \
+       tamias-telemetry tamias-testkit tamias-cache tamias-cache-cf \
+       tamias-cache-local tamias-config tamias-config-toml tamias-config-yml \
+       tamias-registry-cf tamias-source-cf tamias-serve tamias-cli"
+
 touched=""
-for c in tamias-core tamias-git tamias-config tamias-config-toml \
-         tamias-shell tamias-cli; do
+for c in $order; do
     grep -q "^crates/$c/" <<<"$changed" && touched="$touched $c"
 done
 # the bin re-publishes whenever any crate changed
-[ -n "$touched" ] && touched="$touched tamias"
+[ -n "$touched" ] && touched="$touched tamias-cli"
 if [ -z "$touched" ]; then echo "no crate changes since $last"; exit 0; fi
 
-order="tamias-core tamias-config tamias-git tamias-shell tamias-config-toml tamias"
 published=""
+tags=""
 for c in $order; do
+    grep -qw "$c" <<<"$touched" || continue
     p="${c}"; [ "$c" = tamias-cli ] && p="tamias"   # cli package name
-    dir="crates/$c"
-    grep -q " ${c} \|^${c} \?$\| ${c}$" <<<" $touched " || continue
     cargo set-version -p "$p" --bump patch
     for i in 1 2 3 4 5; do
         cargo publish -p "$p" --allow-dirty && break || sleep 30
     done
     published="$published $p"
     # Per-crate tag — versions diverge independently in a monorepo.
-    ver_c="$(grep -m1 '^version' "crates/$p/Cargo.toml" | cut -d'"' -f2)"
+    ver_c="$(grep -m1 '^version' "crates/$c/Cargo.toml" | cut -d'"' -f2)"
     tags="$tags $p-v$ver_c"
 done
 
-git commit -aqm "release: bump crate versions"
+git commit -aqm "release: bump crate versions" || true
 for t in $tags; do git tag "$t"; done
 ver="$(grep -m1 '^version' crates/tamias-cli/Cargo.toml | cut -d'"' -f2)"
 git push -q origin HEAD:main --tags
 
 # binaries: local dist build (host arch) → GitHub Release.
-# Other arches join when the remote-runner pair lands (TODO).
 if command -v dist >/dev/null && command -v gh >/dev/null; then
     dist build --output-format=json > /tmp/dist-manifest.json 2>&1 || true
     gh release create "tamias-v${ver}" --generate-notes \

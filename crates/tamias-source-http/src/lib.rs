@@ -16,6 +16,12 @@ use tamias_source::{Fetched, Plan, RefKind, Source, Spec};
 /// Largest tarball a fetch buffers — 512 MiB.
 const MAX_TARBALL: u64 = 512 * 1024 * 1024;
 
+/// Global request timeout — a hung host can't block a fetch forever.
+const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Connect timeout — fail fast on an unreachable host.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// The http ref kind — a tarball URL with an optional digest pin.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HttpRefKind;
@@ -84,6 +90,8 @@ impl HttpSource {
         Self::with_agent(ureq::Agent::new_with_config(
             ureq::Agent::config_builder()
                 .http_status_as_error(false)
+                .timeout_connect(Some(CONNECT_TIMEOUT))
+                .timeout_global(Some(TIMEOUT))
                 .build(),
         ))
     }
@@ -295,5 +303,14 @@ mod tests {
         assert!(!source.accepts(&1u8));
         assert!(source.plan(&1u8).is_err());
         assert!(source.fetch(&ForeignPlan, d5.path()).is_err());
+
+        // the public plan builder — reusable by other sources (`cf:`)
+        let port = serve(bytes.clone(), "200 OK");
+        let built = HttpPlan::new(format!("http://127.0.0.1:{port}/x.tgz"), None);
+        let d6 = tempfile::tempdir().unwrap();
+        assert!(source.fetch(&built, d6.path()).is_ok());
+        assert!(HttpPlan::new("http://x/y.tgz", None)
+            .prefetch_identity()
+            .is_none());
     }
 }

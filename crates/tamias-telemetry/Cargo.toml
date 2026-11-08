@@ -1,0 +1,32 @@
+[package]
+name = "tamias-telemetry"
+description = "Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[dependencies]
+tracing.workspace = true
+tracing-subscriber.workspace = true
+# Pinned exact — otel 0.33 pairs with tracing-opentelemetry 0.34 (the same
+# convention the sibling daemons use). OTLP/HTTP + a blocking client keeps
+# it off the async-runtime path.
+opentelemetry = "=0.33.0"
+opentelemetry_sdk = "=0.33.0"
+opentelemetry-otlp = { version = "=0.33.0", default-features = false, features = [
+  "http-proto",
+  "reqwest-blocking-client",
+  "trace",
+] }
+tracing-opentelemetry = { version = "=0.34.0", default-features = false }
+http = "1"
+
+[lints]
+workspace = true

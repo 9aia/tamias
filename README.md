@@ -20,7 +20,7 @@ source ─► tamias install <ref> ─► fetch ─► content-addressed cache
 
 ## Why
 
-peregrin already ships a package manager internally (ADR-0079) — a ref
+peregrin already ships a package manager internally (its own distribution ADR) — a ref
 grammar (`fs`/`git`/`http`), a fetch→unpack store + cache, and
 `install/remove/list/…` verbs — but its content type is *peregrin's own*
 and its store is `~/.local/share/peregrin`. myco's kinds/views/templates,

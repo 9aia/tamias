@@ -8,7 +8,7 @@ and delegates content **meaning** to pluggable *content types* — so one
 manager ships peregrin bundles, myco kinds/templates, kuda domains,
 mimus rules, and anything else. Rust workspace, ports-and-adapters.
 Seeded from a copy of `cuora` (its anatomy + cf-Worker pattern) and
-grown from peregrin's distribution machinery (ADR-0079).
+grown from peregrin's distribution machinery (its own distribution ADR).
 
 <!-- myco:agent-awareness -->
 
@@ -74,7 +74,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 > **Seed state (P2 re-derivation).** This repo was seeded from a copy of
 > `cuora`, so the crates currently carry cuora's vault/identity/deploy
 > shapes under `tamias-*` names. They are being re-derived into the map
-> above — see org-ledger `P-002` and `project/adrs`.
+> above — see the org-ledger seed proposal and `project/adrs`.
 
 ## Boundary
 
@@ -82,7 +82,7 @@ Tamias owns **content distribution** — refs, transport, the install
 store + fetch cache, and content-type dispatch. Neighbors own theirs:
 
 - **peregrin** — orchestration; `install/remove/list/…` become thin
-  wrappers over `tamias-*` (ADR-0079's impl moves here).
+  wrappers over `tamias-*` (peregrin's distribution impl moves here).
 - **myco** — work memory; its kinds/views/templates ship as a
   `myco-config` content type.
 - **kuda** — code memory; `kuda-domain` packs.

@@ -5,3 +5,6 @@ set -euo pipefail
 
 cargo xtask check
 cargo xtask test
+
+# advisory scan — best-effort; skipped when the tool is absent
+command -v cargo-audit >/dev/null && cargo audit || echo 'cargo-audit not installed — skipping'

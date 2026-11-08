@@ -8,6 +8,9 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
@@ -16,3 +19,6 @@ serde_json.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

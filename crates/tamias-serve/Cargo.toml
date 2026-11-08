@@ -8,6 +8,9 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
@@ -17,6 +20,7 @@ tamias-source-http.workspace = true
 tamias-source-cf.workspace = true
 tamias-source-git.workspace = true
 tamias-store-local.workspace = true
+tracing.workspace = true
 tamias-cache-local.workspace = true
 tamias-driver.workspace = true
 serde_json.workspace = true

@@ -8,6 +8,9 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 
 [[bin]]
 name = "tamias"
@@ -21,6 +24,8 @@ tamias-source-http.workspace = true
 tamias-source-cf.workspace = true
 tamias-source-git.workspace = true
 tamias-store-local.workspace = true
+tamias-telemetry.workspace = true
+tracing.workspace = true
 tamias-cache-local.workspace = true
 tamias-driver.workspace = true
 tamias-serve.workspace = true

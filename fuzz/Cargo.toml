@@ -1,0 +1,38 @@
+[package]
+name = "tamias-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# Detached workspace: fuzzing needs `cargo +nightly fuzz`, which the main
+# workspace (stable) never builds. Run from here:
+#   cargo +nightly install cargo-fuzz
+#   cargo +nightly fuzz run parse_git_ref
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tempfile = "3"
+tamias-source = { path = "../crates/tamias-source" }
+tamias-source-git = { path = "../crates/tamias-source-git" }
+tamias-source-http = { path = "../crates/tamias-source-http" }
+tamias-source-cf = { path = "../crates/tamias-source-cf" }
+tamias-source-fs = { path = "../crates/tamias-source-fs" }
+tamias-registry = { path = "../crates/tamias-registry" }
+tamias-core = { path = "../crates/tamias-core" }
+
+[[bin]]
+name = "parse_ref"
+path = "fuzz_targets/parse_ref.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "untar"
+path = "fuzz_targets/untar.rs"
+test = false
+doc = false

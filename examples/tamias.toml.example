@@ -1,4 +1,5 @@
-# tamias.toml — package & content manager config. Every section
+# tamias.toml — the TOML *alternative* config (YAML `tamias.yml` is the
+# standard). Every section
 # optional; zero-config = the local store + local cache under
 # ~/.local/share/tamias and ~/.cache/tamias.
 

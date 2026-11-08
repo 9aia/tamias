@@ -168,6 +168,8 @@ fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Er
 }
 
 fn install(env: &Env, reference: &str) -> Result<tamias_core::StoreEntry, Error> {
+    let span = tracing::info_span!("install", reference);
+    let _enter = span.enter();
     let spec = refs().parse(reference)?;
     let planned = sources().plan(&*spec)?;
     let (payload_dir, resolved_id) = fetch_or_cached(env, &planned)?;
