@@ -7,11 +7,10 @@ where and how a package installs.
 ## Declared, not linked
 
 A content type is *data first*: the package's manifest names its `type`
-and carries an install recipe (`mode`, `into`, `validate`). The manager
-runs the recipe; it never links a product crate. When a product must do
-real work (merge `myco.toml`, enable a systemd unit), it ships a
-*provider* binary the manager launches over a wire — "no plugin
-system: files" (peregrin ADR-0082 #3).
+(`kind`). The manager never links a product crate. When a product must do
+real work (materialize a node config, enable a systemd unit), it ships a
+**driver** binary the manager launches over a pipe — "no plugin system:
+files" (peregrin ADR-0082 #3).
 
 ## The roster
 
@@ -21,10 +20,10 @@ system: files" (peregrin ADR-0082 #3).
 | `myco-config` | `[[kinds]]`, `[views]`, `[verbs]`, templates | `myco.toml` / a seeded `project/` |
 | `kuda-domain` | `data/domains/*.toml` | `.kuda/domains/` |
 | `mimus-rules` | `rules/*.toml` | `rules/` |
-| `files` | anything | `install.into` (escape hatch) |
+| `files` | anything | the store entry (no driver) |
 
-Adding a type is a new `tamias-content-*` crate (or a declared manifest
-recipe) — never a change to the engine.
+Adding a type is a new `tamias-driver-<type>` binary — never a change to
+the engine.
 
 ## Providers (and the driver system)
 

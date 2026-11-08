@@ -1,8 +1,7 @@
 # Architecture
 
 > Seeded from a copy of `arca` (its ports-and-adapters anatomy and the
-> `-cf` Worker pattern). The crate set is being re-derived — see the
-> org-ledger proposal `P-002`.
+> `-cf` Worker pattern).
 
 tamias is **ports-and-adapters**. The engine owns the generic half of
 distribution; every content *meaning* is an adapter.
@@ -11,16 +10,17 @@ distribution; every content *meaning* is an adapter.
 
 | Port | Role | Impls |
 | --- | --- | --- |
-| `source` | `resolve(ref)` → `fetch(into)` | `-fs`, `-git`, `-http`, `-registry` |
+| `source` | `resolve(ref)` → `fetch(into)` | `-fs`, `-git`, `-http` |
 | `store` | put/get/verify an installed package | `-local`, `-cf` |
 | `cache` | content-addressed fetch cache | `-local`, `-cf` |
-| `content` | how a package *type* installs | `-peregrin`, `-myco`, … |
 | `registry` | index + publish | `-local`, `-cf` (Worker + R2 + D1/KV) |
+| `deploy` | service unit + teardown | `-local` (systemd) |
+| `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, JSON) |
 
 ## The install path
 
 ```
-ref ─► resolve ─► (cache hit?) ─► fetch ─► overlay (include:) ─► content-type install ─► store
+ref ─► resolve ─► (cache hit?) ─► fetch ─► overlay (include:) ─► driver install ─► store
 ```
 
 `resolve` pins git refs to a commit sha up front, so the content-
