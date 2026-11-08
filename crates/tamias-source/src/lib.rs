@@ -1,89 +1,204 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-//! tamias-source — the source port: turn a **ref** into bytes.
+//! tamias-source — the **ref** + **source** ports.
 //!
-//! `resolve` turns a ref into a [`Resolved`] fetch spec (git pins `#rev`
-//! to a commit sha here, via `ls-remote`); `fetch` materializes the payload
-//! into a caller-owned dir. The fetch→unpack split is what makes the
-//! content-addressed cache work — repeat installs and air-gapped nodes
-//! reuse cache entries instead of re-fetching.
+//! The grammar is a port: each [`RefKind`] claims a shape and parses it into
+//! an opaque [`Spec`]. The transport is a port: each [`Source`] turns *its
+//! own* spec into a [`Plan`] and fetches it. Neither this crate nor the
+//! engine knows a concrete transport — kinds live in the
+//! `tamias-source-<kind>` crates (`-fs`, `-git`, `-http`, `-cf`).
 
+use std::any::Any;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use tamias_core::Error;
-pub use tamias_core::{parse_ref, CfRef, GitRef, HttpRef, SourceRef};
 
-/// What [`Source::resolve`] produces — the concrete fetch spec.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Resolved {
-    /// Local dir or tarball file to copy/unpack.
-    Fs {
-        /// `~`-expanded path.
-        path: PathBuf,
-    },
-    /// A git clone — `sha` is filled when resolve pinned it via `ls-remote`.
-    Git {
-        /// Normalized clone URL.
-        url: String,
-        /// In-repo path, if any.
-        subdir: Option<String>,
-        /// The requested ref (kept for fetch when `sha` is None).
-        rev: Option<String>,
-        /// Resolved commit sha — the pin recorded in the store.
-        sha: Option<String>,
-    },
-    /// A tarball GET.
-    Http {
-        /// Fetch URL.
-        url: String,
-        /// Expected tarball sha256 hex, when the ref pinned it.
-        digest: Option<String>,
-    },
+/// A parsed ref — a typed spec owned by its [`RefKind`].
+pub type Spec = Box<dyn Any + Send + Sync>;
+
+/// A ref-grammar arm.
+pub trait RefKind: Send + Sync {
+    /// Whether this kind handles `input`.
+    fn claims(&self, input: &str) -> bool;
+
+    /// Parse `input` into a spec.
+    ///
+    /// # Errors
+    /// Fails when `input` is claimed but malformed.
+    fn parse(&self, input: &str) -> Result<Spec, Error>;
 }
 
-impl Resolved {
-    /// `(content_key, resolved_id)` — both knowable *before* the fetch or
-    /// neither: `git-<sha>` for resolved/pinned git refs, `sha256-<hex>`
-    /// for digest-pinned tarballs.
+/// The ref registry — parse any ref with the registered kinds.
+#[derive(Default)]
+pub struct Refs {
+    kinds: Vec<Arc<dyn RefKind>>,
+}
+
+impl Refs {
+    /// An empty registry.
     #[must_use]
-    pub fn prefetch_identity(&self) -> Option<(String, String)> {
-        match self {
-            Self::Git { sha: Some(sha), .. } => Some((format!("git-{sha}"), sha.clone())),
-            Self::Http {
-                digest: Some(digest),
-                ..
-            } => Some((format!("sha256-{digest}"), format!("sha256:{digest}"))),
-            _ => None,
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a kind. Kinds are tried in order; register the fallback
+    /// (paths) last.
+    #[must_use]
+    pub fn with(mut self, kind: Arc<dyn RefKind>) -> Self {
+        self.kinds.push(kind);
+        self
+    }
+
+    /// Parse `input` with the first registered kind that claims it.
+    ///
+    /// # Errors
+    /// Fails on an empty ref, no claiming kind, or a malformed ref.
+    pub fn parse(&self, input: &str) -> Result<Spec, Error> {
+        let input = input.trim();
+        if input.is_empty() {
+            return Err(Error::Failed("empty ref".to_string()));
         }
+        let kind = self
+            .kinds
+            .iter()
+            .find(|kind| kind.claims(input))
+            .ok_or_else(|| Error::Failed(format!("unrecognized ref '{input}'")))?;
+        kind.parse(input)
     }
 }
 
-/// What [`Source::fetch`] produced — an unpacked payload plus the identity
-/// the store records.
+/// A resolved fetch plan.
+pub trait Plan: Any + Send + Sync {
+    /// `(content_key, resolved_id)` — both knowable *before* the fetch or
+    /// neither: `git-<sha>` for a pinned git plan, `sha256-<hex>` for a
+    /// digest-pinned tarball.
+    fn prefetch_identity(&self) -> Option<(String, String)> {
+        None
+    }
+}
+
+impl dyn Plan {
+    /// Downcast to the owning source's concrete plan type.
+    #[must_use]
+    pub fn downcast_ref<T: Plan>(&self) -> Option<&T> {
+        (self as &dyn Any).downcast_ref::<T>()
+    }
+}
+
+/// A fetch plan paired with the [`Source`] that owns it.
+pub struct Planned {
+    source: Arc<dyn Source>,
+    plan: Box<dyn Plan>,
+}
+
+impl Planned {
+    /// Pair a source with its plan.
+    #[must_use]
+    pub fn new(source: Arc<dyn Source>, plan: Box<dyn Plan>) -> Self {
+        Self { source, plan }
+    }
+
+    /// See [`Plan::prefetch_identity`].
+    #[must_use]
+    pub fn prefetch_identity(&self) -> Option<(String, String)> {
+        self.plan.prefetch_identity()
+    }
+
+    /// Materialize the plan into `dest_dir`.
+    ///
+    /// # Errors
+    /// Transport/validation failures.
+    pub fn fetch(&self, dest_dir: &Path) -> Result<Fetched, Error> {
+        self.source.fetch(&*self.plan, dest_dir)
+    }
+}
+
+/// The source port. One impl per transport.
+pub trait Source: Send + Sync {
+    /// Whether this source owns `spec`.
+    fn accepts(&self, spec: &dyn Any) -> bool;
+
+    /// Turn its own spec into a fetch plan.
+    ///
+    /// # Errors
+    /// Transport/validation failures.
+    fn plan(&self, spec: &dyn Any) -> Result<Box<dyn Plan>, Error>;
+
+    /// Materialize `plan` into `dest_dir`.
+    ///
+    /// # Errors
+    /// Transport/validation failures.
+    fn fetch(&self, plan: &dyn Plan, dest_dir: &Path) -> Result<Fetched, Error>;
+}
+
+/// The source registry.
+#[derive(Default)]
+pub struct Sources {
+    sources: Vec<Arc<dyn Source>>,
+}
+
+impl Sources {
+    /// An empty registry.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a source.
+    #[must_use]
+    pub fn with(mut self, source: Arc<dyn Source>) -> Self {
+        self.sources.push(source);
+        self
+    }
+
+    /// Plan `spec` with the first source that accepts it.
+    ///
+    /// # Errors
+    /// Fails when no source accepts the spec, or planning fails.
+    pub fn plan(&self, spec: &dyn Any) -> Result<Planned, Error> {
+        let source = self
+            .sources
+            .iter()
+            .find(|source| source.accepts(spec))
+            .ok_or_else(|| Error::Failed("no source handles this ref".to_string()))?;
+        let plan = source.plan(spec)?;
+        Ok(Planned::new(Arc::clone(source), plan))
+    }
+}
+
+/// What a fetch produced — an unpacked payload plus the identity the store
+/// records.
 #[derive(Clone, Debug)]
 pub struct Fetched {
     /// Dir holding the unpacked payload.
     pub dir: PathBuf,
-    /// Resolved identifier recorded in the store — commit sha or
+    /// Resolved identifier recorded in the store — a commit sha or
     /// `sha256:<hex>` content digest.
     pub resolved: String,
     /// Content-addressed cache key (`git-<sha>` / `sha256-<hex>`).
     pub content_key: String,
 }
 
-/// The source port. One impl per transport.
-pub trait Source: Send + Sync {
-    /// Turn a parsed ref into a fetch spec.
-    ///
-    /// # Errors
-    /// Transport/validation failures.
-    fn resolve(&self, reference: &SourceRef) -> Result<Resolved, Error>;
+/// `~` / `~/…` expansion (`$HOME`, else `$USERPROFILE`, else `/`).
+#[must_use]
+pub fn expand_path(path: &Path) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path.to_path_buf();
+    };
+    if text == "~" {
+        return home_dir();
+    }
+    if let Some(rest) = text.strip_prefix("~/") {
+        return home_dir().join(rest);
+    }
+    path.to_path_buf()
+}
 
-    /// Materialize the payload into `dest_dir` (created as needed).
-    ///
-    /// # Errors
-    /// Transport/validation failures.
-    fn fetch(&self, resolved: &Resolved, dest_dir: &Path) -> Result<Fetched, Error>;
+fn home_dir() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map_or_else(|| PathBuf::from("/"), PathBuf::from)
 }
 
 #[cfg(test)]
@@ -91,23 +206,80 @@ pub trait Source: Send + Sync {
 mod tests {
     use super::*;
 
+    /// A toy kind claiming `toy:`, parsing the tail into a `String` spec.
+    struct ToyKind;
+    impl RefKind for ToyKind {
+        fn claims(&self, input: &str) -> bool {
+            input.starts_with("toy:")
+        }
+        fn parse(&self, input: &str) -> Result<Spec, Error> {
+            Ok(Box::new(input.trim_start_matches("toy:").to_string()))
+        }
+    }
+
+    struct ToyPlan(String);
+    impl Plan for ToyPlan {
+        fn prefetch_identity(&self) -> Option<(String, String)> {
+            Some((format!("k-{}", self.0), self.0.clone()))
+        }
+    }
+
+    struct ToySource;
+    impl Source for ToySource {
+        fn accepts(&self, spec: &dyn Any) -> bool {
+            spec.downcast_ref::<String>().is_some()
+        }
+        fn plan(&self, spec: &dyn Any) -> Result<Box<dyn Plan>, Error> {
+            let name = spec
+                .downcast_ref::<String>()
+                .ok_or_else(|| Error::Failed("not a toy spec".to_string()))?;
+            Ok(Box::new(ToyPlan(name.clone())))
+        }
+        fn fetch(&self, plan: &dyn Plan, dest_dir: &Path) -> Result<Fetched, Error> {
+            let (content_key, resolved) = plan.prefetch_identity().unwrap_or_default();
+            std::fs::create_dir_all(dest_dir).map_err(Error::io("create dest"))?;
+            Ok(Fetched {
+                dir: dest_dir.to_path_buf(),
+                resolved,
+                content_key,
+            })
+        }
+    }
+
     #[test]
-    fn prefetch_identity_arms() {
-        let fs = Resolved::Fs {
-            path: std::path::PathBuf::from("/x"),
-        };
-        assert!(fs.prefetch_identity().is_none());
-        let git = Resolved::Git {
-            url: "u".into(),
-            subdir: None,
-            rev: None,
-            sha: Some("abc".into()),
-        };
-        assert_eq!(git.prefetch_identity().unwrap().0, "git-abc");
-        let http = Resolved::Http {
-            url: "u".into(),
-            digest: Some("deadbeef".into()),
-        };
-        assert_eq!(http.prefetch_identity().unwrap().0, "sha256-deadbeef");
+    fn refs_and_sources_registries() {
+        let refs = Refs::new().with(Arc::new(ToyKind));
+        let spec = refs.parse("toy:hello").unwrap();
+        assert!(refs.parse("  ").is_err());
+        assert!(refs.parse("nope").is_err());
+
+        let toy = Arc::new(ToySource);
+        let sources = Sources::new().with(toy.clone());
+        let planned = sources.plan(&*spec).unwrap();
+        assert_eq!(planned.prefetch_identity().unwrap().0, "k-hello");
+        let dest = tempfile::tempdir().unwrap();
+        let fetched = planned.fetch(dest.path()).unwrap();
+        assert_eq!(fetched.content_key, "k-hello");
+        assert!(dest.path().is_dir());
+
+        // no source claims it
+        assert!(Sources::new().plan(&*spec).is_err());
+        // a source rejects a foreign spec
+        assert!(!toy.accepts(&42u32));
+        assert!(toy.plan(&42u32).is_err());
+    }
+
+    #[test]
+    fn expand_path_arms() {
+        std::env::set_var("HOME", "/home/z");
+        assert_eq!(expand_path(Path::new("~/a")), PathBuf::from("/home/z/a"));
+        assert_eq!(expand_path(Path::new("~")), PathBuf::from("/home/z"));
+        assert_eq!(expand_path(Path::new("/abs")), PathBuf::from("/abs"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let p = PathBuf::from(std::ffi::OsStr::from_bytes(b"~\xff"));
+            assert_eq!(expand_path(&p), p);
+        }
     }
 }

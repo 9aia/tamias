@@ -836,6 +836,7 @@ name = "tamias-source"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
+ "tempfile",
 ]
 
 [[package]]
@@ -857,6 +858,7 @@ version = "0.1.0"
 dependencies = [
  "tamias-core",
  "tamias-source",
+ "tar",
  "tempfile",
 ]
 

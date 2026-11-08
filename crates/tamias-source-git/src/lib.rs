@@ -1,25 +1,136 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
-//! tamias-source-git — the `git:` arm of the ref grammar: any clone URL,
-//! `//subdir`, and `#<branch|tag|sha>` pins. `resolve` pins the ref to a
-//! commit sha via `ls-remote` — the resolved sha is the content key
-//! (`git-<sha>`), so a warm cache makes `install` offline-free. Git work
-//! shells out to the `git` binary.
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+//! tamias-source-git — the `git:` ref kind + source: a clone URL with an
+//! optional `//subdir` and `#rev`. Planning pins the rev to a commit sha up
+//! front (via `ls-remote`), so the content-addressed cache can be hit
+//! *before* fetching.
 
+use std::any::Any;
 use std::path::Path;
 use std::process::Command;
 
-use tamias_core::{copy_tree, expand_path, Error, SourceRef};
-use tamias_source::{Fetched, GitRef, Resolved, Source};
+use tamias_core::{copy_tree, Error};
+use tamias_source::{expand_path, Fetched, Plan, RefKind, Source, Spec};
 
-/// [`Source`] over git remotes.
+/// The `git:` ref kind.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct GitSource;
+pub struct GitRefKind;
 
-impl GitSource {
-    /// The git source.
-    #[must_use]
-    pub fn new() -> Self {
-        Self
+/// A parsed git ref.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitSpec {
+    /// Normalized clone URL (`org/repo` → `https://github.com/org/repo`).
+    pub url: String,
+    /// In-repo path after `//` (or the post-two-segment remainder).
+    pub subdir: Option<String>,
+    /// `#<branch|tag|sha>` — the version pin.
+    pub rev: Option<String>,
+}
+
+impl RefKind for GitRefKind {
+    fn claims(&self, input: &str) -> bool {
+        input.starts_with("git:")
+    }
+
+    fn parse(&self, input: &str) -> Result<Spec, Error> {
+        parse_git(input.strip_prefix("git:").unwrap_or_default())
+    }
+}
+
+/// `git:<rest>` — `#rev` off the tail, `//subdir` out of the middle, then
+/// clone-URL normalization.
+fn parse_git(rest: &str) -> Result<Spec, Error> {
+    if rest.is_empty() {
+        return Err(Error::Failed("git: ref is empty".to_string()));
+    }
+    let (head, rev) = match rest.split_once('#') {
+        Some((head, rev)) => {
+            if rev.is_empty() {
+                return Err(Error::Failed("empty ref after '#'".to_string()));
+            }
+            if rev.contains('#') {
+                return Err(Error::Failed(format!("malformed ref '#{rev}'")));
+            }
+            (head, Some(rev.to_string()))
+        }
+        None => (rest, None),
+    };
+    if head.is_empty() {
+        return Err(Error::Failed("git: ref missing the repo".to_string()));
+    }
+    let (repo, subdir) = split_subdir(head)?;
+    Ok(Box::new(GitSpec {
+        url: normalize_clone_url(repo),
+        subdir,
+        rev,
+    }))
+}
+
+/// Pull the `//subdir` out of `head`; fall back to the two-segment rule.
+fn split_subdir(head: &str) -> Result<(&str, Option<String>), Error> {
+    let scan = head.find("://").map_or(0, |i| i + 3);
+    if let Some(i) = head[scan..].find("//") {
+        let repo = &head[..scan + i];
+        let subdir = head[scan + i + 2..].trim_end_matches('/');
+        if subdir.is_empty() || subdir == "." {
+            return Ok((repo, None));
+        }
+        if subdir.starts_with('/') || subdir.split('/').any(|c| c == "..") {
+            return Err(Error::Failed(format!("bad in-repo path '//{subdir}'")));
+        }
+        return Ok((repo, Some(subdir.to_string())));
+    }
+    if head.contains("://")
+        || is_scp_style(head)
+        || head.starts_with('/')
+        || head.starts_with('.')
+        || head.starts_with('~')
+    {
+        return Ok((head, None));
+    }
+    let Some(first_slash) = head.find('/') else {
+        return Ok((head, None));
+    };
+    let Some(second_slash) = head[first_slash + 1..].find('/') else {
+        return Ok((head, None));
+    };
+    let repo_end = first_slash + 1 + second_slash;
+    let subdir = head[repo_end + 1..].trim_end_matches('/');
+    if subdir.is_empty() || subdir == "." {
+        return Ok((&head[..repo_end], None));
+    }
+    if subdir.split('/').any(|c| c == "..") {
+        return Err(Error::Failed(format!("bad in-repo path '/{subdir}'")));
+    }
+    Ok((&head[..repo_end], Some(subdir.to_string())))
+}
+
+/// scp-style ssh — `git@host:path`, `host:path`. The `:` lands before the
+/// first `/` (a `://` was already ruled out by the caller).
+fn is_scp_style(head: &str) -> bool {
+    head.split('/')
+        .next()
+        .is_some_and(|first| first.contains(':'))
+}
+
+/// Bare shorthand → a clone URL: `org/repo` → github.com,
+/// `host/org/repo` → `https://host/…`; URLs and scp pass through.
+fn normalize_clone_url(repo: &str) -> String {
+    if repo.contains("://")
+        || is_scp_style(repo)
+        || repo.starts_with('/')
+        || repo.starts_with('.')
+        || repo.starts_with('~')
+    {
+        return repo.to_string();
+    }
+    let mut segments = repo.split('/');
+    let first = segments.next().unwrap_or(repo);
+    let two_segments = segments.clone().count() == 1;
+    if two_segments && !first.contains('.') {
+        format!("https://github.com/{repo}")
+    } else {
+        format!("https://{repo}")
     }
 }
 
@@ -99,39 +210,65 @@ fn resolve_remote(url: &str, rev: Option<&str>) -> Result<String, Error> {
     }
 }
 
+/// The git source.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GitSource;
+
+impl GitSource {
+    /// The git source — stateless.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+struct GitPlan {
+    url: String,
+    subdir: Option<String>,
+    rev: Option<String>,
+    sha: Option<String>,
+}
+
+impl Plan for GitPlan {
+    fn prefetch_identity(&self) -> Option<(String, String)> {
+        self.sha
+            .as_ref()
+            .map(|sha| (format!("git-{sha}"), sha.clone()))
+    }
+}
+
 impl Source for GitSource {
-    fn resolve(&self, reference: &SourceRef) -> Result<Resolved, Error> {
-        let SourceRef::Git(GitRef { url, subdir, rev }) = reference else {
-            return Err(Error::Failed(
-                "GitSource only resolves git refs".to_string(),
-            ));
-        };
+    fn accepts(&self, spec: &dyn Any) -> bool {
+        spec.is::<GitSpec>()
+    }
+
+    fn plan(&self, spec: &dyn Any) -> Result<Box<dyn Plan>, Error> {
+        let GitSpec { url, subdir, rev } = spec
+            .downcast_ref::<GitSpec>()
+            .ok_or_else(|| Error::Failed("GitSource only plans git refs".to_string()))?;
         let url = expand_url(url)?;
         let sha = match rev.as_deref() {
             Some(rev) if is_full_sha(rev) => Some(rev.to_string()),
             Some(rev) if is_hex_prefix(rev) => None,
             other => Some(resolve_remote(&url, other)?),
         };
-        Ok(Resolved::Git {
+        Ok(Box::new(GitPlan {
             url,
             subdir: subdir.clone(),
             rev: rev.clone(),
             sha,
-        })
+        }))
     }
 
-    fn fetch(&self, resolved: &Resolved, dest_dir: &Path) -> Result<Fetched, Error> {
-        let Resolved::Git {
+    fn fetch(&self, plan: &dyn Plan, dest_dir: &Path) -> Result<Fetched, Error> {
+        let GitPlan {
             url,
             subdir,
             rev,
             sha,
-        } = resolved
-        else {
-            return Err(Error::Failed(
-                "GitSource only fetches git specs".to_string(),
-            ));
-        };
+        } = plan
+            .downcast_ref::<GitPlan>()
+            .ok_or_else(|| Error::Failed("GitSource only fetches git plans".to_string()))?;
         std::fs::create_dir_all(dest_dir)
             .map_err(Error::io(format!("create {}", dest_dir.display())))?;
         let clone = dest_dir.join(".clone");
@@ -165,11 +302,14 @@ impl Source for GitSource {
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
-    #![allow(clippy::unwrap_used)]
-
     use std::process::Command;
+    use std::sync::Arc;
 
     use super::*;
+    use tamias_source::{Refs, Sources};
+
+    struct ForeignPlan;
+    impl Plan for ForeignPlan {}
 
     fn git(dir: &Path, args: &[&str]) {
         let ok = Command::new("git")
@@ -186,113 +326,82 @@ mod tests {
     }
 
     #[test]
-    fn clone_a_file_url() {
-        let repo = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(repo.path().join("sub")).unwrap();
-        std::fs::write(repo.path().join("sub/main.yaml"), "name: x\n").unwrap();
-        git(repo.path(), &["init", "-q", "-b", "main"]);
-        git(repo.path(), &["add", "-A"]);
-        git(repo.path(), &["commit", "-q", "-m", "init"]);
-        let git_ref =
-            tamias_core::parse_ref(&format!("git:file://{}//sub", repo.path().display())).unwrap();
-        let source = GitSource::new();
-        let resolved = source.resolve(&git_ref).unwrap();
-        let dest = tempfile::tempdir().unwrap();
-        let fetched = source.fetch(&resolved, dest.path()).unwrap();
-        assert!(dest.path().join("main.yaml").exists());
-        assert!(fetched.content_key.starts_with("git-"));
-    }
+    fn grammar_plan_fetch_and_errors() {
+        let refs = Refs::new().with(Arc::new(GitRefKind));
+        let sources = Sources::new().with(Arc::new(GitSource::new()));
 
-    #[test]
-    fn resolves_only_git() {
-        let reference = tamias_core::parse_ref("./x").unwrap();
-        assert!(GitSource::new().resolve(&reference).is_err());
-    }
-
-    #[test]
-    fn bad_subdir_errors_on_fetch() {
-        let repo = tempfile::tempdir().unwrap();
-        std::fs::write(repo.path().join("a.txt"), "a").unwrap();
-        git(repo.path(), &["init", "-q", "-b", "main"]);
-        git(repo.path(), &["add", "-A"]);
-        git(repo.path(), &["commit", "-q", "-m", "i"]);
-        let reference =
-            tamias_core::parse_ref(&format!("git:file://{}//nope", repo.path().display())).unwrap();
-        let resolved = GitSource::new().resolve(&reference).unwrap();
-        let dest = tempfile::tempdir().unwrap();
-        assert!(GitSource::new().fetch(&resolved, dest.path()).is_err());
-    }
-
-    #[test]
-    fn resolve_remote_error() {
-        let reference = tamias_core::parse_ref("git:file:///nonexistent/xyz#main").unwrap();
-        assert!(GitSource::new().resolve(&reference).is_err());
-    }
-
-    #[test]
-    fn sha_and_prefix_helpers() {
-        assert!(is_full_sha(&"a".repeat(40)));
-        assert!(!is_full_sha("short"));
-        assert!(is_hex_prefix("abc1234"));
-        assert!(!is_hex_prefix("xyzxyzxyz"));
-        let pinned = tamias_core::parse_ref(&format!("git:file:///r#{}", "a".repeat(40))).unwrap();
-        assert!(GitSource::new().resolve(&pinned).is_ok());
-    }
-
-    #[test]
-    fn tilde_url_expands() {
-        let reference = tamias_core::parse_ref("git:~/nonexistent-repo-xyz").unwrap();
-        assert!(GitSource::new().resolve(&reference).is_err());
-    }
-
-    #[test]
-    fn bad_ref_and_wrong_kind_fetch() {
-        let repo = tempfile::tempdir().unwrap();
-        std::fs::write(repo.path().join("a.txt"), "a").unwrap();
-        git(repo.path(), &["init", "-q", "-b", "main"]);
-        git(repo.path(), &["add", "-A"]);
-        git(repo.path(), &["commit", "-q", "-m", "i"]);
-        let r =
-            tamias_core::parse_ref(&format!("git:file://{}#nope", repo.path().display())).unwrap();
-        assert!(GitSource::new().resolve(&r).is_err());
-        let fs = tamias_source::Resolved::Fs {
-            path: std::path::PathBuf::from("/x"),
-        };
-        let dest = tempfile::tempdir().unwrap();
-        assert!(GitSource::new().fetch(&fs, dest.path()).is_err());
-    }
-
-    #[test]
-    fn resolve_and_fetch_error_arms() {
-        let repo = tempfile::tempdir().unwrap();
-        let g = |a: &[&str]| {
-            std::process::Command::new("git")
-                .current_dir(repo.path())
-                .args(a)
-                .env("GIT_AUTHOR_NAME", "t")
-                .env("GIT_AUTHOR_EMAIL", "t@t")
-                .env("GIT_COMMITTER_NAME", "t")
-                .env("GIT_COMMITTER_EMAIL", "t@t")
-                .status()
-                .unwrap()
-                .success()
-        };
-        assert!(g(&["init", "-q", "-b", "main"]));
-        std::fs::write(repo.path().join("a"), "a").unwrap();
-        assert!(g(&["add", "-A"]));
-        assert!(g(&["commit", "-q", "-m", "i"]));
-        // unknown rev on a real repo → NotFound error
-        let r = tamias_core::parse_ref(&format!("git:file://{}#nosuchrev", repo.path().display()))
+        // grammar
+        let spec = refs
+            .parse("git:9aia/peregrin//libraries/ci-gate#v0.2.0")
             .unwrap();
-        assert!(GitSource::new().resolve(&r).is_err());
-        // clone of a nonexistent url → fetch error
-        let resolved = tamias_source::Resolved::Git {
-            url: "file:///nonexistent-xyz-999".into(),
-            subdir: None,
-            rev: Some("main".into()),
-            sha: Some("0".repeat(40)),
-        };
+        let GitSpec { url, subdir, rev } = *spec.downcast::<GitSpec>().unwrap();
+        assert_eq!(url, "https://github.com/9aia/peregrin");
+        assert_eq!(subdir.as_deref(), Some("libraries/ci-gate"));
+        assert_eq!(rev.as_deref(), Some("v0.2.0"));
+        assert_eq!(
+            *refs
+                .parse("git:org/repo")
+                .unwrap()
+                .downcast::<GitSpec>()
+                .unwrap(),
+            GitSpec {
+                url: "https://github.com/org/repo".into(),
+                subdir: None,
+                rev: None
+            }
+        );
+        assert!(refs.parse("git:").is_err());
+        assert!(refs.parse("git:x/y#").is_err());
+        assert!(refs.parse("git:x/y#a#b").is_err());
+        assert!(refs.parse("git:x/y//a/../b").is_err());
+        assert!(GitRefKind.claims("git:x"));
+        assert!(!GitRefKind.claims("./x"));
+
+        // a real repo → plan pins the sha; fetch clones
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("tamias.yaml"), "name: g\nversion: 1.0.0\n").unwrap();
+        std::fs::write(repo.path().join("a.txt"), "a").unwrap();
+        git(repo.path(), &["init", "-q", "-b", "main"]);
+        git(repo.path(), &["add", "-A"]);
+        git(repo.path(), &["commit", "-q", "-m", "i"]);
+        let url = format!("git:file://{}#main", repo.path().display());
+        let spec = refs.parse(&url).unwrap();
+        let planned = sources.plan(&*spec).unwrap();
+        assert!(planned.prefetch_identity().unwrap().0.starts_with("git-"));
         let dest = tempfile::tempdir().unwrap();
-        assert!(GitSource::new().fetch(&resolved, dest.path()).is_err());
+        let fetched = planned.fetch(dest.path()).unwrap();
+        assert!(fetched.content_key.starts_with("git-"));
+        assert!(dest.path().join("a.txt").is_file());
+
+        // a full-sha rev needs no ls-remote
+        let sha = run_git(&repo.path().join("."), &["rev-parse", "HEAD"]).unwrap();
+        let spec = refs
+            .parse(&format!(
+                "git:file://{}#{}",
+                repo.path().display(),
+                sha.trim()
+            ))
+            .unwrap();
+        assert!(sources.plan(&*spec).is_ok());
+
+        // errors: unknown rev / bad subdir / dead remote
+        let spec = refs
+            .parse(&format!("git:file://{}#nosuchrev", repo.path().display()))
+            .unwrap();
+        assert!(sources.plan(&*spec).is_err());
+        let spec = refs
+            .parse(&format!("git:file://{}//nope#main", repo.path().display()))
+            .unwrap();
+        let planned = sources.plan(&*spec).unwrap();
+        let d2 = tempfile::tempdir().unwrap();
+        assert!(planned.fetch(d2.path()).is_err());
+        let spec = refs.parse("git:file:///nonexistent-xyz-999#main").unwrap();
+        assert!(sources.plan(&*spec).is_err());
+
+        // foreign spec / plan
+        let source = GitSource::new();
+        assert!(!source.accepts(&1u8));
+        assert!(source.plan(&1u8).is_err());
+        assert!(source.fetch(&ForeignPlan, d2.path()).is_err());
     }
 }

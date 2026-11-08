@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -11,17 +12,15 @@ use tamias_cache_local::FetchCache;
 use tamias_config::{ConfigFormat, CONFIG_NAMES};
 use tamias_config_toml::TomlFormat;
 use tamias_config_yml::YmlFormat;
-use tamias_core::{
-    parse_ref, payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord,
-};
+use tamias_core::{payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord};
 use tamias_registry::{parse_registry_ref, Registry, RegistryRef};
 use tamias_registry_cf::HttpRegistry;
 use tamias_registry_local::{serve_http, LocalRegistry};
-use tamias_source::{Fetched, Resolved, Source};
-use tamias_source_cf::CfSource;
-use tamias_source_fs::FsSource;
-use tamias_source_git::GitSource;
-use tamias_source_http::HttpSource;
+use tamias_source::{Planned, Refs, Sources};
+use tamias_source_cf::{CfRefKind, CfSource};
+use tamias_source_fs::{FsRefKind, FsSource};
+use tamias_source_git::{GitRefKind, GitSource};
+use tamias_source_http::{HttpRefKind, HttpSource};
 use tamias_store_local::Store;
 
 /// Default fetch-cache eviction age for `cache clean` — 30 days.
@@ -259,34 +258,34 @@ fn registry_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".tamias/registry"))
 }
 
-/// Dispatch the parsed ref to its source impl.
-fn resolve(reference: &tamias_core::SourceRef) -> Result<Resolved, Error> {
-    match reference {
-        tamias_core::SourceRef::Fs(_) => FsSource::new().resolve(reference),
-        tamias_core::SourceRef::Git(_) => GitSource::new().resolve(reference),
-        tamias_core::SourceRef::Http(_) => HttpSource::new().resolve(reference),
-        tamias_core::SourceRef::Cf(_) => CfSource::new().resolve(reference),
-    }
+/// The ref grammar — kinds in claim order; the fs fallback (paths) is last.
+fn refs() -> Refs {
+    Refs::new()
+        .with(Arc::new(GitRefKind))
+        .with(Arc::new(CfRefKind))
+        .with(Arc::new(HttpRefKind))
+        .with(Arc::new(FsRefKind))
 }
 
-fn fetch(resolved: &Resolved, dest: &std::path::Path) -> Result<Fetched, Error> {
-    match resolved {
-        Resolved::Fs { .. } => FsSource::new().fetch(resolved, dest),
-        Resolved::Git { .. } => GitSource::new().fetch(resolved, dest),
-        Resolved::Http { .. } => HttpSource::new().fetch(resolved, dest),
-    }
+/// The source registry.
+fn sources() -> Sources {
+    Sources::new()
+        .with(Arc::new(GitSource::new()))
+        .with(Arc::new(CfSource::new()))
+        .with(Arc::new(HttpSource::new()))
+        .with(Arc::new(FsSource::new()))
 }
 
-/// resolve → cache-hit or fetch+commit → `(payload_dir, resolved_id)`.
-fn fetch_or_cached(env: &Env, resolved: &Resolved) -> Result<(PathBuf, String), Error> {
+/// plan → cache-hit or fetch+commit → `(payload_dir, resolved_id)`.
+fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Error> {
     let cache = FetchCache::new(&env.cache_root);
-    if let Some((key, resolved_id)) = resolved.prefetch_identity() {
+    if let Some((key, resolved_id)) = planned.prefetch_identity() {
         if cache.has(&key) {
             return Ok((cache.entry(&key), resolved_id));
         }
     }
     let scratch = cache.scratch()?;
-    let fetched = match fetch(resolved, &scratch) {
+    let fetched = match planned.fetch(&scratch) {
         Ok(fetched) => fetched,
         Err(e) => {
             cache.discard(&scratch);
@@ -298,9 +297,9 @@ fn fetch_or_cached(env: &Env, resolved: &Resolved) -> Result<(PathBuf, String), 
 }
 
 fn install(env: &Env, reference: &str) -> Result<StoreEntry, Error> {
-    let parsed = parse_ref(reference).map_err(|e| Error::Failed(e.to_string()))?;
-    let resolved = resolve(&parsed)?;
-    let (payload_dir, resolved_id) = fetch_or_cached(env, &resolved)?;
+    let spec = refs().parse(reference)?;
+    let planned = sources().plan(&*spec)?;
+    let (payload_dir, resolved_id) = fetch_or_cached(env, &planned)?;
     let root = payload_root(&payload_dir)?;
     let manifest = Manifest::load(&root)?;
     let record = StoreRecord {

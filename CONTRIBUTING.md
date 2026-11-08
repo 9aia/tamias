@@ -16,7 +16,10 @@ composition root. `xtask/` is repo chores.
 
 ## Rules of thumb
 
-- New source / store / registry = a new impl crate, not a core change.
+- New **transport** (source/store/registry) = a new impl crate, not a core
+  change. New **ref kind** = a new `tamias-source-<kind>` crate (grammar +
+  transport) + one line in the composition root — also not a core change
+  ([ADR-0002](project/adrs/0002-ref-source-are-ports-the-grammar-and-the-transport-leave-core.md)).
 - New content type = a new `tamias-content-*` crate, or a declared
   manifest recipe — never a core change.
 - `cargo xtask check` and `cargo xtask test` must stay green.

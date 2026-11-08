@@ -8,17 +8,18 @@
 //! `{"ok":false,"error":"…"}`.
 
 use std::io::{BufRead, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
 use tamias_cache_local::FetchCache;
-use tamias_core::{parse_ref, payload_root, Error, Manifest, StoreRecord};
-use tamias_source::{Fetched, Resolved, Source};
-use tamias_source_cf::CfSource;
-use tamias_source_fs::FsSource;
-use tamias_source_git::GitSource;
-use tamias_source_http::HttpSource;
+use tamias_core::{payload_root, Error, Manifest, StoreRecord};
+use tamias_source::{Planned, Refs, Sources};
+use tamias_source_cf::{CfRefKind, CfSource};
+use tamias_source_fs::{FsRefKind, FsSource};
+use tamias_source_git::{GitRefKind, GitSource};
+use tamias_source_http::{HttpRefKind, HttpSource};
 use tamias_store_local::Store;
 
 /// Store + cache roots.
@@ -129,32 +130,33 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
     }
 }
 
-fn resolve(reference: &tamias_core::SourceRef) -> Result<Resolved, Error> {
-    match reference {
-        tamias_core::SourceRef::Fs(_) => FsSource::new().resolve(reference),
-        tamias_core::SourceRef::Git(_) => GitSource::new().resolve(reference),
-        tamias_core::SourceRef::Http(_) => HttpSource::new().resolve(reference),
-        tamias_core::SourceRef::Cf(_) => CfSource::new().resolve(reference),
-    }
+/// The ref grammar — kinds in claim order; the fs fallback (paths) is last.
+fn refs() -> Refs {
+    Refs::new()
+        .with(Arc::new(GitRefKind))
+        .with(Arc::new(CfRefKind))
+        .with(Arc::new(HttpRefKind))
+        .with(Arc::new(FsRefKind))
 }
 
-fn fetch(resolved: &Resolved, dest: &Path) -> Result<Fetched, Error> {
-    match resolved {
-        Resolved::Fs { .. } => FsSource::new().fetch(resolved, dest),
-        Resolved::Git { .. } => GitSource::new().fetch(resolved, dest),
-        Resolved::Http { .. } => HttpSource::new().fetch(resolved, dest),
-    }
+/// The source registry.
+fn sources() -> Sources {
+    Sources::new()
+        .with(Arc::new(GitSource::new()))
+        .with(Arc::new(CfSource::new()))
+        .with(Arc::new(HttpSource::new()))
+        .with(Arc::new(FsSource::new()))
 }
 
-fn fetch_or_cached(env: &Env, resolved: &Resolved) -> Result<(PathBuf, String), Error> {
+fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Error> {
     let cache = FetchCache::new(&env.cache_root);
-    if let Some((key, resolved_id)) = resolved.prefetch_identity() {
+    if let Some((key, resolved_id)) = planned.prefetch_identity() {
         if cache.has(&key) {
             return Ok((cache.entry(&key), resolved_id));
         }
     }
     let scratch = cache.scratch()?;
-    let fetched = match fetch(resolved, &scratch) {
+    let fetched = match planned.fetch(&scratch) {
         Ok(fetched) => fetched,
         Err(e) => {
             cache.discard(&scratch);
@@ -166,9 +168,9 @@ fn fetch_or_cached(env: &Env, resolved: &Resolved) -> Result<(PathBuf, String), 
 }
 
 fn install(env: &Env, reference: &str) -> Result<tamias_core::StoreEntry, Error> {
-    let parsed = parse_ref(reference).map_err(|e| Error::Failed(e.to_string()))?;
-    let resolved = resolve(&parsed)?;
-    let (payload_dir, resolved_id) = fetch_or_cached(env, &resolved)?;
+    let spec = refs().parse(reference)?;
+    let planned = sources().plan(&*spec)?;
+    let (payload_dir, resolved_id) = fetch_or_cached(env, &planned)?;
     let root = payload_root(&payload_dir)?;
     let manifest = Manifest::load(&root)?;
     if manifest.name.is_empty() {

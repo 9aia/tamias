@@ -87,8 +87,8 @@ domain (no I/O); ports are traits, impls are separate crates;
 
 | Crate | Role |
 | --- | --- |
-| `tamias-core` | package, ref grammar, manifest, records, digest — pure |
-| `tamias-source` + `-fs,-git,-http,-cf` | source port (`resolve`→`fetch`) + impls |
+| `tamias-core` | package identity, manifest, lock, records, digest — pure, transport-free |
+| `tamias-source` + `-fs,-git,-http,-cf` | ref-grammar + source ports (`RefKind`/`Source`) + per-kind impls |
 | `tamias-store` + `-local,-cf` | install store port + impls |
 | `tamias-cache` + `-local,-cf` | content-addressed fetch cache |
 | `tamias-driver` | discoverable content drivers (`tamias-driver-<type>`, JSON over stdio) |
