@@ -1,1 +1,1 @@
-{"id":"","ws":"main","actor":"luis","ts":1794114050,"op":{"op":"claim","glob":"*.md","ttl_secs":3600}}
+{"id":"","ws":"main","actor":"luis","ts":1794114066,"op":{"op":"release","glob":"*.md"}}
