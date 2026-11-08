@@ -1,1 +1,1 @@
-{"id":"","ws":"main","actor":"luis","ts":1794176456,"op":{"op":"claim","glob":"crates/tamias-core/src/manifest.rs","ttl_secs":3600}}
+{"id":"","ws":"main","actor":"luis","ts":1794176813,"op":{"op":"presence","status":"left"}}
