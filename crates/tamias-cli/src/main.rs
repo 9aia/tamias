@@ -18,6 +18,7 @@ use tamias_registry::{parse_registry_ref, Registry, RegistryRef};
 use tamias_registry_cf::HttpRegistry;
 use tamias_registry_local::{serve_http, LocalRegistry};
 use tamias_source::{Fetched, Resolved, Source};
+use tamias_source_cf::CfSource;
 use tamias_source_fs::FsSource;
 use tamias_source_git::GitSource;
 use tamias_source_http::HttpSource;
@@ -264,6 +265,7 @@ fn resolve(reference: &tamias_core::SourceRef) -> Result<Resolved, Error> {
         tamias_core::SourceRef::Fs(_) => FsSource::new().resolve(reference),
         tamias_core::SourceRef::Git(_) => GitSource::new().resolve(reference),
         tamias_core::SourceRef::Http(_) => HttpSource::new().resolve(reference),
+        tamias_core::SourceRef::Cf(_) => CfSource::new().resolve(reference),
     }
 }
 
@@ -1360,5 +1362,38 @@ mod tests {
             run_args(e.clone(), &["tamias", "config"]).unwrap();
             std::env::set_current_dir(prev).unwrap();
         }
+    }
+
+    #[test]
+    fn install_from_cf_registry() {
+        use tamias_registry_local::{serve_http, LocalRegistry};
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let src = pkg(tmp.path());
+        let reg = tmp.path().join("reg");
+        let manifest = Manifest::load(&src).unwrap();
+        LocalRegistry::new(&reg).publish(&src, &manifest).unwrap();
+        let served = reg.clone();
+        std::thread::spawn(move || {
+            let _ = serve_http("127.0.0.1:8903", &served);
+        });
+        for _ in 0..100 {
+            if std::net::TcpStream::connect("127.0.0.1:8903").is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        run_args(
+            e.clone(),
+            &["tamias", "install", "cf:http://127.0.0.1:8903/w@1.0.0"],
+        )
+        .unwrap();
+        assert!(Store::new(&e.store_root).find("w").is_ok());
+        // a version the registry doesn't have → error
+        assert!(run_args(
+            e.clone(),
+            &["tamias", "install", "cf:http://127.0.0.1:8903/w@9.9.9"],
+        )
+        .is_err());
     }
 }

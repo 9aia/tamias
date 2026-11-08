@@ -1,0 +1,24 @@
+[package]
+name = "tamias-source-cf"
+description = "Cloudflare registry source impl — the `cf:` ref arm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[dependencies]
+tamias-core.workspace = true
+tamias-source.workspace = true
+tamias-source-http.workspace = true
+tamias-registry.workspace = true
+tamias-registry-cf.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tamias-registry-local.workspace = true
+
+[lints]
+workspace = true

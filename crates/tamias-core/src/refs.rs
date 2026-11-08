@@ -23,6 +23,8 @@ pub enum SourceRef {
     Git(GitRef),
     /// `http(s)://….tgz|tar.gz` with an optional `#sha256:` pin.
     Http(HttpRef),
+    /// `cf:` — a Cloudflare registry, addressed by `name@version`.
+    Cf(CfRef),
 }
 
 /// The `git:` arm of a [`SourceRef`].
@@ -45,6 +47,19 @@ pub struct HttpRef {
     pub digest: Option<String>,
 }
 
+/// The `cf:` arm of a [`SourceRef`] — a Cloudflare registry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CfRef {
+    /// Registry base URL, derived from the address.
+    pub base_url: String,
+    /// The `<account>/<bucket…>` address as written (provenance).
+    pub address: String,
+    /// Bare package name.
+    pub name: String,
+    /// Declared version.
+    pub version: String,
+}
+
 /// Ref-grammar failures.
 #[derive(Debug, thiserror::Error)]
 #[error("invalid ref: {0}")]
@@ -61,6 +76,9 @@ pub fn parse_ref(input: &str) -> Result<SourceRef, RefError> {
     }
     if let Some(rest) = input.strip_prefix("git:") {
         return parse_git(rest).map(SourceRef::Git);
+    }
+    if let Some(rest) = input.strip_prefix("cf:") {
+        return parse_cf(rest).map(SourceRef::Cf);
     }
     if input.starts_with("https://") || input.starts_with("http://") {
         return parse_http(input).map(SourceRef::Http);
@@ -84,6 +102,48 @@ fn is_path_ref(input: &str) -> bool {
         || input.starts_with("~/")
         || input.starts_with('/')
         || input.contains('/')
+}
+
+/// `cf:<account>/<bucket…>/<name>@<version>` → [`CfRef`].
+fn parse_cf(body: &str) -> Result<CfRef, RefError> {
+    let bad = || {
+        RefError(format!(
+            "bad cf ref '{body}' — expected cf:<account>/<bucket…>/<name>@<version>"
+        ))
+    };
+    let (addr, version) = body.rsplit_once('@').ok_or_else(bad)?;
+    let (address, name) = addr.rsplit_once('/').ok_or_else(bad)?;
+    if address.is_empty() || name.is_empty() || version.is_empty() {
+        return Err(bad());
+    }
+    Ok(CfRef {
+        base_url: cf_base_url(address),
+        address: address.to_string(),
+        name: name.to_string(),
+        version: version.to_string(),
+    })
+}
+
+/// `<account>/<bucket…>` → a registry base URL. A full `http(s)://…` address
+/// passes through; a first segment with no dot is a `workers.dev` subdomain;
+/// later segments are a path prefix.
+fn cf_base_url(address: &str) -> String {
+    if address.starts_with("http://") || address.starts_with("https://") {
+        return address.trim_end_matches('/').to_string();
+    }
+    let mut segments = address.split('/');
+    let host = segments.next().unwrap_or_default();
+    let host = if host.contains('.') {
+        host.to_string()
+    } else {
+        format!("{host}.workers.dev")
+    };
+    let prefix: Vec<&str> = segments.collect();
+    if prefix.is_empty() {
+        format!("https://{host}")
+    } else {
+        format!("https://{host}/{}", prefix.join("/"))
+    }
 }
 
 /// `git:<rest>` — `#rev` off the tail, `//subdir` out of the middle, then
@@ -356,5 +416,34 @@ mod tests {
             let p = PathBuf::from(std::ffi::OsStr::from_bytes(b"~\xff"));
             assert_eq!(expand_path(&p), p);
         }
+    }
+
+    #[test]
+    fn cf_refs() {
+        // workers.dev derivation + path prefix
+        let SourceRef::Cf(cf) = parse_ref("cf:9aia/bucket/hello@0.1.0").unwrap() else {
+            panic!("expected cf");
+        };
+        assert_eq!(cf.base_url, "https://9aia.workers.dev/bucket");
+        assert_eq!(cf.address, "9aia/bucket");
+        assert_eq!(cf.name, "hello");
+        assert_eq!(cf.version, "0.1.0");
+        // a dotted host is used verbatim
+        let SourceRef::Cf(cf) = parse_ref("cf:reg.example.com/hi@1.2.3").unwrap() else {
+            panic!("expected cf");
+        };
+        assert_eq!(cf.base_url, "https://reg.example.com");
+        // a full scheme passes through (local/dev registries)
+        let SourceRef::Cf(cf) = parse_ref("cf:http://127.0.0.1:8899/reg/hi@1.2.3").unwrap() else {
+            panic!("expected cf");
+        };
+        assert_eq!(cf.base_url, "http://127.0.0.1:8899/reg");
+        assert_eq!(cf.name, "hi");
+        // malformed arms
+        assert!(parse_ref("cf:").is_err());
+        assert!(parse_ref("cf:name@1.0.0").is_err()); // no account/bucket
+        assert!(parse_ref("cf:a/b/name").is_err()); // no version
+        assert!(parse_ref("cf:a/b/@1.0.0").is_err()); // empty name
+        assert!(parse_ref("cf:a/b/name@").is_err()); // empty version
     }
 }

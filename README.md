@@ -88,7 +88,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | Crate | Role |
 | --- | --- |
 | `tamias-core` | package, ref grammar, manifest, records, digest — pure |
-| `tamias-source` + `-fs,-git,-http` | source port (`resolve`→`fetch`) + impls |
+| `tamias-source` + `-fs,-git,-http,-cf` | source port (`resolve`→`fetch`) + impls |
 | `tamias-store` + `-local,-cf` | install store port + impls |
 | `tamias-cache` + `-local,-cf` | content-addressed fetch cache |
 | `tamias-driver` | discoverable content drivers (`tamias-driver-<type>`, JSON over stdio) |
@@ -119,7 +119,7 @@ pack` · `registry serve` · `deploy-registry` · `deploy` · `uninstall` ·
 sources, a content-addressed fetch cache, a local **and Cloudflare**
 store / registry / deploy, a discoverable **driver** system
 (`tamias-driver-<type>`, JSON over stdio) with the peregrin provider
-cutover complete. Remaining: `cf:` source refs (T-009).
+cutover complete. Remaining: P10c product drivers (T-010).
 
 ## Install
 

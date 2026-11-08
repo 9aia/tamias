@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 use tamias_cache_local::FetchCache;
 use tamias_core::{parse_ref, payload_root, Error, Manifest, StoreRecord};
 use tamias_source::{Fetched, Resolved, Source};
+use tamias_source_cf::CfSource;
 use tamias_source_fs::FsSource;
 use tamias_source_git::GitSource;
 use tamias_source_http::HttpSource;
@@ -133,6 +134,7 @@ fn resolve(reference: &tamias_core::SourceRef) -> Result<Resolved, Error> {
         tamias_core::SourceRef::Fs(_) => FsSource::new().resolve(reference),
         tamias_core::SourceRef::Git(_) => GitSource::new().resolve(reference),
         tamias_core::SourceRef::Http(_) => HttpSource::new().resolve(reference),
+        tamias_core::SourceRef::Cf(_) => CfSource::new().resolve(reference),
     }
 }
 
