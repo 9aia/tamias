@@ -1,7 +1,7 @@
 +++
 id = "PL-003"
 title = "P10 — tamias driver system: Rust di scoverable content drivers (decouple product integrations)"
-status = "open"
+status = "in-progress"
 created = "2026-11-07"
 owner = "human:luis"
 priority = "high"
