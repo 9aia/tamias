@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Property tests for the `cf:` grammar.
 
 use proptest::prelude::*;

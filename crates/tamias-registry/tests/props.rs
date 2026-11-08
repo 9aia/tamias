@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Property tests for registry-ref parsing.
 
 use proptest::prelude::*;

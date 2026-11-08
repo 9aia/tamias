@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Property tests — invariants that must hold for arbitrary inputs.
 
 use std::collections::BTreeMap;

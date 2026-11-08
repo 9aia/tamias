@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Property tests for the http ref grammar.
 
 use proptest::prelude::*;
