@@ -106,7 +106,7 @@ ship a remote registry. No dependency cycle: tamias is standalone;
 ## Phases
 
 ### P0 — Ledger & alignment
-Org proposal **P-002** + this plan; repo **ADR-0001**. *Gate:* committed.
+Org seed proposal + this plan; repo ADR-0001. *Gate:* committed.
 
 ### P1 — Seed (DONE)
 Copy `arca` → `tamias`; rename; docs; `myco init`; private repo; three

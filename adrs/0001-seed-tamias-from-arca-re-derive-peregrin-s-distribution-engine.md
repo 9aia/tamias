@@ -9,7 +9,7 @@ priority = "high"
 ## Context
 
 The factory needs a generic content/package manager. peregrin already
-ships one internally (peregrin ADR-0079) — a ref grammar (`fs`/`git`/
+ships one internally (its own distribution ADR) — a ref grammar (`fs`/`git`/
 `http`), a fetch→unpack store + content-addressed cache, and
 `install/remove/list/…` verbs — but its content type is *peregrin's own*
 (`main.yaml`, `.node.yml`, …) and its store is `~/.local/share/peregrin`.
@@ -20,8 +20,8 @@ This repo is **seeded from a copy of `arca`** — its ports-and-adapters
 anatomy, xtask, hooks, worktrees, `.agents/skills`, and the `-cf`
 Worker + D1/R2 pattern — with the product identity renamed
 `arca` → `tamias` (Greek *tamías*, "steward/treasurer"; the chipmunk
-that carries, lards, scatter-caches, and recalls). The org-ledger
-proposal **P-002** is the project record.
+that carries, lards, scatter-caches, and recalls). The org-ledger seed
+proposal is the project record.
 
 ## Decision
 
@@ -34,12 +34,12 @@ proposal **P-002** is the project record.
   `tamias-registry{,-local,-cf}` · `tamias-publish` · `tamias-cli`.
 - **Lift peregrin's engine, don't rewrite.** Carry the ref grammar and
   the fetch→unpack cache split over near-verbatim from
-  `peregrin-source*` + `peregrin-bundle`. peregrin ADR-0079 stays the
+  `peregrin-source*` + `peregrin-bundle`. peregrin's own ADR stays the
   record; peregrin keeps thin delegating verbs.
 - **Generic engine, pluggable content types.** The manager owns bytes +
   manifest + transport + store + cache; content semantics are *declared*
   (a manifest recipe) with an optional stdio *provider* — the engine
-  never links a product crate ("no plugin system: files", ADR-0082 #3).
+  never links a product crate ("no plugin system: files").
 - **Two store axes.** Registry/remote vs install store + fetch cache;
   each gets a `-local` and a `-cf` impl.
 - **Provenance.** Digest-pinned refs; every install records source ref,
