@@ -76,4 +76,11 @@ if command -v dist >/dev/null && command -v gh >/dev/null; then
         [ -f "$f" ] && gh release upload "tamias-v${ver}" "$f" --clobber
     done
 fi
+# registry-only smoke: install the published CLI and run it. Catches a stale
+# already-published dependency (in-workspace builds hide this class of bug).
+if ! cargo xtask smoke; then
+    echo "SMOKE FAILED — the published CLI does not build/run. Yank and republish the stale crate." >&2
+    exit 1
+fi
+
 echo "released:${published} (tags:${tags})"

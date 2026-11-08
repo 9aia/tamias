@@ -8,6 +8,7 @@
 //!   extra args pass through, e.g. `--fail-under-lines 97`
 //! - `install`  — release-install `tamias` into ~/.cargo/bin
 //! - `package`  — `cargo package --workspace` (verify: builds each packaged crate)
+//! - `smoke`    — install `tamias` from crates.io + run it (post-publish check)
 //! - `site`     — build the docs site (docs/ worktree, VitePress)
 
 use std::process::{Command, ExitStatus};
@@ -113,6 +114,26 @@ fn package() -> i32 {
         .unwrap_or(1)
 }
 
+/// Registry-only smoke test: install `tamias` from crates.io into a temp root
+/// and run it. This is the **only** check that catches a *stale already-published
+/// dependency* — in-workspace builds hide it, and `cargo package --workspace`
+/// resolves workspace members by path, not by registry version.
+/// Run after publishing (see `scripts/release.sh`).
+fn smoke() -> i32 {
+    let root = std::env::temp_dir().join("tamias-smoke");
+    let _ = std::fs::remove_dir_all(&root);
+    let root_s = root.to_string_lossy().into_owned();
+    if run(&["cargo", "install", "tamias", "--root", &root_s, "--force"]).code() != Some(0) {
+        return 1;
+    }
+    let bin = root
+        .join("bin")
+        .join("tamias")
+        .to_string_lossy()
+        .into_owned();
+    run(&[&bin, "version"]).code().unwrap_or(1)
+}
+
 fn site() -> i32 {
     if !std::path::Path::new("docs/package.json").exists() {
         eprintln!("no docs/ worktree — `git worktree add --orphan -b docs docs` first");
@@ -135,10 +156,11 @@ fn main() {
         "coverage" => coverage(&rest),
         "install" => install(),
         "package" => package(),
+        "smoke" => smoke(),
         "site" => site(),
         other => {
             eprintln!(
-                "usage: cargo xtask <check|test|coverage|install|package|site>\n  unknown verb: {other:?}"
+                "usage: cargo xtask <check|test|coverage|install|package|smoke|site>\n  unknown verb: {other:?}"
             );
             2
         }

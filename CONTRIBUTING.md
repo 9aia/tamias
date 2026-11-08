@@ -40,6 +40,14 @@ composition root. `xtask/` is repo chores.
 Run `cargo xtask package` first — it packages + verifies every crate as
 crates.io will see it (catches files that escape a crate).
 
+After publishing, run `cargo xtask smoke` — it installs `tamias` from crates.io
+and runs it. This is the only check that catches a **stale already-published
+dependency** (in-workspace builds hide it, and `cargo package --workspace`
+resolves workspace members by path, not by registry version).
+
+Never edit a crate that is already published: bump it and republish, or the
+registry copy silently drifts from your source.
+
 Crates publish to **crates.io** in dependency order via `scripts/release.sh`
 (bupha-triggered on push). The binary is also installable from source:
 `cargo install --git https://github.com/9aia/tamias tamias`. The script needs
