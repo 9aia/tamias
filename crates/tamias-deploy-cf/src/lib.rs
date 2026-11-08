@@ -11,9 +11,9 @@ use tamias_core::Error;
 use tamias_deploy::Deploy;
 
 /// The registry Worker source (bundled from `tamias-registry-cf/worker`).
-pub const WORKER_JS: &str = include_str!("../../tamias-registry-cf/worker/index.js");
+pub const WORKER_JS: &str = include_str!("../worker/index.js");
 /// The wrangler config (R2 binding).
-pub const WRANGLER_TOML: &str = include_str!("../../tamias-registry-cf/worker/wrangler.toml");
+pub const WRANGLER_TOML: &str = include_str!("../worker/wrangler.toml");
 
 /// The Cloudflare registry deployer.
 #[derive(Clone, Copy, Debug, Default)]

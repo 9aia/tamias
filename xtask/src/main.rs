@@ -7,6 +7,7 @@
 //! - `coverage` — `cargo llvm-cov` (HTML → target/llvm-cov/html);
 //!   extra args pass through, e.g. `--fail-under-lines 97`
 //! - `install`  — release-install `tamias` into ~/.cargo/bin
+//! - `package`  — `cargo package --workspace` (verify: builds each packaged crate)
 //! - `site`     — build the docs site (docs/ worktree, VitePress)
 
 use std::process::{Command, ExitStatus};
@@ -103,6 +104,15 @@ fn install() -> i32 {
         .unwrap_or(1)
 }
 
+/// Package + *verify* every crate the way crates.io will see them — catches
+/// files that escape the crate (`include_str!("../../sibling/…")`) and any
+/// build that only works in-workspace. Run before a release.
+fn package() -> i32 {
+    run(&["cargo", "package", "--workspace", "--allow-dirty"])
+        .code()
+        .unwrap_or(1)
+}
+
 fn site() -> i32 {
     if !std::path::Path::new("docs/package.json").exists() {
         eprintln!("no docs/ worktree — `git worktree add --orphan -b docs docs` first");
@@ -124,10 +134,11 @@ fn main() {
         "test" => test(),
         "coverage" => coverage(&rest),
         "install" => install(),
+        "package" => package(),
         "site" => site(),
         other => {
             eprintln!(
-                "usage: cargo xtask <check|test|coverage|install|site>\n  unknown verb: {other:?}"
+                "usage: cargo xtask <check|test|coverage|install|package|site>\n  unknown verb: {other:?}"
             );
             2
         }

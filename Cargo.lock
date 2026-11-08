@@ -1557,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "tamias"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "clap_complete",
@@ -1666,7 +1666,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-deploy-cf"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "tamias-core",
  "tamias-deploy",

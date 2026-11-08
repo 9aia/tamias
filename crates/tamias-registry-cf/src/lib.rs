@@ -1,6 +1,6 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-registry-cf — a registry over an HTTP blob store: the Cloudflare
-//! Worker (`worker/index.js`) backed by R2, or any host speaking the same
+//! Worker (`tamias-deploy-cf` ships `worker/index.js`) backed by R2, or any host speaking the same
 //! protocol (`GET /<key>`, `PUT /<key>`). The **client** maintains the
 //! `index.json` (read-modify-write); the server is a dumb, token-guarded
 //! blob store. Auth is a bearer token — from `token_env` / cuora, never

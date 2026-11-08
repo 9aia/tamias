@@ -37,6 +37,9 @@ composition root. `xtask/` is repo chores.
 
 ## Releasing
 
+Run `cargo xtask package` first — it packages + verifies every crate as
+crates.io will see it (catches files that escape a crate).
+
 Crates publish to **crates.io** in dependency order via `scripts/release.sh`
 (bupha-triggered on push). The binary is also installable from source:
 `cargo install --git https://github.com/9aia/tamias tamias`. The script needs

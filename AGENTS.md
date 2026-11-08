@@ -69,7 +69,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `crates/tamias-publish` | author-side orchestration |
 | `crates/tamias-testkit` | fixtures + impl conformance |
 | `crates/tamias-cli` | the `tamias` binary — clap, `--json`, `manifest`/`schema` |
-| `xtask` (pkg `tamias-xtask`) | check / test / coverage / install / site |
+| `xtask` (pkg `tamias-xtask`) | check / test / coverage / install / package / site |
 
 > **Seed state (P2 re-derivation).** This repo was seeded from a copy of
 > `cuora`, so the crates currently carry cuora's vault/identity/deploy
@@ -102,6 +102,7 @@ multi-actor arbitration belongs to peregrin.
 ```bash
 cargo xtask check          # fmt + clippy -D warnings
 cargo xtask test           # whole suite (nextest if present)
+cargo xtask package        # cargo package --workspace (verify) — pre-release
 cargo xtask coverage       # llvm-cov report (HTML → target/llvm-cov/html);
                            # extra args pass through, e.g. --fail-under-lines 97
 cargo xtask install        # release-install tamias → ~/.cargo/bin
