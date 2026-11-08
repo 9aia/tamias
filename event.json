@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-driver-conformance","actor":"luis","ts":1794178794,"op":{"op":"claim","glob":"examples/**","ttl_secs":7200}}
+{"id":"","ws":"devin-driver-conformance","actor":"luis","ts":1794178794,"op":{"op":"claim","glob":"crates/tamias-store-local/**","ttl_secs":7200}}
