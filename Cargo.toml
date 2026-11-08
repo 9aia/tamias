@@ -36,6 +36,9 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/9aia/tamias"
 description = "Package & content manager for the agent factory — fetch, store, cache, dispense"
+keywords = ["package-manager", "content", "cli", "distribution"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
 
 [profile.dist]
 inherits = "release"

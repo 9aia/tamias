@@ -5,8 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-keywords = ["secrets", "tamias"]
-categories = ["development-tools"]
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [dependencies]
 

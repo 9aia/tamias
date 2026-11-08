@@ -5,8 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-keywords = ["package-manager", "content", "cli"]
-categories = ["development-tools"]
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [[bin]]
 name = "tamias"
