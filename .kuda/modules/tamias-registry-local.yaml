@@ -1,0 +1,145 @@
+name: tamias-registry-local
+path: crates/tamias-registry-local/Cargo.toml
+purpose: dir registry impl — a folder index, servable over HTTP
+api:
+- name: LocalRegistry
+  kind: type
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 17
+  module: tamias-registry-local
+- name: bad_index_errors
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 275
+  module: tamias-registry-local
+- name: entries
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 40
+  module: tamias-registry-local
+- name: entries_publish_twice_and_label
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 226
+  module: tamias-registry-local
+- name: handle
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 116
+  module: tamias-registry-local
+- name: index_path
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 34
+  module: tamias-registry-local
+- name: new
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 24
+  module: tamias-registry-local
+- name: publish
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 51
+  module: tamias-registry-local
+- name: publish_and_read_io_errors
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 283
+  module: tamias-registry-local
+- name: publish_and_search
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 208
+  module: tamias-registry-local
+- name: raw
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 244
+  module: tamias-registry-local
+- name: respond
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 181
+  module: tamias-registry-local
+- name: respond_unknown_code_uses_error_reason
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 374
+  module: tamias-registry-local
+- name: root
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 30
+  module: tamias-registry-local
+- name: sanitize_default_curdir_arms
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 348
+  module: tamias-registry-local
+- name: sanitize_key
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 165
+  module: tamias-registry-local
+- name: search_scoped_entry
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 332
+  module: tamias-registry-local
+- name: serve_http
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 96
+  module: tamias-registry-local
+- name: serve_http_io_errors
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 415
+  module: tamias-registry-local
+- name: serve_http_method_and_query
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 313
+  module: tamias-registry-local
+- name: serve_http_roundtrip
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 254
+  module: tamias-registry-local
+- name: serve_io_error_arms
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 391
+  module: tamias-registry-local
+- name: tamias-registry-local
+  kind: module
+  file: crates/tamias-registry-local/Cargo.toml
+  line: 1
+  module: tamias-registry-local
+- name: tests
+  kind: module
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 204
+  module: tamias-registry-local
+deps:
+- serde_json
+- tamias-core
+- tamias-registry
+- tempfile
+- tamias-core
+- tamias-registry
+notes: ''
+verify:
+- crates/tamias-registry-local/Cargo.toml
+- crates/tamias-registry-local/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-registry-local/Cargo.toml
+  - crates/tamias-registry-local/src/lib.rs
+  hashes:
+  - 51ef3679e4e57f8ded9dd6b8fe7be1488e63be2e
+  - f614e7f1d78b3187dac88d62bb1dd69b5dc9c189
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

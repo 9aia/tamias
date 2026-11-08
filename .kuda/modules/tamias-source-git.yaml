@@ -1,0 +1,158 @@
+name: tamias-source-git
+path: crates/tamias-source-git/Cargo.toml
+purpose: 'git source impl — clone URL //subdir #rev'
+api:
+- name: ForeignPlan
+  kind: type
+  file: crates/tamias-source-git/src/lib.rs
+  line: 311
+  module: tamias-source-git
+- name: GitPlan
+  kind: type
+  file: crates/tamias-source-git/src/lib.rs
+  line: 225
+  module: tamias-source-git
+- name: GitRefKind
+  kind: type
+  file: crates/tamias-source-git/src/lib.rs
+  line: 17
+  module: tamias-source-git
+- name: GitSource
+  kind: type
+  file: crates/tamias-source-git/src/lib.rs
+  line: 215
+  module: tamias-source-git
+- name: GitSpec
+  kind: type
+  file: crates/tamias-source-git/src/lib.rs
+  line: 21
+  module: tamias-source-git
+- name: accepts
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 241
+  module: tamias-source-git
+- name: claims
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 31
+  module: tamias-source-git
+- name: expand_url
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 172
+  module: tamias-source-git
+- name: fetch
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 263
+  module: tamias-source-git
+- name: git
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 314
+  module: tamias-source-git
+- name: grammar_plan_fetch_and_errors
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 329
+  module: tamias-source-git
+- name: is_full_sha
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 155
+  module: tamias-source-git
+- name: is_hex_prefix
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 163
+  module: tamias-source-git
+- name: is_scp_style
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 110
+  module: tamias-source-git
+- name: new
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 220
+  module: tamias-source-git
+- name: normalize_clone_url
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 118
+  module: tamias-source-git
+- name: parse
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 35
+  module: tamias-source-git
+- name: parse_git
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 42
+  module: tamias-source-git
+- name: parse_ls_remote
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 183
+  module: tamias-source-git
+- name: plan
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 245
+  module: tamias-source-git
+- name: prefetch_identity
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 233
+  module: tamias-source-git
+- name: resolve_remote
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 192
+  module: tamias-source-git
+- name: run_git
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 138
+  module: tamias-source-git
+- name: split_subdir
+  kind: function
+  file: crates/tamias-source-git/src/lib.rs
+  line: 70
+  module: tamias-source-git
+- name: tamias-source-git
+  kind: module
+  file: crates/tamias-source-git/Cargo.toml
+  line: 1
+  module: tamias-source-git
+- name: tests
+  kind: module
+  file: crates/tamias-source-git/src/lib.rs
+  line: 304
+  module: tamias-source-git
+deps:
+- tamias-core
+- tamias-source
+- proptest
+- tempfile
+- tamias-source
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-source-git/Cargo.toml
+- crates/tamias-source-git/src/lib.rs
+- crates/tamias-source-git/tests/props.rs
+provenance:
+  files:
+  - crates/tamias-source-git/Cargo.toml
+  - crates/tamias-source-git/src/lib.rs
+  - crates/tamias-source-git/tests/props.rs
+  hashes:
+  - b2c91e14f608a8c4940afb269d0c3f6f2efa331f
+  - cf51fa2b3907f9006dce3e6a460e8bb16521a5d2
+  - 7e35a941c7f966c9ffa13f0ca7623d4a3bd65bb4
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

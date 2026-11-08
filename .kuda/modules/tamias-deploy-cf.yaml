@@ -1,233 +1,59 @@
 name: tamias-deploy-cf
 path: crates/tamias-deploy-cf/Cargo.toml
-purpose: 'Deploy impl: push secret values to a Cloudflare account Secrets Store (write-only sink) via the CF API v4'
+purpose: Cloudflare deploy impl — the registry Worker + wrangler config
 api:
-- name: CfSecretsStore
+- name: CfDeploy
   kind: type
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 40
+  line: 20
   module: tamias-deploy-cf
-- name: DEFAULT_BASE
+- name: WORKER_JS
   kind: const
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 29
+  line: 14
   module: tamias-deploy-cf
-- name: DEFAULT_TOKEN_ENV
+- name: WRANGLER_TOML
   kind: const
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 32
+  line: 16
   module: tamias-deploy-cf
-- name: FAKE
-  kind: const
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 12
-  module: tamias-deploy-cf
-- name: MAX_RESPONSE_BODY
-  kind: const
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 36
-  module: tamias-deploy-cf
-- name: TOKEN
-  kind: const
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 13
-  module: tamias-deploy-cf
-- name: a_body_short_of_content_length_is_an_io_error
+- name: deploy
   kind: function
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 426
+  line: 23
   module: tamias-deploy-cf
-- name: a_body_short_of_content_length_is_an_io_error
+- name: deploy_writes_worker_and_config
   kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 240
+  file: crates/tamias-deploy-cf/src/lib.rs
+  line: 44
   module: tamias-deploy-cf
 - name: tamias-deploy-cf
   kind: module
   file: crates/tamias-deploy-cf/Cargo.toml
   line: 1
   module: tamias-deploy-cf
-- name: bad_token_maps_to_unauthorized
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 67
-  module: tamias-deploy-cf
-- name: base_url_must_be_https_or_loopback_http
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 362
-  module: tamias-deploy-cf
-- name: die_after_first
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 97
-  module: tamias-deploy-cf
-- name: envelope
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 203
-  module: tamias-deploy-cf
-- name: envelope_failures_on_each_verb_are_errors
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 173
-  module: tamias-deploy-cf
-- name: envelope_reads_the_cf_contract
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 467
-  module: tamias-deploy-cf
-- name: find_id
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 234
-  module: tamias-deploy-cf
-- name: find_id_and_transport_errors_are_clean
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 492
-  module: tamias-deploy-cf
-- name: find_id_treats_malformed_and_missing_results_as_absent
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 148
-  module: tamias-deploy-cf
-- name: is_loopback_host
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 272
-  module: tamias-deploy-cf
-- name: malformed_requests_get_cf_errors_not_panics
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 263
-  module: tamias-deploy-cf
-- name: mock_with_existing
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 124
-  module: tamias-deploy-cf
-- name: name
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 281
-  module: tamias-deploy-cf
-- name: new
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 55
-  module: tamias-deploy-cf
-- name: new_reads_the_token_env_var
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 343
-  module: tamias-deploy-cf
-- name: post_and_delete_envelope_failures_are_errors
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 187
-  module: tamias-deploy-cf
-- name: push
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 285
-  module: tamias-deploy-cf
-- name: push_creates_then_updates
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 20
-  module: tamias-deploy-cf
-- name: remove
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 318
-  module: tamias-deploy-cf
-- name: remove_true_then_false
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 56
-  module: tamias-deploy-cf
-- name: request
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 135
-  module: tamias-deploy-cf
-- name: request_rejects_unknown_method_body_shapes
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 407
-  module: tamias-deploy-cf
-- name: request_serves_every_verb_shape
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 451
-  module: tamias-deploy-cf
-- name: secrets_url
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 125
-  module: tamias-deploy-cf
-- name: sink_name
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 111
-  module: tamias-deploy-cf
-- name: sink_names_are_stable
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 84
-  module: tamias-deploy-cf
-- name: target
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 337
-  module: tamias-deploy-cf
-- name: target
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 15
-  module: tamias-deploy-cf
 - name: tests
   kind: module
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 334
+  line: 38
   module: tamias-deploy-cf
-- name: transport_death_on_patch_post_and_delete_are_io_errors
-  kind: function
-  file: crates/tamias-deploy-cf/tests/deploy.rs
-  line: 209
-  module: tamias-deploy-cf
-- name: validate_base_url
-  kind: function
-  file: crates/tamias-deploy-cf/src/lib.rs
-  line: 252
-  module: tamias-deploy-cf
-api_omitted: 1
 deps:
 - tamias-core
 - tamias-deploy
-- serde_json
-- ureq
-- tamias-testkit
-- temp-env
+- tempfile
 - tamias-core
 - tamias-deploy
-- tamias-testkit
-- ureq
 notes: ''
 verify:
 - crates/tamias-deploy-cf/Cargo.toml
 - crates/tamias-deploy-cf/src/lib.rs
-- crates/tamias-deploy-cf/tests/deploy.rs
 provenance:
   files:
   - crates/tamias-deploy-cf/Cargo.toml
   - crates/tamias-deploy-cf/src/lib.rs
-  - crates/tamias-deploy-cf/tests/deploy.rs
   hashes:
-  - 7a61cefca5b4664322a3b081cbc36b30130bf13d
-  - 8de27520407b106dd98f64d98a03475c4dfb90d4
-  - 5641bc2f28cda761275518cfa29c55bad271e8d4
-  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
-  generated_at: '1793684916'
+  - 1bb89b67605f598c9a5fb1f2eb04d4eda1093f50
+  - 8e9c899f3c48e22aabd392718963f0ac4f7c2391
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
   generator: kuda-template/0.1.2

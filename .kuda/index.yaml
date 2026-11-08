@@ -1,73 +1,114 @@
 name: tamias
 root: /home/luis/GitHub/9aia/tamias
-purpose: '*Package & content manager for the agent factory — fetch, store, cache, dispense.*'
+purpose: '*Package & content manager for the agent factory — fetch, store,'
 modules:
+- docs
+- project
 - tamias
+- tamias-cache
+- tamias-cache-cf
+- tamias-cache-local
 - tamias-config
 - tamias-config-toml
+- tamias-config-yml
 - tamias-core
 - tamias-deploy
 - tamias-deploy-cf
-- tamias-identity
-- tamias-identity-file
-- tamias-identity-keyring
-- tamias-ops
+- tamias-deploy-local
+- tamias-driver
+- tamias-driver-tamias
+- tamias-fuzz
+- tamias-publish
+- tamias-registry
+- tamias-registry-cf
+- tamias-registry-local
 - tamias-serve
 - tamias-shell
+- tamias-source
+- tamias-source-cf
+- tamias-source-fs
+- tamias-source-git
+- tamias-source-http
+- tamias-store
+- tamias-store-cf
+- tamias-store-local
+- tamias-telemetry
 - tamias-testkit
-- tamias-tui
-- tamias-vault
-- tamias-vault-age
-- tamias-vault-cf
 - tamias-xtask
 commands:
 - cargo check
 - cargo test --workspace
-tree_digest: b546d6f89c61c6e5b37ea74a5ff30d15bf4185cf
-files_total: 80
+tree_digest: 93c191710f9dab37e955c01493038941261e85fa
+files_total: 131
 provenance:
   files:
   - Cargo.toml
   - README.md
+  - crates/tamias-cache/Cargo.toml
+  - crates/tamias-cache-cf/Cargo.toml
+  - crates/tamias-cache-local/Cargo.toml
   - crates/tamias-cli/Cargo.toml
   - crates/tamias-config/Cargo.toml
   - crates/tamias-config-toml/Cargo.toml
+  - crates/tamias-config-yml/Cargo.toml
   - crates/tamias-core/Cargo.toml
   - crates/tamias-deploy/Cargo.toml
   - crates/tamias-deploy-cf/Cargo.toml
-  - crates/tamias-identity/Cargo.toml
-  - crates/tamias-identity-file/Cargo.toml
-  - crates/tamias-identity-keyring/Cargo.toml
-  - crates/tamias-ops/Cargo.toml
+  - crates/tamias-deploy-local/Cargo.toml
+  - crates/tamias-driver/Cargo.toml
+  - crates/tamias-driver-tamias/Cargo.toml
+  - crates/tamias-publish/Cargo.toml
+  - crates/tamias-registry/Cargo.toml
+  - crates/tamias-registry-cf/Cargo.toml
+  - crates/tamias-registry-local/Cargo.toml
   - crates/tamias-serve/Cargo.toml
   - crates/tamias-shell/Cargo.toml
+  - crates/tamias-source/Cargo.toml
+  - crates/tamias-source-cf/Cargo.toml
+  - crates/tamias-source-fs/Cargo.toml
+  - crates/tamias-source-git/Cargo.toml
+  - crates/tamias-source-http/Cargo.toml
+  - crates/tamias-store/Cargo.toml
+  - crates/tamias-store-cf/Cargo.toml
+  - crates/tamias-store-local/Cargo.toml
+  - crates/tamias-telemetry/Cargo.toml
   - crates/tamias-testkit/Cargo.toml
-  - crates/tamias-tui/Cargo.toml
-  - crates/tamias-vault/Cargo.toml
-  - crates/tamias-vault-age/Cargo.toml
-  - crates/tamias-vault-cf/Cargo.toml
+  - fuzz/Cargo.toml
   - xtask/Cargo.toml
   hashes:
-  - 65f4dae5d073ddbbf1475e1be2024fb99919eb84
-  - 704abb17c3c236de7f53e0767040dc521c3ce81e
-  - 4f6c201493139ae473e54824ef6afa0a9572e431
-  - cf00672b233762c2e1aa7121fa3921782757a2df
-  - 3bb6412ec59f79642d32c9aa8f4c45e38be95068
-  - 6dcc3b1198677927e82d542e41e26fab610796b1
-  - fc4e4318276c49bf88d4c39a46e2f04b1aeff9a4
-  - 7a61cefca5b4664322a3b081cbc36b30130bf13d
-  - d68fda81cc69983fbbdb3b9130c7c2e9540ea1a7
-  - 1b8e235789058404a28e464ce18bcf798558876a
-  - 2834df38f1023d6910c9c16960ab325e6b5254ef
-  - d7beff3210026cccf25ab65b01f2f181424e5681
-  - 3b2a5797b7f36f6269b6a5eb1ecbe1e70d8b5a6b
-  - d1e286873314306b3ec3e30cd61cc9db964378d0
-  - 714ef5eddf2c1868b02fd1eac622b2f2c3737911
-  - 98c2adeaee57801617a05341fcfba6228dabd630
-  - e58ba1bc7da3c98491c89cf9d751bb9cf3858afb
-  - 96fdab5840dab381baa9f5260b2023f08fc7e3f5
-  - b46d583411dc1b18a9083b85f11b657f92017a4b
-  - 9c55ec755d27dd29ba8bd214918b0213f0283c14
-  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
-  generated_at: '1793684916'
+  - 76bfc0231b551b7627944a7a00aedffc6f47270d
+  - 0b89dc8ba25f7ea821b5f45ec3bf04762a0df9bf
+  - d3af5c2636a8492ae8561db2d7eabe89a24c1deb
+  - 95adcd142d2c55cd9d4e27639ed03ca898bbca04
+  - 73bb965ca9ce52943f387dabc8f131403a583539
+  - 0f7b31b75d2a9b866859d327236d81f5ea8f1e06
+  - 632480163263ef27edab2d729003066436e1a9d5
+  - e2354bf66bcc103954918876c89f75663f28633e
+  - ea0b53562003a16213fbdc77d5703be0e3914475
+  - 3768f539fab709dfed5a488a2ba669f602e14f73
+  - cf266e216f76188736f30f53afcff0fdf41e03bd
+  - 1bb89b67605f598c9a5fb1f2eb04d4eda1093f50
+  - dbaf50440fe4217f50e69cb22cfff2951f69d2f0
+  - d6affaac6d38ba853246c8395a498bcbf7928cbd
+  - d46b4b42711504ab1edbf97d84d8aeeccd95abe0
+  - 9440703dd04a239939c9344b76f465db689a29ad
+  - 9ab3d6d666009614cefb8ee05e7662792a43f5dd
+  - 4f714bbab201b2a39c74f752ad5126919e1ccbb3
+  - 51ef3679e4e57f8ded9dd6b8fe7be1488e63be2e
+  - 26de38b58a51422324db9bbdaf39f3befff690b1
+  - dc01851714866bc619be1b91ea503f0c050c8b2c
+  - 5642cf8eac81db3c8aef874126c2638e546113ef
+  - 1455812a4c18d352c6d58bbc8102e69502d7e09e
+  - 3edf974934fe0d1657a0c378f864811440c8aa48
+  - b2c91e14f608a8c4940afb269d0c3f6f2efa331f
+  - 59ec68e1f9512a030552d9b51e0e59cef86fce9d
+  - eec68fc51ceb51f5cd9c8f31ab31d71e77e75f47
+  - 8ae64c043758a8753ba6fe63fa3b82b4f52930f8
+  - b72ecdfc35205627f0652e893fcaa0e5558afc3b
+  - 11e5afcee2642dd5e6031549c4c19e03372969fc
+  - 371a0d2a29dd41b3a5c93b1a96fc6aea0ea11cfe
+  - 57ca36cf313852cc8f22ea5be173bded5d2f1ed6
+  - b082fd52c6693e2e905507a9e7605d68880524fe
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
   generator: kuda/0.1.0

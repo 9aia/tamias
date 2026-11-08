@@ -1,0 +1,113 @@
+name: tamias-driver
+path: crates/tamias-driver/Cargo.toml
+purpose: content driver host — discovery + dispatch of tamias-driver-<type> (no product knowledge)
+api:
+- name: ENV
+  kind: const
+  file: crates/tamias-driver/src/lib.rs
+  line: 191
+  module: tamias-driver
+- name: capability_and_error_paths
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 249
+  module: tamias-driver
+- name: discovered_drivers
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 90
+  module: tamias-driver
+- name: dispatch
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 125
+  module: tamias-driver
+- name: dispatch_none_and_driver
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 194
+  module: tamias-driver
+- name: dispatch_with_config_and_non_file_entry
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 293
+  module: tamias-driver
+- name: driver_handles
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 69
+  module: tamias-driver
+- name: drivers_dir
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 36
+  module: tamias-driver
+- name: find_driver
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 43
+  module: tamias-driver
+- name: find_via_path
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 275
+  module: tamias-driver
+- name: home_defaults
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 229
+  module: tamias-driver
+- name: lookup
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 56
+  module: tamias-driver
+- name: register_bundled_drivers
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 158
+  module: tamias-driver
+- name: register_bundled_drivers_copies
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 214
+  module: tamias-driver
+- name: tamias-driver
+  kind: module
+  file: crates/tamias-driver/Cargo.toml
+  line: 1
+  module: tamias-driver
+- name: tamias_home
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 26
+  module: tamias-driver
+- name: tests
+  kind: module
+  file: crates/tamias-driver/src/lib.rs
+  line: 186
+  module: tamias-driver
+- name: write_driver
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 236
+  module: tamias-driver
+deps:
+- serde_json
+- tamias-core
+- tempfile
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-driver/Cargo.toml
+- crates/tamias-driver/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-driver/Cargo.toml
+  - crates/tamias-driver/src/lib.rs
+  hashes:
+  - d6affaac6d38ba853246c8395a498bcbf7928cbd
+  - 10fe8f06bd4d7efc4d635acfb6cf99d2015b3186
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

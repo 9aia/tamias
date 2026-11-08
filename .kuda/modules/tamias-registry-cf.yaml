@@ -1,0 +1,128 @@
+name: tamias-registry-cf
+path: crates/tamias-registry-cf/Cargo.toml
+purpose: Cloudflare registry impl — a Worker + R2 over HTTP
+api:
+- name: HttpRegistry
+  kind: type
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 18
+  module: tamias-registry-cf
+- name: SEQ
+  kind: const
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 96
+  module: tamias-registry-cf
+- name: entries
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 108
+  module: tamias-registry-cf
+- name: entries_without_server_is_empty_and_env_token
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 162
+  module: tamias-registry-cf
+- name: from_env
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 51
+  module: tamias-registry-cf
+- name: from_env_token_header_is_sent
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 268
+  module: tamias-registry-cf
+- name: get
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 59
+  module: tamias-registry-cf
+- name: new
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 27
+  module: tamias-registry-cf
+- name: publish
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 116
+  module: tamias-registry-cf
+- name: publish_and_read_roundtrip
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 182
+  module: tamias-registry-cf
+- name: publish_tmp_path
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 95
+  module: tamias-registry-cf
+- name: publish_without_server_errors
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 173
+  module: tamias-registry-cf
+- name: put
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 77
+  module: tamias-registry-cf
+- name: put_non_success_errors
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 290
+  module: tamias-registry-cf
+- name: scoped_publish_put_token_and_overwrite
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 234
+  module: tamias-registry-cf
+- name: serve_500
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 206
+  module: tamias-registry-cf
+- name: server_error_status_paths
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 223
+  module: tamias-registry-cf
+- name: tamias-registry-cf
+  kind: module
+  file: crates/tamias-registry-cf/Cargo.toml
+  line: 1
+  module: tamias-registry-cf
+- name: tests
+  kind: module
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 156
+  module: tamias-registry-cf
+- name: with_token
+  kind: function
+  file: crates/tamias-registry-cf/src/lib.rs
+  line: 43
+  module: tamias-registry-cf
+deps:
+- serde_json
+- tamias-core
+- tamias-registry
+- ureq
+- tamias-registry-local
+- tempfile
+- tamias-core
+- tamias-registry
+- tamias-registry-local
+notes: ''
+verify:
+- crates/tamias-registry-cf/Cargo.toml
+- crates/tamias-registry-cf/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-registry-cf/Cargo.toml
+  - crates/tamias-registry-cf/src/lib.rs
+  hashes:
+  - 4f714bbab201b2a39c74f752ad5126919e1ccbb3
+  - d634a30359e81c0932257185035bf524666a6a14
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

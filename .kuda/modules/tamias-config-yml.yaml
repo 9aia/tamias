@@ -1,0 +1,59 @@
+name: tamias-config-yml
+path: crates/tamias-config-yml/Cargo.toml
+purpose: YAML config impl (the standard) — tamias.yml / tamias.yaml
+api:
+- name: YmlFormat
+  kind: type
+  file: crates/tamias-config-yml/src/lib.rs
+  line: 12
+  module: tamias-config-yml
+- name: extensions
+  kind: function
+  file: crates/tamias-config-yml/src/lib.rs
+  line: 15
+  module: tamias-config-yml
+- name: parse
+  kind: function
+  file: crates/tamias-config-yml/src/lib.rs
+  line: 19
+  module: tamias-config-yml
+- name: parses_yaml_and_rejects_toml
+  kind: function
+  file: crates/tamias-config-yml/src/lib.rs
+  line: 35
+  module: tamias-config-yml
+- name: render
+  kind: function
+  file: crates/tamias-config-yml/src/lib.rs
+  line: 23
+  module: tamias-config-yml
+- name: tamias-config-yml
+  kind: module
+  file: crates/tamias-config-yml/Cargo.toml
+  line: 1
+  module: tamias-config-yml
+- name: tests
+  kind: module
+  file: crates/tamias-config-yml/src/lib.rs
+  line: 31
+  module: tamias-config-yml
+deps:
+- serde_yaml_ng
+- tamias-config
+- tamias-core
+- tamias-config
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-config-yml/Cargo.toml
+- crates/tamias-config-yml/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-config-yml/Cargo.toml
+  - crates/tamias-config-yml/src/lib.rs
+  hashes:
+  - ea0b53562003a16213fbdc77d5703be0e3914475
+  - f58eaeafa6edab9f47ed7d6836db80856dc31b25
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

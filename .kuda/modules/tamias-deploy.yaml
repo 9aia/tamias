@@ -1,21 +1,11 @@
 name: tamias-deploy
 path: crates/tamias-deploy/Cargo.toml
-purpose: 'Deploy port: write-only push targets (sinks) for secret values — never a source'
+purpose: deploy port — provision a remote registry (Worker + R2 + D1/KV)
 api:
 - name: Deploy
   kind: trait
   file: crates/tamias-deploy/src/lib.rs
-  line: 35
-  module: tamias-deploy
-- name: DeployError
-  kind: type
-  file: crates/tamias-deploy/src/lib.rs
-  line: 52
-  module: tamias-deploy
-- name: PushReport
-  kind: type
-  file: crates/tamias-deploy/src/lib.rs
-  line: 25
+  line: 10
   module: tamias-deploy
 - name: tamias-deploy
   kind: module
@@ -24,7 +14,6 @@ api:
   module: tamias-deploy
 deps:
 - tamias-core
-- thiserror
 - tamias-core
 notes: ''
 verify:
@@ -35,8 +24,8 @@ provenance:
   - crates/tamias-deploy/Cargo.toml
   - crates/tamias-deploy/src/lib.rs
   hashes:
-  - fc4e4318276c49bf88d4c39a46e2f04b1aeff9a4
-  - d373d5d1932a3e20283aa02833d5ff4c25333208
-  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
-  generated_at: '1793684916'
+  - cf266e216f76188736f30f53afcff0fdf41e03bd
+  - fec8b2081e6694d932fa19fcfc1656e6f0884836
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
   generator: kuda-template/0.1.2

@@ -1,0 +1,144 @@
+name: tamias-source-http
+path: crates/tamias-source-http/Cargo.toml
+purpose: http source impl — .tgz GET + optional sha256 pin
+api:
+- name: CONNECT_TIMEOUT
+  kind: const
+  file: crates/tamias-source-http/src/lib.rs
+  line: 23
+  module: tamias-source-http
+- name: ForeignPlan
+  kind: type
+  file: crates/tamias-source-http/src/lib.rs
+  line: 201
+  module: tamias-source-http
+- name: HttpPlan
+  kind: type
+  file: crates/tamias-source-http/src/lib.rs
+  line: 113
+  module: tamias-source-http
+- name: HttpRefKind
+  kind: type
+  file: crates/tamias-source-http/src/lib.rs
+  line: 27
+  module: tamias-source-http
+- name: HttpSource
+  kind: type
+  file: crates/tamias-source-http/src/lib.rs
+  line: 82
+  module: tamias-source-http
+- name: HttpSpec
+  kind: type
+  file: crates/tamias-source-http/src/lib.rs
+  line: 31
+  module: tamias-source-http
+- name: MAX_TARBALL
+  kind: const
+  file: crates/tamias-source-http/src/lib.rs
+  line: 17
+  module: tamias-source-http
+- name: TIMEOUT
+  kind: const
+  file: crates/tamias-source-http/src/lib.rs
+  line: 20
+  module: tamias-source-http
+- name: accepts
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 138
+  module: tamias-source-http
+- name: claims
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 39
+  module: tamias-source-http
+- name: default
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 107
+  module: tamias-source-http
+- name: fetch
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 152
+  module: tamias-source-http
+- name: new
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 89
+  module: tamias-source-http
+- name: new
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 121
+  module: tamias-source-http
+- name: parse
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 45
+  module: tamias-source-http
+- name: parse_plan_fetch_and_errors
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 235
+  module: tamias-source-http
+- name: plan
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 142
+  module: tamias-source-http
+- name: prefetch_identity
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 130
+  module: tamias-source-http
+- name: serve
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 205
+  module: tamias-source-http
+- name: tamias-source-http
+  kind: module
+  file: crates/tamias-source-http/Cargo.toml
+  line: 1
+  module: tamias-source-http
+- name: tarball
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 225
+  module: tamias-source-http
+- name: tests
+  kind: module
+  file: crates/tamias-source-http/src/lib.rs
+  line: 192
+  module: tamias-source-http
+- name: with_agent
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 101
+  module: tamias-source-http
+deps:
+- tamias-core
+- tamias-source
+- ureq
+- proptest
+- tempfile
+- tamias-source
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-source-http/Cargo.toml
+- crates/tamias-source-http/src/lib.rs
+- crates/tamias-source-http/tests/props.rs
+provenance:
+  files:
+  - crates/tamias-source-http/Cargo.toml
+  - crates/tamias-source-http/src/lib.rs
+  - crates/tamias-source-http/tests/props.rs
+  hashes:
+  - 59ec68e1f9512a030552d9b51e0e59cef86fce9d
+  - 268627c7007f081971b0035a813246d416a38e1b
+  - 32ad9146c1e60127c9418e6b92325cf32e42357b
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

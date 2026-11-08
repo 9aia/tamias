@@ -1,0 +1,109 @@
+name: tamias-source-fs
+path: crates/tamias-source-fs/Cargo.toml
+purpose: fs source impl — local dirs and tarballs
+api:
+- name: ForeignPlan
+  kind: type
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 136
+  module: tamias-source-fs
+- name: FsPlan
+  kind: type
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 57
+  module: tamias-source-fs
+- name: FsRefKind
+  kind: type
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 17
+  module: tamias-source-fs
+- name: FsSource
+  kind: type
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 47
+  module: tamias-source-fs
+- name: FsSpec
+  kind: type
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 21
+  module: tamias-source-fs
+- name: accepts
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 64
+  module: tamias-source-fs
+- name: claims
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 27
+  module: tamias-source-fs
+- name: dir_tarball_and_error_arms
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 140
+  module: tamias-source-fs
+- name: fetch
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 78
+  module: tamias-source-fs
+- name: new
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 52
+  module: tamias-source-fs
+- name: parse
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 38
+  module: tamias-source-fs
+- name: plan
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 68
+  module: tamias-source-fs
+- name: tamias-source-fs
+  kind: module
+  file: crates/tamias-source-fs/Cargo.toml
+  line: 1
+  module: tamias-source-fs
+- name: tests
+  kind: module
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 123
+  module: tamias-source-fs
+- name: unpack_tarball
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 101
+  module: tamias-source-fs
+- name: wire
+  kind: function
+  file: crates/tamias-source-fs/src/lib.rs
+  line: 129
+  module: tamias-source-fs
+deps:
+- tamias-core
+- tamias-source
+- proptest
+- tar
+- tempfile
+- tamias-source
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-source-fs/Cargo.toml
+- crates/tamias-source-fs/src/lib.rs
+- crates/tamias-source-fs/tests/props.rs
+provenance:
+  files:
+  - crates/tamias-source-fs/Cargo.toml
+  - crates/tamias-source-fs/src/lib.rs
+  - crates/tamias-source-fs/tests/props.rs
+  hashes:
+  - 3edf974934fe0d1657a0c378f864811440c8aa48
+  - 547100b3b45a74082783646148f6ac0e1b3fc806
+  - e194a2a8b9ab50a30e5830f69e65edab56570cac
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

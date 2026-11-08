@@ -1,0 +1,73 @@
+name: tamias-registry
+path: crates/tamias-registry/Cargo.toml
+purpose: registry port — index + publish
+api:
+- name: Registry
+  kind: trait
+  file: crates/tamias-registry/src/lib.rs
+  line: 47
+  module: tamias-registry
+- name: RegistryEntry
+  kind: type
+  file: crates/tamias-registry/src/lib.rs
+  line: 13
+  module: tamias-registry
+- name: RegistryRef
+  kind: type
+  file: crates/tamias-registry/src/lib.rs
+  line: 79
+  module: tamias-registry
+- name: label
+  kind: function
+  file: crates/tamias-registry/src/lib.rs
+  line: 34
+  module: tamias-registry
+- name: label_and_ref_parse
+  kind: function
+  file: crates/tamias-registry/src/lib.rs
+  line: 106
+  module: tamias-registry
+- name: parse_registry_ref
+  kind: function
+  file: crates/tamias-registry/src/lib.rs
+  line: 88
+  module: tamias-registry
+- name: search
+  kind: function
+  file: crates/tamias-registry/src/lib.rs
+  line: 64
+  module: tamias-registry
+- name: tamias-registry
+  kind: module
+  file: crates/tamias-registry/Cargo.toml
+  line: 1
+  module: tamias-registry
+- name: tests
+  kind: module
+  file: crates/tamias-registry/src/lib.rs
+  line: 98
+  module: tamias-registry
+deps:
+- serde
+- serde_json
+- tamias-core
+- proptest
+- serde
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-registry/Cargo.toml
+- crates/tamias-registry/src/lib.rs
+- crates/tamias-registry/tests/props.rs
+provenance:
+  files:
+  - crates/tamias-registry/Cargo.toml
+  - crates/tamias-registry/src/lib.rs
+  - crates/tamias-registry/tests/props.rs
+  hashes:
+  - 9ab3d6d666009614cefb8ee05e7662792a43f5dd
+  - d6ad570e29047be481be5ceebaaa8ce97de9a25a
+  - 9c76c50538df4b424c71707ee8c7b4a786ad6101
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

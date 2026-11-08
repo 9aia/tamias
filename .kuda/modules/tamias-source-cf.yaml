@@ -1,0 +1,121 @@
+name: tamias-source-cf
+path: crates/tamias-source-cf/Cargo.toml
+purpose: Cloudflare registry source impl — the `cf:` ref arm
+api:
+- name: CfPlan
+  kind: type
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 102
+  module: tamias-source-cf
+- name: CfRefKind
+  kind: type
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 23
+  module: tamias-source-cf
+- name: CfSource
+  kind: type
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 92
+  module: tamias-source-cf
+- name: CfSpec
+  kind: type
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 27
+  module: tamias-source-cf
+- name: ForeignPlan
+  kind: type
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 150
+  module: tamias-source-cf
+- name: accepts
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 109
+  module: tamias-source-cf
+- name: cf_base_url
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 71
+  module: tamias-source-cf
+- name: claims
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 39
+  module: tamias-source-cf
+- name: fetch
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 133
+  module: tamias-source-cf
+- name: grammar_plan_fetch_and_errors
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 185
+  module: tamias-source-cf
+- name: new
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 97
+  module: tamias-source-cf
+- name: parse
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 43
+  module: tamias-source-cf
+- name: parse_cf
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 49
+  module: tamias-source-cf
+- name: plan
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 113
+  module: tamias-source-cf
+- name: serve_registry
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 155
+  module: tamias-source-cf
+- name: tamias-source-cf
+  kind: module
+  file: crates/tamias-source-cf/Cargo.toml
+  line: 1
+  module: tamias-source-cf
+- name: tests
+  kind: module
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 144
+  module: tamias-source-cf
+deps:
+- tamias-core
+- tamias-registry
+- tamias-registry-cf
+- tamias-source
+- tamias-source-http
+- proptest
+- tamias-registry-local
+- tempfile
+- tamias-source
+- tamias-core
+- tamias-registry
+- tamias-registry-cf
+- tamias-source-http
+- tamias-registry-local
+notes: ''
+verify:
+- crates/tamias-source-cf/Cargo.toml
+- crates/tamias-source-cf/src/lib.rs
+- crates/tamias-source-cf/tests/props.rs
+provenance:
+  files:
+  - crates/tamias-source-cf/Cargo.toml
+  - crates/tamias-source-cf/src/lib.rs
+  - crates/tamias-source-cf/tests/props.rs
+  hashes:
+  - 1455812a4c18d352c6d58bbc8102e69502d7e09e
+  - 0e2236898d3afd2017dfd885e0c36e5e876266b8
+  - 32215f5222a96dc1a54fe876d70b722b8adf36d1
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

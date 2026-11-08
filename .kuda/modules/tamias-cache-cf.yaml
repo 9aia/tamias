@@ -1,0 +1,25 @@
+name: tamias-cache-cf
+path: crates/tamias-cache-cf/Cargo.toml
+purpose: Cloudflare adapter (P6)
+api:
+- name: tamias-cache-cf
+  kind: module
+  file: crates/tamias-cache-cf/Cargo.toml
+  line: 1
+  module: tamias-cache-cf
+deps:
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-cache-cf/Cargo.toml
+- crates/tamias-cache-cf/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-cache-cf/Cargo.toml
+  - crates/tamias-cache-cf/src/lib.rs
+  hashes:
+  - 95adcd142d2c55cd9d4e27639ed03ca898bbca04
+  - 91de0e48cf0a6dc7d00d09babdd9b1acfbe02692
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

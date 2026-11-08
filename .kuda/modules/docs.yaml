@@ -1,0 +1,65 @@
+name: docs
+path: docs/package.json
+purpose: documentation corpus — pages as records, backticked refs as edges
+api: []
+deps: []
+notes: ''
+verify:
+- docs/package.json
+- docs/README.md
+- docs/explanation/architecture.md
+- docs/explanation/boundaries.md
+- docs/explanation/content-types.md
+- docs/gen-api-index.py
+- docs/gen-api.py
+- docs/gen-config-docs.py
+- docs/gen-crate-map.py
+- docs/getting-started.md
+provenance:
+  files:
+  - docs/README.md
+  - docs/explanation/architecture.md
+  - docs/explanation/boundaries.md
+  - docs/explanation/content-types.md
+  - docs/gen-api-index.py
+  - docs/gen-api.py
+  - docs/gen-config-docs.py
+  - docs/gen-crate-map.py
+  - docs/getting-started.md
+  - docs/how-to/install-from-git.md
+  - docs/how-to/provision-a-service.md
+  - docs/how-to/publish-to-a-registry.md
+  - docs/how-to/write-a-driver.md
+  - docs/index.md
+  - docs/package.json
+  - docs/public/api/static.files/SourceSerif4-LICENSE-a2cfd9d5.md
+  - docs/reference/cli.md
+  - docs/reference/config.md
+  - docs/reference/crate-api.md
+  - docs/reference/refs.md
+  - docs/tutorials/first-package.md
+  hashes:
+  - 3e2567532d755741f01fd8d843314a585c92065e
+  - 10ab952e5dba5773f02fd5607bdef0cc14c48fc2
+  - 637070c640f4071506b164dfb9f8b3151325e293
+  - 0026d6f15dd7e69aecf81a38e085b866563d68c6
+  - 352656ecb5acf8fa9fa3788c3fcab8bb669a661d
+  - 200738f01ff6ce4eeb91dbf66c4521d3fc333da5
+  - e1b6a01bfa589f3b9c31f93e20c99ef466fd9db1
+  - 12239f581061f01ef1cd6fd09b369cff36083caf
+  - 0e3fd1018b1c128271ed86ce75fc0cb8c9467e9b
+  - cc4b84afadbe1209b3668503d5e31f37547003f1
+  - 66d44169868f5cafcecb7012bd21953e47e98b41
+  - 4c4cf8df26a558340b413f74e809f3684b9b217e
+  - eb45ccc7d794b5b909bb16ebbd8a385d7348dac8
+  - fd49412c0b9f1eb1a8f342536cf16e08eb14e08f
+  - 722c6aa2587e0e12d76a3fca579b88a205463d49
+  - 175fa4f47aecdc02e902d243a1c29914eb2ee258
+  - 751360a4845899448a29e67a23ffb23f57577289
+  - 87fca7f366450df9a7e8a1b304b17237e4e93b77
+  - c9f226b29b36a8c46b4f29d8cdd71553a0e11caa
+  - 6c3a28c35906e66adebecde5a99a50239e8395cf
+  - 27a2cea51055c3c6940ce2786dddd274edad5653
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

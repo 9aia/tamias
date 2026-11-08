@@ -1,252 +1,272 @@
 name: tamias-core
 path: crates/tamias-core/Cargo.toml
-purpose: 'tamias domain core: tamias:// refs, redacting Secret, env axis, actor, config model — pure, no I/O'
+purpose: Pure domain — package identity (@scope/name@semver), refs, manifests, records, digests (no I/O)
 api:
-- name: ALL
-  kind: const
-  file: crates/tamias-core/src/op.rs
-  line: 49
-  module: tamias-core
-- name: Actor
+- name: DocFormat
   kind: type
-  file: crates/tamias-core/src/actor.rs
-  line: 12
-  module: tamias-core
-- name: Config
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 43
-  module: tamias-core
-- name: DeployConfig
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 156
-  module: tamias-core
-- name: Env
-  kind: type
-  file: crates/tamias-core/src/env.rs
-  line: 12
-  module: tamias-core
-- name: EnvRoute
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 184
-  module: tamias-core
-- name: EnvRouteTable
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 195
-  module: tamias-core
-- name: Err
-  kind: type
-  file: crates/tamias-core/src/actor.rs
-  line: 47
-  module: tamias-core
-- name: Err
-  kind: type
-  file: crates/tamias-core/src/env.rs
-  line: 60
-  module: tamias-core
-- name: Err
-  kind: type
-  file: crates/tamias-core/src/op.rs
-  line: 97
-  module: tamias-core
-- name: Err
-  kind: type
-  file: crates/tamias-core/src/refs.rs
-  line: 98
+  file: crates/tamias-core/src/overlay.rs
+  line: 62
   module: tamias-core
 - name: Error
   kind: type
-  file: crates/tamias-core/src/actor.rs
-  line: 55
-  module: tamias-core
-- name: GuardDefault
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 226
-  module: tamias-core
-- name: Guardrails
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 243
-  module: tamias-core
-- name: LOCAL_VAULT
-  kind: const
-  file: crates/tamias-core/src/config.rs
-  line: 37
-  module: tamias-core
-- name: Op
-  kind: type
-  file: crates/tamias-core/src/op.rs
-  line: 14
-  module: tamias-core
-- name: ParseActorError
-  kind: type
-  file: crates/tamias-core/src/actor.rs
-  line: 44
-  module: tamias-core
-- name: ParseEnvError
-  kind: type
-  file: crates/tamias-core/src/env.rs
-  line: 57
-  module: tamias-core
-- name: ParseOpError
-  kind: type
-  file: crates/tamias-core/src/op.rs
-  line: 71
-  module: tamias-core
-- name: ParseRefError
-  kind: type
-  file: crates/tamias-core/src/refs.rs
-  line: 95
-  module: tamias-core
-- name: PdpConfig
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 300
-  module: tamias-core
-- name: Ref
-  kind: type
-  file: crates/tamias-core/src/refs.rs
-  line: 23
-  module: tamias-core
-- name: SCHEME
-  kind: const
-  file: crates/tamias-core/src/refs.rs
-  line: 19
-  module: tamias-core
-- name: Secret
-  kind: type
-  file: crates/tamias-core/src/secret.rs
-  line: 16
-  module: tamias-core
-- name: ServeConfig
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 280
-  module: tamias-core
-- name: VaultConfig
-  kind: type
-  file: crates/tamias-core/src/config.rs
-  line: 104
-  module: tamias-core
-- name: WELL_KNOWN
-  kind: const
-  file: crates/tamias-core/src/env.rs
-  line: 17
-  module: tamias-core
-- name: actor
-  kind: module
-  file: crates/tamias-core/src/lib.rs
-  line: 7
-  module: tamias-core
-- name: all_covers_schema
-  kind: function
-  file: crates/tamias-core/src/op.rs
-  line: 136
-  module: tamias-core
-- name: allows
-  kind: function
-  file: crates/tamias-core/src/config.rs
-  line: 265
-  module: tamias-core
-- name: tamias-core
-  kind: module
-  file: crates/tamias-core/Cargo.toml
-  line: 1
-  module: tamias-core
-- name: as_str
-  kind: function
-  file: crates/tamias-core/src/actor.rs
-  line: 26
-  module: tamias-core
-- name: as_str
-  kind: function
-  file: crates/tamias-core/src/env.rs
-  line: 34
-  module: tamias-core
-- name: as_str
-  kind: function
-  file: crates/tamias-core/src/op.rs
-  line: 75
-  module: tamias-core
-- name: cf_tokens_and_private_refs_parse
-  kind: function
-  file: crates/tamias-core/src/config.rs
-  line: 385
-  module: tamias-core
-- name: config
-  kind: module
-  file: crates/tamias-core/src/lib.rs
+  file: crates/tamias-core/src/error.rs
   line: 8
   module: tamias-core
-- name: conversions_and_display
-  kind: function
-  file: crates/tamias-core/src/actor.rs
-  line: 136
+- name: Identity
+  kind: type
+  file: crates/tamias-core/src/identity.rs
+  line: 15
   module: tamias-core
-- name: default_deploy_kind
-  kind: function
-  file: crates/tamias-core/src/config.rs
-  line: 175
+- name: IdentityError
+  kind: type
+  file: crates/tamias-core/src/identity.rs
+  line: 26
   module: tamias-core
-- name: default_kind
-  kind: function
-  file: crates/tamias-core/src/config.rs
-  line: 143
+- name: Lock
+  kind: type
+  file: crates/tamias-core/src/project.rs
+  line: 13
   module: tamias-core
-- name: deploy_config
-  kind: function
-  file: crates/tamias-core/src/config.rs
-  line: 95
+- name: LockEntry
+  kind: type
+  file: crates/tamias-core/src/project.rs
+  line: 20
   module: tamias-core
-api_omitted: 86
+- name: MANIFEST_NAMES
+  kind: const
+  file: crates/tamias-core/src/manifest.rs
+  line: 11
+  module: tamias-core
+- name: Manifest
+  kind: type
+  file: crates/tamias-core/src/manifest.rs
+  line: 16
+  module: tamias-core
+- name: RECORD_FILE
+  kind: const
+  file: crates/tamias-core/src/records.rs
+  line: 12
+  module: tamias-core
+- name: StoreEntry
+  kind: type
+  file: crates/tamias-core/src/records.rs
+  line: 40
+  module: tamias-core
+- name: StoreRecord
+  kind: type
+  file: crates/tamias-core/src/records.rs
+  line: 17
+  module: tamias-core
+- name: apply_layer
+  kind: function
+  file: crates/tamias-core/src/overlay.rs
+  line: 131
+  module: tamias-core
+- name: apply_layer_copy_error
+  kind: function
+  file: crates/tamias-core/src/overlay.rs
+  line: 244
+  module: tamias-core
+- name: apply_layer_unparseable_doc_falls_through_to_copy
+  kind: function
+  file: crates/tamias-core/src/overlay.rs
+  line: 254
+  module: tamias-core
+- name: archive
+  kind: module
+  file: crates/tamias-core/src/lib.rs
+  line: 12
+  module: tamias-core
+- name: archive_tests
+  kind: module
+  file: crates/tamias-core/src/archive.rs
+  line: 153
+  module: tamias-core
+- name: content_digest
+  kind: function
+  file: crates/tamias-core/src/digest.rs
+  line: 22
+  module: tamias-core
+- name: copy_tree
+  kind: function
+  file: crates/tamias-core/src/records.rs
+  line: 91
+  module: tamias-core
+- name: copy_tree_propagates_copy_failure
+  kind: function
+  file: crates/tamias-core/src/records.rs
+  line: 140
+  module: tamias-core
+- name: dedup_by_id
+  kind: function
+  file: crates/tamias-core/src/overlay.rs
+  line: 121
+  module: tamias-core
+- name: digest
+  kind: module
+  file: crates/tamias-core/src/lib.rs
+  line: 13
+  module: tamias-core
+- name: dir_digest
+  kind: function
+  file: crates/tamias-core/src/digest.rs
+  line: 70
+  module: tamias-core
+- name: dir_digest_order_independent_and_stable
+  kind: function
+  file: crates/tamias-core/src/digest.rs
+  line: 114
+  module: tamias-core
+- name: dir_size
+  kind: function
+  file: crates/tamias-core/src/digest.rs
+  line: 87
+  module: tamias-core
+- name: doc_format
+  kind: function
+  file: crates/tamias-core/src/overlay.rs
+  line: 67
+  module: tamias-core
+- name: error
+  kind: module
+  file: crates/tamias-core/src/lib.rs
+  line: 14
+  module: tamias-core
+- name: error_is_constructible
+  kind: function
+  file: crates/tamias-core/tests/props.rs
+  line: 146
+  module: tamias-core
+- name: file_digest
+  kind: function
+  file: crates/tamias-core/src/digest.rs
+  line: 30
+  module: tamias-core
+- name: fmt
+  kind: function
+  file: crates/tamias-core/src/identity.rs
+  line: 109
+  module: tamias-core
+- name: from_record
+  kind: function
+  file: crates/tamias-core/src/project.rs
+  line: 40
+  module: tamias-core
+- name: identity
+  kind: module
+  file: crates/tamias-core/src/lib.rs
+  line: 15
+  module: tamias-core
+- name: io
+  kind: function
+  file: crates/tamias-core/src/error.rs
+  line: 25
+  module: tamias-core
+- name: io_and_failed_display
+  kind: function
+  file: crates/tamias-core/src/error.rs
+  line: 39
+  module: tamias-core
+- name: io_error_arms
+  kind: function
+  file: crates/tamias-core/src/digest.rs
+  line: 127
+  module: tamias-core
+- name: known_vector
+  kind: function
+  file: crates/tamias-core/src/digest.rs
+  line: 102
+  module: tamias-core
+- name: label
+  kind: function
+  file: crates/tamias-core/src/records.rs
+  line: 50
+  module: tamias-core
+- name: label_scoped_and_sha_fallback
+  kind: function
+  file: crates/tamias-core/src/records.rs
+  line: 126
+  module: tamias-core
+- name: load
+  kind: function
+  file: crates/tamias-core/src/manifest.rs
+  line: 50
+  module: tamias-core
+- name: load
+  kind: function
+  file: crates/tamias-core/src/project.rs
+  line: 57
+  module: tamias-core
+- name: load_at
+  kind: function
+  file: crates/tamias-core/src/manifest.rs
+  line: 65
+  module: tamias-core
+api_omitted: 69
 deps:
+- flate2
+- hex
 - schemars
+- semver
 - serde
-- thiserror
-- zeroize
 - serde_json
+- serde_yaml_ng
+- sha2
+- tar
+- thiserror
 - toml
-- zeroize
+- proptest
+- tempfile
 - serde
-- actor
-- config
-- env
-- op
-- refs
-- secret
+- semver
+- serde_json
+- sha2
+- tar
+- archive
+- digest
+- error
+- identity
+- manifest
+- overlay
+- project
+- records
 notes: ''
 verify:
 - crates/tamias-core/Cargo.toml
-- crates/tamias-core/src/actor.rs
-- crates/tamias-core/src/config.rs
-- crates/tamias-core/src/env.rs
 - crates/tamias-core/src/lib.rs
-- crates/tamias-core/src/op.rs
-- crates/tamias-core/src/refs.rs
-- crates/tamias-core/src/secret.rs
+- crates/tamias-core/src/archive.rs
+- crates/tamias-core/src/digest.rs
+- crates/tamias-core/src/error.rs
+- crates/tamias-core/src/identity.rs
+- crates/tamias-core/src/manifest.rs
+- crates/tamias-core/src/overlay.rs
+- crates/tamias-core/src/project.rs
+- crates/tamias-core/src/records.rs
 provenance:
   files:
   - crates/tamias-core/Cargo.toml
-  - crates/tamias-core/src/actor.rs
-  - crates/tamias-core/src/config.rs
-  - crates/tamias-core/src/env.rs
+  - crates/tamias-core/src/archive.rs
+  - crates/tamias-core/src/digest.rs
+  - crates/tamias-core/src/error.rs
+  - crates/tamias-core/src/identity.rs
   - crates/tamias-core/src/lib.rs
-  - crates/tamias-core/src/op.rs
-  - crates/tamias-core/src/refs.rs
-  - crates/tamias-core/src/secret.rs
+  - crates/tamias-core/src/manifest.rs
+  - crates/tamias-core/src/overlay.rs
+  - crates/tamias-core/src/project.rs
+  - crates/tamias-core/src/records.rs
+  - crates/tamias-core/tests/props.rs
   hashes:
-  - 6dcc3b1198677927e82d542e41e26fab610796b1
-  - 969e8e3eff5b1be6a77238a69761993de6b31ea2
-  - 1ff04e1b411a491e41cf6b13f940525d7c8525d6
-  - e9ff49af7daccbb09ceb392ed413fdef16bd7b8b
-  - d5e558a9cf69e895f27042fcc542fdfce73a1cd0
-  - 55d8238f2ce4c4d16649d30958e24e4c4578d2d0
-  - 6b9cf52a6e8575ab8bdbd2a18219f4d41a4d0830
-  - 508fc79aa21a29585701837e6e0377f6775cf153
-  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
-  generated_at: '1793684916'
+  - 3768f539fab709dfed5a488a2ba669f602e14f73
+  - 1ea2497bc72a377afb70eaf0a34d6fbbf314eafc
+  - c319a21bb62803dc033607119f9c7207dddff337
+  - 3050b521008bf72751d6ffcab5f7dcbeced1d9f6
+  - ea8ff165afcdccfccd8aad76171a031df45b4c05
+  - 2d9fea390292dd833f39bda62eb059fc1e1d944f
+  - e3b8b4a2e6a3571ad18ca02f61f6767bd9290624
+  - 0e2ff1c633a2652b504247a302504de727a35a8c
+  - db065b44567bbaa7535e0e1362c3ddcd568ccecc
+  - ae142654d5248b16ea3aa2a8cf3a8048f7a971a1
+  - e156b1d25a978fb792909b8e88e4b6c83bf56f26
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
   generator: kuda-template/0.1.2

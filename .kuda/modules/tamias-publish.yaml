@@ -1,0 +1,47 @@
+name: tamias-publish
+path: crates/tamias-publish/Cargo.toml
+purpose: author side — pack + push
+api:
+- name: pack
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 13
+  module: tamias-publish
+- name: pack_without_version_uses_name
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 42
+  module: tamias-publish
+- name: packs_a_dir
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 31
+  module: tamias-publish
+- name: tamias-publish
+  kind: module
+  file: crates/tamias-publish/Cargo.toml
+  line: 1
+  module: tamias-publish
+- name: tests
+  kind: module
+  file: crates/tamias-publish/src/lib.rs
+  line: 25
+  module: tamias-publish
+deps:
+- tamias-core
+- tempfile
+- tamias-core
+notes: ''
+verify:
+- crates/tamias-publish/Cargo.toml
+- crates/tamias-publish/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-publish/Cargo.toml
+  - crates/tamias-publish/src/lib.rs
+  hashes:
+  - 9440703dd04a239939c9344b76f465db689a29ad
+  - b368943fcfbc3692149e4471155790f39a5fb332
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

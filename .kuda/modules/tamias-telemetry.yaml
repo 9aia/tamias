@@ -1,0 +1,231 @@
+name: tamias-telemetry
+path: crates/tamias-telemetry/Cargo.toml
+purpose: Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation
+api:
+- name: DEFAULT_SERVICE_NAME
+  kind: const
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 50
+  module: tamias-telemetry
+- name: ENV_OTEL_ENDPOINT
+  kind: const
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 42
+  module: tamias-telemetry
+- name: ENV_OTEL_SERVICE_NAME
+  kind: const
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 44
+  module: tamias-telemetry
+- name: HeaderMapExtractor
+  kind: type
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 226
+  module: tamias-telemetry
+- name: OTEL_ENDPOINT
+  kind: const
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 46
+  module: tamias-telemetry
+- name: OTEL_SERVICE_NAME
+  kind: const
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 48
+  module: tamias-telemetry
+- name: OTEL_TRACES_ENDPOINT
+  kind: const
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 47
+  module: tamias-telemetry
+- name: TRACES_PATH
+  kind: const
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 53
+  module: tamias-telemetry
+- name: TelemetryConfig
+  kind: type
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 58
+  module: tamias-telemetry
+- name: TelemetryGuard
+  kind: type
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 132
+  module: tamias-telemetry
+- name: VecInjector
+  kind: type
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 216
+  module: tamias-telemetry
+- name: build_provider
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 111
+  module: tamias-telemetry
+- name: config_from
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 82
+  module: tamias-telemetry
+- name: disabled_guard_is_inert
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 366
+  module: tamias-telemetry
+- name: disabled_without_env
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 302
+  module: tamias-telemetry
+- name: drop
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 153
+  module: tamias-telemetry
+- name: drop_logs_shutdown_errors
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 426
+  module: tamias-telemetry
+- name: enabled
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 107
+  module: tamias-telemetry
+- name: enabled_mirrors_config_presence
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 373
+  module: tamias-telemetry
+- name: extractor_enumerates_keys
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 481
+  module: tamias-telemetry
+- name: force_flush
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 145
+  module: tamias-telemetry
+- name: get
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 229
+  module: tamias-telemetry
+- name: init
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 173
+  module: tamias-telemetry
+- name: init_installs_tracing_only_when_unconfigured
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 394
+  module: tamias-telemetry
+- name: init_with
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 180
+  module: tamias-telemetry
+- name: init_with_builds_the_otlp_layer
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 405
+  module: tamias-telemetry
+- name: init_with_degrades_on_a_bad_endpoint
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 416
+  module: tamias-telemetry
+- name: is_enabled
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 138
+  module: tamias-telemetry
+- name: keys
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 233
+  module: tamias-telemetry
+- name: lookup
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 293
+  module: tamias-telemetry
+- name: nonempty
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 65
+  module: tamias-telemetry
+- name: peregrin_endpoint_appends_traces_path
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 311
+  module: tamias-telemetry
+- name: peregrin_endpoint_verbatim_when_path_present
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 325
+  module: tamias-telemetry
+- name: propagation_round_trip
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 441
+  module: tamias-telemetry
+- name: provider_builds_and_guard_flushes
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 379
+  module: tamias-telemetry
+- name: record_response
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 276
+  module: tamias-telemetry
+- name: server_span
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 254
+  module: tamias-telemetry
+- name: service_name_precedence
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 348
+  module: tamias-telemetry
+- name: set
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 219
+  module: tamias-telemetry
+- name: standard_otlp_vars_enable_export
+  kind: function
+  file: crates/tamias-telemetry/src/lib.rs
+  line: 338
+  module: tamias-telemetry
+api_omitted: 4
+deps:
+- http
+- opentelemetry
+- opentelemetry-otlp
+- opentelemetry_sdk
+- tracing
+- tracing-opentelemetry
+- tracing-subscriber
+- opentelemetry
+- tracing_opentelemetry
+- tracing_subscriber
+- opentelemetry_otlp
+notes: ''
+verify:
+- crates/tamias-telemetry/Cargo.toml
+- crates/tamias-telemetry/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-telemetry/Cargo.toml
+  - crates/tamias-telemetry/src/lib.rs
+  hashes:
+  - 11e5afcee2642dd5e6031549c4c19e03372969fc
+  - 4878825cecb5792e19bb2d03f1de22692b35b51a
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

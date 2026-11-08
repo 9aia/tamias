@@ -1,0 +1,242 @@
+name: tamias-driver-tamias
+path: crates/tamias-driver-tamias/Cargo.toml
+purpose: tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only)
+api:
+- name: Roots
+  kind: type
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 48
+  module: tamias-driver-tamias
+- name: Snapshot
+  kind: type
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 65
+  module: tamias-driver-tamias
+- name: binding
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 99
+  module: tamias-driver-tamias
+- name: bound
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 43
+  module: tamias-driver-tamias
+- name: cache_payload
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 614
+  module: tamias-driver-tamias
+- name: cache_stats
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 290
+  module: tamias-driver-tamias
+- name: capabilities_json
+  kind: function
+  file: crates/tamias-driver-tamias/src/main.rs
+  line: 48
+  module: tamias-driver-tamias
+- name: col
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 51
+  module: tamias-driver-tamias
+- name: data
+  kind: module
+  file: crates/tamias-driver-tamias/src/main.rs
+  line: 37
+  module: tamias-driver-tamias
+- name: default
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 88
+  module: tamias-driver-tamias
+- name: dispatch
+  kind: function
+  file: crates/tamias-driver-tamias/src/main.rs
+  line: 59
+  module: tamias-driver-tamias
+- name: driver_claims
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 473
+  module: tamias-driver-tamias
+- name: env_cache_root
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 145
+  module: tamias-driver-tamias
+- name: env_registry_root
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 156
+  module: tamias-driver-tamias
+- name: env_store_root
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 132
+  module: tamias-driver-tamias
+- name: error_payload
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 113
+  module: tamias-driver-tamias
+- name: every_binding_is_a_known_query
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 733
+  module: tamias-driver-tamias
+- name: flag
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 329
+  module: tamias-driver-tamias
+- name: fmt_ts
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 313
+  module: tamias-driver-tamias
+- name: fmt_ts_renders_unix_utc
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 742
+  module: tamias-driver-tamias
+- name: graph
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 83
+  module: tamias-driver-tamias
+- name: graph_payload
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 639
+  module: tamias-driver-tamias
+- name: graph_payload_shape
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 769
+  module: tamias-driver-tamias
+- name: kind_of
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 348
+  module: tamias-driver-tamias
+- name: known_query
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 284
+  module: tamias-driver-tamias
+- name: kv
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 59
+  module: tamias-driver-tamias
+- name: load
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 342
+  module: tamias-driver-tamias
+- name: main
+  kind: function
+  file: crates/tamias-driver-tamias/src/main.rs
+  line: 120
+  module: tamias-driver-tamias
+- name: manifest
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 242
+  module: tamias-driver-tamias
+- name: manifest_advertises_pavo_and_lists_every_view
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 704
+  module: tamias-driver-tamias
+- name: manifest_json
+  kind: function
+  file: crates/tamias-driver-tamias/src/main.rs
+  line: 44
+  module: tamias-driver-tamias
+- name: md
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 92
+  module: tamias-driver-tamias
+- name: ok
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 118
+  module: tamias-driver-tamias
+- name: package_detail
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 414
+  module: tamias-driver-tamias
+- name: package_detail_requires_name
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 754
+  module: tamias-driver-tamias
+- name: packages_rows
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 389
+  module: tamias-driver-tamias
+- name: param
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 340
+  module: tamias-driver-tamias
+- name: param_path
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 123
+  module: tamias-driver-tamias
+- name: query_data
+  kind: function
+  file: crates/tamias-driver-tamias/src/views.rs
+  line: 294
+  module: tamias-driver-tamias
+- name: registry_entries
+  kind: function
+  file: crates/tamias-driver-tamias/src/data.rs
+  line: 317
+  module: tamias-driver-tamias
+api_omitted: 20
+deps:
+- pavo-protocol
+- serde_json
+- tamias-cache-local
+- tamias-core
+- tamias-driver
+- tamias-registry
+- tamias-registry-local
+- tamias-store-local
+- tempfile
+- serde_json
+- tamias-cache-local
+- tamias-core
+- tamias-registry
+- tamias-registry-local
+- tamias-store-local
+- pavo_protocol
+notes: ''
+verify:
+- crates/tamias-driver-tamias/Cargo.toml
+- crates/tamias-driver-tamias/src/data.rs
+- crates/tamias-driver-tamias/src/main.rs
+- crates/tamias-driver-tamias/src/views.rs
+provenance:
+  files:
+  - crates/tamias-driver-tamias/Cargo.toml
+  - crates/tamias-driver-tamias/src/data.rs
+  - crates/tamias-driver-tamias/src/main.rs
+  - crates/tamias-driver-tamias/src/views.rs
+  hashes:
+  - d46b4b42711504ab1edbf97d84d8aeeccd95abe0
+  - 8150d8ae7e6bc15fb4cf0f26dd3606a06252276f
+  - 4e02639111f650e7cacd4b781a68eaf4dfb65266
+  - a8f4b9c61fcee5c105fc1d32096c87bb35798243
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
+  generator: kuda-template/0.1.2

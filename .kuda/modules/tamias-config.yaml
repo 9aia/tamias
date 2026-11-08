@@ -1,18 +1,97 @@
 name: tamias-config
 path: crates/tamias-config/Cargo.toml
-purpose: 'Config port: where tamias.toml-shaped config comes from'
+purpose: Config port — where tamias.toml-shaped config comes from
 api:
-- name: ConfigSource
+- name: CONFIG_ENV
+  kind: const
+  file: crates/tamias-config/src/lib.rs
+  line: 20
+  module: tamias-config
+- name: CONFIG_NAMES
+  kind: const
+  file: crates/tamias-config/src/lib.rs
+  line: 17
+  module: tamias-config
+- name: Config
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 61
+  module: tamias-config
+- name: ConfigFormat
   kind: trait
   file: crates/tamias-config/src/lib.rs
-  line: 5
+  line: 74
+  module: tamias-config
+- name: Location
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 25
+  module: tamias-config
+- name: Publish
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 52
+  module: tamias-config
+- name: Registry
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 37
+  module: tamias-config
+- name: Toy
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 142
+  module: tamias-config
+- name: extensions
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 144
+  module: tamias-config
+- name: format_for
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 93
+  module: tamias-config
+- name: format_for_load_file_and_load_in
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 160
+  module: tamias-config
+- name: load_file
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 109
+  module: tamias-config
+- name: load_in
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 121
+  module: tamias-config
+- name: parse
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 147
+  module: tamias-config
+- name: render
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 154
   module: tamias-config
 - name: tamias-config
   kind: module
   file: crates/tamias-config/Cargo.toml
   line: 1
   module: tamias-config
+- name: tests
+  kind: module
+  file: crates/tamias-config/src/lib.rs
+  line: 138
+  module: tamias-config
 deps:
+- serde
+- tamias-core
+- tempfile
+- serde
 - tamias-core
 notes: ''
 verify:
@@ -23,8 +102,8 @@ provenance:
   - crates/tamias-config/Cargo.toml
   - crates/tamias-config/src/lib.rs
   hashes:
-  - cf00672b233762c2e1aa7121fa3921782757a2df
-  - bfeab7ce177cba4fff075d6fa993e58005e13278
-  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
-  generated_at: '1793684916'
+  - 632480163263ef27edab2d729003066436e1a9d5
+  - c0be3fd384d3083e4e7f8645d69dabc342b48356
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
   generator: kuda-template/0.1.2

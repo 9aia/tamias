@@ -1,68 +1,48 @@
 name: tamias-config-toml
 path: crates/tamias-config-toml/Cargo.toml
-purpose: 'Config impl: tamias.toml file (explicit path, env, ./, ~/.config)'
+purpose: TOML config impl
 api:
-- name: TomlSource
+- name: TomlFormat
   kind: type
   file: crates/tamias-config-toml/src/lib.rs
-  line: 8
+  line: 11
+  module: tamias-config-toml
+- name: extensions
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 14
+  module: tamias-config-toml
+- name: parse
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 18
+  module: tamias-config-toml
+- name: parses_toml_and_rejects_yaml
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 33
+  module: tamias-config-toml
+- name: render
+  kind: function
+  file: crates/tamias-config-toml/src/lib.rs
+  line: 22
   module: tamias-config-toml
 - name: tamias-config-toml
   kind: module
   file: crates/tamias-config-toml/Cargo.toml
   line: 1
   module: tamias-config-toml
-- name: candidates
-  kind: function
-  file: crates/tamias-config-toml/src/lib.rs
-  line: 15
-  module: tamias-config-toml
-- name: default_search_builds_candidates
-  kind: function
-  file: crates/tamias-config-toml/src/lib.rs
-  line: 111
-  module: tamias-config-toml
-- name: explicit_missing_file_errors
-  kind: function
-  file: crates/tamias-config-toml/src/lib.rs
-  line: 57
-  module: tamias-config-toml
-- name: load
-  kind: function
-  file: crates/tamias-config-toml/src/lib.rs
-  line: 39
-  module: tamias-config-toml
-- name: locate
-  kind: function
-  file: crates/tamias-config-toml/src/lib.rs
-  line: 33
-  module: tamias-config-toml
-- name: located_but_unreadable_errors
-  kind: function
-  file: crates/tamias-config-toml/src/lib.rs
-  line: 66
-  module: tamias-config-toml
-- name: parses_secrets_table
-  kind: function
-  file: crates/tamias-config-toml/src/lib.rs
-  line: 82
-  module: tamias-config-toml
 - name: tests
   kind: module
   file: crates/tamias-config-toml/src/lib.rs
-  line: 53
-  module: tamias-config-toml
-- name: unknown_fields_fail_loud
-  kind: function
-  file: crates/tamias-config-toml/src/lib.rs
-  line: 98
+  line: 29
   module: tamias-config-toml
 deps:
 - tamias-config
 - tamias-core
 - toml
-- temp-env
 - tamias-config
+- tamias-core
 notes: ''
 verify:
 - crates/tamias-config-toml/Cargo.toml
@@ -72,8 +52,8 @@ provenance:
   - crates/tamias-config-toml/Cargo.toml
   - crates/tamias-config-toml/src/lib.rs
   hashes:
-  - 3bb6412ec59f79642d32c9aa8f4c45e38be95068
-  - 8cfdb3b79ab4cb773fe7fe5342c91d8388847253
-  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
-  generated_at: '1793684916'
+  - e2354bf66bcc103954918876c89f75663f28633e
+  - 81690e1a8c8532e4f7b9105f1ee9150c60c3849a
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
   generator: kuda-template/0.1.2

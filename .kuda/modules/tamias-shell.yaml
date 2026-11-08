@@ -5,87 +5,87 @@ api:
 - name: PASS_ENV
   kind: const
   file: crates/tamias-shell/src/lib.rs
-  line: 20
+  line: 21
   module: tamias-shell
 - name: PASS_ENV_PREFIX
   kind: const
   file: crates/tamias-shell/src/lib.rs
-  line: 67
+  line: 68
   module: tamias-shell
 - name: allowed_var
   kind: function
   file: crates/tamias-shell/src/lib.rs
-  line: 72
+  line: 73
+  module: tamias-shell
+- name: captures_output
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 174
+  module: tamias-shell
+- name: children_do_not_inherit_parent_credentials
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 197
+  module: tamias-shell
+- name: exec_argv_needs_no_shell
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 248
+  module: tamias-shell
+- name: exec_with_env
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 118
+  module: tamias-shell
+- name: injects_env_vars
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 185
+  module: tamias-shell
+- name: output
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 133
+  module: tamias-shell
+- name: output_with_env
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 138
+  module: tamias-shell
+- name: run
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 97
+  module: tamias-shell
+- name: run_with_env
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 103
+  module: tamias-shell
+- name: runs_in_worktree
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 162
+  module: tamias-shell
+- name: scrub_env
+  kind: function
+  file: crates/tamias-shell/src/lib.rs
+  line: 82
   module: tamias-shell
 - name: tamias-shell
   kind: module
   file: crates/tamias-shell/Cargo.toml
   line: 1
   module: tamias-shell
-- name: captures_output
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 172
-  module: tamias-shell
-- name: children_do_not_inherit_parent_credentials
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 195
-  module: tamias-shell
-- name: exec_argv_needs_no_shell
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 246
-  module: tamias-shell
-- name: exec_with_env
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 117
-  module: tamias-shell
-- name: injects_env_vars
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 183
-  module: tamias-shell
-- name: output
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 132
-  module: tamias-shell
-- name: output_with_env
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 137
-  module: tamias-shell
-- name: run
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 96
-  module: tamias-shell
-- name: run_with_env
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 102
-  module: tamias-shell
-- name: runs_in_worktree
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 160
-  module: tamias-shell
-- name: scrub_env
-  kind: function
-  file: crates/tamias-shell/src/lib.rs
-  line: 81
-  module: tamias-shell
 - name: tests
   kind: module
   file: crates/tamias-shell/src/lib.rs
-  line: 150
+  line: 152
   module: tamias-shell
 - name: tmpdir
   kind: function
   file: crates/tamias-shell/src/lib.rs
-  line: 153
+  line: 155
   module: tamias-shell
 deps:
 - temp-env
@@ -98,8 +98,8 @@ provenance:
   - crates/tamias-shell/Cargo.toml
   - crates/tamias-shell/src/lib.rs
   hashes:
-  - d1e286873314306b3ec3e30cd61cc9db964378d0
-  - b823147ec8a0a66ccbef71caac6009c9fefd7a0b
-  commit_sha: d7be8f483c95735af5c205d7ac5acc46187d4200
-  generated_at: '1793684916'
+  - dc01851714866bc619be1b91ea503f0c050c8b2c
+  - 2da6b45f93961457d062d5d2e7851d207c5576e8
+  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
+  generated_at: '1794170572'
   generator: kuda-template/0.1.2
