@@ -1,1 +1,1 @@
-{"id":"","ws":"main","actor":"luis","ts":1794173648,"op":{"op":"claim","glob":"crates/tamias-store-local/src/**","ttl_secs":3600}}
+{"id":"","ws":"main","actor":"luis","ts":1794173648,"op":{"op":"claim","glob":"crates/tamias-source-git/src/**","ttl_secs":3600}}
