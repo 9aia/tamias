@@ -409,4 +409,19 @@ mod tests {
         let _ = std::net::TcpStream::connect("127.0.0.1:8797");
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn serve_http_io_errors() {
+        use std::os::unix::fs::PermissionsExt;
+        // bind failure → error
+        assert!(serve_http("not-an-addr", Path::new("/tmp")).is_err());
+        // unwritable root dir → create_dir_all(root) fails
+        let ro = tempfile::tempdir().unwrap();
+        let rodir = ro.path().join("d");
+        std::fs::create_dir_all(&rodir).unwrap();
+        std::fs::set_permissions(&rodir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        assert!(serve_http("127.0.0.1:8798", &rodir.join("reg")).is_err());
+        std::fs::set_permissions(&rodir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
