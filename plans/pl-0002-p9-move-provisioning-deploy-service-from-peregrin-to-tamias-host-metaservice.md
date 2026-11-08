@@ -1,7 +1,7 @@
 +++
 id = "PL-002"
 title = "P9 — move provisioning/deploy/service from peregrin to tamias (host metaservice)"
-status = "open"
+status = "in-progress"
 created = "2026-11-07"
 owner = "human:luis"
 priority = "high"
