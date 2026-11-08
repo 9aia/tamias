@@ -69,8 +69,8 @@ impl Lock {
     /// # Errors
     /// Propagates serialize + write failures.
     pub fn save(&self, path: &Path) -> Result<(), Error> {
-        let text = serde_yaml_ng::to_string(self)
-            .map_err(|e| Error::Failed(format!("serialize lock: {e}")))?;
+        let ctx = |e| Error::Failed(format!("serialize lock: {e}"));
+        let text = serde_yaml_ng::to_string(self).map_err(ctx)?;
         std::fs::write(path, text).map_err(Error::io(format!("write {}", path.display())))
     }
 

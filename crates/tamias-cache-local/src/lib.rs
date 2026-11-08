@@ -55,12 +55,12 @@ impl FetchCache {
     /// # Errors
     /// Propagates I/O failures creating the scratch dir.
     pub fn scratch(&self) -> Result<PathBuf, Error> {
-        fs::create_dir_all(&self.root)
-            .map_err(Error::io(format!("create {}", self.root.display())))?;
+        let ctx = format!("create {}", self.root.display());
+        fs::create_dir_all(&self.root).map_err(Error::io(ctx))?;
         let scratch = self.root.join(format!(".scratch-{}", std::process::id()));
         if scratch.exists() {
-            fs::remove_dir_all(&scratch)
-                .map_err(Error::io(format!("clear {}", scratch.display())))?;
+            let clear = format!("clear {}", scratch.display());
+            fs::remove_dir_all(&scratch).map_err(Error::io(clear))?;
         }
         fs::create_dir_all(&scratch).map_err(Error::io(format!("create {}", scratch.display())))?;
         Ok(scratch)
@@ -76,15 +76,12 @@ impl FetchCache {
         }
         let dest = self.entry(key);
         if dest.exists() {
-            fs::remove_dir_all(scratch)
-                .map_err(Error::io(format!("clear {}", scratch.display())))?;
+            let clear = format!("clear {}", scratch.display());
+            fs::remove_dir_all(scratch).map_err(Error::io(clear))?;
             return Ok(dest);
         }
-        fs::rename(scratch, &dest).map_err(Error::io(format!(
-            "commit {} → {}",
-            scratch.display(),
-            dest.display()
-        )))?;
+        let ctx = format!("commit {} → {}", scratch.display(), dest.display());
+        fs::rename(scratch, &dest).map_err(Error::io(ctx))?;
         Ok(dest)
     }
 
@@ -102,8 +99,8 @@ impl FetchCache {
     pub fn entries(&self) -> Result<Vec<PathBuf>, Error> {
         let mut out = Vec::new();
         if self.root.is_dir() {
-            let read = fs::read_dir(&self.root)
-                .map_err(Error::io(format!("read {}", self.root.display())))?;
+            let ctx = format!("read {}", self.root.display());
+            let read = fs::read_dir(&self.root).map_err(Error::io(ctx))?;
             for entry in read {
                 let path = entry.map_err(Error::io("read cache entry"))?.path();
                 let hidden = path
@@ -131,8 +128,8 @@ impl FetchCache {
                 .and_then(|m| m.modified())
                 .is_ok_and(|mtime| now.duration_since(mtime).is_ok_and(|age| age >= max_age));
             if stale {
-                fs::remove_dir_all(&path)
-                    .map_err(Error::io(format!("remove {}", path.display())))?;
+                let ctx = format!("remove {}", path.display());
+                fs::remove_dir_all(&path).map_err(Error::io(ctx))?;
                 evicted.push(path);
             }
         }

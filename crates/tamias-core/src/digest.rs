@@ -72,8 +72,8 @@ pub fn dir_digest(dir: &Path) -> Result<String, Error> {
     for rel in payload_files(dir)? {
         hasher.update(rel.to_string_lossy().as_bytes());
         hasher.update([0]);
-        let bytes = fs::read(dir.join(&rel))
-            .map_err(Error::io(format!("read {}", dir.join(&rel).display())))?;
+        let ctx = format!("read {}", dir.join(&rel).display());
+        let bytes = fs::read(dir.join(&rel)).map_err(Error::io(ctx))?;
         hasher.update(bytes);
         hasher.update([0]);
     }
@@ -87,9 +87,8 @@ pub fn dir_digest(dir: &Path) -> Result<String, Error> {
 pub fn dir_size(dir: &Path) -> Result<u64, Error> {
     let mut total = 0;
     for rel in payload_files(dir)? {
-        total += fs::metadata(dir.join(&rel))
-            .map_err(Error::io(format!("stat {}", dir.join(&rel).display())))?
-            .len();
+        let ctx = format!("stat {}", dir.join(&rel).display());
+        total += fs::metadata(dir.join(&rel)).map_err(Error::io(ctx))?.len();
     }
     Ok(total)
 }
