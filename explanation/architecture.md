@@ -10,7 +10,8 @@ distribution; every content *meaning* is an adapter.
 
 | Port | Role | Impls |
 | --- | --- | --- |
-| `source` | `resolve(ref)` → `fetch(into)` | `-fs`, `-git`, `-http`, `-cf` |
+| `ref` | claims + parses a ref into an opaque spec | one per kind (in the `source-*` crates) |
+| `source` | `plan(spec)` → `fetch(plan, into)` | `-fs`, `-git`, `-http`, `-cf` |
 | `store` | put/get/verify an installed package | `-local`, `-cf` |
 | `cache` | content-addressed fetch cache | `-local`, `-cf` |
 | `registry` | index + publish | `-local`, `-cf` (Worker + R2 + D1/KV) |
