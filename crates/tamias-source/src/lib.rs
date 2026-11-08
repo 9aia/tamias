@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use tamias_core::Error;
-pub use tamias_core::{parse_ref, GitRef, HttpRef, SourceRef};
+pub use tamias_core::{parse_ref, CfRef, GitRef, HttpRef, SourceRef};
 
 /// What [`Source::resolve`] produces — the concrete fetch spec.
 #[derive(Clone, Debug, PartialEq, Eq)]
