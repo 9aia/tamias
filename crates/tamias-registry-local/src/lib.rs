@@ -281,6 +281,37 @@ mod tests {
         assert!(LocalRegistry::new(root.path()).entries().is_err());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn publish_and_read_io_errors() {
+        use std::os::unix::fs::PermissionsExt;
+        // publish into an unwritable root
+        let ro = tempfile::tempdir().unwrap();
+        let rodir = ro.path().join("d");
+        std::fs::create_dir_all(&rodir).unwrap();
+        std::fs::set_permissions(&rodir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let registry = LocalRegistry::new(rodir.join("reg"));
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        assert!(registry.publish(src.path(), &manifest).is_err());
+        std::fs::set_permissions(&rodir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // an unreadable index.json → read error
+        let reg = tempfile::tempdir().unwrap();
+        std::fs::write(reg.path().join("index.json"), "[]").unwrap();
+        std::fs::set_permissions(
+            reg.path().join("index.json"),
+            std::fs::Permissions::from_mode(0o000),
+        )
+        .unwrap();
+        assert!(LocalRegistry::new(reg.path()).entries().is_err());
+        std::fs::set_permissions(
+            reg.path().join("index.json"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+    }
+
     #[test]
     fn serve_http_method_and_query() {
         let root = tempfile::tempdir().unwrap();

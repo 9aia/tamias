@@ -1021,6 +1021,53 @@ mod tests {
         assert!(run_args(e3.clone(), &["tamias", "install", empty.to_str().unwrap()]).is_err());
         assert!(run_args(e3.clone(), &["tamias", "verify", "ghost"]).is_err());
         assert!(run_args(e3.clone(), &["tamias", "remove", "ghost"]).is_err());
+
+        // cache dir exists but is unreadable → cache clean fails
+        let cdir = tmp.path().join("cdir");
+        std::fs::create_dir_all(cdir.join("k")).unwrap();
+        std::fs::set_permissions(&cdir, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let e4 = Env {
+            store_root: tmp.path().join("s4"),
+            cache_root: cdir.clone(),
+            registry_root: tmp.path().join("r4"),
+        };
+        assert!(run_args(e4.clone(), &["tamias", "cache", "clean", "--all"]).is_err());
+        assert!(run_args(e4.clone(), &["tamias", "cache", "clean", "--days", "1"]).is_err());
+        std::fs::set_permissions(&cdir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn doctor_and_add_save_errors() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = pkg(tmp.path());
+        // doctor: unreadable cache
+        let cdir = tmp.path().join("c");
+        std::fs::create_dir_all(&cdir).unwrap();
+        let sd = tmp.path().join("s");
+        std::fs::create_dir_all(&sd).unwrap();
+        std::fs::set_permissions(&cdir, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let e = Env {
+            store_root: sd,
+            cache_root: cdir.clone(),
+            registry_root: tmp.path().join("r"),
+        };
+        assert!(run_args(e.clone(), &["tamias", "doctor"]).is_err());
+        std::fs::set_permissions(&cdir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // add: unwritable cwd → manifest save fails
+        let ro = tmp.path().join("rodir");
+        std::fs::create_dir_all(&ro).unwrap();
+        std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o555)).unwrap();
+        {
+            let _g = CWD.lock().unwrap();
+            let prev = std::env::current_dir().unwrap();
+            std::env::set_current_dir(&ro).unwrap();
+            let r = run_args(e.clone(), &["tamias", "add", dir.to_str().unwrap()]);
+            std::env::set_current_dir(prev).unwrap();
+            assert!(r.is_err());
+        }
+        std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     #[test]
@@ -1081,5 +1128,30 @@ mod tests {
             std::env::set_current_dir(prev).unwrap();
             assert!(r.is_err());
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn service_status_logs_uninstall() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let fake = bin.join("systemctl");
+        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let old = std::env::var_os("PATH").unwrap_or_default();
+        let mut newp = bin.clone().into_os_string();
+        newp.push(":");
+        newp.push(&old);
+        std::env::set_var("PATH", newp);
+        let e = env(tmp.path());
+        let r1 = run_args(e.clone(), &["tamias", "service", "status", "foo"]);
+        let r2 = run_args(e.clone(), &["tamias", "service", "logs", "foo"]);
+        let r3 = run_args(e.clone(), &["tamias", "service", "uninstall", "foo"]);
+        std::env::set_var("PATH", old);
+        r1.unwrap();
+        r2.unwrap();
+        r3.unwrap();
     }
 }

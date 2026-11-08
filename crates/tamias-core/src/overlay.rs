@@ -249,4 +249,15 @@ mod overlay_tests {
         std::fs::create_dir_all(dest.path().join("x")).unwrap();
         assert!(overlay(&[base.path()], local.path(), dest.path()).is_err());
     }
+
+    #[test]
+    fn apply_layer_unparseable_doc_falls_through_to_copy() {
+        let base = tempfile::tempdir().unwrap();
+        std::fs::write(base.path().join("m.yaml"), ": not : valid : yaml : [").unwrap();
+        let local = tempfile::tempdir().unwrap();
+        std::fs::write(local.path().join("m.yaml"), "a: 1\n").unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        overlay(&[base.path()], local.path(), dest.path()).unwrap();
+        assert!(dest.path().join("m.yaml").is_file());
+    }
 }
