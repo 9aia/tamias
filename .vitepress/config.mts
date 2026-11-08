@@ -27,6 +27,19 @@ export default defineConfig({
     sidebar: [
       { text: "Getting Started", items: [{ text: "Install a package", link: "/getting-started" }] },
       {
+        text: "Tutorials",
+        items: [{ text: "Your first package", link: "/tutorials/first-package" }],
+      },
+      {
+        text: "How-to",
+        items: [
+          { text: "Install from a git repo", link: "/how-to/install-from-git" },
+          { text: "Publish to a registry", link: "/how-to/publish-to-a-registry" },
+          { text: "Provision and service", link: "/how-to/provision-a-service" },
+          { text: "Write a driver", link: "/how-to/write-a-driver" },
+        ],
+      },
+      {
         text: "Reference",
         items: [
           { text: "CLI", link: "/reference/cli" },
