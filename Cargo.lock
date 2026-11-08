@@ -1557,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "tamias"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "clap_complete",
@@ -1640,7 +1640,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flate2",
  "hex",

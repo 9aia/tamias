@@ -1,7 +1,7 @@
 [package]
 name = "tamias-core"
 description = "Pure domain — package identity (@scope/name@semver), refs, manifests, records, digests (no I/O)"
-version.workspace = true
+version = "0.1.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
