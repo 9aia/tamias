@@ -5,7 +5,7 @@
 //! - `check`    — `cargo fmt --check` + `cargo clippy -D warnings`
 //! - `test`     — `cargo nextest run` when installed, else `cargo test`
 //! - `coverage` — `cargo llvm-cov` (HTML → target/llvm-cov/html);
-//!   extra args pass through, e.g. `--fail-under-lines 98`
+//!   extra args pass through, e.g. `--fail-under-lines 97`
 //! - `install`  — release-install `tamias` into ~/.cargo/bin
 //! - `site`     — build the docs site (docs/ worktree, VitePress)
 

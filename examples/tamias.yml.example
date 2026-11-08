@@ -1,0 +1,28 @@
+# tamias.yml — package & content manager config. YAML is the standard
+# format; tamias.toml is the supported alternative. Every section is
+# optional; zero-config = the local store + local cache under
+# ~/.local/share/tamias and ~/.cache/tamias.
+
+store:
+  kind: local                 # local larder (v1)
+  # root: ~/.local/share/tamias/store
+
+cache:
+  kind: local                 # content-addressed fetch cache
+  # root: ~/.cache/tamias/fetch
+
+# Registries — where published content lives. A directory, or a
+# self-hosted Cloudflare Worker + R2 + D1/KV.
+registries:
+  local:
+    kind: dir
+    # url: ~/.local/share/tamias/registry
+
+  # cloud:
+  #   kind: cf
+  #   url: https://tamias-registry.you.workers.dev
+  #   token_env: TAMIAS_CF_TOKEN   # env var NAME — the token is never here
+
+# Publish-target routing — `tamias publish --registry cloud`.
+# publish:
+#   default: local

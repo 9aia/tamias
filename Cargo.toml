@@ -5,6 +5,7 @@ members = [
     "crates/tamias-cache",
     "crates/tamias-cache-local",
     "crates/tamias-config",
+    "crates/tamias-config-yml",
     "crates/tamias-config-toml",
     "crates/tamias-driver",
     "crates/tamias-core",
@@ -45,6 +46,7 @@ tamias = { path = "crates/tamias-cli", version = "0.1.0" }
 tamias-cache = { path = "crates/tamias-cache", version = "0.1.0" }
 tamias-cache-local = { path = "crates/tamias-cache-local", version = "0.1.0" }
 tamias-config = { path = "crates/tamias-config", version = "0.1.0" }
+tamias-config-yml = { path = "crates/tamias-config-yml", version = "0.1.0" }
 tamias-config-toml = { path = "crates/tamias-config-toml", version = "0.1.0" }
 tamias-driver = { path = "crates/tamias-driver", version = "0.1.0" }
 tamias-core = { path = "crates/tamias-core", version = "0.1.0" }

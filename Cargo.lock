@@ -647,6 +647,9 @@ dependencies = [
  "clap",
  "serde_json",
  "tamias-cache-local",
+ "tamias-config",
+ "tamias-config-toml",
+ "tamias-config-yml",
  "tamias-core",
  "tamias-deploy",
  "tamias-deploy-cf",
@@ -693,6 +696,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "tamias-core",
+ "tempfile",
 ]
 
 [[package]]
@@ -702,6 +706,15 @@ dependencies = [
  "tamias-config",
  "tamias-core",
  "toml",
+]
+
+[[package]]
+name = "tamias-config-yml"
+version = "0.1.0"
+dependencies = [
+ "serde_yaml_ng",
+ "tamias-config",
+ "tamias-core",
 ]
 
 [[package]]

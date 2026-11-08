@@ -65,6 +65,7 @@ cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry (P6)
 | `tamias registry serve` | serve a local registry (dev / air-gap) |
 | `tamias bundle pack` | dir + manifest → `.tgz` |
 | `tamias doctor` | store / cache / registry / content-type diagnostics |
+| `tamias config [--file f] [--json]` | show the effective config (YAML standard, TOML alt) |
 
 `--json` on `doctor`; `tamias manifest` / `tamias schema` self-discover.
 
@@ -78,7 +79,7 @@ cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry (P6)
   (`tamias registry serve`) or a Cloudflare Worker + R2 (payloads) +
   D1/KV (index). Same protocol either way.
 
-## Layout (target — P2 re-derivation)
+## Layout
 
 Ports-and-adapters, flat `crates/` workspace. `tamias-core` is pure
 domain (no I/O); ports are traits, impls are separate crates;
@@ -87,21 +88,17 @@ domain (no I/O); ports are traits, impls are separate crates;
 | Crate | Role |
 | --- | --- |
 | `tamias-core` | package, ref grammar, manifest, records, digest — pure |
-| `tamias-source` + `-fs,-git,-http,-registry` | source port (`resolve`→`fetch`) + impls |
+| `tamias-source` + `-fs,-git,-http` | source port (`resolve`→`fetch`) + impls |
 | `tamias-store` + `-local,-cf` | install store port + impls |
 | `tamias-cache` + `-local,-cf` | content-addressed fetch cache |
-| `tamias-content` (+ `-peregrin,-myco,…`) | the `ContentType` port + impls |
 | `tamias-driver` | discoverable content drivers (`tamias-driver-<type>`, JSON over stdio) |
 | `tamias-deploy` + `-local,-cf` | the service / deploy port + impls |
 | `tamias-registry` + `-local,-cf` | index + publish port + impls |
 | `tamias-publish` | author-side orchestration |
+| `tamias-config` + `-yml,-toml` | config model + file formats (YAML standard, TOML alt) |
 | `tamias-testkit` | impl conformance |
 | `tamias-cli` | the `tamias` binary |
 | `xtask` | check / test / coverage / install / site |
-
-> Seeded from a copy of `cuora` — its workspace anatomy, xtask, hooks,
-> worktrees, skills, and the `-cf` Worker pattern. The crate set is
-> being re-derived into the map above (org ledger P-002).
 
 ## Position in the stack
 

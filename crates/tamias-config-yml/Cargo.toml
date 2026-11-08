@@ -1,0 +1,15 @@
+[package]
+name = "tamias-config-yml"
+description = "YAML config impl (the standard) — tamias.yml / tamias.yaml"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde_yaml_ng.workspace = true
+tamias-core.workspace = true
+tamias-config.workspace = true
+
+[lints]
+workspace = true

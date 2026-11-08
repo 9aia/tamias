@@ -8,6 +8,9 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use tamias_cache_local::FetchCache;
+use tamias_config::{ConfigFormat, CONFIG_NAMES};
+use tamias_config_toml::TomlFormat;
+use tamias_config_yml::YmlFormat;
 use tamias_core::{
     parse_ref, payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord,
 };
@@ -97,6 +100,15 @@ enum Command {
     GenCliDocs,
     /// Diagnose the host metaservice (store, cache, registry, drivers).
     Doctor {
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the effective config — YAML (`tamias.yml`) is the standard.
+    Config {
+        /// Explicit config file (overrides discovery).
+        #[arg(long)]
+        file: Option<PathBuf>,
         /// JSON output.
         #[arg(long)]
         json: bool,
@@ -523,6 +535,29 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
         }
         Some(Command::Doctor { json }) => {
             doctor(&env, json)?;
+        }
+        Some(Command::Config { file, json }) => {
+            let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
+            let (path, config) = match &file {
+                Some(p) => (Some(p.clone()), tamias_config::load_file(p, &formats)?),
+                None => match tamias_config::load_in(Path::new("."), &formats)? {
+                    Some((p, c)) => (Some(p), c),
+                    None => (None, tamias_config::Config::default()),
+                },
+            };
+            if json {
+                let value = serde_json::json!({
+                    "file": path.as_ref().map(|p| p.display().to_string()),
+                    "search": CONFIG_NAMES,
+                    "config": config,
+                });
+                println!(
+                    "{}",
+                    serde_json::to_string(&value).map_err(|e| Error::Failed(e.to_string()))?
+                );
+            } else {
+                println!("{}", YmlFormat.render(&config)?);
+            }
         }
         Some(Command::Manifest) => {
             println!(
@@ -1263,5 +1298,67 @@ mod tests {
         assert!(run_args(e.clone(), &["tamias", "update"]).is_err());
         // pin a ghost → error
         assert!(run_args(e.clone(), &["tamias", "pin", "ghost", "./x"]).is_err());
+    }
+
+    #[test]
+    fn config_verb() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        // YAML (the standard) via --file, text + json
+        let yml = tmp.path().join("tamias.yml");
+        std::fs::write(&yml, "store:\n  kind: local\npublish:\n  default: cloud\n").unwrap();
+        run_args(
+            e.clone(),
+            &["tamias", "config", "--file", yml.to_str().unwrap()],
+        )
+        .unwrap();
+        run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "config",
+                "--file",
+                yml.to_str().unwrap(),
+                "--json",
+            ],
+        )
+        .unwrap();
+        // TOML (the alternative) via --file
+        let toml_ = tmp.path().join("tamias.toml");
+        std::fs::write(&toml_, "[store]\nkind = \"local\"\n").unwrap();
+        run_args(
+            e.clone(),
+            &["tamias", "config", "--file", toml_.to_str().unwrap()],
+        )
+        .unwrap();
+        // unclaimed extension → error
+        let json = tmp.path().join("x.json");
+        std::fs::write(&json, "{}").unwrap();
+        assert!(run_args(
+            e.clone(),
+            &["tamias", "config", "--file", json.to_str().unwrap()]
+        )
+        .is_err());
+        // malformed YAML → error
+        let bad = tmp.path().join("bad.yml");
+        std::fs::write(&bad, ":\n  - [").unwrap();
+        assert!(run_args(
+            e.clone(),
+            &["tamias", "config", "--file", bad.to_str().unwrap()]
+        )
+        .is_err());
+        // discovery: a dir with a config (Some) and an empty dir (None → default)
+        {
+            let _g = CWD.lock().unwrap();
+            let prev = std::env::current_dir().unwrap();
+            std::env::set_current_dir(tmp.path()).unwrap();
+            run_args(e.clone(), &["tamias", "config"]).unwrap();
+            run_args(e.clone(), &["tamias", "config", "--json"]).unwrap();
+            let empty = tmp.path().join("empty");
+            std::fs::create_dir_all(&empty).unwrap();
+            std::env::set_current_dir(&empty).unwrap();
+            run_args(e.clone(), &["tamias", "config"]).unwrap();
+            std::env::set_current_dir(prev).unwrap();
+        }
     }
 }

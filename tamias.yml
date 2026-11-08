@@ -1,0 +1,24 @@
+# tamias.yml — repo-level tamias config (dogfooding). YAML is the standard;
+# tamias.toml is the supported alternative. Search order: --file →
+# $TAMIAS_CONFIG → ./tamias.yml → ./tamias.yaml → ./tamias.toml
+# → ~/.config/tamias/tamias.yml. Refs and secret NAMES — never values.
+
+# Local install store + fetch cache (defaults shown).
+store:
+  kind: local
+  # root: ~/.local/share/tamias/store
+
+cache:
+  kind: local
+  # root: ~/.cache/tamias/fetch
+
+# A Cloudflare registry (Worker + R2 + D1/KV).
+# registries:
+#   cloud:
+#     kind: cf
+#     url: https://tamias-registry.you.workers.dev
+#     token_env: TAMIAS_CF_TOKEN      # env var NAME — never the token
+
+# Publish-target routing — `tamias publish --registry cloud`.
+# publish:
+#   default: local
