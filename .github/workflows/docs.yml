@@ -1,0 +1,36 @@
+name: docs
+on:
+  push:
+    branches: [docs, main]
+  workflow_dispatch:
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tamias
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - name: Install deps
+        working-directory: tamias/docs
+        run: bun i
+      - name: Build docs
+        working-directory: tamias/docs
+        run: bun run docs:build
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: tamias/docs/.vitepress/dist
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
