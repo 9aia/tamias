@@ -1,1 +1,1 @@
-{"id":"","ws":"main","actor":"luis","ts":1794180014,"op":{"op":"claim","glob":"scripts/setup.sh","ttl_secs":3600}}
+{"id":"","ws":"main","actor":"luis","ts":1794180014,"op":{"op":"claim","glob":"rust-toolchain.toml","ttl_secs":3600}}
