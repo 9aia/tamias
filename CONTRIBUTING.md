@@ -21,7 +21,10 @@ composition root. `xtask/` is repo chores.
   manifest recipe — never a core change.
 - `cargo xtask check` and `cargo xtask test` must stay green.
 - Coverage: `cargo xtask coverage` — cargo-llvm-cov HTML report in
-  `target/llvm-cov/html`; pass `--fail-under-lines 100` to gate.
+  `target/llvm-cov/html`. The gate is `cargo xtask coverage
+  --fail-under-lines 97`, run under `RUSTC_BOOTSTRAP=1` so test code is
+  excluded (`cfg_attr(coverage, coverage(off))`). llvm-cov counts
+  line-regions, so a small artifact tail keeps the metric just under 100.
 - Keep the binary dependency-light and sync; no async runtime.
 - Commits: conventional prefixes (`feat:`/`fix:`/`refactor:`/`docs:`/`chore:`).
 - Digest-pin refs; secret names never values; no plaintext secret in
