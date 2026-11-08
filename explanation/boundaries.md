@@ -10,7 +10,7 @@ concern.
 | **myco** | work memory | kinds/views/templates ship as a `myco-config` content type |
 | **kuda** | code memory | `kuda-domain` packs |
 | **mimus** | critic | `mimus-rules` packs |
-| **arca** | secrets | publish tokens / private-registry creds via `arca://` refs |
+| **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
 | **sturn** | coordination | claim the store lock during concurrent installs |
 | **bupha / ci-gate** | CI gate | the first published bundle |
 | **sepia** | sessions | — |

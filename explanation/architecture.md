@@ -1,6 +1,6 @@
 # Architecture
 
-> Seeded from a copy of `arca` (its ports-and-adapters anatomy and the
+> Seeded from a copy of `cuora` (its ports-and-adapters anatomy and the
 > `-cf` Worker pattern).
 
 tamias is **ports-and-adapters**. The engine owns the generic half of
