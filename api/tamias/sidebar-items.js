@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CACHE_MAX_AGE_DAYS"],"enum":["BundleCommand","CacheCommand","Command","RegistryCommand","ServiceCommand"],"fn":["cache_root","cli_docs","deploy_package","doctor","fetch_or_cached","install","main","open_registry","refs","registry_root","run","run_main","run_service","short","sources","store_root","uninstall_package"],"struct":["Cli","Env"]};

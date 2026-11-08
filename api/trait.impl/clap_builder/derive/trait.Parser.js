@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["tamias",[["impl Parser for <a class=\"struct\" href=\"tamias/struct.Cli.html\" title=\"struct tamias::Cli\">Cli</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[123]}

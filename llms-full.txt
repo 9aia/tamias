@@ -1,0 +1,791 @@
+---
+url: /tamias/getting-started.md
+---
+# Getting Started
+
+Install tamias, then point it at a package.
+
+## Install
+
+```sh
+cargo install --git https://github.com/9aia/tamias tamias
+# or, from a checkout:
+cargo xtask install
+```
+
+## Install a package
+
+```sh
+tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias list
+tamias info ci-gate
+tamias verify ci-gate        # recompute the payload digest
+```
+
+## Author and publish
+
+```sh
+tamias bundle pack ./my-bundle
+tamias publish ./my-bundle --registry local
+```
+
+## Next
+
+* [Architecture](/explanation/architecture)
+* [Content types](/explanation/content-types)
+* [CLI reference](/reference/cli)
+
+---
+
+---
+url: /tamias/tutorials/first-package.md
+---
+# Tutorial: your first package
+
+A guided walk from a folder to a published, installed, verified package.
+
+## 1. Make a payload
+
+A package is *bytes + a manifest*. Any folder with a `tamias.yaml` is one.
+
+```sh
+mkdir -p hello/world
+cat > hello/tamias.yaml <<'YAML'
+name: hello
+version: 0.1.0
+type: files
+YAML
+echo "hi from hello" > hello/world/greeting.txt
+```
+
+`type: files` means "the store entry is the whole story" — no driver.
+
+## 2. Pack it
+
+```sh
+tamias bundle pack ./hello
+# → packed → hello-0.1.0.tgz
+```
+
+## 3. Publish it
+
+Serve a registry (any directory works) and publish into it:
+
+```sh
+tamias registry serve --addr 127.0.0.1:8788 --dir ~/.local/share/tamias/registry &
+tamias publish ./hello --registry http://127.0.0.1:8788
+# → published hello@0.1.0
+tamias search hello --registry http://127.0.0.1:8788
+```
+
+## 4. Install it
+
+```sh
+tamias install ./hello
+tamias list
+tamias info hello
+```
+
+`install` resolved the ref, fetched it, cached the payload by content, and
+unpacked it into the **install store** under `~/.local/share/tamias`.
+
+## 5. Verify it
+
+```sh
+tamias verify hello
+# → hello: ok (sha256:…)
+```
+
+`verify` recomputes the payload digest and compares it to the recorded
+one. Now poke the store and verify again — it should fail:
+
+```sh
+echo tampered >> ~/.local/share/tamias/hello@0.1.0/world/greeting.txt
+tamias verify hello   # → digest mismatch
+```
+
+## 6. Untamper, then keep going
+
+Reinstall to restore, then try a git ref:
+
+```sh
+tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias list --type peregrin-bundle
+```
+
+## Next
+
+* [How-to guides](/how-to/publish-to-a-registry)
+* [Ref grammar](/reference/refs)
+* [CLI reference](/reference/cli)
+
+---
+
+---
+url: /tamias/how-to/install-from-git.md
+---
+# How to install from a git repo
+
+Point a ref at a repo, an in-repo subdir, and a rev.
+
+## The ref
+
+```
+git:9aia/peregrin//libraries/ci-gate#v0.2.0
+│   │           │  │               │
+│   │           │  │               └─ #ref — branch, tag, or sha
+│   │           │  └─ in-repo path (after `//`)
+│   │           └─ repo
+│   └─ host/org (bare `org/repo` → github.com)
+└─ kind
+```
+
+* `//` splits repo from the in-repo path — required because nested
+  groups make `a/b/c/d` ambiguous.
+* Without `//`, a two-segment prefix is the repo; the rest is the path.
+* The resolved **commit sha** is recorded in the store regardless of rev.
+
+## Install
+
+```sh
+tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias info ci-gate        # shows source ref + resolved sha
+```
+
+## Re-resolve a moving ref
+
+```sh
+tamias update ci-gate      # re-resolve + reinstall from the recorded ref
+tamias update --all        # every installed package
+```
+
+## Repoint the ref
+
+```sh
+tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#v0.3.0
+```
+
+`pin` rewrites the recorded ref; the payload is untouched until the next
+`update`.
+
+## Air-gapped / repeat installs
+
+Git fetches are cached content-addressed under `~/.cache/tamias/fetch`,
+keyed by the resolved sha — a repeat install reuses the cache and costs
+nothing.
+
+## See also
+
+* [Ref grammar](/reference/refs)
+* [Tutorial: your first package](/tutorials/first-package)
+
+---
+
+---
+url: /tamias/how-to/publish-to-a-registry.md
+---
+# How to publish to a registry
+
+Publish a packed package into a registry — a local directory, or a
+Cloudflare Worker (R2 blobs + D1/KV index).
+
+## Local registry
+
+```sh
+tamias registry serve --addr 127.0.0.1:8788 --dir ~/.local/share/tamias/registry &
+tamias publish ./hello --registry http://127.0.0.1:8788
+tamias search hello --registry http://127.0.0.1:8788
+```
+
+Without `--registry`, `publish` writes to the default local directory.
+
+## Consume it
+
+```sh
+tamias install ./hello                     # a path
+tamias install https://host/hello-0.1.0.tgz#sha256:<hex>
+```
+
+Digest-pin the tarball (`#sha256:<hex>`) when you have the bytes.
+
+## Cloudflare registry
+
+1. Write the Worker + config:
+
+   ```sh
+   tamias deploy-registry --out ./tamias-registry-worker
+   ```
+
+2. Deploy the Worker with your Cloudflare account and bind R2 + D1/KV.
+
+3. Point a registry entry at it. In `tamias.yml`:
+
+   ```yaml
+   registries:
+     cloud:
+       kind: cf
+       url: https://tamias-registry.you.workers.dev
+       token_env: TAMIAS_CF_TOKEN   # env var NAME — never the token
+   ```
+
+4. Publish + search through it:
+
+   ```sh
+   tamias publish ./hello --registry https://tamias-registry.you.workers.dev
+   ```
+
+The protocol is the same either way: the client does a read-modify-write
+of `index.json`; the server is a token-guarded blob store (`GET`/`PUT
+/<key>`). Auth is a bearer token from `token_env` — never inline.
+
+## See also
+
+* [Config reference](/reference/config)
+* [Tutorial: your first package](/tutorials/first-package)
+
+---
+
+---
+url: /tamias/how-to/provision-a-service.md
+---
+# How to provision and service-manage a package
+
+`install` puts a payload in the store. **Provisioning** (materializing a
+runnable artifact), **deploy** (activation), and the **service unit** are
+the driver's job — tamias shells the driver and never learns its schema.
+
+## Deploy an installed package
+
+```sh
+tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias deploy ci-gate                       # runs the driver's deploy step
+tamias deploy ci-gate --config ./node.yaml   # operator params ride a config file
+```
+
+If the package's type has no driver, `deploy` reports
+`nothing to deploy (type …)` and succeeds.
+
+## Manage the service unit
+
+The per-user **systemd** mechanism:
+
+```sh
+tamias service install --unit ci-gate \
+  --exec "/usr/local/bin/ci-gate run" \
+  --description "ci-gate" \
+  --env HOME=/home/me \
+  --workdir /srv/ci-gate
+tamias service enable  ci-gate
+tamias service status  ci-gate
+tamias service logs    ci-gate
+tamias service disable ci-gate
+tamias service uninstall ci-gate
+```
+
+`service install` writes the unit (it does **not** enable it). `uninstall`
+disables + removes the unit file.
+
+## Tear down
+
+```sh
+tamias uninstall ci-gate    # driver teardown + drop the store entry
+```
+
+## See also
+
+* [Write a driver](/how-to/write-a-driver)
+* [Content types](/explanation/content-types)
+
+---
+
+---
+url: /tamias/how-to/write-a-driver.md
+---
+# How to write a content driver
+
+A **driver** teaches tamias how a content *type* installs, deploys, and
+uninstalls — with **no compile-time coupling**. tamias discovers
+`tamias-driver-<type>` on `PATH` or `<tamias-home>/drivers/`,
+and speaks JSON over stdio.
+
+## The contract
+
+One request line in, one response line out:
+
+| Request | Meaning |
+| --- | --- |
+| `{"op":"capabilities"}` | JSON with the `types` you handle |
+| `{"op":"install","dir":…,"name":…,"config":…}` | materialize |
+| `{"op":"deploy",…}` | activate (unit, hooks) |
+| `{"op":"uninstall",…}` | tear down |
+
+`config` is an optional path to a node/config file carrying operator
+params. A driver that exits non-zero fails the tamias verb.
+
+## Capabilities
+
+tamias maps a package's `type:` to a driver. Either name the binary
+`tamias-driver-<type>`, or answer `capabilities` so a differently-named
+binary can claim types:
+
+```sh
+#!/bin/sh
+if [ "$1" = capabilities ]; then
+  echo '{"types":["myco-config"]}'
+  exit 0
+fi
+# …handle install/deploy/uninstall…
+```
+
+## Ship it with the payload
+
+Drop the binary under `drivers/` in your payload — installing the package
+registers it into `<tamias-home>/drivers/`, and tamias finds it:
+
+```
+mypkg/
+  tamias.yaml         # type: myco-config
+  drivers/
+    tamias-driver-myco
+```
+
+## Check
+
+```sh
+tamias doctor --json    # lists discovered drivers
+```
+
+## See also
+
+* [Content types](/explanation/content-types)
+* [Provision and service](/how-to/provision-a-service)
+
+---
+
+---
+url: /tamias/reference/cli.md
+---
+# tamias CLI
+
+```
+Package & content manager — fetch, store, cache, dispense
+
+Usage: tamias [COMMAND]
+
+Commands:
+  install          Fetch → store a package from a ref
+  add              Install a ref and record it in `tamias.yaml` + `tamias.lock`
+  remove           Drop a store entry (cache untouched)
+  list             List installed packages
+  info             Show one package's manifest + provenance
+  verify           Digest-check a package against its record
+  update           Re-resolve + re-install a package from its recorded ref
+  pin              Retarget an installed package's recorded source ref
+  cache            Fetch-cache maintenance
+  version          Print the tamias version
+  manifest         Print the machine-readable capability manifest
+  schema           Print the `tamias.yaml` JSON Schema
+  gen-cli-docs     Print the CLI reference (markdown) generated from the parser
+  completions      Print a shell completion script
+  doctor           Diagnose the host metaservice (store, cache, registry, drivers)
+  config           Show the effective config — YAML (`tamias.yml`) is the standard
+  serve            Run the ndjson JSON-RPC service over stdio
+  publish          Publish a package dir to a registry
+  search           Search a registry's index
+  bundle           Author-side packing
+  registry         Registry operations
+  deploy-registry  Deploy the registry Worker (Cloudflare)
+  deploy           Deploy an installed package's service/runtime (via its provider)
+  uninstall        Uninstall — provider teardown + drop the store entry
+  service          Manage a per-user service unit (systemd)
+  help             Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help
+
+  -V, --version
+          Print version
+
+```
+
+---
+
+---
+url: /tamias/reference/refs.md
+---
+# Ref grammar
+
+A **ref** names *where* a package comes from. One grammar covers all
+sources; the impl is picked by shape.
+
+```
+./dir                                         local (dev loop)
+git:9aia/peregrin//libraries/ci-gate#v0.2.0   git + in-repo subdir + ref
+https://…/ci-gate-0.2.0.tgz#sha256:<hex>        tarball (+ digest pin)
+cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry
+```
+
+## Git
+
+* `//subdir` splits the repo from the in-repo path (go-getter
+  convention) — required because nested groups make bare `a/b/c/d`
+  ambiguous. Without `//`, a two-segment prefix is the repo and the
+  remainder is the in-repo path.
+* `#ref` is a branch, tag, or sha — the version pin. The resolved
+  commit sha is recorded in the store regardless.
+* `org/repo` defaults to `github.com`; `host/org/repo` becomes
+  `https://host/org/repo`; `git@host:…` and `ssh://`/`file://` pass
+  through.
+
+## HTTP
+
+* A `.tgz` / `.tar.gz` URL, with an optional `#sha256:<hex>` pin.
+
+## Cloudflare registry
+
+```
+cf:<account>/<bucket…>/<name>@<version>
+```
+
+The address derives the base URL: a full `http(s)://…` passes through
+(local / dev registries), a first segment with **no dot** is a
+`workers.dev` subdomain, and later segments are a path prefix.
+
+```
+cf:9aia/myrepo/ci-gate@0.2.0        → https://9aia.workers.dev/myrepo
+cf:reg.example.com/ci-gate@0.2.0    → https://reg.example.com
+cf:http://127.0.0.1:8903/w@1.0.0    → http://127.0.0.1:8903
+```
+
+`install` fetches `<base>/index.json`, finds `name@version`, then pulls
+the tarball (`<base>/<file>`) over HTTP.
+
+## Local
+
+* `./x`, `../x`, `~/x`, `/x`, or a bare path.
+
+---
+
+---
+url: /tamias/reference/config.md
+---
+# Config — `tamias.toml`
+
+## `[locations.NAME]` — an install/fetch location
+
+| field | type | required | notes |
+|---|---|---|---|
+| `kind` | `string` | optional | Impl kind — `local` (default) or `cf`. |
+| `root` | `string` | optional | Root dir (or URL base for `cf`). |
+
+## `[registries.NAME]` — a content registry
+
+| field | type | required | notes |
+|---|---|---|---|
+| `kind` | `string` | optional | `local` (default) or `cf`. |
+| `url` | `string` | optional | Base URL (http) or root dir. |
+| `token_env` | `string` | optional | Env var **name** holding the bearer token — never the token. |
+
+## `[publish]` — publish routing
+
+| field | type | required | notes |
+|---|---|---|---|
+| `default` | `string` | optional | Registry name `publish` targets by default. |
+
+## Top level
+
+| field | type | required | notes |
+|---|---|---|---|
+| `store` | `Location` | required | Install store location. |
+| `cache` | `Location` | required | Fetch-cache location. |
+| `registries` | `BTreeMap<String, Registry>` | required | Named registries. |
+| `publish` | `Publish` | required | Publish routing. |
+
+## format trait (parse/render)
+
+| field | type | required | notes |
+|---|---|---|---|
+
+## `[envs]` route forms
+
+Either a bare vault name or the table above:
+
+```toml
+[envs]
+dev = "local"
+prod = { vault = "cloud" }
+```
+
+## Constraints
+
+* `deny_unknown_fields`: typos in field names fail the load.
+* Search order: `--config` → `$TAMIAS_CONFIG` → `./tamias.toml` →
+  `~/.config/tamias/tamias.toml`. The file is optional — no
+  `tamias.toml` anywhere just means defaults (local age vault,
+  `dev` env).
+* Token values never live in the file — `token_env` fields name
+  the env var that carries them.
+* `tamias schema` emits the JSON Schema for this shape;
+  `tamias check` validates a real file end-to-end.
+
+---
+
+---
+url: /tamias/explanation/architecture.md
+---
+# Architecture
+
+> Seeded from a copy of `cuora` (its ports-and-adapters anatomy and the
+> `-cf` Worker pattern).
+
+tamias is **ports-and-adapters**. The engine owns the generic half of
+distribution; every content *meaning* is an adapter.
+
+## Ports
+
+| Port | Role | Impls |
+| --- | --- | --- |
+| `ref` | claims + parses a ref into an opaque spec | one per kind (in the `source-*` crates) |
+| `source` | `plan(spec)` → `fetch(plan, into)` | `-fs`, `-git`, `-http`, `-cf` |
+| `store` | put/get/verify an installed package | `-local`, `-cf` |
+| `cache` | content-addressed fetch cache | `-local`, `-cf` |
+| `registry` | index + publish | `-local`, `-cf` (Worker + R2 + D1/KV) |
+| `deploy` | service unit + teardown | `-local` (systemd) |
+| `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, JSON) |
+
+## The install path
+
+```
+ref ─► resolve ─► (cache hit?) ─► fetch ─► overlay (include:) ─► driver install ─► store
+```
+
+`resolve` pins git refs to a commit sha up front, so the content-
+addressed cache can be hit *before* fetching. The fetch→unpack split is
+what makes repeat installs and air-gapped nodes free.
+
+## Stores
+
+* **install store** — `<name>@<version>/` with a record (source ref,
+  resolved sha, payload digest, installed-at).
+* **fetch cache** — content-addressed; `remove` never touches it.
+* **registry** — where published content lives: a directory, or a
+  Cloudflare Worker + R2 + D1/KV.
+
+## Provenance
+
+`verify` recomputes the payload digest against the record. Digest-pinned
+refs (`#sha256:…`, resolved shas) are the integrity contract.
+
+---
+
+---
+url: /tamias/explanation/content-types.md
+---
+# Content types
+
+The engine is **generic**: it moves *bytes + a manifest* and doesn't
+care what the bytes mean. A **content type** declares the meaning —
+where and how a package installs.
+
+## Declared, not linked
+
+A content type is *data first*: the package's manifest names its `type`
+(`kind`). The manager never links a product crate. When a product must do
+real work (materialize a node config, enable a systemd unit), it ships a
+**driver** binary the manager launches over a pipe — "no plugin system:
+files" (peregrin’s own ADR).
+
+## The roster
+
+| Type | Payload | Installs into |
+| --- | --- | --- |
+| `peregrin-bundle` | workflows, `.node.yml`, `.snippet.yml`, `.field.yml`, `.prompt.yml` | the peregrin bundle store |
+| `myco-config` | `[[kinds]]`, `[views]`, `[verbs]`, templates | `myco.toml` / a seeded `project/` |
+| `kuda-domain` | `data/domains/*.toml` | `.kuda/domains/` |
+| `mimus-rules` | `rules/*.toml` | `rules/` |
+| `files` | anything | the store entry (no driver) |
+
+Adding a type is a new `tamias-driver-<type>` binary — never a change to
+the engine.
+
+## Providers (and the driver system)
+
+The engine is generic — it moves *bytes + a manifest* and unpacks into the
+store. Everything product-specific beyond that is a **provider**: tamias
+shells `<provider> provision {install,deploy,uninstall} --dir … --name … [--config …]` and never learns the product's schema.
+
+* `peregrin-bundle` → provider **`peregrin`** (materializes a node config +
+  a systemd unit).
+* `files` → no provider (the store install is the whole story).
+
+This is generalizing into a first-class **driver system** (`P10`): each
+product ships a Rust binary **`tamias-driver-<name>`**, tamias discovers it
+on `PATH`/`<tamias-home>/drivers/`, and speaks JSON over stdio
+(`capabilities`/`install`/`deploy`/`uninstall`). Installing a product drops
+its driver; tamias finds it. No compile-time coupling either way.
+
+---
+
+---
+url: /tamias/explanation/boundaries.md
+---
+# Boundaries
+
+Tamias owns **content distribution**: refs, transport, the install store
+
+* fetch cache, and content-type dispatch. Every neighbour owns its own
+  concern.
+
+| Sibling | Owns | Relationship |
+| --- | --- | --- |
+| **peregrin** | orchestration | `install/remove/list/…` become thin wrappers over `tamias-*`; peregrin's distribution impl moves here |
+| **myco** | work memory | kinds/views/templates ship as a `myco-config` content type |
+| **kuda** | code memory | `kuda-domain` packs |
+| **mimus** | critic | `mimus-rules` packs |
+| **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
+| **sturn** | coordination | claim the store lock during concurrent installs |
+| **bupha / ci-gate** | CI gate | the first published bundle |
+| **sepia** | sessions | — |
+| **cicada** | scheduling | `tamias update --all` + registry reindex |
+
+A hosted registry is in scope (it's a `registry` impl). A daemon or
+multi-actor arbitration belongs to peregrin.
+
+---
+
+---
+url: /tamias/reference/crate-api.md
+---
+# Crate API
+
+Rustdoc for every workspace crate — public APIs are
+documented at source (doc comments).
+
+* [tamias-core](/tamias/api/tamias_core/index.html) — domain
+* [tamias-config](/tamias/api/tamias_config/index.html) — port
+* [tamias-deploy](/tamias/api/tamias_deploy/index.html) — port
+* [tamias-cache](/tamias/api/tamias_cache/index.html) — adapter
+* [tamias-cache-cf](/tamias/api/tamias_cache_cf/index.html) — adapter
+* [tamias-cache-local](/tamias/api/tamias_cache_local/index.html) — adapter
+* [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
+* [tamias-config-yml](/tamias/api/tamias_config_yml/index.html) — adapter
+* [tamias-deploy-cf](/tamias/api/tamias_deploy_cf/index.html) — adapter
+* [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
+* [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
+* [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
+* [tamias-registry](/tamias/api/tamias_registry/index.html) — adapter
+* [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
+* [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter
+* [tamias-serve](/tamias/api/tamias_serve/index.html) — adapter
+* [tamias-shell](/tamias/api/tamias_shell/index.html) — adapter
+* [tamias-source](/tamias/api/tamias_source/index.html) — adapter
+* [tamias-source-cf](/tamias/api/tamias_source_cf/index.html) — adapter
+* [tamias-source-fs](/tamias/api/tamias_source_fs/index.html) — adapter
+* [tamias-source-git](/tamias/api/tamias_source_git/index.html) — adapter
+* [tamias-source-http](/tamias/api/tamias_source_http/index.html) — adapter
+* [tamias-store](/tamias/api/tamias_store/index.html) — adapter
+* [tamias-store-cf](/tamias/api/tamias_store_cf/index.html) — adapter
+* [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
+* [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
+* [tamias-testkit](/tamias/api/tamias_testkit/index.html) — adapter
+* [tamias](/tamias/api/tamias/index.html) — binary
+
+---
+
+---
+url: /tamias/public/api/static.files/SourceSerif4-LICENSE-a2cfd9d5.md
+---
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. All Rights Reserved. Source is a trademark of Adobe in the United States and/or other countries.
+Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’. All Rights Reserved. Source is a trademark of Adobe in the United States and/or other countries.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+
+This license is copied below, and is also available with a FAQ at: http://scripts.sil.org/OFL
+
+***
+
+## SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1. Neither the Font Software nor any of its individual components,
+   in Original or Modified Versions, may be sold by itself.
+
+2. Original or Modified Versions of the Font Software may be bundled,
+   redistributed and/or sold with any software, provided that each copy
+   contains the above copyright notice and this license. These can be
+   included either as stand-alone text files, human-readable headers or
+   in the appropriate machine-readable metadata fields within text or
+   binary files as long as those fields can be easily viewed by the user.
+
+3. No Modified Version of the Font Software may use the Reserved Font
+   Name(s) unless explicit written permission is granted by the corresponding
+   Copyright Holder. This restriction only applies to the primary font name as
+   presented to the users.
+
+4. The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+   Software shall not be used to promote, endorse or advertise any
+   Modified Version, except to acknowledge the contribution(s) of the
+   Copyright Holder(s) and the Author(s) or with their explicit written
+   permission.
+
+5. The Font Software, modified or unmodified, in part or in whole,
+   must be distributed entirely under this license, and must not be
+   distributed under any other license. The requirement for fonts to
+   remain under this license does not apply to any document created
+   using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.

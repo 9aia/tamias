@@ -1,0 +1,39 @@
+# tamias
+
+> package & content manager for the agent factory
+
+fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mimus rules, one tool
+
+## Table of Contents
+
+### Getting Started
+
+- [Getting Started](/tamias/getting-started.md)
+
+### Tutorials
+
+- [Tutorial: your first package](/tamias/tutorials/first-package.md)
+
+### How-to
+
+- [How to install from a git repo](/tamias/how-to/install-from-git.md)
+- [How to publish to a registry](/tamias/how-to/publish-to-a-registry.md)
+- [How to provision and service-manage a package](/tamias/how-to/provision-a-service.md)
+- [How to write a content driver](/tamias/how-to/write-a-driver.md)
+
+### Reference
+
+- [tamias CLI](/tamias/reference/cli.md)
+- [Ref grammar](/tamias/reference/refs.md)
+- [Config — `tamias.toml`](/tamias/reference/config.md)
+
+### Explanation
+
+- [Architecture](/tamias/explanation/architecture.md)
+- [Content types](/tamias/explanation/content-types.md)
+- [Boundaries](/tamias/explanation/boundaries.md)
+
+### Other
+
+- [Crate API](/tamias/reference/crate-api.md)
+- [Untitled](/tamias/public/api/static.files/SourceSerif4-LICENSE-a2cfd9d5.md)
