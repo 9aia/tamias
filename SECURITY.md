@@ -15,8 +15,8 @@ Do not open public issues for security reports.
   shas); SSH-sign (sturn-style) as the growth path; the fetch cache is
   content-addressed.
 - `tamias.yaml` / `tamias.lock` hold names, refs, and digests — never
-  secret values. Publish tokens resolve via env var → keyring → arca
-  (`arca://` refs), never inline.
+  secret values. Publish tokens resolve via env var → keyring → cuora
+  (`cuora://` refs), never inline.
 - Refs and names are validated before they touch store keys — strict
   segment rules, bounded length, no path traversal.
 

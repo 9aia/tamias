@@ -3,7 +3,7 @@
 //! Worker (`worker/index.js`) backed by R2, or any host speaking the same
 //! protocol (`GET /<key>`, `PUT /<key>`). The **client** maintains the
 //! `index.json` (read-modify-write); the server is a dumb, token-guarded
-//! blob store. Auth is a bearer token — from `token_env` / arca, never
+//! blob store. Auth is a bearer token — from `token_env` / cuora, never
 //! inline.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
@@ -36,7 +36,7 @@ impl HttpRegistry {
         }
     }
 
-    /// A bearer token for auth (from `token_env`/arca).
+    /// A bearer token for auth (from `token_env`/cuora).
     #[must_use]
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());

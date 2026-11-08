@@ -11,7 +11,7 @@ pure domain (no I/O); `tamias-source`/`tamias-store`/`tamias-cache`/
 `-local`/`-cf` crates their impls; `tamias` (`crates/tamias-cli`) is the
 composition root. `xtask/` is repo chores.
 
-> Seeded from `arca`; the crate set is being re-derived per org-ledger
+> Seeded from `cuora`; the crate set is being re-derived per org-ledger
 > P-002.
 
 ## Rules of thumb

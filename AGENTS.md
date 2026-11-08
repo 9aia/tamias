@@ -7,7 +7,7 @@ dispense. Named for *Tamias* — the chipmunk; Greek *tamías* =
 and delegates content **meaning** to pluggable *content types* — so one
 manager ships peregrin bundles, myco kinds/templates, kuda domains,
 mimus rules, and anything else. Rust workspace, ports-and-adapters.
-Seeded from a copy of `arca` (its anatomy + cf-Worker pattern) and
+Seeded from a copy of `cuora` (its anatomy + cf-Worker pattern) and
 grown from peregrin's distribution machinery (ADR-0079).
 
 <!-- myco:agent-awareness -->
@@ -72,7 +72,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `xtask` (pkg `tamias-xtask`) | check / test / coverage / install / site |
 
 > **Seed state (P2 re-derivation).** This repo was seeded from a copy of
-> `arca`, so the crates currently carry arca's vault/identity/deploy
+> `cuora`, so the crates currently carry cuora's vault/identity/deploy
 > shapes under `tamias-*` names. They are being re-derived into the map
 > above — see org-ledger `P-002` and `project/adrs`.
 
@@ -87,8 +87,8 @@ store + fetch cache, and content-type dispatch. Neighbors own theirs:
   `myco-config` content type.
 - **kuda** — code memory; `kuda-domain` packs.
 - **mimus** — critic; `mimus-rules` packs.
-- **arca** — secrets; publish tokens / private-registry creds via
-  `arca://` refs (values never in `tamias.yaml`).
+- **cuora** — secrets; publish tokens / private-registry creds via
+  `cuora://` refs (values never in `tamias.yaml`).
 - **sturn** — ephemeral coordination; claim the store/lock during
   concurrent installs.
 - **bupha** / `ci-gate` — the first published bundle.

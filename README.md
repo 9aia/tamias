@@ -97,7 +97,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `tamias-cli` | the `tamias` binary |
 | `xtask` | check / test / coverage / install / site |
 
-> Seeded from a copy of `arca` — its workspace anatomy, xtask, hooks,
+> Seeded from a copy of `cuora` — its workspace anatomy, xtask, hooks,
 > worktrees, skills, and the `-cf` Worker pattern. The crate set is
 > being re-derived into the map above (org ledger P-002).
 
@@ -106,8 +106,8 @@ domain (no I/O); ports are traits, impls are separate crates;
 tamias = **content distribution**. Neighbors: **peregrin** (orchestration
 — its `install/…` verbs become thin wrappers here), **myco** (work memory
 — kinds/views/templates ship as a content type), **kuda** (code memory —
-domain packs), **mimus** (rules packs), **arca** (secrets — publish tokens
-via `arca://`), **sturn** (claims the store lock), **bupha**/**ci-gate**
+domain packs), **mimus** (rules packs), **cuora** (secrets — publish tokens
+via `cuora://`), **sturn** (claims the store lock), **bupha**/**ci-gate**
 (the first published bundle), **sepia** (sessions), **cicada** (scheduled
 updates).
 

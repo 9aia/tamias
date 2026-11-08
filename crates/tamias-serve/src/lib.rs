@@ -1,7 +1,7 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-serve — the ndjson JSON-RPC surface for embedding: read one JSON
 //! request per line on stdin, write one JSON response per line on stdout.
-//! Same wire as `sepia serve` / `arca serve` / `myco serve`.
+//! Same wire as `sepia serve` / `cuora serve` / `myco serve`.
 //!
 //! Ops: `install`, `list`, `info`, `verify`, `remove`. Requests are
 //! `{"op":"…", …}`; responses are `{"ok":true,"result":…}` or
