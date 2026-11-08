@@ -143,4 +143,15 @@ mod tests {
         let r = SourceRef::Fs(std::path::PathBuf::from("/nonexistent-xyz-123"));
         assert!(FsSource::new().resolve(&r).is_err());
     }
+
+    #[test]
+    fn fetch_plain_tar() {
+        let out = tempfile::tempdir().unwrap();
+        let tar_path = out.path().join("x.tar");
+        // a minimal, valid empty tar: two zero blocks
+        std::fs::write(&tar_path, vec![0u8; 1024]).unwrap();
+        let resolved = FsSource::new().resolve(&SourceRef::Fs(tar_path)).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        FsSource::new().fetch(&resolved, dest.path()).unwrap();
+    }
 }

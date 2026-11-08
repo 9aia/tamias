@@ -267,4 +267,15 @@ mod tests {
         let entry = store.install(p.path(), rec).unwrap();
         assert_eq!(entry.label(), "w@deadbeefcafe");
     }
+
+    #[test]
+    fn collect_skips_non_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path());
+        std::fs::write(root.path().join("stray.txt"), "x").unwrap();
+        let p = tempfile::tempdir().unwrap();
+        std::fs::write(p.path().join("a.txt"), "a").unwrap();
+        store.install(p.path(), record("w", None)).unwrap();
+        assert_eq!(store.entries().unwrap().len(), 1);
+    }
 }

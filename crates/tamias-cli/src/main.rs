@@ -626,6 +626,8 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+    /// Serializes tests that mutate the process working directory.
+    static CWD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn env(root: &std::path::Path) -> Env {
         Env {
@@ -728,6 +730,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
+        let _g = CWD.lock().unwrap();
         let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
         let result = run_args(e.clone(), &["tamias", "add", dir.to_str().unwrap()]);
@@ -939,5 +942,45 @@ mod tests {
         std::fs::write(dd.join("tamias-driver-x"), "#!/bin/sh\n").unwrap();
         run_args(e.clone(), &["tamias", "doctor"]).unwrap();
         std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn add_with_existing_manifest_and_service_verbs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        {
+            let _g = CWD.lock().unwrap();
+            let prev = std::env::current_dir().unwrap();
+            std::env::set_current_dir(tmp.path()).unwrap();
+            std::fs::write(
+                tmp.path().join("tamias.yaml"),
+                "name: proj\nversion: 1.0.0\n",
+            )
+            .unwrap();
+            let result = run_args(e.clone(), &["tamias", "add", dir.to_str().unwrap()]);
+            std::env::set_current_dir(prev).unwrap();
+            result.unwrap();
+        }
+        // stub `systemctl` on PATH → service enable/disable print their lines
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let fake = bin.join("systemctl");
+        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let old = std::env::var_os("PATH").unwrap_or_default();
+        let mut newp = bin.clone().into_os_string();
+        newp.push(":");
+        newp.push(&old);
+        std::env::set_var("PATH", newp);
+        let r1 = run_args(e.clone(), &["tamias", "service", "enable", "foo"]);
+        let r2 = run_args(e.clone(), &["tamias", "service", "disable", "foo"]);
+        std::env::set_var("PATH", old);
+        r1.unwrap();
+        r2.unwrap();
     }
 }

@@ -288,4 +288,9 @@ mod tests {
         assert!(text.contains("WorkingDirectory=/w"));
         assert!(text.contains("Environment=A=1"));
     }
+
+    #[test]
+    fn default_uses_new() {
+        let _ = LocalDeploy::default();
+    }
 }

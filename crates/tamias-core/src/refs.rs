@@ -339,4 +339,22 @@ mod tests {
         assert!(parse_ref("https://x/y.tgz#sha256:short").is_err());
         assert!(parse_ref("git:x/y//a/../b").is_err());
     }
+
+    #[test]
+    fn git_no_slash_trailing_and_host_forms() {
+        assert!(parse_ref("git:justrepo").is_ok());
+        assert!(parse_ref("git:org/repo/").is_ok());
+        assert!(parse_ref("git:org/repo/a/../b").is_err());
+        assert!(parse_ref("git:github.com/org/repo").is_ok());
+    }
+
+    #[test]
+    fn expand_path_non_utf8_is_verbatim() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let p = PathBuf::from(std::ffi::OsStr::from_bytes(b"~\xff"));
+            assert_eq!(expand_path(&p), p);
+        }
+    }
 }

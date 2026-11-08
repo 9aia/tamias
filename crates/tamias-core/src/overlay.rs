@@ -230,4 +230,13 @@ mod overlay_tests {
         std::fs::write(d.path().join("f.txt"), "x").unwrap();
         assert!(payload_root(d.path()).is_err());
     }
+
+    #[test]
+    fn merge_scalar_and_unknown_ext() {
+        assert_eq!(
+            merge_documents(&serde_json::json!(1), &serde_json::json!(2)),
+            serde_json::json!(1)
+        );
+        assert!(doc_format(Path::new("x.txt")).is_none());
+    }
 }

@@ -220,4 +220,12 @@ mod tests {
         assert!(s2.is_dir());
         assert!(!s1.join("f").exists());
     }
+
+    #[test]
+    fn commit_missing_scratch_errors() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = FetchCache::new(root.path().join("fetch"));
+        let missing = root.path().join("nope");
+        assert!(cache.commit(&missing, "sha256-abc").is_err());
+    }
 }

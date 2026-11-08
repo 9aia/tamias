@@ -135,4 +135,21 @@ mod tests {
         };
         assert_eq!(e2.label(), "w@deadbeefcafe");
     }
+
+    #[test]
+    fn copy_tree_propagates_copy_failure() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                src.path().join("a.txt"),
+                std::fs::Permissions::from_mode(0o000),
+            )
+            .unwrap();
+        }
+        let dest = tempfile::tempdir().unwrap();
+        assert!(copy_tree(src.path(), dest.path()).is_err());
+    }
 }

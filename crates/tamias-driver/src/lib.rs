@@ -285,4 +285,22 @@ mod tests {
         }
         std::env::remove_var("TAMIAS_HOME");
     }
+
+    #[test]
+    fn dispatch_with_config_and_non_file_entry() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        let dd = drivers_dir();
+        write_driver(&dd, "tamias-driver-cfg", "#!/bin/sh\nexit 0\n");
+        let cfg = tmp.path().join("cfg.yaml");
+        std::fs::write(&cfg, "x").unwrap();
+        assert!(dispatch("cfg", "deploy", tmp.path(), "n", Some(&cfg)).unwrap());
+        // a subdir under drivers/ is skipped when registering bundled drivers
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(payload.join("drivers/sub")).unwrap();
+        std::fs::write(payload.join("drivers/d1"), "#!/bin/sh\n").unwrap();
+        assert_eq!(register_bundled_drivers(&payload).unwrap().len(), 1);
+        std::env::remove_var("TAMIAS_HOME");
+    }
 }

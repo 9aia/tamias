@@ -319,4 +319,40 @@ mod tests {
     fn serve_probe_is_covered() {
         assert!(serve(env()).is_err());
     }
+
+    #[test]
+    fn cache_hit_and_missing_name_error() {
+        let env = env();
+        // manifest without a name → the missing-name arm
+        let pkg = tempfile::tempdir().unwrap();
+        std::fs::write(pkg.path().join("tamias.yaml"), "version: 1.0.0\n").unwrap();
+        let r = format!(
+            "{{\"op\":\"install\",\"ref\":{:?}}}",
+            pkg.path().to_str().unwrap()
+        );
+        assert!(dispatch(&env, &r).is_err());
+
+        // git install twice → the second is served from the fetch cache
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("tamias.yaml"), "name: c\nversion: 1.0.0\n").unwrap();
+        let git = |a: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(repo.path())
+                .args(a)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .status()
+                .unwrap()
+                .success()
+        };
+        assert!(git(&["init", "-q", "-b", "main"]));
+        assert!(git(&["add", "-A"]));
+        assert!(git(&["commit", "-q", "-m", "i"]));
+        let r = format!("git:file://{}#main", repo.path().display());
+        let rj = format!("{{\"op\":\"install\",\"ref\":{r:?}}}");
+        let _ = dispatch(&env, &rj);
+        let _ = dispatch(&env, &rj);
+    }
 }

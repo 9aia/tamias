@@ -315,4 +315,47 @@ mod tests {
         assert_eq!(registry.search("acme").unwrap().len(), 1);
         assert_eq!(registry.search("s").unwrap().len(), 1);
     }
+
+    #[test]
+    fn sanitize_default_curdir_arms() {
+        let root = tempfile::tempdir().unwrap();
+        let rp = root.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = serve_http("127.0.0.1:8795", &rp);
+        });
+        for _ in 0..100 {
+            if std::net::TcpStream::connect("127.0.0.1:8795").is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        // empty path → index.json (absent → 404)
+        let root_req = raw("127.0.0.1:8795", b"GET / HTTP/1.1\r\n\r\n");
+        assert!(root_req.contains("404"), "{root_req}");
+        // a "./" component is skipped
+        let cur = raw(
+            "127.0.0.1:8795",
+            b"PUT /./k HTTP/1.1\r\nContent-Length: 1\r\n\r\nz",
+        );
+        assert!(cur.contains("200"), "{cur}");
+        let got = raw("127.0.0.1:8795", b"GET /./k HTTP/1.1\r\n\r\n");
+        assert!(got.contains('z'), "{got}");
+    }
+
+    #[test]
+    fn respond_unknown_code_uses_error_reason() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let h = std::thread::spawn(move || {
+            let (mut s, _) = listener.accept().unwrap();
+            respond(&mut s, 999, b"x").unwrap();
+        });
+        let mut c = std::net::TcpStream::connect(addr).unwrap();
+        let mut buf = Vec::new();
+        use std::io::Read as _;
+        let _ = c.read_to_end(&mut buf);
+        h.join().unwrap();
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("999 Error"), "{text}");
+    }
 }

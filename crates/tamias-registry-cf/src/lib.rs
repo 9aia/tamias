@@ -9,6 +9,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tamias_core::{dir_digest, pack_tgz, Error, Manifest};
 use tamias_registry::{Registry, RegistryEntry};
@@ -87,6 +88,20 @@ impl HttpRegistry {
     }
 }
 
+/// A per-call-unique temp path for the transient publish tarball, so
+/// concurrent publishes in one process don't clobber each other's file.
+fn publish_tmp_path(version: &str) -> std::path::PathBuf {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    std::env::temp_dir().join(format!(
+        "tamias-pub-{}-{nanos}-{seq}-{version}.tgz",
+        std::process::id()
+    ))
+}
+
 impl Registry for HttpRegistry {
     fn entries(&self) -> Result<Vec<RegistryEntry>, Error> {
         match self.get("index.json") {
@@ -106,8 +121,7 @@ impl Registry for HttpRegistry {
             .clone()
             .unwrap_or_else(|| "0.0.0".to_string());
         let rel = format!("{scoped}/{version}.tgz");
-        let tmp =
-            std::env::temp_dir().join(format!("tamias-pub-{}-{}.tgz", std::process::id(), version));
+        let tmp = publish_tmp_path(&version);
         pack_tgz(payload_root, &tmp)?;
         let bytes = std::fs::read(&tmp).map_err(Error::io(format!("read {}", tmp.display())))?;
         let _ = std::fs::remove_file(&tmp);
@@ -170,11 +184,16 @@ mod tests {
         std::thread::spawn(move || {
             let _ = serve_http("127.0.0.1:8793", &root);
         });
-        std::thread::sleep(std::time::Duration::from_millis(400));
         let src = tempfile::tempdir().unwrap();
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
         let registry = HttpRegistry::new("http://127.0.0.1:8793");
+        for _ in 0..100 {
+            if std::net::TcpStream::connect("127.0.0.1:8793").is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
         assert_eq!(
             registry.publish(src.path(), &manifest).unwrap().label(),
             "x@1.0.0"
@@ -206,6 +225,93 @@ mod tests {
         let src = tempfile::tempdir().unwrap();
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
+        assert!(registry.publish(src.path(), &manifest).is_err());
+    }
+
+    #[test]
+    fn scoped_publish_put_token_and_overwrite() {
+        use tamias_registry_local::serve_http;
+        let reg = tempfile::tempdir().unwrap();
+        let root = reg.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = serve_http("127.0.0.1:8796", &root);
+        });
+        for _ in 0..100 {
+            if std::net::TcpStream::connect("127.0.0.1:8796").is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("tamias.yaml"),
+            "name: s\nscope: acme\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        let registry = HttpRegistry::new("http://127.0.0.1:8796").with_token("tok");
+        assert_eq!(
+            registry.publish(src.path(), &manifest).unwrap().label(),
+            "@acme/s@1.0.0"
+        );
+        // re-publish → the existing index entry is replaced
+        assert_eq!(
+            registry.publish(src.path(), &manifest).unwrap().label(),
+            "@acme/s@1.0.0"
+        );
+        assert_eq!(registry.entries().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn from_env_token_header_is_sent() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let h = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut s, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let n = s.read(&mut buf).unwrap_or(0);
+            let _ =
+                s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]");
+            let _ = s.flush();
+            String::from_utf8_lossy(&buf[..n]).to_string()
+        });
+        std::env::set_var("TAMIAS_REGISTRY_TOKEN", "sekret");
+        let registry = HttpRegistry::from_env(format!("http://127.0.0.1:{port}"));
+        let _ = registry.entries().unwrap();
+        std::env::remove_var("TAMIAS_REGISTRY_TOKEN");
+        let req = h.join().unwrap().to_lowercase();
+        assert!(req.contains("authorization: bearer sekret"), "{req}");
+    }
+
+    #[test]
+    fn put_non_success_errors() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            for _ in 0..2 {
+                let Ok((mut s, _)) = listener.accept() else {
+                    return;
+                };
+                let mut buf = [0u8; 4096];
+                let n = s.read(&mut buf).unwrap_or(0);
+                if buf[..n].starts_with(b"PUT") {
+                    let _ = s.write_all(
+                        b"HTTP/1.1 500 X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    );
+                } else {
+                    let _ = s.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]",
+                    );
+                }
+                let _ = s.flush();
+            }
+        });
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        let registry = HttpRegistry::new(format!("http://127.0.0.1:{port}"));
         assert!(registry.publish(src.path(), &manifest).is_err());
     }
 }

@@ -147,6 +147,7 @@ pub fn output_with_env(
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;

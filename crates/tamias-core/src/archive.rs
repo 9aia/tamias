@@ -261,4 +261,23 @@ mod archive_tests {
         let dest = tempfile::tempdir().unwrap();
         assert!(untar(Cursor::new(bytes), dest.path()).is_err());
     }
+
+    #[test]
+    fn untar_skips_rootless_entry() {
+        let mut builder = Builder::new(Vec::new());
+        let mut h = tar::Header::new_gnu();
+        h.set_size(0);
+        h.set_mode(0o644);
+        h.set_cksum();
+        builder.append_data(&mut h, ".", std::io::empty()).unwrap();
+        let mut f = tar::Header::new_gnu();
+        f.set_size(1);
+        f.set_mode(0o644);
+        f.set_cksum();
+        builder.append_data(&mut f, "ok.txt", &b"x"[..]).unwrap();
+        let bytes = builder.into_inner().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        untar(Cursor::new(bytes), dest.path()).unwrap();
+        assert!(dest.path().join("ok.txt").is_file());
+    }
 }
