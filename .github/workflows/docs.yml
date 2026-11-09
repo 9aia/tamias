@@ -14,9 +14,18 @@ jobs:
       group: pages
       cancel-in-progress: true
     steps:
+      # docs/ is a gitignored worktree locally — in CI we rebuild the same
+      # layout: main checkout at tamias/, docs branch checked out inside it
+      # at tamias/docs/ so gen-*.py `cd ..` lands on the real code.
       - uses: actions/checkout@v4
         with:
+          ref: main
           path: tamias
+      - uses: actions/checkout@v4
+        with:
+          ref: docs
+          path: tamias/docs
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
           node-version: 22
