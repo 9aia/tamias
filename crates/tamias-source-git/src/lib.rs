@@ -8,9 +8,18 @@
 use std::any::Any;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
-use tamias_core::{copy_tree, Error};
+use tamias_core::{copy_tree, output_with_timeout, Error};
 use tamias_source::{expand_path, Fetched, Plan, RefKind, Source, Spec};
+
+/// `git clone` moves the whole repo — large repos need minutes, but a
+/// hung remote must not wedge the install forever.
+const CLONE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// `ls-remote`/`rev-parse`/`checkout` are quick probes — a minute is
+/// generous for a responsive remote and a local checkout.
+const GIT_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The `git:` ref kind.
 #[derive(Clone, Copy, Debug, Default)]
@@ -59,11 +68,71 @@ fn parse_git(rest: &str) -> Result<Spec, Error> {
         return Err(Error::Failed("git: ref missing the repo".to_string()));
     }
     let (repo, subdir) = split_subdir(head)?;
-    Ok(Box::new(GitSpec {
-        url: normalize_clone_url(repo),
-        subdir,
-        rev,
-    }))
+    let url = normalize_clone_url(repo);
+    validate_clone_url(&url)?;
+    if let Some(rev) = &rev {
+        validate_rev(rev)?;
+    }
+    Ok(Box::new(GitSpec { url, subdir, rev }))
+}
+
+/// A clone URL git argv can safely carry: an allowlisted scheme, scp-style
+/// `host:path`, or a local path — never a leading `-` (which git's option
+/// parser would read as a flag like `--upload-pack`) and never whitespace
+/// or control chars.
+fn validate_clone_url(url: &str) -> Result<(), Error> {
+    let bad = url.is_empty()
+        || url.starts_with('-')
+        || url.chars().any(|c| c.is_whitespace() || c.is_control());
+    if bad {
+        return Err(Error::Failed(format!("bad clone url '{url}'")));
+    }
+    let ok = if let Some((scheme, rest)) = url.split_once("://") {
+        if !matches!(
+            scheme.to_ascii_lowercase().as_str(),
+            "http" | "https" | "ssh" | "git" | "file"
+        ) {
+            return Err(Error::Failed(format!(
+                "unsupported clone scheme '{scheme}:'"
+            )));
+        }
+        // the repo path must exist — `https://host` alone names no repo
+        rest.split_once('/')
+            .is_some_and(|(_, path)| !path.is_empty())
+    } else if is_scp_style(url) {
+        // `host:path` — the `:` precedes the first `/`; argv-safe because
+        // the string can't start with `-` and carries no whitespace.
+        true
+    } else {
+        url.starts_with('/') || url.starts_with('.') || url.starts_with('~')
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(Error::Failed(format!("bad clone url '{url}'")))
+    }
+}
+
+/// A `#rev` pin that can't smuggle a git option: conservative charset
+/// (alnum plus `._/+@-~^` — `~`/`^` are relative-rev syntax like
+/// `HEAD~2`/`main^`, inert as argv since they can't lead with `-`),
+/// no leading `-`, no `..`/`//`/trailing `.`/`/` (mirrors
+/// `git check-ref-format`). `{`/`}` stay excluded so `^{…}` peel
+/// syntax can't be injected into the `{want}^{commit}` we append.
+fn validate_rev(rev: &str) -> Result<(), Error> {
+    let ok = !rev.is_empty()
+        && !rev.starts_with('-')
+        && rev.chars().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | '+' | '@' | '~' | '^')
+        })
+        && !rev.contains("..")
+        && !rev.contains("//")
+        && !rev.ends_with(['/', '.']);
+    if ok {
+        Ok(())
+    } else {
+        Err(Error::Failed(format!("bad rev '{rev}'")))
+    }
 }
 
 /// Pull the `//subdir` out of `head`; fall back to the two-segment rule.
@@ -135,11 +204,22 @@ fn normalize_clone_url(repo: &str) -> String {
 }
 
 /// Run `git` in `cwd`, returning stdout (or the stderr on failure).
-fn run_git(cwd: &Path, args: &[&str]) -> Result<String, Error> {
-    let out = Command::new("git")
-        .current_dir(cwd)
+/// `timeout` bounds the whole invocation — a hung remote is killed, not
+/// waited on forever.
+fn run_git(cwd: &Path, args: &[&str], timeout: Duration) -> Result<String, Error> {
+    let mut cmd = Command::new("git");
+    cmd.current_dir(cwd)
         .args(args)
-        .output()
+        // Auth must fail, never hang: suppress every interactive prompt
+        // (terminal, askpass, ssh askpass). The rest of the env —
+        // credential helpers, `GIT_SSH`, the agent — is inherited so
+        // legitimate private repos still authenticate non-interactively.
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_ASKPASS", "")
+        .env("SSH_ASKPASS", "")
+        .env("SSH_ASKPASS_REQUIRE", "never")
+        .stdin(std::process::Stdio::null());
+    let out = output_with_timeout(&mut cmd, timeout)
         .map_err(|e| Error::Failed(format!("git {}: {e}", args.join(" "))))?;
     if !out.status.success() {
         return Err(Error::Failed(format!(
@@ -179,18 +259,29 @@ fn expand_url(url: &str) -> Result<String, Error> {
         .ok_or_else(|| Error::Failed(format!("non-UTF-8 clone path '{url}'")))
 }
 
-/// `ls-remote` stdout → `(refname → sha)`.
+/// A sha `ls-remote`/`rev-parse` reported — hex only, so a hostile remote
+/// can't smuggle a `-`-leading option into `checkout` argv.
+fn is_sha_hex(sha: &str) -> bool {
+    (sha.len() == 40 || sha.len() == 64)
+        && sha
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// `ls-remote` stdout → `(refname → sha)`; non-hex shas are dropped so a
+/// malicious remote can't inject argv into `rev-parse`/`checkout`.
 fn parse_ls_remote(out: &str) -> Vec<(String, String)> {
     out.lines()
         .filter_map(|line| {
             let (sha, refname) = line.split_once('\t')?;
-            Some((refname.trim().to_string(), sha.trim().to_string()))
+            let sha = sha.trim();
+            is_sha_hex(sha).then(|| (refname.trim().to_string(), sha.to_string()))
         })
         .collect()
 }
 
 fn resolve_remote(url: &str, rev: Option<&str>) -> Result<String, Error> {
-    let out = run_git(Path::new("."), &["ls-remote", url])?;
+    let out = run_git(Path::new("."), &["ls-remote", "--", url], GIT_TIMEOUT)?;
     let refs = parse_ls_remote(&out);
     let pick = |name: &str| refs.iter().find(|(r, _)| r == name).map(|(_, s)| s.clone());
     match rev {
@@ -246,6 +337,11 @@ impl Source for GitSource {
         let GitSpec { url, subdir, rev } = spec
             .downcast_ref::<GitSpec>()
             .ok_or_else(|| Error::Failed("GitSource only plans git refs".to_string()))?;
+        // GitSpec fields are public — re-validate at the argv boundary.
+        validate_clone_url(url)?;
+        if let Some(rev) = rev {
+            validate_rev(rev)?;
+        }
         let url = expand_url(url)?;
         let sha = match rev.as_deref() {
             Some(rev) if is_full_sha(rev) => Some(rev.to_string()),
@@ -273,17 +369,39 @@ impl Source for GitSource {
             .map_err(Error::io(format!("create {}", dest_dir.display())))?;
         let clone = dest_dir.join(".clone");
         let clone_str = clone.to_string_lossy().to_string();
-        run_git(dest_dir, &["clone", "--quiet", url, &clone_str])?;
+        // `--` ends option parsing: `url` can't become a `--upload-pack`-style
+        // flag even if validation were bypassed.
+        run_git(
+            dest_dir,
+            &["clone", "--quiet", "--", url, &clone_str],
+            CLONE_TIMEOUT,
+        )?;
         let want = sha.as_deref().or(rev.as_deref()).unwrap_or("HEAD");
         let want_commit = format!("{want}^{{commit}}");
-        let sha = run_git(&clone, &["rev-parse", "--verify", &want_commit])?
-            .trim()
-            .to_string();
-        run_git(&clone, &["checkout", "--quiet", &sha])?;
+        // rev-parse has no `--` form; `want` is charset-validated at parse
+        // and the resolved sha is re-checked hex before checkout.
+        let sha = run_git(
+            &clone,
+            &["rev-parse", "--verify", &want_commit],
+            GIT_TIMEOUT,
+        )?
+        .trim()
+        .to_string();
+        if !is_sha_hex(&sha) {
+            return Err(Error::Failed(format!(
+                "unexpected rev-parse output '{sha}'"
+            )));
+        }
+        run_git(&clone, &["checkout", "--quiet", &sha], GIT_TIMEOUT)?;
         let payload = subdir
             .as_ref()
             .map_or_else(|| clone.clone(), |s| clone.join(s));
-        if !payload.is_dir() {
+        // `symlink_metadata` — a `subdir` that's a link isn't the payload
+        // (copy_tree would walk whatever it points at).
+        let payload_is_dir = std::fs::symlink_metadata(&payload)
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
+        if !payload_is_dir {
             return Err(Error::Failed(format!(
                 "subdir '{}' not in {url}@{sha}",
                 subdir.as_deref().unwrap_or_default()
@@ -374,7 +492,7 @@ mod tests {
         assert!(dest.path().join("a.txt").is_file());
 
         // a full-sha rev needs no ls-remote
-        let sha = run_git(&repo.path().join("."), &["rev-parse", "HEAD"]).unwrap();
+        let sha = run_git(&repo.path().join("."), &["rev-parse", "HEAD"], GIT_TIMEOUT).unwrap();
         let spec = refs
             .parse(&format!(
                 "git:file://{}#{}",
@@ -403,5 +521,86 @@ mod tests {
         assert!(!source.accepts(&1u8));
         assert!(source.plan(&1u8).is_err());
         assert!(source.fetch(&ForeignPlan, d2.path()).is_err());
+    }
+
+    #[test]
+    fn hostile_refs_never_reach_git_argv() {
+        let refs = Refs::new().with(Arc::new(GitRefKind));
+        // each of these would land in `git clone`/`rev-parse` argv as an
+        // option (`--upload-pack`, `-b`, …) without validation
+        for bad in [
+            "git:--upload-pack=touch /tmp/pwned:/x", // scp-shaped + whitespace
+            "git:--upload-pack=id:file:///tmp/x",    // scp-shaped, leading '-'
+            "git:-x:y",                              // scp-shaped, leading '-'
+            "git:https://ok#--upload-pack=x",        // rev as an option
+            "git:https://ok#-b",                     // rev leading '-'
+            "git:https://ok#a b",                    // rev whitespace
+            "git:https://ok#a..b",                   // rev `..`
+            "git:https://ok#a//b",                   // rev `//`
+            "git:https://ok#v1^{}",                  // rev rev-syntax escape
+            "git:foo",                               // bare → no repo path
+            "git:foo://bar/baz",                     // scheme not allowlisted
+            "git:https://host/",                     // empty repo path
+            "git:host:path with space",              // scp + whitespace
+        ] {
+            assert!(refs.parse(bad).is_err(), "{bad} should be rejected");
+        }
+
+        // GitSpec fields are public — plan() must re-validate at the argv
+        // boundary even for a hand-built spec
+        let source = GitSource::new();
+        let spec = Box::new(GitSpec {
+            url: "--upload-pack=id".to_string(),
+            subdir: None,
+            rev: None,
+        });
+        assert!(source.plan(&*spec).is_err());
+        let spec = Box::new(GitSpec {
+            url: "https://ok/repo".to_string(),
+            subdir: None,
+            rev: Some("--upload-pack=x".to_string()),
+        });
+        assert!(source.plan(&*spec).is_err());
+
+        // the shapes we DO accept still parse
+        for good in [
+            "git:org/repo",
+            "git:git@github.com:org/repo#v1.2.3",
+            "git:ssh://git@host:2222/org/repo",
+            "git:file:///tmp/repo#main",
+            "git:https://host/org/repo//sub/dir#abc1234",
+            "git:https://host/org/repo#HEAD~2", // relative rev
+            "git:https://host/org/repo#main^",  // relative rev
+        ] {
+            assert!(refs.parse(good).is_ok(), "{good} should parse");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fetch_skips_symlinked_payload_entries() {
+        let refs = Refs::new().with(Arc::new(GitRefKind));
+        let sources = Sources::new().with(Arc::new(GitSource::new()));
+        // an attacker-controlled repo: `loot -> /` would exfiltrate the
+        // whole fs through the old walk; `a -> .` would loop it forever
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("tamias.yaml"), "name: g\nversion: 1.0.0\n").unwrap();
+        std::fs::write(repo.path().join("a.txt"), "a").unwrap();
+        std::os::unix::fs::symlink("/", repo.path().join("loot")).unwrap();
+        std::os::unix::fs::symlink(".", repo.path().join("self")).unwrap();
+        git(repo.path(), &["init", "-q", "-b", "main"]);
+        git(repo.path(), &["add", "-A"]);
+        git(repo.path(), &["commit", "-q", "-m", "i"]);
+        let url = format!("git:file://{}#main", repo.path().display());
+        let spec = refs.parse(&url).unwrap();
+        let planned = sources.plan(&*spec).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        // completes — links never enter the fetched payload
+        let fetched = planned.fetch(dest.path()).unwrap();
+        assert!(fetched.content_key.starts_with("git-"));
+        assert!(dest.path().join("a.txt").is_file());
+        assert!(!dest.path().join("loot").exists());
+        assert!(!dest.path().join("self").exists());
+        assert!(!dest.path().join("etc").exists());
     }
 }

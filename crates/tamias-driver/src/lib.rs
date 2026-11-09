@@ -17,8 +17,17 @@
 //! finds it. The engine never links a product crate.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use tamias_core::Error;
+use tamias_core::{output_with_timeout, Error};
+
+/// A driver verb (`install`/`deploy`/`uninstall`) can legitimately take a
+/// while — a hung one must not wedge the install or the single-threaded
+/// `tamias serve` loop.
+const DISPATCH_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// `capabilities` is a discovery probe — seconds, not minutes.
+const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// `<tamias-home>` — `$TAMIAS_HOME` → `$XDG_DATA_HOME/tamias` →
 /// `~/.local/share/tamias` → `./.tamias`.
@@ -73,10 +82,9 @@ fn lookup(name: &str) -> Option<PathBuf> {
 
 /// Whether `driver` reports handling `kind` (its `capabilities` `types`).
 fn driver_handles(driver: &Path, kind: &str) -> bool {
-    let Ok(out) = std::process::Command::new(driver)
-        .arg("capabilities")
-        .output()
-    else {
+    let mut cmd = std::process::Command::new(driver);
+    cmd.arg("capabilities");
+    let Ok(out) = output_with_timeout(&mut cmd, CAPABILITIES_TIMEOUT) else {
         return false;
     };
     if !out.status.success() {
@@ -105,8 +113,11 @@ pub fn discovered_drivers() -> Vec<(String, PathBuf)> {
                 .file_name()
                 .and_then(|n| n.to_str())
                 .and_then(|n| n.strip_prefix("tamias-driver-"));
+            // `file_type` never follows symlinks — a linked driver isn't
+            // dispatchable (mirrors register_bundled_drivers).
+            let is_file = entry.file_type().is_ok_and(|t| t.is_file());
             if let Some(kind) = kind {
-                if path.is_file() && !found.iter().any(|(k, _)| k == kind) {
+                if is_file && !found.iter().any(|(k, _)| k == kind) {
                     found.push((kind.to_string(), path));
                 }
             }
@@ -135,6 +146,19 @@ pub fn dispatch(
     name: &str,
     config: Option<&Path>,
 ) -> Result<bool, Error> {
+    dispatch_with_timeout(kind, verb, dir, name, config, DISPATCH_TIMEOUT)
+}
+
+/// [`dispatch`] with an explicit bound — tests shrink it; production
+/// callers get [`DISPATCH_TIMEOUT`].
+fn dispatch_with_timeout(
+    kind: &str,
+    verb: &str,
+    dir: &Path,
+    name: &str,
+    config: Option<&Path>,
+    timeout: Duration,
+) -> Result<bool, Error> {
     let Some(driver) = find_driver(kind) else {
         return Ok(false);
     };
@@ -143,9 +167,8 @@ pub fn dispatch(
     if let Some(config) = config {
         cmd.arg("--config").arg(config);
     }
-    let out = cmd
-        .output()
-        .map_err(Error::io(format!("run driver {}", driver.display())))?;
+    let out = output_with_timeout(&mut cmd, timeout)
+        .map_err(|e| Error::Failed(format!("run driver {}: {e}", driver.display())))?;
     if !out.status.success() {
         return Err(Error::Failed(format!(
             "driver {} {verb} failed: {}",
@@ -154,6 +177,42 @@ pub fn dispatch(
         )));
     }
     Ok(true)
+}
+
+/// Consent for registering + running payload-shipped drivers: the caller's
+/// `--allow-drivers` flag, or `TAMIAS_ALLOW_DRIVERS=1` in the environment.
+#[must_use]
+pub fn drivers_allowed(flag: bool) -> bool {
+    flag || std::env::var("TAMIAS_ALLOW_DRIVERS").is_ok_and(|v| v == "1")
+}
+
+/// Names of the driver files a payload ships under `drivers/` — regular
+/// files only, mirroring `register_bundled_drivers`'s filter. Lets callers
+/// detect (and gate) bundled drivers *before* copying or dispatching them.
+///
+/// # Errors
+/// Propagates read failures.
+pub fn bundled_drivers(payload_root: &Path) -> Result<Vec<String>, Error> {
+    let src = payload_root.join("drivers");
+    if !src.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(&src).map_err(Error::io(format!("read {}", src.display())))? {
+        let entry = entry.map_err(Error::io("read driver entry"))?;
+        // `file_type` never follows symlinks — same filter as registration.
+        let is_file = entry
+            .file_type()
+            .map_err(Error::io(format!("stat {}", entry.path().display())))?
+            .is_file();
+        if is_file {
+            if let Some(name) = entry.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 /// Copy any bundled drivers a payload ships (`<payload>/drivers/*`) into
@@ -170,10 +229,17 @@ pub fn register_bundled_drivers(payload_root: &Path) -> Result<Vec<String>, Erro
     std::fs::create_dir_all(&dest).map_err(Error::io(format!("create {}", dest.display())))?;
     let mut actions = Vec::new();
     for entry in std::fs::read_dir(&src).map_err(Error::io(format!("read {}", src.display())))? {
-        let path = entry.map_err(Error::io("read driver entry"))?.path();
-        if !path.is_file() {
+        let entry = entry.map_err(Error::io("read driver entry"))?;
+        // `file_type` never follows symlinks — a payload can't install a
+        // linked "driver" that resolves outside the payload.
+        let is_file = entry
+            .file_type()
+            .map_err(Error::io(format!("stat {}", entry.path().display())))?
+            .is_file();
+        if !is_file {
             continue;
         }
+        let path = entry.path();
         let name = path.file_name().unwrap_or_default();
         let to = dest.join(name);
         std::fs::copy(&path, &to).map_err(Error::io(format!("copy {}", path.display())))?;
@@ -229,6 +295,27 @@ mod tests {
         let empty = tempfile::tempdir().unwrap();
         assert!(register_bundled_drivers(empty.path()).unwrap().is_empty());
         std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn bundled_drivers_detects_and_consent() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let payload = tmp.path().join("payload");
+        std::fs::create_dir_all(payload.join("drivers")).unwrap();
+        std::fs::write(payload.join("drivers/tamias-driver-x"), "#!/bin/sh\n").unwrap();
+        std::fs::create_dir_all(payload.join("drivers/sub")).unwrap();
+        assert_eq!(bundled_drivers(&payload).unwrap(), ["tamias-driver-x"]);
+        assert!(bundled_drivers(tmp.path()).unwrap().is_empty());
+        // consent: flag or env
+        std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
+        assert!(!drivers_allowed(false));
+        assert!(drivers_allowed(true));
+        std::env::set_var("TAMIAS_ALLOW_DRIVERS", "1");
+        assert!(drivers_allowed(false));
+        std::env::set_var("TAMIAS_ALLOW_DRIVERS", "0");
+        assert!(!drivers_allowed(false));
+        std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
     }
 
     #[test]
@@ -310,6 +397,31 @@ mod tests {
         } else {
             std::env::remove_var("PATH");
         }
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn hung_driver_is_killed() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        write_driver(
+            &drivers_dir(),
+            "tamias-driver-hang",
+            "#!/bin/sh\nsleep 30\n",
+        );
+        let start = std::time::Instant::now();
+        let err = dispatch_with_timeout(
+            "hang",
+            "install",
+            tmp.path(),
+            "n",
+            None,
+            Duration::from_millis(300),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("timed out"), "{err}");
+        assert!(start.elapsed() < Duration::from_secs(10));
         std::env::remove_var("TAMIAS_HOME");
     }
 

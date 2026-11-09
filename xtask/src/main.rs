@@ -55,8 +55,31 @@ fn have_cargo_sub(sub: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// `tamias-driver-tamias` is excluded from the workspace (its pavo-protocol
+/// dep is a sibling-checkout path dep until pavo-protocol is published), so
+/// `--workspace` commands skip it. When the pavo checkout is present we still
+/// fmt/clippy/test it via its own manifest; on a fresh clone it's skipped.
+const DRIVER_TAMIAS_MANIFEST: &str = "crates/tamias-driver-tamias/Cargo.toml";
+
+fn driver_tamias_available() -> bool {
+    std::path::Path::new(DRIVER_TAMIAS_MANIFEST).exists()
+        && std::path::Path::new("../pavo/crates/pavo-protocol/Cargo.toml").exists()
+}
+
 fn check() -> i32 {
-    let ok = run(&["cargo", "fmt", "--all", "--", "--check"]).success()
+    let mut ok = run(&["cargo", "fmt", "--all", "--", "--check"]).success();
+    if ok && driver_tamias_available() {
+        ok = run(&[
+            "cargo",
+            "fmt",
+            "--manifest-path",
+            DRIVER_TAMIAS_MANIFEST,
+            "--",
+            "--check",
+        ])
+        .success();
+    }
+    ok = ok
         && run(&[
             "cargo",
             "clippy",
@@ -67,16 +90,44 @@ fn check() -> i32 {
             "warnings",
         ])
         .success();
+    if ok && driver_tamias_available() {
+        ok = run(&[
+            "cargo",
+            "clippy",
+            "--manifest-path",
+            DRIVER_TAMIAS_MANIFEST,
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ])
+        .success();
+    }
     i32::from(!ok)
 }
 
 fn test() -> i32 {
-    let status = if have_cargo_sub("nextest") {
-        run(&["cargo", "nextest", "run", "--workspace"])
+    let nextest = have_cargo_sub("nextest");
+    let mut code = if nextest {
+        run(&["cargo", "nextest", "run", "--workspace"]).code()
     } else {
-        run(&["cargo", "test", "--workspace"])
+        run(&["cargo", "test", "--workspace"]).code()
     };
-    status.code().unwrap_or(1)
+    if code == Some(0) && driver_tamias_available() {
+        code = if nextest {
+            run(&[
+                "cargo",
+                "nextest",
+                "run",
+                "--manifest-path",
+                DRIVER_TAMIAS_MANIFEST,
+            ])
+            .code()
+        } else {
+            run(&["cargo", "test", "--manifest-path", DRIVER_TAMIAS_MANIFEST]).code()
+        };
+    }
+    code.unwrap_or(1)
 }
 
 fn coverage(extra: &[String]) -> i32 {

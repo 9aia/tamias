@@ -1,0 +1,10 @@
+# Toolchain for tamias — stable channel with the components the hooks
+# and xtask need (pre-commit runs `cargo fmt --check`, pre-push runs
+# `cargo xtask check` = fmt + clippy -D warnings).
+#
+# Coverage (`cargo xtask coverage`) does NOT need nightly: it runs under
+# `RUSTC_BOOTSTRAP=1` so `cfg_attr(coverage, coverage(off))` test regions
+# are excluded — see CONTRIBUTING.md. Keep this on stable.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

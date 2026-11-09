@@ -89,6 +89,11 @@ fn dispatch(req: Request) -> Response {
         Request::Render { kind, .. } => Response::err(format!(
             "tamias-driver-tamias claims no renderers (kind '{kind}')"
         )),
+        // `submit` — this driver is read-only and ships no forms; the
+        // wire contract says drivers without forms answer `ok:false`.
+        Request::Submit { .. } => {
+            Response::err("tamias-driver-tamias is read-only and implements no forms")
+        }
     }
 }
 

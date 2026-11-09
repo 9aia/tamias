@@ -78,6 +78,12 @@ impl RefKind for HttpRefKind {
     }
 }
 
+/// Whether a fetch is cleartext (`http://`) AND unpinned — the case that
+/// deserves the stderr warning.
+fn cleartext_unpinned(url: &str, digest: &Option<String>) -> bool {
+    url.starts_with("http://") && digest.is_none()
+}
+
 /// The http source.
 pub struct HttpSource {
     agent: ureq::Agent,
@@ -153,6 +159,15 @@ impl Source for HttpSource {
         let HttpPlan { url, digest } = plan
             .downcast_ref::<HttpPlan>()
             .ok_or_else(|| Error::Failed("HttpSource only fetches http plans".to_string()))?;
+        // Cleartext + unauthenticated + (usually) unpinned — worth a loud
+        // stderr note; `--json` stdout stays clean. Warn at fetch time:
+        // parse/plan also run in library contexts where eprintln is rude.
+        if cleartext_unpinned(url, digest) {
+            eprintln!(
+                "warning: fetching {url} over plain http with no #sha256: pin — \
+                 the payload is unauthenticated and modifiable in transit"
+            );
+        }
         fs::create_dir_all(dest_dir)
             .map_err(Error::io(format!("create {}", dest_dir.display())))?;
         let mut response = self
@@ -312,5 +327,12 @@ mod tests {
         assert!(HttpPlan::new("http://x/y.tgz", None)
             .prefetch_identity()
             .is_none());
+    }
+
+    #[test]
+    fn cleartext_unpinned_predicate() {
+        assert!(cleartext_unpinned("http://x/y.tgz", &None));
+        assert!(!cleartext_unpinned("https://x/y.tgz", &None));
+        assert!(!cleartext_unpinned("http://x/y.tgz", &Some("a".repeat(64))));
     }
 }

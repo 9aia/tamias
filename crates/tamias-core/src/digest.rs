@@ -2,6 +2,7 @@
 //! and `verify` use.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -28,12 +29,33 @@ pub fn content_digest(bytes: &[u8]) -> String {
 /// # Errors
 /// Propagates I/O failures reading the file.
 pub fn file_digest(path: &Path) -> Result<String, Error> {
-    let bytes = fs::read(path).map_err(Error::io(format!("read {}", path.display())))?;
-    Ok(content_digest(&bytes))
+    let mut hasher = Sha256::new();
+    hash_file_into(&mut hasher, path)?;
+    Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
+}
+
+/// Stream `path` through `hasher` in fixed-size chunks — memory stays
+/// flat no matter how large the file is (cache hits re-digest on every
+/// read, so `fs::read` here would make peak memory = largest blob).
+fn hash_file_into(hasher: &mut Sha256, path: &Path) -> Result<(), Error> {
+    let mut file = fs::File::open(path).map_err(Error::io(format!("read {}", path.display())))?;
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(Error::io(format!("read {}", path.display())))?;
+        if n == 0 {
+            return Ok(());
+        }
+        hasher.update(&buf[..n]);
+    }
 }
 
 /// Sorted relative paths of payload files under `dir` — `.git/` dirs and
-/// the root [`RECORD_FILE`] never count.
+/// the root [`RECORD_FILE`] never count. Symlinks are never payload:
+/// `DirEntry::file_type` does not follow them, so links are neither
+/// recursed into nor hashed — a `loot -> /` or `a -> .` in a fetched
+/// tree can't exfiltrate or loop the walk.
 ///
 /// # Errors
 /// Propagates I/O failures while walking the tree.
@@ -48,14 +70,17 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<PathBuf>) -> Result<(), Error> {
     let entries = fs::read_dir(dir).map_err(Error::io(format!("read {}", dir.display())))?;
     for entry in entries {
         let entry = entry.map_err(Error::io(format!("read {}", dir.display())))?;
+        let file_type = entry
+            .file_type()
+            .map_err(Error::io(format!("stat {}", entry.path().display())))?;
         let path = entry.path();
         let rel = path.strip_prefix(base).unwrap_or(&path).to_path_buf();
-        if path.is_dir() {
+        if file_type.is_dir() {
             if rel == Path::new(".git") {
                 continue;
             }
             walk(&path, base, out)?;
-        } else if rel != Path::new(RECORD_FILE) {
+        } else if file_type.is_file() && rel != Path::new(RECORD_FILE) {
             out.push(rel);
         }
     }
@@ -72,9 +97,7 @@ pub fn dir_digest(dir: &Path) -> Result<String, Error> {
     for rel in payload_files(dir)? {
         hasher.update(rel.to_string_lossy().as_bytes());
         hasher.update([0]);
-        let ctx = format!("read {}", dir.join(&rel).display());
-        let bytes = fs::read(dir.join(&rel)).map_err(Error::io(ctx))?;
-        hasher.update(bytes);
+        hash_file_into(&mut hasher, &dir.join(&rel))?;
         hasher.update([0]);
     }
     Ok(format!("sha256:{}", hex::encode(hasher.finalize())))
@@ -121,6 +144,23 @@ mod tests {
         assert_eq!(d1, d2);
         assert!(d1.starts_with("sha256:"));
         assert_eq!(dir_size(dir.path()).unwrap(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_are_never_payload() {
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), b"loot").unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"a").unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("loot")).unwrap();
+        std::os::unix::fs::symlink(".", dir.path().join("self")).unwrap();
+        std::os::unix::fs::symlink("a.txt", dir.path().join("alias")).unwrap();
+        // completes — no recursion through `self`, no reads through `loot`
+        let files = payload_files(dir.path()).unwrap();
+        assert_eq!(files, vec![PathBuf::from("a.txt")]);
+        assert!(dir_digest(dir.path()).is_ok());
+        assert_eq!(dir_size(dir.path()).unwrap(), 1);
     }
 
     #[test]

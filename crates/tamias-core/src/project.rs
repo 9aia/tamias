@@ -71,7 +71,7 @@ impl Lock {
     pub fn save(&self, path: &Path) -> Result<(), Error> {
         let ctx = |e| Error::Failed(format!("serialize lock: {e}"));
         let text = serde_yaml_ng::to_string(self).map_err(ctx)?;
-        std::fs::write(path, text).map_err(Error::io(format!("write {}", path.display())))
+        crate::write_atomic(path, text.as_bytes())
     }
 
     /// Insert or replace the entry for (scope, name), keeping the list

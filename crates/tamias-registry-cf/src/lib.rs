@@ -11,8 +11,17 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tamias_core::{dir_digest, pack_tgz, Error, Manifest};
+use tamias_core::{dir_digest, is_valid_name, is_valid_version, pack_tgz, Error, Manifest};
 use tamias_registry::{Registry, RegistryEntry};
+
+/// Largest `.tgz` blob a publish will PUT — matches the fetch-side
+/// `MAX_TARBALL` in `tamias-source-http`; bigger payloads can't be
+/// installed anyway.
+const MAX_TARBALL: u64 = 512 * 1024 * 1024;
+
+/// `index.json` is a small catalog — cap its GET well below the blob
+/// limit so a hostile/buggy store can't OOM the client.
+const MAX_INDEX: u64 = 16 * 1024 * 1024;
 
 /// A registry over an http(s) blob store.
 pub struct HttpRegistry {
@@ -56,7 +65,13 @@ impl HttpRegistry {
         registry
     }
 
-    fn get(&self, key: &str) -> Result<Vec<u8>, Error> {
+    /// `GET <key>` → the body, or `None` when the store has no such key
+    /// (HTTP 404). Every other failure — transport error, 5xx, auth
+    /// rejection, unreadable body — is an `Err`. Callers must never
+    /// treat a failed read as "the key is absent": for `index.json` that
+    /// would let a transient outage masquerade as an empty registry (and
+    /// a publish could then overwrite the whole catalog).
+    fn get(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
         let url = format!("{}/{key}", self.base);
         let mut req = self.agent.get(&url);
         if let Some(token) = &self.token {
@@ -65,16 +80,30 @@ impl HttpRegistry {
         let mut resp = req
             .call()
             .map_err(|e| Error::Failed(format!("GET {url}: {e}")))?;
-        if !resp.status().is_success() {
-            return Err(Error::Failed(format!("GET {url}: HTTP {}", resp.status())));
+        let status = resp.status();
+        if status == ureq::http::StatusCode::NOT_FOUND {
+            return Ok(None);
         }
+        if !status.is_success() {
+            return Err(Error::Failed(format!("GET {url}: HTTP {status}")));
+        }
+        // Bound the body — `index.json` is small, blobs are tarballs.
+        let limit = if key == "index.json" {
+            MAX_INDEX
+        } else {
+            MAX_TARBALL
+        };
         resp.body_mut()
             .with_config()
+            .limit(limit)
             .read_to_vec()
+            .map(Some)
             .map_err(|e| Error::Failed(format!("read {url}: {e}")))
     }
 
-    fn put(&self, key: &str, body: &[u8]) -> Result<(), Error> {
+    /// `PUT <key>` — the body is streamed (`AsSendBody`), so a `.tgz`
+    /// publish never buffers the whole tarball in memory.
+    fn put(&self, key: &str, body: impl ureq::AsSendBody) -> Result<(), Error> {
         let url = format!("{}/{key}", self.base);
         let mut req = self.agent.put(&url);
         if let Some(token) = &self.token {
@@ -98,22 +127,51 @@ fn publish_tmp_path(version: &str) -> std::path::PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
+    // The version is validated before this is called, but keep the temp
+    // filename single-component regardless — records/manifests can be
+    // hand-edited.
+    let safe: String = version
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     std::env::temp_dir().join(format!(
-        "tamias-pub-{}-{nanos}-{seq}-{version}.tgz",
+        "tamias-pub-{}-{nanos}-{seq}-{safe}.tgz",
         std::process::id()
     ))
 }
 
 impl Registry for HttpRegistry {
     fn entries(&self) -> Result<Vec<RegistryEntry>, Error> {
-        match self.get("index.json") {
-            Ok(bytes) => serde_json::from_slice(&bytes)
+        // Only a genuine 404 (no index yet — first publish) yields an
+        // empty list; any other read failure propagates so `publish`
+        // never PUTs an index built from a failed read.
+        match self.get("index.json")? {
+            Some(bytes) => serde_json::from_slice(&bytes)
                 .map_err(|e| Error::Failed(format!("parse index: {e}"))),
-            Err(_) => Ok(Vec::new()),
+            None => Ok(Vec::new()),
         }
     }
 
     fn publish(&self, payload_root: &Path, manifest: &Manifest) -> Result<RegistryEntry, Error> {
+        // The manifest may not have been validated upstream — every field
+        // embedded in the blob key/URL must be a single safe component.
+        if !is_valid_name(&manifest.name) {
+            return Err(Error::Failed(format!(
+                "unsafe package name '{}'",
+                manifest.name
+            )));
+        }
+        if let Some(scope) = &manifest.scope {
+            if !is_valid_name(scope) {
+                return Err(Error::Failed(format!("unsafe scope '{scope}'")));
+            }
+        }
         let scoped = match &manifest.scope {
             Some(scope) => format!("@{scope}/{}", manifest.name),
             None => manifest.name.clone(),
@@ -122,12 +180,32 @@ impl Registry for HttpRegistry {
             .version
             .clone()
             .unwrap_or_else(|| "0.0.0".to_string());
+        if !is_valid_version(&version) {
+            return Err(Error::Failed(format!(
+                "unsafe version '{version}' — expected [A-Za-z0-9][A-Za-z0-9._+-]* with no '..'"
+            )));
+        }
         let rel = format!("{scoped}/{version}.tgz");
         let tmp = publish_tmp_path(&version);
         pack_tgz(payload_root, &tmp)?;
-        let bytes = std::fs::read(&tmp).map_err(Error::io(format!("read {}", tmp.display())))?;
+        // Stream the tarball — `File`'s AsSendBody sets Content-Length
+        // from metadata, so the whole .tgz never lands in memory. Reject
+        // oversized payloads up front: fetch caps tarballs at MAX_TARBALL.
+        let file =
+            std::fs::File::open(&tmp).map_err(Error::io(format!("open {}", tmp.display())))?;
+        let size = file
+            .metadata()
+            .map_err(Error::io(format!("stat {}", tmp.display())))?
+            .len();
+        if size > MAX_TARBALL {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(Error::Failed(format!(
+                "payload tarball {} exceeds the {MAX_TARBALL}-byte limit",
+                tmp.display()
+            )));
+        }
+        self.put(&rel, file)?;
         let _ = std::fs::remove_file(&tmp);
-        self.put(&rel, &bytes)?;
 
         let entry = RegistryEntry {
             name: manifest.name.clone(),
@@ -159,14 +237,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn entries_without_server_is_empty_and_env_token() {
+    fn entries_without_server_errors_and_env_token() {
+        // A dead registry is a transport failure, not an empty index.
         let registry = HttpRegistry::new("http://127.0.0.1:1");
-        assert!(registry.entries().unwrap().is_empty());
+        assert!(registry.entries().is_err());
         assert!(HttpRegistry::from_env("http://127.0.0.1:1")
             .with_token("t")
             .entries()
-            .unwrap()
-            .is_empty());
+            .is_err());
     }
 
     #[test]
@@ -176,6 +254,39 @@ mod tests {
         let manifest = Manifest::load(src.path()).unwrap();
         let registry = HttpRegistry::new("http://127.0.0.1:1");
         assert!(registry.publish(src.path(), &manifest).is_err());
+    }
+
+    #[test]
+    fn publish_rejects_unsafe_manifest_fields() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        let registry = HttpRegistry::new("http://127.0.0.1:1");
+        for bad in ["../../evil", "a/b", "..", "", "-x"] {
+            let manifest = Manifest {
+                name: "x".into(),
+                version: Some(bad.into()),
+                ..Default::default()
+            };
+            assert!(registry.publish(src.path(), &manifest).is_err(), "{bad}");
+        }
+        let manifest = Manifest {
+            name: "../x".into(),
+            version: Some("1.0.0".into()),
+            ..Default::default()
+        };
+        assert!(registry.publish(src.path(), &manifest).is_err());
+    }
+
+    #[test]
+    fn publish_tmp_path_stays_single_component() {
+        let tmp = publish_tmp_path("../../evil");
+        assert_eq!(
+            tmp.components().count(),
+            std::env::temp_dir().components().count() + 1
+        );
+        let name = tmp.file_name().unwrap().to_string_lossy().to_string();
+        assert!(name.contains("tamias-pub-"), "{name}");
+        assert!(!name.contains('/'), "{name}");
     }
 
     #[test]
@@ -196,6 +307,8 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
+        // Fresh registry: index.json is absent → 404 → legitimately empty.
+        assert!(registry.entries().unwrap().is_empty());
         assert_eq!(
             registry.publish(src.path(), &manifest).unwrap().label(),
             "x@1.0.0"
@@ -223,7 +336,8 @@ mod tests {
     fn server_error_status_paths() {
         let base = format!("http://127.0.0.1:{}", serve_500());
         let registry = HttpRegistry::new(&base);
-        assert!(registry.entries().unwrap().is_empty());
+        // A 500 on GET index.json is a failure, not an empty registry.
+        assert!(registry.entries().is_err());
         let src = tempfile::tempdir().unwrap();
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
@@ -315,5 +429,77 @@ mod tests {
         let manifest = Manifest::load(src.path()).unwrap();
         let registry = HttpRegistry::new(format!("http://127.0.0.1:{port}"));
         assert!(registry.publish(src.path(), &manifest).is_err());
+    }
+
+    /// A store that accepts PUTs but fails GET index.json with a 500 —
+    /// the index-wipe scenario: publish must fail and must NOT PUT a
+    /// rebuilt index on top of the failed read.
+    #[test]
+    fn publish_failed_index_read_never_writes_index() {
+        use std::io::{Read, Write};
+        use std::sync::{Arc, Mutex};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+        let seen_srv = seen.clone();
+        std::thread::spawn(move || {
+            while let Ok((mut s, _)) = listener.accept() {
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 8192];
+                let header_end = loop {
+                    let n = s.read(&mut chunk).unwrap_or(0);
+                    if n == 0 {
+                        break buf.len();
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                        break i + 4;
+                    }
+                };
+                let head = String::from_utf8_lossy(&buf[..header_end]).to_string();
+                let first = head.lines().next().unwrap_or_default().to_string();
+                // Drain the request body so the response isn't cut short.
+                let content_length: usize = head
+                    .lines()
+                    .find_map(|l| {
+                        l.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .and_then(|v| v.trim().parse().ok())
+                    })
+                    .unwrap_or(0);
+                let mut left = content_length.saturating_sub(buf.len() - header_end);
+                while left > 0 {
+                    let n = s.read(&mut chunk).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    left = left.saturating_sub(n);
+                }
+                seen_srv.lock().unwrap().push(first.clone());
+                let body = if first.starts_with("GET") {
+                    b"HTTP/1.1 500 X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".as_slice()
+                } else {
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".as_slice()
+                };
+                let _ = s.write_all(body);
+                let _ = s.flush();
+            }
+        });
+
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        let registry = HttpRegistry::new(format!("http://127.0.0.1:{port}"));
+        assert!(registry.publish(src.path(), &manifest).is_err());
+        let reqs = seen.lock().unwrap();
+        assert!(
+            reqs.iter().any(|r| r.starts_with("GET /index.json")),
+            "{reqs:?}"
+        );
+        assert!(
+            !reqs.iter().any(|r| r.starts_with("PUT /index.json")),
+            "failed index read must not be overwritten: {reqs:?}"
+        );
     }
 }

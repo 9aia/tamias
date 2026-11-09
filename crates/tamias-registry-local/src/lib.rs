@@ -7,9 +7,13 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 use std::fs;
+use std::net::ToSocketAddrs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-use tamias_core::{dir_digest, pack_tgz, Error, Manifest};
+use tamias_core::{
+    dir_digest, is_valid_name, is_valid_version, pack_tgz_atomic, write_atomic, Error, Manifest,
+};
 use tamias_registry::{Registry, RegistryEntry};
 
 /// A dir-backed registry.
@@ -49,6 +53,19 @@ impl Registry for LocalRegistry {
     }
 
     fn publish(&self, payload_root: &Path, manifest: &Manifest) -> Result<RegistryEntry, Error> {
+        // The manifest may not have been validated upstream — every field
+        // embedded in the blob path must be a single safe component.
+        if !is_valid_name(&manifest.name) {
+            return Err(Error::Failed(format!(
+                "unsafe package name '{}'",
+                manifest.name
+            )));
+        }
+        if let Some(scope) = &manifest.scope {
+            if !is_valid_name(scope) {
+                return Err(Error::Failed(format!("unsafe scope '{scope}'")));
+            }
+        }
         let scoped = match &manifest.scope {
             Some(scope) => format!("@{scope}/{}", manifest.name),
             None => manifest.name.clone(),
@@ -57,11 +74,18 @@ impl Registry for LocalRegistry {
             .version
             .clone()
             .unwrap_or_else(|| "0.0.0".to_string());
+        if !is_valid_version(&version) {
+            return Err(Error::Failed(format!(
+                "unsafe version '{version}' — expected [A-Za-z0-9][A-Za-z0-9._+-]* with no '..'"
+            )));
+        }
         let rel = format!("{scoped}/{version}.tgz");
         let out = self.root.join(&rel);
         let parent = out.parent().unwrap_or(Path::new("."));
         fs::create_dir_all(parent).map_err(Error::io(format!("create {}", parent.display())))?;
-        pack_tgz(payload_root, &out)?;
+        // Blob lands atomically — a crash mid-pack leaves a stray
+        // `*.tmp`, never a truncated `.tgz` at the canonical path.
+        pack_tgz_atomic(payload_root, &out)?;
         let entry = RegistryEntry {
             name: manifest.name.clone(),
             scope: manifest.scope.clone(),
@@ -70,6 +94,11 @@ impl Registry for LocalRegistry {
             digest: dir_digest(payload_root)?,
             file: rel,
         };
+        // The index read-modify-write is serialized across processes —
+        // concurrent publishes can't lose each other's entries.
+        fs::create_dir_all(&self.root)
+            .map_err(Error::io(format!("create {}", self.root.display())))?;
+        let _lock = IndexLock::acquire(&self.root)?;
         let mut entries = self.entries()?;
         entries.retain(|e| {
             !(e.name == entry.name && e.scope == entry.scope && e.version == entry.version)
@@ -77,33 +106,141 @@ impl Registry for LocalRegistry {
         entries.push(entry.clone());
         entries
             .sort_by(|a, b| (&a.scope, &a.name, &a.version).cmp(&(&b.scope, &b.name, &b.version)));
-        fs::create_dir_all(&self.root)
-            .map_err(Error::io(format!("create {}", self.root.display())))?;
         let text = serde_json::to_string_pretty(&entries)
             .map_err(|e| Error::Failed(format!("serialize index: {e}")))?;
-        fs::write(self.index_path(), text)
-            .map_err(Error::io(format!("write {}", self.index_path().display())))?;
+        write_atomic(&self.index_path(), text.as_bytes())?;
         Ok(entry)
     }
 }
+
+/// `index.lock` — an atomic-create (`create_new`) lockfile serializing
+/// the registry index read-modify-write. A lock older than
+/// [`STALE_AFTER`] is treated as abandoned (holder crashed) and stolen;
+/// `create_new` still guarantees a single winner of the steal race.
+/// Residual: a holder legitimately keeping the lock past
+/// [`STALE_AFTER`] (a multi-minute index update) could have its lock
+/// stolen — index updates here are sub-second, so this is theoretical.
+struct IndexLock {
+    path: PathBuf,
+}
+
+/// A lockfile untouched for this long is considered stale.
+const STALE_AFTER: Duration = Duration::from_secs(30);
+/// How long `acquire` waits for a live holder before giving up.
+const LOCK_TIMEOUT: Duration = Duration::from_secs(10);
+
+impl IndexLock {
+    /// Take `root/index.lock`, waiting out live holders.
+    ///
+    /// # Errors
+    /// Fails on I/O errors or when the lock stays held past
+    /// [`LOCK_TIMEOUT`].
+    fn acquire(root: &Path) -> Result<Self, Error> {
+        let path = root.join("index.lock");
+        let deadline = Instant::now() + LOCK_TIMEOUT;
+        loop {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(mut f) => {
+                    use std::io::Write;
+                    let _ = writeln!(f, "{}", std::process::id());
+                    return Ok(Self { path });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if lock_stale(&path) {
+                        let _ = fs::remove_file(&path);
+                        continue;
+                    }
+                    if Instant::now() >= deadline {
+                        return Err(Error::Failed(format!(
+                            "registry index locked ({})",
+                            path.display()
+                        )));
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => return Err(Error::io(format!("lock {}", path.display()))(e)),
+            }
+        }
+    }
+}
+
+impl Drop for IndexLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+/// Whether `path`'s mtime is older than [`STALE_AFTER`] — or unreadable,
+/// in which case removing it is harmless (the create race decides).
+fn lock_stale(path: &Path) -> bool {
+    fs::metadata(path)
+        .and_then(|m| m.modified())
+        .map(|t| t.elapsed().is_ok_and(|age| age > STALE_AFTER))
+        .unwrap_or(true)
+}
+
+/// Largest PUT body the dev server accepts — matches the fetch-side
+/// `MAX_TARBALL` convention; bigger blobs can't be installed anyway.
+const MAX_PUT: u64 = 512 * 1024 * 1024;
+
+/// Per-read timeout on a connection — an idle client can't stall the
+/// single-threaded accept loop (each `read` gets this long).
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Env var that turns on bearer auth for the dev server — mirrors the
+/// client's `TAMIAS_REGISTRY_TOKEN`. Unset = open (dev default).
+const SERVE_TOKEN_ENV: &str = "TAMIAS_REGISTRY_SERVE_TOKEN";
 
 /// Serve `root` over a tiny blocking HTTP surface until the process stops.
 /// `GET /<key>` reads a blob; `PUT /<key>` writes one. The registry root is
 /// the blob namespace (paths sanitized — no traversal).
 ///
+/// **Dev surface, not a real registry.** Anyone who can reach the port can
+/// read and overwrite every blob — including `index.json` (the `PUT /`
+/// sanitize maps the root to it, and `HttpRegistry` publishes through this
+/// protocol, so it stays allowed). Bind loopback, or set
+/// `TAMIAS_REGISTRY_SERVE_TOKEN` to require `Authorization: Bearer <token>`.
+///
 /// # Errors
 /// Propagates the bind failure; per-request errors are logged, not fatal.
 pub fn serve_http(addr: &str, root: &Path) -> Result<(), Error> {
+    let token = std::env::var(SERVE_TOKEN_ENV)
+        .ok()
+        .filter(|t| !t.is_empty());
+    serve_http_token(addr, root, token.as_deref())
+}
+
+/// [`serve_http`] with an explicit bearer token — `Some` requires
+/// `Authorization: Bearer <token>` on every request. Split out so tests
+/// don't race on the process env.
+fn serve_http_token(addr: &str, root: &Path, token: Option<&str>) -> Result<(), Error> {
     let listener = std::net::TcpListener::bind(addr).map_err(Error::io(format!("bind {addr}")))?;
     fs::create_dir_all(root).map_err(Error::io(format!("create {}", root.display())))?;
     eprintln!(
-        "tamias registry serving {} at http://{addr}/",
+        "tamias registry serving {} at http://{addr}/ — dev server: \
+         unauthenticated blob store (set {SERVE_TOKEN_ENV} for bearer auth)",
         root.display()
     );
+    // `--addr 0.0.0.0` (or any non-loopback bind) exposes the writable
+    // store to the network — say so loudly.
+    let exposed = addr
+        .to_socket_addrs()
+        .map(|mut addrs| addrs.any(|a| !a.ip().is_loopback()))
+        .unwrap_or(false);
+    if exposed {
+        eprintln!(
+            "warning: registry is bound to a non-loopback address ({addr}) — \
+             anyone who can reach it can read/overwrite all blobs"
+        );
+    }
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                if let Err(e) = handle(&mut stream, root) {
+                if let Err(e) = handle(&mut stream, root, token) {
                     eprintln!("tamias registry: {e}");
                 }
             }
@@ -113,9 +250,14 @@ pub fn serve_http(addr: &str, root: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn handle(stream: &mut std::net::TcpStream, root: &Path) -> Result<(), Error> {
+fn handle(stream: &mut std::net::TcpStream, root: &Path, token: Option<&str>) -> Result<(), Error> {
     use std::io::{BufRead, BufReader, Read};
 
+    // Bound every read on this connection — headers AND body — so an
+    // idle or slow-loris client can't park the accept loop.
+    stream
+        .set_read_timeout(Some(READ_TIMEOUT))
+        .map_err(Error::io("set read timeout"))?;
     let clone = stream.try_clone().map_err(Error::io("clone stream"))?;
     let mut reader = BufReader::new(clone);
     let mut request_line = String::new();
@@ -125,7 +267,8 @@ fn handle(stream: &mut std::net::TcpStream, root: &Path) -> Result<(), Error> {
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("").to_string();
     let raw_path = parts.next().unwrap_or("/").to_string();
-    let mut content_length = 0usize;
+    let mut content_length = 0u64;
+    let mut authorization = String::new();
     loop {
         let mut line = String::new();
         reader
@@ -134,8 +277,24 @@ fn handle(stream: &mut std::net::TcpStream, root: &Path) -> Result<(), Error> {
         if line == "\r\n" || line == "\n" || line.is_empty() {
             break;
         }
-        if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+        // Match the header name case-insensitively but keep the VALUE
+        // verbatim — bearer tokens are case-sensitive.
+        let lower = line.to_ascii_lowercase();
+        if let Some(v) = lower.strip_prefix("content-length:") {
             content_length = v.trim().parse().unwrap_or(0);
+        } else if lower.starts_with("authorization:") {
+            authorization = line["authorization:".len()..].trim().to_string();
+        }
+    }
+    // Optional bearer auth — `Some(token)` means the operator opted in.
+    // `get(..)` slicing: a hostile non-ASCII header can't panic the loop.
+    if let Some(token) = token {
+        let ok = authorization
+            .get(..7)
+            .is_some_and(|s| s.eq_ignore_ascii_case("bearer "))
+            && authorization.get(7..).is_some_and(|t| t == token);
+        if !ok {
+            return respond(stream, 401, b"unauthorized");
         }
     }
     let Some(key) = sanitize_key(&raw_path) else {
@@ -147,7 +306,12 @@ fn handle(stream: &mut std::net::TcpStream, root: &Path) -> Result<(), Error> {
             Err(_) => respond(stream, 404, b"not found"),
         },
         "PUT" => {
-            let mut body = vec![0u8; content_length];
+            // Reject the declared length BEFORE allocating — a huge
+            // Content-Length must not become a huge vec.
+            if content_length > MAX_PUT {
+                return respond(stream, 413, b"payload too large");
+            }
+            let mut body = vec![0u8; content_length as usize];
             reader
                 .read_exact(&mut body)
                 .map_err(Error::io("read body"))?;
@@ -183,8 +347,10 @@ fn respond(stream: &mut std::net::TcpStream, code: u16, body: &[u8]) -> Result<(
     let reason = match code {
         200 => "OK",
         400 => "Bad Request",
+        401 => "Unauthorized",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        413 => "Payload Too Large",
         _ => "Error",
     };
     let head = format!(
@@ -272,10 +438,142 @@ mod tests {
     }
 
     #[test]
+    fn serve_http_rejects_oversized_content_length() {
+        let root = tempfile::tempdir().unwrap();
+        let rp = root.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = serve_http_token("127.0.0.1:8797", &rp, None);
+        });
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        // Declared length over MAX_PUT → 413 before any allocation; the
+        // connection closes without needing the (absent) body.
+        let res = raw(
+            "127.0.0.1:8797",
+            format!(
+                "PUT /big HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+                MAX_PUT + 1
+            )
+            .as_bytes(),
+        );
+        assert!(res.contains("413"), "{res}");
+        assert!(!root.path().join("big").exists());
+    }
+
+    #[test]
+    fn serve_http_bearer_token() {
+        let root = tempfile::tempdir().unwrap();
+        let rp = root.path().to_path_buf();
+        std::thread::spawn(move || {
+            let _ = serve_http_token("127.0.0.1:8798", &rp, Some("sekret"));
+        });
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let noauth = raw("127.0.0.1:8798", b"GET /index.json HTTP/1.1\r\n\r\n");
+        assert!(noauth.contains("401"), "{noauth}");
+        let wrong = raw(
+            "127.0.0.1:8798",
+            b"GET /index.json HTTP/1.1\r\nAuthorization: Bearer wrong\r\n\r\n",
+        );
+        assert!(wrong.contains("401"), "{wrong}");
+        let put = raw(
+            "127.0.0.1:8798",
+            b"PUT /index.json HTTP/1.1\r\nAuthorization: Bearer sekret\r\nContent-Length: 2\r\n\r\n[]",
+        );
+        assert!(put.contains("200"), "{put}");
+        let get = raw(
+            "127.0.0.1:8798",
+            b"GET /index.json HTTP/1.1\r\nauthorization: bearer sekret\r\n\r\n",
+        );
+        assert!(get.contains("200"), "{get}");
+    }
+
+    #[test]
+    fn publish_rejects_unsafe_manifest_fields() {
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry = LocalRegistry::new(reg_dir.path());
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        for bad in ["../../evil", "a/b", "..", "", "-x"] {
+            let manifest = Manifest {
+                name: "x".into(),
+                version: Some(bad.into()),
+                ..Default::default()
+            };
+            assert!(registry.publish(src.path(), &manifest).is_err(), "{bad}");
+        }
+        // an unsafe/empty name must not escape via an absolute rel path
+        for name in ["../x", "", "a/b"] {
+            let manifest = Manifest {
+                name: name.into(),
+                version: Some("1.0.0".into()),
+                ..Default::default()
+            };
+            assert!(registry.publish(src.path(), &manifest).is_err(), "{name}");
+        }
+        // nothing was published — no blob, no index
+        assert!(registry.entries().unwrap().is_empty());
+        assert!(!reg_dir.path().join("index.json").exists());
+    }
+
+    #[test]
     fn bad_index_errors() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("index.json"), "not json").unwrap();
         assert!(LocalRegistry::new(root.path()).entries().is_err());
+    }
+
+    #[test]
+    fn publish_leaves_no_tmp_or_lock_litter() {
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry = LocalRegistry::new(reg_dir.path());
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        registry.publish(src.path(), &manifest).unwrap();
+        assert!(!reg_dir.path().join("index.lock").exists());
+        // no *.tmp siblings anywhere in the registry
+        let mut stack = vec![reg_dir.path().to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(&dir).unwrap() {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    assert!(
+                        !p.file_name().unwrap().to_string_lossy().ends_with(".tmp"),
+                        "tmp litter: {}",
+                        p.display()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn concurrent_publishes_keep_all_entries() {
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry = LocalRegistry::new(reg_dir.path());
+        let mut handles = Vec::new();
+        for i in 0..4 {
+            let reg = registry.clone();
+            handles.push(std::thread::spawn(move || {
+                let src = tempfile::tempdir().unwrap();
+                std::fs::write(
+                    src.path().join("tamias.yaml"),
+                    format!("name: pkg{i}\nversion: 1.0.0\n"),
+                )
+                .unwrap();
+                std::fs::write(src.path().join("a.txt"), "a").unwrap();
+                let manifest = Manifest::load(src.path()).unwrap();
+                reg.publish(src.path(), &manifest).unwrap();
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        let entries = registry.entries().unwrap();
+        assert_eq!(entries.len(), 4, "{entries:?}");
+        assert!(!reg_dir.path().join("index.lock").exists());
     }
 
     #[cfg(unix)]

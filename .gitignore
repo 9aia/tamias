@@ -1,4 +1,6 @@
-/target
+# unanchored: crates/tamias-driver-tamias is its own workspace and builds
+# into crates/tamias-driver-tamias/target
+target/
 coverage/
 *.profraw
 .env

@@ -17,7 +17,6 @@ modules:
 - tamias-deploy-local
 - tamias-driver
 - tamias-driver-tamias
-- tamias-fuzz
 - tamias-publish
 - tamias-registry
 - tamias-registry-cf

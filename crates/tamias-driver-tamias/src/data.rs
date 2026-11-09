@@ -210,8 +210,11 @@ fn scan_drivers(drivers_dir: &Path) -> Vec<(String, PathBuf)> {
                 .file_name()
                 .and_then(|n| n.to_str())
                 .and_then(|n| n.strip_prefix("tamias-driver-"));
+            // `file_type` never follows symlinks — a linked driver isn't
+            // dispatchable (mirrors register_bundled_drivers).
+            let is_file = entry.file_type().is_ok_and(|t| t.is_file());
             if let Some(kind) = kind {
-                if path.is_file() && !found.iter().any(|(k, _)| k == kind) {
+                if is_file && !found.iter().any(|(k, _)| k == kind) {
                     found.push((kind.to_string(), path));
                 }
             }
@@ -266,12 +269,23 @@ fn scan_dir(
 ) -> Result<(), Error> {
     let read = std::fs::read_dir(dir).map_err(Error::io(format!("read {}", dir.display())))?;
     for entry in read {
-        let path = entry.map_err(Error::io("read store entry"))?.path();
-        if !path.is_dir() {
+        let entry = entry.map_err(Error::io("read store entry"))?;
+        let path = entry.path();
+        // `file_type` never follows symlinks — a linked dir can't recurse
+        // the store scan.
+        let is_dir = entry
+            .file_type()
+            .map_err(Error::io(format!("stat {}", path.display())))?
+            .is_dir();
+        if !is_dir {
             continue;
         }
         let record_path = path.join(RECORD_FILE);
-        if record_path.is_file() {
+        // no-follow: a linked record file isn't trusted provenance
+        let is_file = std::fs::symlink_metadata(&record_path)
+            .map(|m| m.is_file())
+            .unwrap_or(false);
+        if is_file {
             let text = std::fs::read_to_string(&record_path)
                 .map_err(Error::io(format!("read {}", record_path.display())))?;
             match serde_json::from_str::<StoreRecord>(&text) {

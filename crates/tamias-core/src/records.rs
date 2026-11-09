@@ -152,4 +152,25 @@ mod tests {
         let dest = tempfile::tempdir().unwrap();
         assert!(copy_tree(src.path(), dest.path()).is_err());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_tree_skips_symlinks() {
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), b"loot").unwrap();
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a.txt"), b"a").unwrap();
+        std::os::unix::fs::symlink(outside.path(), src.path().join("loot")).unwrap();
+        std::os::unix::fs::symlink(".", src.path().join("self")).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        // completes — outside content never crosses, self-link can't loop
+        copy_tree(src.path(), dest.path()).unwrap();
+        assert_eq!(
+            std::fs::read(dest.path().join("a.txt")).unwrap(),
+            b"a".to_vec()
+        );
+        assert!(!dest.path().join("loot").exists());
+        assert!(!dest.path().join("self").exists());
+        assert!(!dest.path().join("secret.txt").exists());
+    }
 }

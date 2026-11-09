@@ -8,7 +8,6 @@ members = [
     "crates/tamias-config-yml",
     "crates/tamias-config-toml",
     "crates/tamias-driver",
-    "crates/tamias-driver-tamias",
     "crates/tamias-core",
     "crates/tamias-deploy",
     "crates/tamias-deploy-local",
@@ -32,6 +31,11 @@ members = [
     "crates/tamias-testkit",
     "xtask",
 ]
+# tamias-driver-tamias is excluded: its pavo-protocol/pavo-testkit deps are
+# sibling-checkout path deps (pavo isn't on crates.io yet), so a fresh clone
+# couldn't resolve the workspace. It keeps its own `[workspace]` and is still
+# covered by xtask check/test when the pavo checkout is present.
+exclude = ["crates/tamias-driver-tamias"]
 
 [workspace.package]
 version = "0.1.0"
@@ -58,7 +62,6 @@ tamias-config = { path = "crates/tamias-config", version = "0.1.0" }
 tamias-config-yml = { path = "crates/tamias-config-yml", version = "0.1.0" }
 tamias-config-toml = { path = "crates/tamias-config-toml", version = "0.1.0" }
 tamias-driver = { path = "crates/tamias-driver", version = "0.1.0" }
-tamias-driver-tamias = { path = "crates/tamias-driver-tamias", version = "0.1.0" }
 tamias-core = { path = "crates/tamias-core", version = "0.1.0" }
 tamias-deploy = { path = "crates/tamias-deploy", version = "0.1.0" }
 tamias-deploy-local = { path = "crates/tamias-deploy-local", version = "0.1.0" }

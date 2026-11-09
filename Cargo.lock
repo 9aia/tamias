@@ -975,26 +975,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pavo-protocol"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "pavo-testkit"
-version = "0.1.0"
-dependencies = [
- "pavo-protocol",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1627,6 +1607,8 @@ dependencies = [
 name = "tamias-cache-local"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "tamias-core",
  "tempfile",
 ]
@@ -1707,22 +1689,6 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "tamias-core",
- "tempfile",
-]
-
-[[package]]
-name = "tamias-driver-tamias"
-version = "0.1.0"
-dependencies = [
- "pavo-protocol",
- "pavo-testkit",
- "serde_json",
- "tamias-cache-local",
- "tamias-core",
- "tamias-driver",
- "tamias-registry",
- "tamias-registry-local",
- "tamias-store-local",
  "tempfile",
 ]
 

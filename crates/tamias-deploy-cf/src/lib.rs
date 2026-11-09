@@ -48,4 +48,22 @@ mod tests {
         assert!(out.path().join("wrangler.toml").is_file());
         assert!(actions.iter().any(|a| a.contains("wrangler deploy")));
     }
+
+    #[test]
+    fn worker_auth_fails_closed() {
+        // A missing REGISTRY_TOKEN secret must reject every request —
+        // the old `env.REGISTRY_TOKEN && …` check failed OPEN, leaving
+        // the blob store (index.json included) world-writable. There's
+        // no JS harness here, so pin the invariant in source: the
+        // missing-secret branch returns an error status and sits before
+        // any REGISTRY access.
+        let missing = WORKER_JS.find("!env.REGISTRY_TOKEN").unwrap();
+        let guarded = WORKER_JS
+            .find("env.REGISTRY.get(")
+            .or_else(|| WORKER_JS.find("env.REGISTRY.put("))
+            .unwrap();
+        assert!(missing < guarded, "auth check must precede blob access");
+        let branch = &WORKER_JS[missing..missing + 200];
+        assert!(branch.contains("status: 500") || branch.contains("status: 401"));
+    }
 }

@@ -1,35 +1,52 @@
 [package]
 name = "tamias-driver-tamias"
 description = "tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only)"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/9aia/tamias"
+homepage = "https://9aia.com/tamias"
+documentation = "https://9aia.com/tamias"
+authors = ["9aia"]
 keywords = ["pavo", "tamias", "package-manager"]
 categories = ["development-tools"]
+# Never published to crates.io: pavo-protocol is a sibling-checkout path
+# dep until it lands on the registry, and this binary ships as a tamias
+# driver, not a library.
+publish = false
 
 [[bin]]
 name = "tamias-driver-tamias"
 path = "src/main.rs"
 
 [dependencies]
-tamias-core.workspace = true
-tamias-store-local.workspace = true
-tamias-cache-local.workspace = true
-tamias-registry.workspace = true
-tamias-registry-local.workspace = true
-tamias-driver.workspace = true
-serde_json.workspace = true
+tamias-core = { path = "../tamias-core" }
+tamias-store-local = { path = "../tamias-store-local" }
+tamias-cache-local = { path = "../tamias-cache-local" }
+tamias-registry = { path = "../tamias-registry" }
+tamias-registry-local = { path = "../tamias-registry-local" }
+tamias-driver = { path = "../tamias-driver" }
+serde_json = "1"
 # The public wire contract — sibling-checkout path dep until
 # pavo-protocol is published (the whole 9aia org lives side-by-side
 # under one parent dir; `version` is the crates.io fallback).
 pavo-protocol = { path = "../../../pavo/crates/pavo-protocol", version = "0.1.0" }
 
 [dev-dependencies]
-tempfile.workspace = true
+tempfile = "3"
 # Conformance gate — `cargo test` runs pavo's wire-contract suite
 # against this crate's own `tamias-driver-tamias serve` binary.
 pavo-testkit = { path = "../../../pavo/crates/pavo-testkit" }
 
-[lints]
-workspace = true
+# Mirrors the parent workspace's [workspace.lints] — this crate is
+# excluded from that workspace (see the root Cargo.toml `exclude`).
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] }
+
+[lints.clippy]
+unwrap_used = "warn"
+
+# Own workspace root: keeps `cargo` commands run inside this directory
+# from resolving the parent workspace (and its members) at all.
+[workspace]

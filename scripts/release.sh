@@ -69,7 +69,7 @@ git push -q origin HEAD:main --tags
 
 # binaries: local dist build (host arch) → GitHub Release.
 if command -v dist >/dev/null && command -v gh >/dev/null; then
-    dist build --output-format=json > /tmp/dist-manifest.json 2>&1 || true
+    dist build --tag="tamias-v${ver}" --output-format=json > /tmp/dist-manifest.json 2>&1 || true
     gh release create "tamias-v${ver}" --generate-notes \
         --title "tamias ${ver}" 2>/dev/null || true
     for f in target/distrib/*; do

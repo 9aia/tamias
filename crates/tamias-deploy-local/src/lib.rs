@@ -83,19 +83,27 @@ impl LocalDeploy {
     }
 
     /// The unit file path for `name`.
-    #[must_use]
-    pub fn unit_path(&self, name: &str) -> PathBuf {
-        self.unit_dir.join(format!("{name}.service"))
+    ///
+    /// # Errors
+    /// [`Error::Failed`] when `name` is not a valid unit base name —
+    /// the name becomes a filename, so traversal (`../`) and separators
+    /// are rejected.
+    pub fn unit_path(&self, name: &str) -> Result<PathBuf, Error> {
+        check_unit_name(name)?;
+        Ok(self.unit_dir.join(format!("{name}.service")))
     }
 
     /// Write the unit file (does not enable it).
     ///
     /// # Errors
-    /// Propagates write failures.
+    /// [`Error::Failed`] on an invalid unit name or a field containing a
+    /// line break/NUL (unit-file injection); propagates write failures.
     pub fn install(&self, spec: &ServiceSpec) -> Result<PathBuf, Error> {
+        check_unit_name(&spec.name)?;
+        check_unit_fields(spec)?;
         std::fs::create_dir_all(&self.unit_dir)
             .map_err(Error::io(format!("create {}", self.unit_dir.display())))?;
-        let path = self.unit_path(&spec.name);
+        let path = self.unit_path(&spec.name)?;
         std::fs::write(&path, render_unit(spec))
             .map_err(Error::io(format!("write {}", path.display())))?;
         Ok(path)
@@ -104,50 +112,55 @@ impl LocalDeploy {
     /// `systemctl --user enable --now <unit>`.
     ///
     /// # Errors
-    /// Propagates the runner failure.
+    /// [`Error::Failed`] on an invalid unit name; propagates the runner
+    /// failure.
     pub fn enable(&self, name: &str) -> Result<(), Error> {
         self.runner
-            .run("systemctl", &["--user", "enable", "--now", &unit(name)])
+            .run("systemctl", &["--user", "enable", "--now", &unit(name)?])
     }
 
     /// `systemctl --user disable --now <unit>`.
     ///
     /// # Errors
-    /// Propagates the runner failure.
+    /// [`Error::Failed`] on an invalid unit name; propagates the runner
+    /// failure.
     pub fn disable(&self, name: &str) -> Result<(), Error> {
         self.runner
-            .run("systemctl", &["--user", "disable", "--now", &unit(name)])
+            .run("systemctl", &["--user", "disable", "--now", &unit(name)?])
     }
 
     /// `systemctl --user status <unit>`.
     ///
     /// # Errors
-    /// Propagates the runner failure.
+    /// [`Error::Failed`] on an invalid unit name; propagates the runner
+    /// failure.
     pub fn status(&self, name: &str) -> Result<(), Error> {
         self.runner.run(
             "systemctl",
-            &["--user", "status", "--no-pager", &unit(name)],
+            &["--user", "status", "--no-pager", &unit(name)?],
         )
     }
 
     /// `journalctl --user -u <unit> -n 200`.
     ///
     /// # Errors
-    /// Propagates the runner failure.
+    /// [`Error::Failed`] on an invalid unit name; propagates the runner
+    /// failure.
     pub fn logs(&self, name: &str) -> Result<(), Error> {
         self.runner.run(
             "journalctl",
-            &["--user", "-u", &unit(name), "-n", "200", "--no-pager"],
+            &["--user", "-u", &unit(name)?, "-n", "200", "--no-pager"],
         )
     }
 
     /// Disable (best-effort) + remove the unit file.
     ///
     /// # Errors
-    /// Propagates the unit-file removal failure.
+    /// [`Error::Failed`] on an invalid unit name; propagates the unit-file
+    /// removal failure.
     pub fn uninstall(&self, name: &str) -> Result<(), Error> {
         let _ = self.disable(name);
-        let path = self.unit_path(name);
+        let path = self.unit_path(name)?;
         if path.exists() {
             std::fs::remove_file(&path).map_err(Error::io(format!("remove {}", path.display())))?;
         }
@@ -161,8 +174,68 @@ impl Default for LocalDeploy {
     }
 }
 
-fn unit(name: &str) -> String {
-    format!("{name}.service")
+/// A valid unit base name: `[A-Za-z0-9_.@-]`, no separators, no `..`,
+/// not `.`/`..`. The name becomes both a filename (`<name>.service`)
+/// and a `systemctl` argument, so anything outside this set is rejected.
+fn check_unit_name(name: &str) -> Result<(), Error> {
+    let ok = !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains("..")
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '@' | '-'));
+    if ok {
+        Ok(())
+    } else {
+        Err(Error::Failed(format!(
+            "invalid unit name '{name}' (expected [A-Za-z0-9_.@-], no '..')"
+        )))
+    }
+}
+
+/// Reject spec fields that could smuggle extra unit directives — a
+/// `\n`/`\r`/NUL in `Description`, `ExecStart`, `Environment`, or
+/// `WorkingDirectory` would inject lines into the rendered unit.
+fn check_unit_fields(spec: &ServiceSpec) -> Result<(), Error> {
+    let bad = |what: &str, v: &str| {
+        if v.contains(['\n', '\r', '\0']) {
+            Some(Error::Failed(format!(
+                "unit {what} contains a line break or NUL"
+            )))
+        } else {
+            None
+        }
+    };
+    for (what, v) in [
+        ("name", spec.name.as_str()),
+        ("description", spec.description.as_str()),
+        ("exec", spec.exec.as_str()),
+        ("workdir", spec.workdir.as_deref().unwrap_or("")),
+    ] {
+        if let Some(e) = bad(what, v) {
+            return Err(e);
+        }
+    }
+    for (k, v) in &spec.env {
+        if let Some(e) = bad("env key", k).or_else(|| bad("env value", v)) {
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
+fn unit(name: &str) -> Result<String, Error> {
+    check_unit_name(name)?;
+    Ok(format!("{name}.service"))
+}
+
+/// Strip characters that would break out of a single unit-file line —
+/// defense in depth for callers that render without field validation.
+fn unit_field(s: &str) -> String {
+    s.chars()
+        .filter(|c| !matches!(c, '\n' | '\r' | '\0'))
+        .collect()
 }
 
 /// Render a systemd `.service` unit.
@@ -170,16 +243,20 @@ fn unit(name: &str) -> String {
 pub fn render_unit(spec: &ServiceSpec) -> String {
     let mut unit = String::new();
     unit.push_str("[Unit]\n");
-    unit.push_str(&format!("Description={}\n", spec.description));
+    unit.push_str(&format!("Description={}\n", unit_field(&spec.description)));
     unit.push_str("After=network.target\n\n");
     unit.push_str("[Service]\n");
     unit.push_str("Type=simple\n");
-    unit.push_str(&format!("ExecStart={}\n", spec.exec));
+    unit.push_str(&format!("ExecStart={}\n", unit_field(&spec.exec)));
     if let Some(workdir) = &spec.workdir {
-        unit.push_str(&format!("WorkingDirectory={workdir}\n"));
+        unit.push_str(&format!("WorkingDirectory={}\n", unit_field(workdir)));
     }
     for (k, v) in &spec.env {
-        unit.push_str(&format!("Environment={k}={v}\n"));
+        unit.push_str(&format!(
+            "Environment={}={}\n",
+            unit_field(k),
+            unit_field(v)
+        ));
     }
     unit.push_str("Restart=on-failure\n\n");
     unit.push_str("[Install]\n");
@@ -244,7 +321,68 @@ mod tests {
         assert!(path.is_file());
         deploy.enable("peregrin").unwrap();
         deploy.uninstall("peregrin").unwrap();
-        assert!(!deploy.unit_path("peregrin").exists());
+        assert!(!deploy.unit_path("peregrin").unwrap().exists());
+    }
+
+    #[test]
+    fn rejects_unit_name_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let deploy =
+            LocalDeploy::with_default(dir.path().to_path_buf(), Box::new(Recorder::default()));
+        for bad in [
+            "../escape",
+            "a/b",
+            "..",
+            ".",
+            "",
+            "a b",
+            "x\nExecStart=/bin/evil",
+        ] {
+            assert!(deploy.unit_path(bad).is_err(), "name {bad:?} accepted");
+            assert!(deploy.enable(bad).is_err(), "enable {bad:?} accepted");
+            assert!(deploy.uninstall(bad).is_err(), "uninstall {bad:?} accepted");
+        }
+        // nothing escaped the unit dir
+        assert!(!dir.path().parent().unwrap().join("escape.service").exists());
+    }
+
+    #[test]
+    fn rejects_newline_injection_in_spec() {
+        let dir = tempfile::tempdir().unwrap();
+        let deploy =
+            LocalDeploy::with_default(dir.path().to_path_buf(), Box::new(Recorder::default()));
+        for evil in [
+            ServiceSpec {
+                description: "d\nExecStart=/bin/evil".into(),
+                ..spec()
+            },
+            ServiceSpec {
+                exec: "/bin/x\nRestart=always".into(),
+                ..spec()
+            },
+            ServiceSpec {
+                env: vec![("A\nB".into(), "1".into())],
+                ..spec()
+            },
+            ServiceSpec {
+                env: vec![("A".into(), "1\r\n[Install]".into())],
+                ..spec()
+            },
+            ServiceSpec {
+                workdir: Some("/w\nX=y".into()),
+                ..spec()
+            },
+        ] {
+            assert!(deploy.install(&evil).is_err());
+        }
+        // render_unit alone still cannot emit an injected directive
+        let text = render_unit(&ServiceSpec {
+            description: "d\n[Service]".into(),
+            exec: "/bin/x\r\nRestart=always".into(),
+            ..spec()
+        });
+        assert!(!text.contains("d\n"));
+        assert_eq!(text.matches("Restart=on-failure").count(), 1);
     }
 
     struct FailRunner;

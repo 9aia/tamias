@@ -10,6 +10,7 @@ fn tamias(home: &Path, cache: &Path, args: &[&str]) -> Output {
         .args(args)
         .env("TAMIAS_HOME", home)
         .env("TAMIAS_CACHE", cache)
+        .env_remove("TAMIAS_ALLOW_DRIVERS")
         .output()
         .unwrap()
 }
@@ -363,6 +364,171 @@ fn driver_discovery_dispatches() {
 }
 
 #[test]
+fn bare_tamias_prints_help() {
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias")).output().unwrap();
+    assert!(o.status.success(), "bare tamias: {}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("Usage:"), "{out}");
+    assert!(out.contains("Commands:"), "{out}");
+    // `tamias version` still prints the version
+    let tmp = tempfile::tempdir().unwrap();
+    let o = tamias(&tmp.path().join("h"), &tmp.path().join("c"), &["version"]);
+    assert!(o.status.success());
+    assert!(stdout(&o).starts_with("tamias "), "{}", stdout(&o));
+}
+
+#[test]
+fn manifest_lists_every_verb() {
+    let tmp = tempfile::tempdir().unwrap();
+    let o = tamias(&tmp.path().join("h"), &tmp.path().join("c"), &["manifest"]);
+    assert!(o.status.success(), "manifest: {}", stderr(&o));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    let verbs: Vec<&str> = value["verbs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    for want in [
+        "install",
+        "add",
+        "remove",
+        "list",
+        "info",
+        "verify",
+        "update",
+        "pin",
+        "cache",
+        "version",
+        "manifest",
+        "schema",
+        "gen-cli-docs",
+        "completions",
+        "doctor",
+        "config",
+        "serve",
+        "publish",
+        "search",
+        "bundle",
+        "registry",
+        "deploy-registry",
+        "deploy",
+        "uninstall",
+        "service",
+    ] {
+        assert!(verbs.contains(&want), "manifest missing verb {want}");
+    }
+}
+
+#[test]
+fn json_flags_emit_parseable_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let reg = tmp.path().join("registry");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget\nversion: 1.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let o = tamias(&home, &cache, &["install", pkg.to_str().unwrap()]);
+    assert!(o.status.success(), "install: {}", stderr(&o));
+    // publish so `search` has an entry
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args([
+            "publish",
+            pkg.to_str().unwrap(),
+            "--registry",
+            reg.to_str().unwrap(),
+        ])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "publish: {}", stderr(&o));
+
+    let cases: Vec<Vec<String>> = vec![
+        vec!["list".into(), "--json".into()],
+        vec!["info".into(), "widget".into(), "--json".into()],
+        vec!["verify".into(), "widget".into(), "--json".into()],
+        vec!["update".into(), "widget".into(), "--json".into()],
+        vec!["cache".into(), "clean".into(), "--json".into()],
+        vec![
+            "search".into(),
+            "widget".into(),
+            "--registry".into(),
+            reg.to_str().unwrap().into(),
+            "--json".into(),
+        ],
+        vec!["doctor".into(), "--json".into()],
+    ];
+    for args in cases {
+        let o = tamias(
+            &home,
+            &cache,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        assert!(o.status.success(), "{args:?}: {}", stderr(&o));
+        let text = stdout(&o);
+        let parsed: serde_json::Value = serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("{args:?} not JSON: {e}\n{text}"));
+        assert!(!parsed.is_null(), "{args:?}");
+    }
+    // --all conflicts with --days
+    let o = tamias(&home, &cache, &["cache", "clean", "--all", "--days", "3"]);
+    assert!(!o.status.success(), "--all --days must conflict");
+}
+
+#[test]
+fn update_and_pin_refresh_the_lock() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget\nversion: 1.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_tamias"))
+            .args(args)
+            .current_dir(&proj)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .output()
+            .unwrap()
+    };
+    let o = run(&["add", pkg.to_str().unwrap()]);
+    assert!(o.status.success(), "add: {}", stderr(&o));
+    let lock_path = proj.join("tamias.lock");
+    let text = std::fs::read_to_string(&lock_path).unwrap();
+    assert!(text.contains("widget"), "lock: {text}");
+    // pin retargets the recorded ref → the lock entry follows
+    let o = run(&["pin", "widget", "./elsewhere"]);
+    assert!(o.status.success(), "pin: {}", stderr(&o));
+    let text = std::fs::read_to_string(&lock_path).unwrap();
+    assert!(text.contains("./elsewhere"), "lock: {text}");
+    // update re-resolves → digest in the lock is refreshed, not stale
+    let o = run(&["update", "widget"]);
+    // the pinned ref ./elsewhere doesn't exist → update fails; the lock
+    // must be left untouched rather than rewritten with garbage.
+    assert!(!o.status.success(), "update of bogus ref should fail");
+    let text = std::fs::read_to_string(&lock_path).unwrap();
+    assert!(
+        text.contains("./elsewhere"),
+        "lock after failed update: {text}"
+    );
+}
+
+#[test]
 fn install_registers_bundled_driver() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -379,11 +545,129 @@ fn install_registers_bundled_driver() {
         "#!/bin/sh\nexit 0\n",
     )
     .unwrap();
+    // no consent → refused before install; nothing registered or run
     let o = tamias(&home, &cache, &["install", pkg.to_str().unwrap()]);
+    assert!(!o.status.success(), "expected refusal: {}", stdout(&o));
+    assert!(
+        stderr(&o).contains("--allow-drivers"),
+        "error should name the consent flag: {}",
+        stderr(&o)
+    );
+    assert!(!home.join("drivers/tamias-driver-doodad").exists());
+    let o = tamias(&home, &cache, &["list"]);
+    assert!(stdout(&o).contains("no packages installed"));
+
+    // --allow-drivers → registered
+    let o = tamias(
+        &home,
+        &cache,
+        &["install", pkg.to_str().unwrap(), "--allow-drivers"],
+    );
     assert!(o.status.success(), "{}", stderr(&o));
     assert!(
         home.join("drivers/tamias-driver-doodad").is_file(),
         "driver not registered: {}",
+        stdout(&o)
+    );
+
+    // TAMIAS_ALLOW_DRIVERS=1 is equivalent consent
+    let other = tmp.path().join("pkg2");
+    std::fs::create_dir_all(other.join("drivers")).unwrap();
+    std::fs::write(
+        other.join("tamias.yaml"),
+        "name: doodad2\nversion: 1.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(
+        other.join("drivers/tamias-driver-doodad2"),
+        "#!/bin/sh\nexit 0\n",
+    )
+    .unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        .args(["install", other.to_str().unwrap()])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .env("TAMIAS_ALLOW_DRIVERS", "1")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(home.join("drivers/tamias-driver-doodad2").is_file());
+}
+
+#[test]
+fn install_unknown_type_fails_without_entry() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: mystery\nversion: 1.0.0\ntype: zzz-e2e-no-driver\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let o = tamias(&home, &cache, &["install", pkg.to_str().unwrap()]);
+    assert!(!o.status.success(), "expected failure: {}", stdout(&o));
+    let err = stderr(&o);
+    assert!(err.contains("zzz-e2e-no-driver"), "{err}");
+    assert!(err.contains("tamias-driver-zzz-e2e-no-driver"), "{err}");
+    let o = tamias(&home, &cache, &["list"]);
+    assert!(
+        stdout(&o).contains("no packages installed"),
+        "{}",
+        stdout(&o)
+    );
+}
+
+#[test]
+fn uninstall_driver_failure_keeps_entry() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: leak\nversion: 1.0.0\ntype: e2e-flaky\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    // driver installs fine but its uninstall verb fails
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let driver = bin.join("tamias-driver-e2e-flaky");
+    std::fs::write(
+        &driver,
+        "#!/bin/sh\ncase \"$1\" in\n  uninstall) exit 1;;\n  *) exit 0;;\nesac\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path_env = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_tamias"))
+            .args(args)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("PATH", &path_env)
+            .output()
+            .unwrap()
+    };
+    assert!(run(&["install", pkg.to_str().unwrap()]).status.success());
+    let o = run(&["uninstall", "leak"]);
+    assert!(!o.status.success(), "uninstall should fail: {}", stdout(&o));
+    let o = run(&["list"]);
+    assert!(
+        stdout(&o).contains("leak"),
+        "entry must be kept: {}",
         stdout(&o)
     );
 }

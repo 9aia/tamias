@@ -3,11 +3,17 @@
 //
 // Bindings: REGISTRY (R2 bucket), REGISTRY_TOKEN (secret). Deploy with
 // `wrangler deploy` (see wrangler.toml).
+//
+// Auth FAILS CLOSED: if REGISTRY_TOKEN was never set, every request is
+// rejected — an unconfigured secret must never mean "world-writable".
 export default {
   async fetch(request, env) {
+    if (!env.REGISTRY_TOKEN) {
+      return new Response("registry token not configured", { status: 500 });
+    }
     const auth = request.headers.get("authorization") || "";
     const token = auth.replace(/^Bearer\s+/i, "");
-    if (env.REGISTRY_TOKEN && token !== env.REGISTRY_TOKEN) {
+    if (!(await tokenEquals(token, env.REGISTRY_TOKEN))) {
       return new Response("unauthorized", { status: 401 });
     }
     const url = new URL(request.url);
@@ -28,3 +34,19 @@ export default {
     return new Response("method not allowed", { status: 405 });
   },
 };
+
+// Constant-time-ish compare: SHA-256 both sides, then XOR the digests —
+// the loop always runs 32 rounds regardless of where the strings differ,
+// so a prefix guess can't be timed. (Workers have no timingSafeEqual.)
+async function tokenEquals(given, expected) {
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(given)),
+    crypto.subtle.digest("SHA-256", enc.encode(expected)),
+  ]);
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}

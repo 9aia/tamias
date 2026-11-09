@@ -61,14 +61,18 @@ domain (no I/O); ports are traits, impls are separate crates;
 | Crate | Role |
 | --- | --- |
 | `crates/tamias-core` | package, ref grammar, manifest, records, digest — pure |
-| `crates/tamias-source` + `-fs`/`-git`/`-http`/`-registry` | source port (`resolve`→`fetch`) + impls |
-| `crates/tamias-store` + `-local`/`-cf` | install store port + impls |
-| `crates/tamias-cache` + `-local`/`-cf` | content-addressed fetch cache |
-| `crates/tamias-content` (+ `-peregrin`/`-myco`/…) | the `ContentType` port + impls |
-| `crates/tamias-registry` + `-local`/`-cf` | index + publish port + impls |
-| `crates/tamias-publish` | author-side orchestration |
+| `crates/tamias-config` + `-yml`/`-toml` | config model + format port — YAML (`tamias.yml`) is the standard, TOML the alternative |
+| `crates/tamias-source` + `-fs`/`-git`/`-http`/`-cf` | ref grammar + source port (`resolve`→`fetch`) + impls (`cf:` = Cloudflare registry refs) |
+| `crates/tamias-store` + `-local`/`-cf` | install store port + impls (`-cf` scaffolded) |
+| `crates/tamias-cache` + `-local`/`-cf` | content-addressed fetch cache (`-cf` scaffolded) |
+| `crates/tamias-registry` + `-local`/`-cf` | index + publish port + impls (local dir, optionally HTTP-served; CF Worker client) |
+| `crates/tamias-publish` | author-side packing — payload dir + manifest → `.tgz` |
+| `crates/tamias-deploy` + `-local`/`-cf` | deploy port — provision a remote registry (`-cf` materializes Worker + wrangler config) / per-user service unit, systemd or launchd (`-local`) |
 | `crates/tamias-driver` | content-driver host — discovers `tamias-driver-<type>` on PATH/`<tamias-home>/drivers/`, dispatches install/deploy/uninstall, registers payload-bundled drivers (consent-gated) |
 | `crates/tamias-driver-tamias` | the *pavo* view driver for the tamias product itself (bin `tamias-driver-tamias`, manifest `name: "tamias"`, `types: []` — read-only over store/cache/registry/drivers). The `tamias-driver-` prefix is required for pavo discovery; it is **not** a content-type driver — a hypothetical `type: tamias` package would fail loudly on the unknown verb, never silently |
+| `crates/tamias-serve` | ndjson JSON-RPC over stdio for embedding (`install`/`list`/`info`/`verify`/`remove`) — same wire as `sepia serve`/`cuora serve`/`myco serve` |
+| `crates/tamias-shell` | `bash -c` / direct-argv exec helper with env injection (intended for `tamias run`) — **orphan: declared in the workspace but zero dependents** |
+| `crates/tamias-telemetry` | opt-in OpenTelemetry layer over the daemons' `tracing` stack (OTLP only when an endpoint is configured) |
 | `crates/tamias-testkit` | fixtures + impl conformance |
 | `crates/tamias-cli` | the `tamias` binary — clap, `--json`, `manifest`/`schema` |
 | `xtask` (pkg `tamias-xtask`) | check / test / coverage / install / package / smoke / site |

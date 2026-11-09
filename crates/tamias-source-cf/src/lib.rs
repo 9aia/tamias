@@ -12,7 +12,7 @@
 use std::any::Any;
 use std::path::Path;
 
-use tamias_core::Error;
+use tamias_core::{dir_digest, payload_root, Error};
 use tamias_registry::Registry;
 use tamias_registry_cf::HttpRegistry;
 use tamias_source::{Fetched, Plan, RefKind, Source, Spec};
@@ -101,6 +101,11 @@ impl CfSource {
 
 struct CfPlan {
     url: String,
+    /// The index's recorded `dir_digest` of the published payload root —
+    /// the *expected* unpacked-payload digest. The tarball itself carries
+    /// no pin, so this is the only provenance check between "the registry
+    /// said hello@1.0.0 lives at this URL" and "these bytes are it".
+    digest: String,
 }
 
 impl Plan for CfPlan {}
@@ -127,15 +132,26 @@ impl Source for CfSource {
             .ok_or_else(|| Error::Failed(format!("{name}@{version} not found in {base}")))?;
         Ok(Box::new(CfPlan {
             url: format!("{base}/{}", entry.file),
+            digest: entry.digest,
         }))
     }
 
     fn fetch(&self, plan: &dyn Plan, dest_dir: &Path) -> Result<Fetched, Error> {
         // A `cf:` plan is an http tarball — the http source does the rest.
-        let CfPlan { url } = plan
+        let CfPlan { url, digest } = plan
             .downcast_ref::<CfPlan>()
             .ok_or_else(|| Error::Failed("CfSource only fetches cf plans".to_string()))?;
-        HttpSource::new().fetch(&HttpPlan::new(url.clone(), None), dest_dir)
+        let fetched = HttpSource::new().fetch(&HttpPlan::new(url.clone(), None), dest_dir)?;
+        // Verify the unpacked payload against the digest the registry
+        // index recorded at publish — a swapped or truncated tarball
+        // fails here instead of installing under the right name@version.
+        let actual = dir_digest(&payload_root(&fetched.dir)?)?;
+        if actual != *digest {
+            return Err(Error::Failed(format!(
+                "payload digest mismatch for {url}: {actual} ≠ index {digest}"
+            )));
+        }
+        Ok(fetched)
     }
 }
 
@@ -232,5 +248,30 @@ mod tests {
         assert!(!source.accepts(&1u8));
         assert!(source.plan(&1u8).is_err());
         assert!(source.fetch(&ForeignPlan, dest.path()).is_err());
+    }
+
+    #[test]
+    fn fetch_rejects_payload_digest_mismatch() {
+        let refs = Refs::new().with(Arc::new(CfRefKind));
+        let sources = Sources::new().with(Arc::new(CfSource::new()));
+        let (base, reg) = serve_registry("8912");
+        let spec = refs.parse(&format!("cf:{base}/hello@0.1.0")).unwrap();
+        let planned = sources.plan(&*spec).unwrap();
+        // happy path first — the index digest verifies the unpacked payload
+        let d1 = tempfile::tempdir().unwrap();
+        assert!(planned.fetch(d1.path()).is_ok());
+        // swap the served tarball for a different payload under the same
+        // name@version → the index digest must reject it
+        let evil = tempfile::tempdir().unwrap();
+        std::fs::write(
+            evil.path().join("tamias.yaml"),
+            "name: hello\nversion: 0.1.0\n",
+        )
+        .unwrap();
+        std::fs::write(evil.path().join("a.txt"), "evil").unwrap();
+        tamias_core::pack_tgz_atomic(evil.path(), &reg.path().join("hello/0.1.0.tgz")).unwrap();
+        let d2 = tempfile::tempdir().unwrap();
+        let err = planned.fetch(d2.path()).unwrap_err();
+        assert!(err.to_string().contains("digest mismatch"), "{err}");
     }
 }

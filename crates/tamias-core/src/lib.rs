@@ -10,18 +10,22 @@
 //! live in the sibling crates.
 
 pub mod archive;
+pub mod atomic;
 pub mod digest;
 pub mod error;
 pub mod identity;
 pub mod manifest;
 pub mod overlay;
+pub mod process;
 pub mod project;
 pub mod records;
-pub use archive::{pack_tgz, untar, untar_gz};
+pub use archive::{pack_tgz, pack_tgz_atomic, untar, untar_gz};
+pub use atomic::write_atomic;
 pub use digest::{content_digest, dir_digest, dir_size, file_digest, sha256_hex};
 pub use error::Error;
 pub use identity::{Identity, IdentityError};
-pub use manifest::{Manifest, MANIFEST_NAMES};
+pub use manifest::{is_valid_name, is_valid_version, Manifest, MANIFEST_NAMES};
 pub use overlay::{overlay, payload_root};
+pub use process::output_with_timeout;
 pub use project::{Lock, LockEntry};
 pub use records::{copy_tree, StoreEntry, StoreRecord, RECORD_FILE};

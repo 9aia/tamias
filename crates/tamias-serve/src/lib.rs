@@ -85,7 +85,13 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
     match op {
         "install" => {
             let reference = str_field(&req, "ref")?;
-            let entry = install(env, reference)?;
+            // Optional consent for payload-shipped `drivers/` — same rule as
+            // `tamias install --allow-drivers` / `TAMIAS_ALLOW_DRIVERS=1`.
+            let allow_drivers = req
+                .get("allow_drivers")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let entry = install(env, reference, allow_drivers)?;
             Ok(json!({
                 "label": entry.label(),
                 "resolved": entry.record.resolved,
@@ -123,7 +129,20 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
         }
         "remove" => {
             let name = str_field(&req, "name")?;
-            let record = Store::new(&env.store_root).remove(name)?;
+            let store = Store::new(&env.store_root);
+            let entry = store.find(name)?;
+            let kind = entry.record.kind.as_deref().unwrap_or("files");
+            // Same teardown rule as `tamias uninstall`: a failing driver
+            // keeps the store entry; a missing one warns loudly.
+            if !tamias_driver::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None)?
+                && kind != "files"
+            {
+                eprintln!(
+                    "tamias-serve: warning — no driver for type '{kind}'; \
+                     provider resources may remain"
+                );
+            }
+            let record = store.remove(name)?;
             Ok(json!({"name": record.name}))
         }
         other => Err(Error::Failed(format!("unknown op '{other}'"))),
@@ -151,8 +170,10 @@ fn sources() -> Sources {
 fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Error> {
     let cache = FetchCache::new(&env.cache_root);
     if let Some((key, resolved_id)) = planned.prefetch_identity() {
-        if cache.has(&key) {
-            return Ok((cache.entry(&key), resolved_id));
+        // Integrity-checked hit — a tampered or pre-metadata entry is
+        // evicted inside `hit` and reported as a miss → refetch.
+        if let Some(dir) = cache.hit(&key)? {
+            return Ok((dir, resolved_id));
         }
     }
     let scratch = cache.scratch()?;
@@ -167,7 +188,11 @@ fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Er
     Ok((committed, fetched.resolved))
 }
 
-fn install(env: &Env, reference: &str) -> Result<tamias_core::StoreEntry, Error> {
+fn install(
+    env: &Env,
+    reference: &str,
+    allow_drivers: bool,
+) -> Result<tamias_core::StoreEntry, Error> {
     let span = tracing::info_span!("install", reference);
     let _enter = span.enter();
     let spec = refs().parse(reference)?;
@@ -180,6 +205,17 @@ fn install(env: &Env, reference: &str) -> Result<tamias_core::StoreEntry, Error>
             "package manifest is missing a name".to_string(),
         ));
     }
+    // Bundled drivers are arbitrary code shipped inside the package — refuse
+    // before the store entry is written unless the caller consented via
+    // `allow_drivers` or `TAMIAS_ALLOW_DRIVERS=1`.
+    let shipped = tamias_driver::bundled_drivers(&root)?;
+    if !shipped.is_empty() && !tamias_driver::drivers_allowed(allow_drivers) {
+        return Err(Error::Failed(format!(
+            "package ships bundled driver(s): {} — refusing to install + run them; \
+             pass \"allow_drivers\":true or set TAMIAS_ALLOW_DRIVERS=1 to consent",
+            shipped.join(", ")
+        )));
+    }
     let record = StoreRecord {
         name: manifest.name.clone(),
         scope: manifest.scope.clone(),
@@ -190,11 +226,24 @@ fn install(env: &Env, reference: &str) -> Result<tamias_core::StoreEntry, Error>
         digest: String::new(),
         installed_at: 0,
     };
-    let entry = Store::new(&env.store_root).install(&root, record)?;
+    // Same semantics as `tamias install`: driver registration + dispatch
+    // run *before* the store commit, so a missing or failing driver fails
+    // the install with no committed entry.
     let kind = manifest.kind.as_deref().unwrap_or("files");
-    let _ = tamias_driver::register_bundled_drivers(&root);
-    let _ = tamias_driver::dispatch(kind, "install", &root, &entry.record.name, None);
-    Ok(entry)
+    tamias_driver::register_bundled_drivers(&root)?;
+    if !tamias_driver::dispatch(kind, "install", &root, &record.name, None)? && kind != "files" {
+        return Err(Error::Failed(format!(
+            "no driver for content type '{kind}' — install `tamias-driver-{kind}` on PATH \
+             or ship one in the package's `drivers/` dir{}",
+            if shipped.is_empty() {
+                String::new()
+            } else {
+                "; bundled drivers need \"allow_drivers\":true or TAMIAS_ALLOW_DRIVERS=1"
+                    .to_string()
+            }
+        )));
+    }
+    Store::new(&env.store_root).install(&root, record)
 }
 
 /// A convenience default cache eviction window re-exported for callers that
@@ -207,6 +256,9 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+
+    /// Serializes tests that mutate `TAMIAS_HOME`/`TAMIAS_ALLOW_DRIVERS`.
+    static DRVENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn env() -> Env {
         let dir = tempfile::tempdir().unwrap();
@@ -360,6 +412,168 @@ mod tests {
         let rj = format!("{{\"op\":\"install\",\"ref\":{r:?}}}");
         let _ = dispatch(&env, &rj);
         let _ = dispatch(&env, &rj);
+    }
+
+    #[test]
+    fn corrupt_cache_entry_refetches() {
+        let env = env();
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(
+            repo.path().join("tamias.yaml"),
+            "name: cc\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        std::fs::write(repo.path().join("a.txt"), "good").unwrap();
+        let git = |a: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(repo.path())
+                .args(a)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .status()
+                .unwrap()
+                .success()
+        };
+        assert!(git(&["init", "-q", "-b", "main"]));
+        assert!(git(&["add", "-A"]));
+        assert!(git(&["commit", "-q", "-m", "i"]));
+        let r = format!("git:file://{}#main", repo.path().display());
+        let rj = format!("{{\"op\":\"install\",\"ref\":{r:?}}}");
+        assert!(dispatch(&env, &rj).is_ok());
+        // poison the cache entry → the next install must reject the hit,
+        // evict, refetch, and store the good bytes — never "evil".
+        let entries = FetchCache::new(&env.cache_root).entries().unwrap();
+        assert_eq!(entries.len(), 1);
+        std::fs::write(entries[0].join("a.txt"), "evil").unwrap();
+        assert!(dispatch(&env, &rj).is_ok());
+        let entry = Store::new(&env.store_root).find("cc").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(entry.dir.join("a.txt")).unwrap(),
+            "good"
+        );
+        assert_eq!(
+            dispatch(&env, r#"{"op":"verify","name":"cc"}"#).unwrap()["ok"],
+            true
+        );
+    }
+
+    #[test]
+    fn install_gates_bundled_drivers() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
+        let env = Env {
+            store_root: tmp.path().join("store"),
+            cache_root: tmp.path().join("cache"),
+        };
+        let pkg = tmp.path().join("pkg");
+        std::fs::create_dir_all(pkg.join("drivers")).unwrap();
+        std::fs::write(pkg.join("tamias.yaml"), "name: sd\nversion: 1.0.0\n").unwrap();
+        std::fs::write(
+            pkg.join("drivers/tamias-driver-files"),
+            "#!/bin/sh\nexit 0\n",
+        )
+        .unwrap();
+        let r = format!("{{\"op\":\"install\",\"ref\":{:?}}}", pkg.to_str().unwrap());
+        // no consent → error, no store entry, nothing registered
+        assert!(dispatch(&env, &r).is_err());
+        assert!(Store::new(&env.store_root).find("sd").is_err());
+        assert!(!tmp.path().join("th/drivers/tamias-driver-files").exists());
+        // allow_drivers param → proceeds
+        let rc = format!(
+            "{{\"op\":\"install\",\"ref\":{:?},\"allow_drivers\":true}}",
+            pkg.to_str().unwrap()
+        );
+        assert!(dispatch(&env, &rc).is_ok());
+        assert!(tmp.path().join("th/drivers/tamias-driver-files").is_file());
+        // env consent works too
+        std::env::set_var("TAMIAS_ALLOW_DRIVERS", "1");
+        assert!(dispatch(&env, &r).is_ok());
+        std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
+        // a plain files package is unaffected — no consent needed
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::write(plain.join("tamias.yaml"), "name: sp\nversion: 1.0.0\n").unwrap();
+        let rp = format!(
+            "{{\"op\":\"install\",\"ref\":{:?}}}",
+            plain.to_str().unwrap()
+        );
+        assert!(dispatch(&env, &rp).is_ok());
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn install_unknown_kind_fails_without_entry() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
+        let env = Env {
+            store_root: tmp.path().join("store"),
+            cache_root: tmp.path().join("cache"),
+        };
+        let pkg = tmp.path().join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(
+            pkg.join("tamias.yaml"),
+            "name: su\nversion: 1.0.0\ntype: zzz-serve-no-driver\n",
+        )
+        .unwrap();
+        std::fs::write(pkg.join("a.txt"), "a").unwrap();
+        let r = format!("{{\"op\":\"install\",\"ref\":{:?}}}", pkg.to_str().unwrap());
+        let err = dispatch(&env, &r).unwrap_err();
+        assert!(err.to_string().contains("zzz-serve-no-driver"), "{err}");
+        assert!(Store::new(&env.store_root).find("su").is_err());
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn remove_propagates_driver_failure() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
+        let dd = tmp.path().join("th/drivers");
+        std::fs::create_dir_all(&dd).unwrap();
+        let driver = dd.join("tamias-driver-srvflaky");
+        std::fs::write(
+            &driver,
+            "#!/bin/sh\ncase \"$1\" in\n  uninstall) exit 1;;\n  *) exit 0;;\nesac\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let env = Env {
+            store_root: tmp.path().join("store"),
+            cache_root: tmp.path().join("cache"),
+        };
+        let pkg = tmp.path().join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(
+            pkg.join("tamias.yaml"),
+            "name: sf\nversion: 1.0.0\ntype: srvflaky\n",
+        )
+        .unwrap();
+        std::fs::write(pkg.join("a.txt"), "a").unwrap();
+        let r = format!("{{\"op\":\"install\",\"ref\":{:?}}}", pkg.to_str().unwrap());
+        assert!(dispatch(&env, &r).is_ok());
+        // driver teardown fails → remove errors, entry kept
+        assert!(dispatch(&env, r#"{"op":"remove","name":"sf"}"#).is_err());
+        assert_eq!(
+            dispatch(&env, r#"{"op":"list"}"#)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        std::env::remove_var("TAMIAS_HOME");
     }
 
     #[cfg(unix)]

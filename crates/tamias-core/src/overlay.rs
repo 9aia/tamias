@@ -31,7 +31,9 @@ pub fn payload_root(dir: &Path) -> Result<PathBuf, Error> {
         }
         if children.len() == 1 {
             let child = children.into_iter().next().unwrap_or_default();
-            if child.is_dir() {
+            // `symlink_metadata` never follows links — a lone symlink
+            // (even `a -> .`) can't unwrap the root or loop the search.
+            if fs::symlink_metadata(&child).is_ok_and(|m| m.is_dir()) {
                 current = child;
                 continue;
             }
@@ -87,7 +89,7 @@ fn write_doc(path: &Path, format: DocFormat, value: &Value) -> Result<(), Error>
         DocFormat::Json => serde_json::to_string_pretty(value)
             .map_err(|e| Error::Failed(format!("serialize {}: {e}", path.display())))?,
     };
-    fs::write(path, text).map_err(Error::io(format!("write {}", path.display())))
+    crate::write_atomic(path, text.as_bytes())
 }
 
 /// Deep-merge `high` over `low`: dicts merge per-key, arrays concat
@@ -229,6 +231,22 @@ mod overlay_tests {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("f.txt"), "x").unwrap();
         assert!(payload_root(d.path()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn payload_root_never_follows_symlinks() {
+        // a lone symlink — even one pointing at a real payload dir —
+        // must not unwrap the root (or loop on `a -> .`)
+        let real = tempfile::tempdir().unwrap();
+        std::fs::write(real.path().join("tamias.yaml"), "name: x\n").unwrap();
+        let wrapped = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(real.path(), wrapped.path().join("link")).unwrap();
+        assert!(payload_root(wrapped.path()).is_err());
+
+        let looping = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(".", looping.path().join("a")).unwrap();
+        assert!(payload_root(looping.path()).is_err());
     }
 
     #[test]

@@ -6,13 +6,24 @@ dogfoods its own PM ledger (`project/`). Fork freely under MIT.
 ## Layout
 
 `crates/` — flat rust workspace, ports-and-adapters. `tamias-core` is
-pure domain (no I/O); `tamias-source`/`tamias-store`/`tamias-cache`/
-`tamias-content`/`tamias-registry` are ports, `-fs`/`-git`/`-http`/
-`-local`/`-cf` crates their impls; `tamias` (`crates/tamias-cli`) is the
-composition root. `xtask/` is repo chores.
+pure domain (no I/O); the ports are `tamias-source` (ref grammar +
+fetch), `tamias-store` (install store), `tamias-cache` (fetch cache),
+`tamias-registry` (index + publish), `tamias-config` (config model +
+format), `tamias-deploy` (provisioning), and `tamias-driver` (driver
+host); `-fs`/`-git`/`-http`/`-cf`/`-local` crates are the impls.
+`tamias-cli` (`crates/tamias-cli`, package `tamias`) is the composition
+root; `tamias-serve`/`tamias-shell`/`tamias-telemetry` are support
+crates. `xtask/` is repo chores. See the crate table in
+[AGENTS.md](AGENTS.md#layout) for the full map.
 
-> Seeded from `cuora`; the crate set is being re-derived per org-ledger
-> the org-ledger seed proposal.
+> Seeded from `cuora`; the crate set is being re-derived per the
+> org-ledger seed proposal (see `project/adrs`).
+
+Fresh clone? Run `./scripts/setup.sh` — it sets `core.hooksPath=.hooks`
+(pre-commit `cargo fmt --check`, pre-push `cargo xtask check`) and
+verifies the toolchain. `rust-toolchain.toml` pins stable + rustfmt +
+clippy; coverage stays on stable via `RUSTC_BOOTSTRAP=1` (below), no
+nightly needed.
 
 ## Rules of thumb
 
@@ -20,8 +31,8 @@ composition root. `xtask/` is repo chores.
   change. New **ref kind** = a new `tamias-source-<kind>` crate (grammar +
   transport) + one line in the composition root — also not a core change
   ([ADR-0002](project/adrs/0002-ref-source-are-ports-the-grammar-and-the-transport-leave-core.md)).
-- New content type = a new `tamias-content-*` crate, or a declared
-  manifest recipe — never a core change.
+- New content type = a manifest recipe + a `tamias-driver-<type>`
+  provider — never a core change.
 - `cargo xtask check` and `cargo xtask test` must stay green.
 - Coverage: `cargo xtask coverage` — cargo-llvm-cov HTML report in
   `target/llvm-cov/html`. The gate is `cargo xtask coverage

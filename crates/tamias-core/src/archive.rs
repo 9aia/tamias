@@ -31,6 +31,34 @@ pub fn pack_tgz(src_dir: &Path, out: &Path) -> Result<PathBuf, Error> {
     Ok(out.to_path_buf())
 }
 
+/// [`pack_tgz`] to a sibling tmp file, fsync, then atomic rename —
+/// a crash mid-pack leaves a stray `*.tmp`, never a truncated blob at
+/// `out`.
+///
+/// # Errors
+/// Propagates pack/write/rename failures; the tmp file is cleaned up.
+pub fn pack_tgz_atomic(src_dir: &Path, out: &Path) -> Result<PathBuf, Error> {
+    let tmp = crate::atomic::tmp_path(out);
+    let result = (|| -> Result<(), Error> {
+        pack_tgz(src_dir, &tmp)?;
+        let f = fs::OpenOptions::new()
+            .write(true)
+            .open(&tmp)
+            .map_err(Error::io(format!("open {}", tmp.display())))?;
+        f.sync_all()
+            .map_err(Error::io(format!("sync {}", tmp.display())))?;
+        fs::rename(&tmp, out).map_err(Error::io(format!(
+            "rename {} → {}",
+            tmp.display(),
+            out.display()
+        )))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result.map(|()| out.to_path_buf())
+}
+
 /// Unpack a plain `.tar` stream.
 ///
 /// # Errors
@@ -123,7 +151,11 @@ fn write_symlink<R: Read>(entry: &tar::Entry<'_, R>, target: &Path) -> Result<()
         .link_name()
         .map_err(Error::io("read tar symlink"))?
         .ok_or_else(|| Error::Failed("symlink entry without a target".to_string()))?;
-    if link.is_absolute() || link.components().any(|c| c == Component::ParentDir) {
+    // Absolute paths, `..` escapes, and self-references (`.`/`./`/empty —
+    // they resolve to the link's own dir and self-cycle any walk) are
+    // all unsafe.
+    let self_ref = link.components().all(|c| matches!(c, Component::CurDir));
+    if self_ref || link.is_absolute() || link.components().any(|c| c == Component::ParentDir) {
         return Err(Error::Failed(format!(
             "unsafe symlink in archive: {}",
             link.display()
@@ -168,6 +200,24 @@ mod archive_tests {
         untar_gz(std::fs::File::open(&tgz).unwrap(), dest.path()).unwrap();
         assert!(dest.path().join("a.txt").is_file());
         assert!(dest.path().join("sub/b.txt").is_file());
+    }
+
+    #[test]
+    fn pack_tgz_atomic_roundtrips_and_leaves_no_tmp() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let tgz = out.path().join("x.tgz");
+        pack_tgz_atomic(src.path(), &tgz).unwrap();
+        // valid blob at the canonical path, no tmp litter
+        let dest = tempfile::tempdir().unwrap();
+        untar_gz(std::fs::File::open(&tgz).unwrap(), dest.path()).unwrap();
+        assert_eq!(std::fs::read(dest.path().join("a.txt")).unwrap(), b"a");
+        let entries: Vec<_> = std::fs::read_dir(out.path()).unwrap().collect();
+        assert_eq!(entries.len(), 1);
+        // repack over the existing blob replaces it
+        pack_tgz_atomic(src.path(), &tgz).unwrap();
+        assert!(tgz.is_file());
     }
 
     #[test]
@@ -257,6 +307,22 @@ mod archive_tests {
         link.set_mode(0o777);
         link.set_cksum();
         builder.append_link(&mut link, "link", "../escape").unwrap();
+        let bytes = builder.into_inner().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(untar(Cursor::new(bytes), dest.path()).is_err());
+    }
+
+    #[test]
+    fn self_referential_symlink_errors() {
+        // `a -> .` resolves to the link's own dir — it self-cycles any
+        // walk that follows links, so untar refuses it outright.
+        let mut builder = Builder::new(Vec::new());
+        let mut link = tar::Header::new_gnu();
+        link.set_entry_type(tar::EntryType::Symlink);
+        link.set_size(0);
+        link.set_mode(0o777);
+        link.set_cksum();
+        builder.append_link(&mut link, "a", ".").unwrap();
         let bytes = builder.into_inner().unwrap();
         let dest = tempfile::tempdir().unwrap();
         assert!(untar(Cursor::new(bytes), dest.path()).is_err());
