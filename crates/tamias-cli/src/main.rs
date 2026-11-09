@@ -1319,7 +1319,12 @@ mod tests {
         std::thread::spawn(move || {
             let _ = tamias_registry_local::serve_http("127.0.0.1:8792", &root);
         });
-        std::thread::sleep(Duration::from_millis(400));
+        for _ in 0..100 {
+            if std::net::TcpStream::connect("127.0.0.1:8792").is_ok() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
         run_args(
             e.clone(),
             &["tamias", "install", "http://127.0.0.1:8792/h.tgz"],

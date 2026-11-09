@@ -416,24 +416,50 @@ mod tests {
         String::from_utf8_lossy(&out).to_string()
     }
 
+    /// A loopback addr nothing else is using — bind :0, read the port,
+    /// release. Tests run in parallel threads; shared fixed ports made
+    /// the second binder fail and its client see `ConnectionRefused`.
+    fn free_addr() -> String {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap().to_string();
+        drop(l);
+        addr
+    }
+
+    /// Wait until the spawned server accepts — a fixed sleep raced the
+    /// bind under nextest load.
+    fn wait_ready(addr: &str) {
+        for _ in 0..100 {
+            if std::net::TcpStream::connect(addr).is_ok() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        panic!("server on {addr} never came up");
+    }
+
     #[test]
     fn serve_http_roundtrip() {
         let root = tempfile::tempdir().unwrap();
         let rp = root.path().to_path_buf();
-        std::thread::spawn(move || {
-            let _ = serve_http("127.0.0.1:8791", &rp);
+        let addr = free_addr();
+        std::thread::spawn({
+            let addr = addr.clone();
+            move || {
+                let _ = serve_http(&addr, &rp);
+            }
         });
-        std::thread::sleep(std::time::Duration::from_millis(400));
+        wait_ready(&addr);
         let put = raw(
-            "127.0.0.1:8791",
+            &addr,
             b"PUT /index.json HTTP/1.1\r\nContent-Length: 3\r\n\r\n[1]",
         );
         assert!(put.starts_with("HTTP/1.1 200"), "{put}");
-        let get = raw("127.0.0.1:8791", b"GET /index.json HTTP/1.1\r\n\r\n");
+        let get = raw(&addr, b"GET /index.json HTTP/1.1\r\n\r\n");
         assert!(get.contains("[1]"), "{get}");
-        let nf = raw("127.0.0.1:8791", b"GET /nope HTTP/1.1\r\n\r\n");
+        let nf = raw(&addr, b"GET /nope HTTP/1.1\r\n\r\n");
         assert!(nf.contains("404"), "{nf}");
-        let bad = raw("127.0.0.1:8791", b"GET /../x HTTP/1.1\r\n\r\n");
+        let bad = raw(&addr, b"GET /../x HTTP/1.1\r\n\r\n");
         assert!(bad.contains("400"), "{bad}");
     }
 
@@ -441,14 +467,18 @@ mod tests {
     fn serve_http_rejects_oversized_content_length() {
         let root = tempfile::tempdir().unwrap();
         let rp = root.path().to_path_buf();
-        std::thread::spawn(move || {
-            let _ = serve_http_token("127.0.0.1:8797", &rp, None);
+        let addr = free_addr();
+        std::thread::spawn({
+            let addr = addr.clone();
+            move || {
+                let _ = serve_http_token(&addr, &rp, None);
+            }
         });
-        std::thread::sleep(std::time::Duration::from_millis(400));
+        wait_ready(&addr);
         // Declared length over MAX_PUT → 413 before any allocation; the
         // connection closes without needing the (absent) body.
         let res = raw(
-            "127.0.0.1:8797",
+            &addr,
             format!(
                 "PUT /big HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
                 MAX_PUT + 1
@@ -463,24 +493,28 @@ mod tests {
     fn serve_http_bearer_token() {
         let root = tempfile::tempdir().unwrap();
         let rp = root.path().to_path_buf();
-        std::thread::spawn(move || {
-            let _ = serve_http_token("127.0.0.1:8798", &rp, Some("sekret"));
+        let addr = free_addr();
+        std::thread::spawn({
+            let addr = addr.clone();
+            move || {
+                let _ = serve_http_token(&addr, &rp, Some("sekret"));
+            }
         });
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        let noauth = raw("127.0.0.1:8798", b"GET /index.json HTTP/1.1\r\n\r\n");
+        wait_ready(&addr);
+        let noauth = raw(&addr, b"GET /index.json HTTP/1.1\r\n\r\n");
         assert!(noauth.contains("401"), "{noauth}");
         let wrong = raw(
-            "127.0.0.1:8798",
+            &addr,
             b"GET /index.json HTTP/1.1\r\nAuthorization: Bearer wrong\r\n\r\n",
         );
         assert!(wrong.contains("401"), "{wrong}");
         let put = raw(
-            "127.0.0.1:8798",
+            &addr,
             b"PUT /index.json HTTP/1.1\r\nAuthorization: Bearer sekret\r\nContent-Length: 2\r\n\r\n[]",
         );
         assert!(put.contains("200"), "{put}");
         let get = raw(
-            "127.0.0.1:8798",
+            &addr,
             b"GET /index.json HTTP/1.1\r\nauthorization: bearer sekret\r\n\r\n",
         );
         assert!(get.contains("200"), "{get}");
@@ -611,18 +645,19 @@ mod tests {
     fn serve_http_method_and_query() {
         let root = tempfile::tempdir().unwrap();
         let rp = root.path().to_path_buf();
-        std::thread::spawn(move || {
-            let _ = serve_http("127.0.0.1:8794", &rp);
+        let addr = free_addr();
+        std::thread::spawn({
+            let addr = addr.clone();
+            move || {
+                let _ = serve_http(&addr, &rp);
+            }
         });
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        let del = raw("127.0.0.1:8794", b"DELETE /x HTTP/1.1\r\n\r\n");
+        wait_ready(&addr);
+        let del = raw(&addr, b"DELETE /x HTTP/1.1\r\n\r\n");
         assert!(del.contains("405"), "{del}");
-        let put = raw(
-            "127.0.0.1:8794",
-            b"PUT /k?v=1 HTTP/1.1\r\nContent-Length: 1\r\n\r\nz",
-        );
+        let put = raw(&addr, b"PUT /k?v=1 HTTP/1.1\r\nContent-Length: 1\r\n\r\nz");
         assert!(put.contains("200"), "{put}");
-        let get = raw("127.0.0.1:8794", b"GET /k?v=1 HTTP/1.1\r\n\r\n");
+        let get = raw(&addr, b"GET /k?v=1 HTTP/1.1\r\n\r\n");
         assert!(get.contains('z'), "{get}");
     }
 
@@ -646,25 +681,21 @@ mod tests {
     fn sanitize_default_curdir_arms() {
         let root = tempfile::tempdir().unwrap();
         let rp = root.path().to_path_buf();
-        std::thread::spawn(move || {
-            let _ = serve_http("127.0.0.1:8795", &rp);
-        });
-        for _ in 0..100 {
-            if std::net::TcpStream::connect("127.0.0.1:8795").is_ok() {
-                break;
+        let addr = free_addr();
+        std::thread::spawn({
+            let addr = addr.clone();
+            move || {
+                let _ = serve_http(&addr, &rp);
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+        });
+        wait_ready(&addr);
         // empty path → index.json (absent → 404)
-        let root_req = raw("127.0.0.1:8795", b"GET / HTTP/1.1\r\n\r\n");
+        let root_req = raw(&addr, b"GET / HTTP/1.1\r\n\r\n");
         assert!(root_req.contains("404"), "{root_req}");
         // a "./" component is skipped
-        let cur = raw(
-            "127.0.0.1:8795",
-            b"PUT /./k HTTP/1.1\r\nContent-Length: 1\r\n\r\nz",
-        );
+        let cur = raw(&addr, b"PUT /./k HTTP/1.1\r\nContent-Length: 1\r\n\r\nz");
         assert!(cur.contains("200"), "{cur}");
-        let got = raw("127.0.0.1:8795", b"GET /./k HTTP/1.1\r\n\r\n");
+        let got = raw(&addr, b"GET /./k HTTP/1.1\r\n\r\n");
         assert!(got.contains('z'), "{got}");
     }
 
@@ -689,22 +720,21 @@ mod tests {
     fn serve_io_error_arms() {
         let root = tempfile::tempdir().unwrap();
         let rp = root.path().to_path_buf();
-        std::thread::spawn(move || {
-            let _ = serve_http("127.0.0.1:8797", &rp);
-        });
-        for _ in 0..100 {
-            if std::net::TcpStream::connect("127.0.0.1:8797").is_ok() {
-                break;
+        let addr = free_addr();
+        std::thread::spawn({
+            let addr = addr.clone();
+            move || {
+                let _ = serve_http(&addr, &rp);
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+        });
+        wait_ready(&addr);
         use std::io::Write;
         // short body vs Content-Length → read_exact fails
-        let mut s = std::net::TcpStream::connect("127.0.0.1:8797").unwrap();
+        let mut s = std::net::TcpStream::connect(&addr).unwrap();
         let _ = s.write_all(b"PUT /k HTTP/1.1\r\nContent-Length: 10\r\n\r\nab");
         drop(s);
         // connect + immediate close → server write → broken pipe
-        let _ = std::net::TcpStream::connect("127.0.0.1:8797");
+        let _ = std::net::TcpStream::connect(&addr);
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
 
@@ -719,7 +749,7 @@ mod tests {
         let rodir = ro.path().join("d");
         std::fs::create_dir_all(&rodir).unwrap();
         std::fs::set_permissions(&rodir, std::fs::Permissions::from_mode(0o555)).unwrap();
-        assert!(serve_http("127.0.0.1:8798", &rodir.join("reg")).is_err());
+        assert!(serve_http(&free_addr(), &rodir.join("reg")).is_err());
         std::fs::set_permissions(&rodir, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 }

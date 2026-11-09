@@ -40,8 +40,28 @@ exit "${CARGO_EXIT:-0}"
 
 const OK_STUB: &str = "#!/bin/sh\nexit 0\n";
 
+/// Path to the xtask binary under test. `env!("CARGO_BIN_EXE_…")` is
+/// baked at compile time — a stale or shared `target/` (repo moved,
+/// `CARGO_TARGET_DIR` reuse across checkouts) can leave it pointing at
+/// a path that no longer exists, and cargo's fingerprint does not
+/// invalidate on the move. Fall back to the bin next to this test
+/// executable: `target/<profile>/deps/<test>` → `target/<profile>/`.
+fn xtask_bin() -> PathBuf {
+    let baked = PathBuf::from(env!("CARGO_BIN_EXE_tamias-xtask"));
+    if baked.exists() {
+        return baked;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .and_then(|deps| deps.parent().map(Path::to_path_buf))
+        .map(|profile| profile.join("tamias-xtask"))
+        .filter(|p| p.exists())
+        .unwrap_or(baked)
+}
+
 fn xtask(dir: &Path, args: &[&str], envs: &[(&str, &str)]) -> Output {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_tamias-xtask"));
+    let mut c = Command::new(xtask_bin());
     c.args(args)
         .env("PATH", dir.join("bin"))
         .envs(envs.iter().copied())

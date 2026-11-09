@@ -2,11 +2,30 @@
 //! End-to-end: install a local fixture, list, info, verify, remove —
 //! driving the real binary through the fs source + cache + store.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+/// Path to the `tamias` binary under test. `env!("CARGO_BIN_EXE_…")`
+/// is baked at compile time — a stale or shared `target/` (repo moved,
+/// `CARGO_TARGET_DIR` reuse across checkouts) can leave it pointing at
+/// a path that no longer exists. Fall back to the bin next to this
+/// test executable: `target/<profile>/deps/<test>` → `target/<profile>/`.
+fn tamias_bin() -> PathBuf {
+    let baked = PathBuf::from(env!("CARGO_BIN_EXE_tamias"));
+    if baked.exists() {
+        return baked;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .and_then(|deps| deps.parent().map(Path::to_path_buf))
+        .map(|profile| profile.join("tamias"))
+        .filter(|p| p.exists())
+        .unwrap_or(baked)
+}
+
 fn tamias(home: &Path, cache: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_tamias"))
+    Command::new(tamias_bin())
         .args(args)
         .env("TAMIAS_HOME", home)
         .env("TAMIAS_CACHE", cache)
@@ -99,7 +118,7 @@ fn peregrin_bundle_uses_the_peregrin_driver() {
         bin.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args(["install", pkg.to_str().unwrap()])
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
@@ -129,7 +148,7 @@ fn add_writes_manifest_and_lock() {
     )
     .unwrap();
     std::fs::write(pkg.join("a.txt"), "a").unwrap();
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args(["add", pkg.to_str().unwrap()])
         .current_dir(&proj)
         .env("TAMIAS_HOME", &home)
@@ -151,7 +170,7 @@ fn serve_ndjson_roundtrip() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     let cache = tmp.path().join("cache");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let mut child = Command::new(tamias_bin())
         .arg("serve")
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
@@ -186,7 +205,7 @@ fn publish_search_and_install_from_registry_tgz() {
     .unwrap();
     std::fs::write(pkg.join("a.txt"), "a").unwrap();
 
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args([
             "publish",
             pkg.to_str().unwrap(),
@@ -200,7 +219,7 @@ fn publish_search_and_install_from_registry_tgz() {
     assert!(o.status.success(), "publish: {}", stderr(&o));
     assert!(reg.join("widget/2.0.0.tgz").is_file());
 
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args(["search", "widget", "--registry", reg.to_str().unwrap()])
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
@@ -232,7 +251,7 @@ fn registry_http_publish_and_search() {
     .unwrap();
     std::fs::write(pkg.join("a.txt"), "a").unwrap();
     let addr = "127.0.0.1:8799";
-    let mut server = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let mut server = Command::new(tamias_bin())
         .args([
             "registry",
             "serve",
@@ -247,16 +266,22 @@ fn registry_http_publish_and_search() {
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    std::thread::sleep(Duration::from_millis(700));
+    // wait for the serve subprocess to bind — a fixed sleep raced it
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(addr).is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let url = format!("http://{addr}");
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args(["publish", pkg.to_str().unwrap(), "--registry", &url])
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
         .output()
         .unwrap();
     assert!(o.status.success(), "publish http: {}", stderr(&o));
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args(["search", "widget", "--registry", &url])
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
@@ -300,7 +325,7 @@ fn deploy_and_uninstall_use_the_driver() {
         std::env::var("PATH").unwrap_or_default()
     );
     let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_tamias"))
+        Command::new(tamias_bin())
             .args(args)
             .env("TAMIAS_HOME", &home)
             .env("TAMIAS_CACHE", &cache)
@@ -347,7 +372,7 @@ fn driver_discovery_dispatches() {
         bin.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args(["install", pkg.to_str().unwrap()])
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
@@ -365,7 +390,7 @@ fn driver_discovery_dispatches() {
 
 #[test]
 fn bare_tamias_prints_help() {
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias")).output().unwrap();
+    let o = Command::new(tamias_bin()).output().unwrap();
     assert!(o.status.success(), "bare tamias: {}", stderr(&o));
     let out = stdout(&o);
     assert!(out.contains("Usage:"), "{out}");
@@ -437,7 +462,7 @@ fn json_flags_emit_parseable_json() {
     let o = tamias(&home, &cache, &["install", pkg.to_str().unwrap()]);
     assert!(o.status.success(), "install: {}", stderr(&o));
     // publish so `search` has an entry
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args([
             "publish",
             pkg.to_str().unwrap(),
@@ -498,7 +523,7 @@ fn update_and_pin_refresh_the_lock() {
     .unwrap();
     std::fs::write(pkg.join("a.txt"), "a").unwrap();
     let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_tamias"))
+        Command::new(tamias_bin())
             .args(args)
             .current_dir(&proj)
             .env("TAMIAS_HOME", &home)
@@ -583,7 +608,7 @@ fn install_registers_bundled_driver() {
         "#!/bin/sh\nexit 0\n",
     )
     .unwrap();
-    let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+    let o = Command::new(tamias_bin())
         .args(["install", other.to_str().unwrap()])
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
@@ -653,7 +678,7 @@ fn uninstall_driver_failure_keeps_entry() {
         std::env::var("PATH").unwrap_or_default()
     );
     let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_tamias"))
+        Command::new(tamias_bin())
             .args(args)
             .env("TAMIAS_HOME", &home)
             .env("TAMIAS_CACHE", &cache)
@@ -709,7 +734,7 @@ fn kuda_and_mimus_have_their_own_drivers() {
         .unwrap();
         std::fs::write(pkg.join("x.toml"), "x").unwrap();
         let target = tmp.path().join(target);
-        let o = Command::new(env!("CARGO_BIN_EXE_tamias"))
+        let o = Command::new(tamias_bin())
             .args(["install", pkg.to_str().unwrap()])
             .env("TAMIAS_HOME", &home)
             .env("TAMIAS_CACHE", &cache)
