@@ -1,16 +1,16 @@
 ---
 url: /tamias/reference/config.md
 ---
-# Config — `tamias.toml`
+# Config — `tamias.yml` / `tamias.yaml` / `tamias.toml`
 
-## `[locations.NAME]` — an install/fetch location
+## `store` / `cache` — an install/fetch location
 
 | field | type | required | notes |
 |---|---|---|---|
 | `kind` | `string` | optional | Impl kind — `local` (default) or `cf`. |
 | `root` | `string` | optional | Root dir (or URL base for `cf`). |
 
-## `[registries.NAME]` — a content registry
+## `registries.NAME` — a named registry
 
 | field | type | required | notes |
 |---|---|---|---|
@@ -28,34 +28,29 @@ url: /tamias/reference/config.md
 
 | field | type | required | notes |
 |---|---|---|---|
-| `store` | `Location` | required | Install store location. |
-| `cache` | `Location` | required | Fetch-cache location. |
-| `registries` | `BTreeMap<String, Registry>` | required | Named registries. |
-| `publish` | `Publish` | required | Publish routing. |
+| `store` | `Location` | optional | Install store location. |
+| `cache` | `Location` | optional | Fetch-cache location. |
+| `registries` | `BTreeMap<String, Registry>` | optional | Named registries. |
+| `publish` | `Publish` | optional | Publish routing. |
 
 ## format trait (parse/render)
 
 | field | type | required | notes |
 |---|---|---|---|
 
-## `[envs]` route forms
+## Formats
 
-Either a bare vault name or the table above:
-
-```toml
-[envs]
-dev = "local"
-prod = { vault = "cloud" }
-```
+YAML is the standard — `tamias.yml` or `tamias.yaml`; `tamias.toml`
+parses into the same `Config`. `tamias config` reads the first of
+`./tamias.yml`, `./tamias.yaml`, `./tamias.toml` in the cwd
+(`--file` overrides); no file means defaults. The same file informs
+`doctor`'s registry check (`publish.default` → `registries.NAME`).
 
 ## Constraints
 
-* `deny_unknown_fields`: typos in field names fail the load.
-* Search order: `--config` → `$TAMIAS_CONFIG` → `./tamias.toml` →
-  `~/.config/tamias/tamias.toml`. The file is optional — no
-  `tamias.toml` anywhere just means defaults (local age vault,
-  `dev` env).
 * Token values never live in the file — `token_env` fields name
-  the env var that carries them.
-* `tamias schema` emits the JSON Schema for this shape;
-  `tamias check` validates a real file end-to-end.
+  the env var that carries them (the http client reads
+  `TAMIAS_REGISTRY_TOKEN`).
+* `tamias config --json` dumps the effective config;
+  `tamias schema` emits the JSON Schema for the *package* manifest
+  (`tamias.yaml`), a different document.

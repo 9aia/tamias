@@ -10,13 +10,19 @@ the driver's job — tamias shells the driver and never learns its schema.
 ## Deploy an installed package
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias install git:9aia/peregrin//libraries/ci-gate#main
 tamias deploy ci-gate                       # runs the driver's deploy step
 tamias deploy ci-gate --config ./node.yaml   # operator params ride a config file
 ```
 
+A package that ships its own `drivers/` needs `--allow-drivers` at
+install time (or `TAMIAS_ALLOW_DRIVERS=1`) — the consent gate is
+described in [Security model](/explanation/security).
+
 If the package's type has no driver, `deploy` reports
-`nothing to deploy (type …)` and succeeds.
+`nothing to deploy (type …)` and succeeds. `uninstall` runs the driver's
+teardown first; with no driver it warns that provider-side resources may
+remain, then drops the store entry.
 
 ## Manage the service unit
 

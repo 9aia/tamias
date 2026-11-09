@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["pack_tgz","untar","untar_gz"]};
+window.SIDEBAR_ITEMS = {"fn":["pack_tgz","pack_tgz_atomic","untar","untar_gz"]};

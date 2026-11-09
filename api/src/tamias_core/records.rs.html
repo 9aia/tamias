@@ -152,5 +152,26 @@
 <a href=#152 id=152 data-nosnippet>152</a>        <span class="kw">let </span>dest = tempfile::tempdir().unwrap();
 <a href=#153 id=153 data-nosnippet>153</a>        <span class="macro">assert!</span>(copy_tree(src.path(), dest.path()).is_err());
 <a href=#154 id=154 data-nosnippet>154</a>    }
-<a href=#155 id=155 data-nosnippet>155</a>}
+<a href=#155 id=155 data-nosnippet>155</a>
+<a href=#156 id=156 data-nosnippet>156</a>    <span class="attr">#[cfg(unix)]
+<a href=#157 id=157 data-nosnippet>157</a>    #[test]
+<a href=#158 id=158 data-nosnippet>158</a>    </span><span class="kw">fn </span>copy_tree_skips_symlinks() {
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">let </span>outside = tempfile::tempdir().unwrap();
+<a href=#160 id=160 data-nosnippet>160</a>        std::fs::write(outside.path().join(<span class="string">"secret.txt"</span>), <span class="string">b"loot"</span>).unwrap();
+<a href=#161 id=161 data-nosnippet>161</a>        <span class="kw">let </span>src = tempfile::tempdir().unwrap();
+<a href=#162 id=162 data-nosnippet>162</a>        std::fs::write(src.path().join(<span class="string">"a.txt"</span>), <span class="string">b"a"</span>).unwrap();
+<a href=#163 id=163 data-nosnippet>163</a>        std::os::unix::fs::symlink(outside.path(), src.path().join(<span class="string">"loot"</span>)).unwrap();
+<a href=#164 id=164 data-nosnippet>164</a>        std::os::unix::fs::symlink(<span class="string">"."</span>, src.path().join(<span class="string">"self"</span>)).unwrap();
+<a href=#165 id=165 data-nosnippet>165</a>        <span class="kw">let </span>dest = tempfile::tempdir().unwrap();
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="comment">// completes — outside content never crosses, self-link can't loop
+<a href=#167 id=167 data-nosnippet>167</a>        </span>copy_tree(src.path(), dest.path()).unwrap();
+<a href=#168 id=168 data-nosnippet>168</a>        <span class="macro">assert_eq!</span>(
+<a href=#169 id=169 data-nosnippet>169</a>            std::fs::read(dest.path().join(<span class="string">"a.txt"</span>)).unwrap(),
+<a href=#170 id=170 data-nosnippet>170</a>            <span class="string">b"a"</span>.to_vec()
+<a href=#171 id=171 data-nosnippet>171</a>        );
+<a href=#172 id=172 data-nosnippet>172</a>        <span class="macro">assert!</span>(!dest.path().join(<span class="string">"loot"</span>).exists());
+<a href=#173 id=173 data-nosnippet>173</a>        <span class="macro">assert!</span>(!dest.path().join(<span class="string">"self"</span>).exists());
+<a href=#174 id=174 data-nosnippet>174</a>        <span class="macro">assert!</span>(!dest.path().join(<span class="string">"secret.txt"</span>).exists());
+<a href=#175 id=175 data-nosnippet>175</a>    }
+<a href=#176 id=176 data-nosnippet>176</a>}
 </code></pre></div></section></main></body></html>

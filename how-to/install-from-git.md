@@ -8,7 +8,7 @@ Point a ref at a repo, an in-repo subdir, and a rev.
 ## The ref
 
 ```
-git:9aia/peregrin//libraries/ci-gate#v0.2.0
+git:9aia/peregrin//libraries/ci-gate#main
 │   │           │  │               │
 │   │           │  │               └─ #ref — branch, tag, or sha
 │   │           │  └─ in-repo path (after `//`)
@@ -25,21 +25,40 @@ git:9aia/peregrin//libraries/ci-gate#v0.2.0
 ## Install
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias install git:9aia/peregrin//libraries/ci-gate#main
 tamias info ci-gate        # shows source ref + resolved sha
 ```
+
+If the package ships its own `drivers/`, add `--allow-drivers` (or
+`TAMIAS_ALLOW_DRIVERS=1`) — see [Write a driver](/how-to/write-a-driver).
+
+## Track it in a project
+
+`tamias add` does the same install *and* records the ref in the
+project's `tamias.yaml` + resolved entry in `tamias.lock`:
+
+```sh
+tamias add git:9aia/peregrin//libraries/ci-gate#main
+```
+
+See [Manage project dependencies](/how-to/manage-deps) for the full
+add/pin/update/lock flow.
 
 ## Re-resolve a moving ref
 
 ```sh
 tamias update ci-gate      # re-resolve + reinstall from the recorded ref
 tamias update --all        # every installed package
+tamias update --all --json # machine-readable
 ```
+
+`update` and `pin` refresh `tamias.lock` when the cwd lockfile already
+pins the package.
 
 ## Repoint the ref
 
 ```sh
-tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#v0.3.0
+tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#main~1
 ```
 
 `pin` rewrites the recorded ref; the payload is untouched until the next
@@ -53,5 +72,6 @@ nothing.
 
 ## See also
 
+* [Manage project dependencies](/how-to/manage-deps)
 * [Ref grammar](/reference/refs)
 * [Tutorial: your first package](/tutorials/first-package)

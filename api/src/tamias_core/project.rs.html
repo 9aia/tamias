@@ -71,7 +71,7 @@
 <a href=#71 id=71 data-nosnippet>71</a>    </span><span class="kw">pub fn </span>save(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>Path) -&gt; <span class="prelude-ty">Result</span>&lt;(), Error&gt; {
 <a href=#72 id=72 data-nosnippet>72</a>        <span class="kw">let </span>ctx = |e| Error::Failed(<span class="macro">format!</span>(<span class="string">"serialize lock: {e}"</span>));
 <a href=#73 id=73 data-nosnippet>73</a>        <span class="kw">let </span>text = serde_yaml_ng::to_string(<span class="self">self</span>).map_err(ctx)<span class="question-mark">?</span>;
-<a href=#74 id=74 data-nosnippet>74</a>        std::fs::write(path, text).map_err(Error::io(<span class="macro">format!</span>(<span class="string">"write {}"</span>, path.display())))
+<a href=#74 id=74 data-nosnippet>74</a>        <span class="kw">crate</span>::write_atomic(path, text.as_bytes())
 <a href=#75 id=75 data-nosnippet>75</a>    }
 <a href=#76 id=76 data-nosnippet>76</a>
 <a href=#77 id=77 data-nosnippet>77</a>    <span class="doccomment">/// Insert or replace the entry for (scope, name), keeping the list

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["discovered_drivers","dispatch","drivers_dir","find_driver","register_bundled_drivers","tamias_home"]};
+window.SIDEBAR_ITEMS = {"fn":["bundled_drivers","discovered_drivers","dispatch","drivers_allowed","drivers_dir","find_driver","register_bundled_drivers","tamias_home","target_triple"]};

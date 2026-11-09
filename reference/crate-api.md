@@ -7,9 +7,12 @@ Rustdoc for every workspace crate — public APIs are
 documented at source (doc comments).
 
 * [tamias-core](/tamias/api/tamias_core/index.html) — domain
+* [tamias-cache](/tamias/api/tamias_cache/index.html) — port
 * [tamias-config](/tamias/api/tamias_config/index.html) — port
 * [tamias-deploy](/tamias/api/tamias_deploy/index.html) — port
-* [tamias-cache](/tamias/api/tamias_cache/index.html) — adapter
+* [tamias-registry](/tamias/api/tamias_registry/index.html) — port
+* [tamias-source](/tamias/api/tamias_source/index.html) — port
+* [tamias-store](/tamias/api/tamias_store/index.html) — port
 * [tamias-cache-cf](/tamias/api/tamias_cache_cf/index.html) — adapter
 * [tamias-cache-local](/tamias/api/tamias_cache_local/index.html) — adapter
 * [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
@@ -17,18 +20,16 @@ documented at source (doc comments).
 * [tamias-deploy-cf](/tamias/api/tamias_deploy_cf/index.html) — adapter
 * [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
 * [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
+* [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
 * [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
-* [tamias-registry](/tamias/api/tamias_registry/index.html) — adapter
 * [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
 * [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter
 * [tamias-serve](/tamias/api/tamias_serve/index.html) — adapter
 * [tamias-shell](/tamias/api/tamias_shell/index.html) — adapter
-* [tamias-source](/tamias/api/tamias_source/index.html) — adapter
 * [tamias-source-cf](/tamias/api/tamias_source_cf/index.html) — adapter
 * [tamias-source-fs](/tamias/api/tamias_source_fs/index.html) — adapter
 * [tamias-source-git](/tamias/api/tamias_source_git/index.html) — adapter
 * [tamias-source-http](/tamias/api/tamias_source_http/index.html) — adapter
-* [tamias-store](/tamias/api/tamias_store/index.html) — adapter
 * [tamias-store-cf](/tamias/api/tamias_store_cf/index.html) — adapter
 * [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
 * [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter

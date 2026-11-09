@@ -16,23 +16,28 @@ cargo xtask install
 ## Install a package
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias install git:9aia/peregrin//libraries/ci-gate#main
 tamias list
 tamias info ci-gate
 tamias verify ci-gate        # recompute the payload digest
+tamias doctor                # store, cache, git, registry, drivers — all green?
 ```
 
 ## Author and publish
 
 ```sh
 tamias bundle pack ./my-bundle
-tamias publish ./my-bundle --registry local
+tamias publish ./my-bundle            # writes to the default local registry
+# or a served registry:
+# tamias publish ./my-bundle --registry http://127.0.0.1:8788
 ```
 
 ## Next
 
 * [Architecture](/explanation/architecture)
 * [Content types](/explanation/content-types)
+* [Security model](/explanation/security) — digests, drivers, `--allow-drivers`
+* [Manage project dependencies](/how-to/manage-deps)
 * [CLI reference](/reference/cli)
 
 ---
@@ -109,13 +114,14 @@ tamias verify hello   # → digest mismatch
 Reinstall to restore, then try a git ref:
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
-tamias list --type peregrin-bundle
+tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias info ci-gate    # provenance: source ref, resolved sha, digest
 ```
 
 ## Next
 
 * [How-to guides](/how-to/publish-to-a-registry)
+* [Manage project dependencies](/how-to/manage-deps) — `add` + `tamias.lock`
 * [Ref grammar](/reference/refs)
 * [CLI reference](/reference/cli)
 
@@ -131,7 +137,7 @@ Point a ref at a repo, an in-repo subdir, and a rev.
 ## The ref
 
 ```
-git:9aia/peregrin//libraries/ci-gate#v0.2.0
+git:9aia/peregrin//libraries/ci-gate#main
 │   │           │  │               │
 │   │           │  │               └─ #ref — branch, tag, or sha
 │   │           │  └─ in-repo path (after `//`)
@@ -148,21 +154,40 @@ git:9aia/peregrin//libraries/ci-gate#v0.2.0
 ## Install
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias install git:9aia/peregrin//libraries/ci-gate#main
 tamias info ci-gate        # shows source ref + resolved sha
 ```
+
+If the package ships its own `drivers/`, add `--allow-drivers` (or
+`TAMIAS_ALLOW_DRIVERS=1`) — see [Write a driver](/how-to/write-a-driver).
+
+## Track it in a project
+
+`tamias add` does the same install *and* records the ref in the
+project's `tamias.yaml` + resolved entry in `tamias.lock`:
+
+```sh
+tamias add git:9aia/peregrin//libraries/ci-gate#main
+```
+
+See [Manage project dependencies](/how-to/manage-deps) for the full
+add/pin/update/lock flow.
 
 ## Re-resolve a moving ref
 
 ```sh
 tamias update ci-gate      # re-resolve + reinstall from the recorded ref
 tamias update --all        # every installed package
+tamias update --all --json # machine-readable
 ```
+
+`update` and `pin` refresh `tamias.lock` when the cwd lockfile already
+pins the package.
 
 ## Repoint the ref
 
 ```sh
-tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#v0.3.0
+tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#main~1
 ```
 
 `pin` rewrites the recorded ref; the payload is untouched until the next
@@ -176,8 +201,80 @@ nothing.
 
 ## See also
 
+* [Manage project dependencies](/how-to/manage-deps)
 * [Ref grammar](/reference/refs)
 * [Tutorial: your first package](/tutorials/first-package)
+
+---
+
+---
+url: /tamias/how-to/manage-deps.md
+---
+# How to manage project dependencies
+
+`tamias install` fetches into the store. **`tamias add`** does that *and*
+records the ref in your project's `tamias.yaml` (`deps:`) plus a resolved
+entry in `tamias.lock` — run it from the project dir, not inside a
+package's own source dir (a package's `tamias.yaml` is its package
+manifest, a different document).
+
+## Add and lock
+
+```sh
+tamias add git:9aia/peregrin//libraries/ci-gate#main
+tamias add ./local-bundle --allow-drivers   # if it ships drivers/
+```
+
+This writes:
+
+* `tamias.yaml` — `deps:` gains the ref (idempotent).
+* `tamias.lock` — the resolved record: source ref, resolved sha,
+  payload digest.
+
+## Inspect
+
+```sh
+tamias list --json
+tamias info ci-gate --json
+tamias verify ci-gate --json
+```
+
+## Update and repin
+
+```sh
+tamias update ci-gate     # re-resolve + reinstall from the recorded ref
+tamias update --all       # every installed package
+tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#main~1
+```
+
+`update` and `pin` keep `tamias.lock` honest: if a lockfile exists in
+the cwd and already pins the package, its entry is refreshed to the new
+record. A missing lockfile — or one that doesn't pin the package — is
+left alone (`add` is what creates it).
+
+`update` re-runs the install path, so a package that ships `drivers/`
+needs `--allow-drivers` (or `TAMIAS_ALLOW_DRIVERS=1`) again.
+
+## Remove
+
+```sh
+tamias remove ci-gate    # drop the store entry; the fetch cache stays
+```
+
+`remove` only drops the store entry — it does **not** run the driver's
+`uninstall` teardown. For provider-side cleanup use
+`tamias uninstall ci-gate` (see
+[Provision and service](/how-to/provision-a-service)).
+
+The cache is content-addressed — removing never deletes shared fetch
+entries. `tamias cache clean` maintains it separately (`--days <n>`, or
+`--all`; the two conflict).
+
+## See also
+
+* [Install from a git repo](/how-to/install-from-git)
+* [Ref grammar](/reference/refs)
+* [Scripting tamias](/reference/scripting)
 
 ---
 
@@ -196,6 +293,11 @@ tamias registry serve --addr 127.0.0.1:8788 --dir ~/.local/share/tamias/registry
 tamias publish ./hello --registry http://127.0.0.1:8788
 tamias search hello --registry http://127.0.0.1:8788
 ```
+
+`registry serve` is an **open dev server** — anyone who can reach the
+port can read and write the index. Set `TAMIAS_REGISTRY_SERVE_TOKEN`
+before serving and clients must send `Authorization: Bearer <token>`
+(the client's token comes from `TAMIAS_REGISTRY_TOKEN`).
 
 Without `--registry`, `publish` writes to the default local directory.
 
@@ -236,7 +338,9 @@ Digest-pin the tarball (`#sha256:<hex>`) when you have the bytes.
 
 The protocol is the same either way: the client does a read-modify-write
 of `index.json`; the server is a token-guarded blob store (`GET`/`PUT
-/<key>`). Auth is a bearer token from `token_env` — never inline.
+/<key>`). Auth is a bearer token — the config `token_env` field names
+the env var that carries it; in practice the http client reads
+`TAMIAS_REGISTRY_TOKEN`. Never inline a token.
 
 ## See also
 
@@ -257,13 +361,19 @@ the driver's job — tamias shells the driver and never learns its schema.
 ## Deploy an installed package
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias install git:9aia/peregrin//libraries/ci-gate#main
 tamias deploy ci-gate                       # runs the driver's deploy step
 tamias deploy ci-gate --config ./node.yaml   # operator params ride a config file
 ```
 
+A package that ships its own `drivers/` needs `--allow-drivers` at
+install time (or `TAMIAS_ALLOW_DRIVERS=1`) — the consent gate is
+described in [Security model](/explanation/security).
+
 If the package's type has no driver, `deploy` reports
-`nothing to deploy (type …)` and succeeds.
+`nothing to deploy (type …)` and succeeds. `uninstall` runs the driver's
+teardown first; with no driver it warns that provider-side resources may
+remain, then drops the store entry.
 
 ## Manage the service unit
 
@@ -305,28 +415,34 @@ url: /tamias/how-to/write-a-driver.md
 
 A **driver** teaches tamias how a content *type* installs, deploys, and
 uninstalls — with **no compile-time coupling**. tamias discovers
-`tamias-driver-<type>` on `PATH` or `<tamias-home>/drivers/`,
-and speaks JSON over stdio.
+`tamias-driver-<type>` on `PATH` or `<tamias-home>/drivers/` and runs
+it as a subprocess.
 
 ## The contract
 
-One request line in, one response line out:
+```text
+tamias-driver-<type> <verb> --dir <dir> --name <name> [--config <file>]
+```
 
-| Request | Meaning |
+| verb | Meaning |
 | --- | --- |
-| `{"op":"capabilities"}` | JSON with the `types` you handle |
-| `{"op":"install","dir":…,"name":…,"config":…}` | materialize |
-| `{"op":"deploy",…}` | activate (unit, hooks) |
-| `{"op":"uninstall",…}` | tear down |
+| `install` | materialize the payload at `--dir` |
+| `deploy` | activate (unit, hooks) |
+| `uninstall` | tear down |
+| `capabilities` | print `{"types":[…]}` on stdout — the types this binary handles |
 
-`config` is an optional path to a node/config file carrying operator
-params. A driver that exits non-zero fails the tamias verb.
+`--config` is an optional path to a node/config file carrying operator
+params (`tamias deploy --config`). Exit zero on success; a non-zero
+exit fails the tamias verb, with your stderr surfaced. Dispatch has a
+120s timeout (`capabilities` probes get 10s), so a hung driver fails the
+verb instead of wedging it.
 
 ## Capabilities
 
-tamias maps a package's `type:` to a driver. Either name the binary
-`tamias-driver-<type>`, or answer `capabilities` so a differently-named
-binary can claim types:
+tamias maps a package's `type:` to a driver. Naming the binary
+`tamias-driver-<type>` is enough — tamias tries that name first. A
+differently-named binary can still claim types by answering
+`capabilities`:
 
 ```sh
 #!/bin/sh
@@ -339,8 +455,19 @@ fi
 
 ## Ship it with the payload
 
-Drop the binary under `drivers/` in your payload — installing the package
-registers it into `<tamias-home>/drivers/`, and tamias finds it:
+Drop the binary under `drivers/` in your payload — but know that this
+makes the package **self-modifying**: a bundled driver is arbitrary code
+that runs on the installer's machine. tamias therefore gates it:
+
+```sh
+tamias install --allow-drivers <ref>
+# or export TAMIAS_ALLOW_DRIVERS=1 once
+```
+
+Without consent the install **fails before anything is registered or
+executed** — no partial store entry, no copied driver. Only regular
+files directly under `drivers/` are registered, into
+`<tamias-home>/drivers/`, where tamias discovers them.
 
 ```
 mypkg/
@@ -348,6 +475,16 @@ mypkg/
   drivers/
     tamias-driver-myco
 ```
+
+## What if there's no driver?
+
+A package whose `type:` has no discoverable driver **fails to install**
+(any type other than `files`). tamias never silently "installs" content
+it can't place — so either ship the driver, publish
+`tamias-driver-<type>` on the host's `PATH`, or use `type: files`.
+
+`tamias deploy`/`uninstall` behave the same way: they dispatch to the
+driver for the package's type and warn when none exists.
 
 ## Check
 
@@ -432,15 +569,24 @@ cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry
   convention) — required because nested groups make bare `a/b/c/d`
   ambiguous. Without `//`, a two-segment prefix is the repo and the
   remainder is the in-repo path.
-* `#ref` is a branch, tag, or sha — the version pin. The resolved
-  commit sha is recorded in the store regardless.
+* `#ref` is a branch, tag, sha, or **relative rev** (`HEAD~2`, `main^`)
+  — the version pin. The resolved commit sha is recorded in the store
+  regardless. Revs can't start with `-` or contain whitespace, `..`, or
+  `//`, so a ref can't smuggle git options.
+* Clone URLs are allowlisted: `https`, `http`, `ssh`, `git`, `file`,
+  and scp-style `git@host:…`. Anything else is rejected.
+* Fetches run with `GIT_TERMINAL_PROMPT=0` — a credential prompt fails
+  the fetch instead of hanging.
 * `org/repo` defaults to `github.com`; `host/org/repo` becomes
   `https://host/org/repo`; `git@host:…` and `ssh://`/`file://` pass
   through.
 
 ## HTTP
 
-* A `.tgz` / `.tar.gz` URL, with an optional `#sha256:<hex>` pin.
+* A `.tgz` / `.tar.gz` URL over `http(s)`, with an optional
+  `#sha256:<hex>` pin — verified against the downloaded bytes before
+  unpack. An `http://` URL **without** a pin fetches cleartext and
+  prints a warning; prefer `https://` or pin the digest.
 
 ## Cloudflare registry
 
@@ -458,8 +604,12 @@ cf:reg.example.com/ci-gate@0.2.0    → https://reg.example.com
 cf:http://127.0.0.1:8903/w@1.0.0    → http://127.0.0.1:8903
 ```
 
-`install` fetches `<base>/index.json`, finds `name@version`, then pulls
-the tarball (`<base>/<file>`) over HTTP.
+`install` fetches `<base>/index.json`, finds `name@version`, pulls the
+tarball (`<base>/<file>`), unpacks it, and **verifies the unpacked
+payload against the index's recorded `dir_digest`** — a mismatched
+payload fails the install. Note the digest covers the payload *dir*, not
+the tarball bytes, so it can't be checked at transport (see
+[Security model](/explanation/security)).
 
 ## Local
 
@@ -470,16 +620,16 @@ the tarball (`<base>/<file>`) over HTTP.
 ---
 url: /tamias/reference/config.md
 ---
-# Config — `tamias.toml`
+# Config — `tamias.yml` / `tamias.yaml` / `tamias.toml`
 
-## `[locations.NAME]` — an install/fetch location
+## `store` / `cache` — an install/fetch location
 
 | field | type | required | notes |
 |---|---|---|---|
 | `kind` | `string` | optional | Impl kind — `local` (default) or `cf`. |
 | `root` | `string` | optional | Root dir (or URL base for `cf`). |
 
-## `[registries.NAME]` — a content registry
+## `registries.NAME` — a named registry
 
 | field | type | required | notes |
 |---|---|---|---|
@@ -497,37 +647,197 @@ url: /tamias/reference/config.md
 
 | field | type | required | notes |
 |---|---|---|---|
-| `store` | `Location` | required | Install store location. |
-| `cache` | `Location` | required | Fetch-cache location. |
-| `registries` | `BTreeMap<String, Registry>` | required | Named registries. |
-| `publish` | `Publish` | required | Publish routing. |
+| `store` | `Location` | optional | Install store location. |
+| `cache` | `Location` | optional | Fetch-cache location. |
+| `registries` | `BTreeMap<String, Registry>` | optional | Named registries. |
+| `publish` | `Publish` | optional | Publish routing. |
 
 ## format trait (parse/render)
 
 | field | type | required | notes |
 |---|---|---|---|
 
-## `[envs]` route forms
+## Formats
 
-Either a bare vault name or the table above:
-
-```toml
-[envs]
-dev = "local"
-prod = { vault = "cloud" }
-```
+YAML is the standard — `tamias.yml` or `tamias.yaml`; `tamias.toml`
+parses into the same `Config`. `tamias config` reads the first of
+`./tamias.yml`, `./tamias.yaml`, `./tamias.toml` in the cwd
+(`--file` overrides); no file means defaults. The same file informs
+`doctor`'s registry check (`publish.default` → `registries.NAME`).
 
 ## Constraints
 
-* `deny_unknown_fields`: typos in field names fail the load.
-* Search order: `--config` → `$TAMIAS_CONFIG` → `./tamias.toml` →
-  `~/.config/tamias/tamias.toml`. The file is optional — no
-  `tamias.toml` anywhere just means defaults (local age vault,
-  `dev` env).
 * Token values never live in the file — `token_env` fields name
-  the env var that carries them.
-* `tamias schema` emits the JSON Schema for this shape;
-  `tamias check` validates a real file end-to-end.
+  the env var that carries them (the http client reads
+  `TAMIAS_REGISTRY_TOKEN`).
+* `tamias config --json` dumps the effective config;
+  `tamias schema` emits the JSON Schema for the *package* manifest
+  (`tamias.yaml`), a different document.
+
+---
+
+---
+url: /tamias/reference/scripting.md
+---
+# Scripting tamias
+
+Everything an agent or CI job needs without scraping human output.
+
+## `--json`
+
+These verbs emit JSON with `--json`:
+
+| verb | shape |
+| --- | --- |
+| `list` | `{"packages": [entry…]}` — record fields + `label`, `size`, `dir` |
+| `info <name>` | one entry object (same fields) |
+| `verify <name>` | `{name, recorded, computed, ok}` — non-zero exit on mismatch |
+| `update [name]` | `{"updated": [label…]}` (with `--all` or a name) |
+| `doctor` | per-check report — store, cache, git, registry, drivers |
+| `config` | `{file, search, config}` — the effective config |
+| `search <q>` | `{"results": [{label, name, scope, version, kind, digest, file}]}` |
+| `cache clean` | `{evicted, entries}` |
+
+Without `--json` the same verbs print aligned text.
+
+## Capability discovery
+
+```sh
+tamias manifest      # {"name","version","verbs":[…]} — verbs generated from the parser
+tamias schema        # JSON Schema for the package manifest (tamias.yaml)
+tamias gen-cli-docs  # this CLI reference, regenerated from clap
+tamias completions bash|zsh|fish|elvish|powershell
+```
+
+`manifest`'s verb list can't drift — it's generated from the clap tree
+each run.
+
+## `tamias serve`
+
+For stateful, interactive use, `tamias serve` speaks ndjson JSON-RPC
+over stdio — see [the serve reference](/reference/serve).
+
+## Environment
+
+| var | effect |
+| --- | --- |
+| `TAMIAS_HOME` | store + `drivers/` root (default `~/.local/share/tamias`) |
+| `TAMIAS_CACHE` | fetch-cache root (default `~/.cache/tamias/fetch`) |
+| `TAMIAS_REGISTRY` | default registry root for `publish`/`search` |
+| `TAMIAS_ALLOW_DRIVERS` | `=1` consents to bundled `drivers/` (same as `--allow-drivers`) |
+| `TAMIAS_REGISTRY_TOKEN` | bearer token for http(s) registries |
+| `TAMIAS_REGISTRY_SERVE_TOKEN` | require auth on `tamias registry serve` |
+| `TAMIAS_OTEL_*` / `OTEL_*` | opt-in telemetry — see [Architecture](/explanation/architecture#observability) |
+
+`tamias config --file <path>` overrides discovery for that invocation;
+without it, `tamias config` reads the first of `./tamias.yml`,
+`./tamias.yaml`, `./tamias.toml` it finds.
+
+## Exit codes
+
+A failed verb exits non-zero. `verify` fails on digest mismatch;
+`doctor` fails if any check fails (the report still prints first).
+`cache clean --all` and `--days` conflict — pick one.
+
+---
+
+---
+url: /tamias/reference/serve.md
+---
+# `tamias serve` — JSON-RPC over stdio
+
+`tamias serve` runs tamias as an **ndjson JSON-RPC service**: one JSON
+request per line on stdin, one JSON response per line on stdout. It's
+the embedding surface — a parent process (an agent harness, a daemon)
+drives installs without shelling out per verb.
+
+## Framing
+
+Request:  `{"op": "<op>", …fields}`
+Response: `{"ok": true, "result": …}` or `{"ok": false, "error": "…"}`
+
+A failed op returns `ok:false` — it does not kill the service. The
+service exits when stdin closes.
+
+## Ops
+
+| op | fields | result |
+| --- | --- | --- |
+| `install` | `ref`, `allow_drivers?` | `{label, resolved, digest}` |
+| `list` | — | `[{label, source_ref, digest}]` |
+| `info` | `name` | `{label, resolved, digest, size}` |
+| `verify` | `name` | `{name, ok}` |
+| `remove` | `name` | `{name}` — runs driver teardown first, like `tamias uninstall` |
+
+`name` accepts `@scope/name` or bare `name`, same as the CLI.
+
+## Driver consent
+
+`install` refuses payload-shipped `drivers/` unless the request carries
+`"allow_drivers": true` (or `TAMIAS_ALLOW_DRIVERS=1` is set) — identical
+to `--allow-drivers`. Bundled drivers are never registered or executed
+without it.
+
+## Environment
+
+The service honors the same roots as the CLI: `TAMIAS_HOME` (store +
+`drivers/`), `TAMIAS_CACHE`, `TAMIAS_REGISTRY`, and the telemetry vars
+(`TAMIAS_OTEL_*`).
+
+## Example
+
+```sh
+printf '%s\n' \
+  '{"op":"install","ref":"./hello"}' \
+  '{"op":"list"}' \
+  '{"op":"verify","name":"hello"}' \
+| tamias serve
+```
+
+## See also
+
+* [Scripting tamias](/reference/scripting) — `--json`, `manifest`, `schema`
+* [Security model](/explanation/security)
+
+---
+
+---
+url: /tamias/reference/crate-api.md
+---
+# Crate API
+
+Rustdoc for every workspace crate — public APIs are
+documented at source (doc comments).
+
+* [tamias-core](/tamias/api/tamias_core/index.html) — domain
+* [tamias-cache](/tamias/api/tamias_cache/index.html) — port
+* [tamias-config](/tamias/api/tamias_config/index.html) — port
+* [tamias-deploy](/tamias/api/tamias_deploy/index.html) — port
+* [tamias-registry](/tamias/api/tamias_registry/index.html) — port
+* [tamias-source](/tamias/api/tamias_source/index.html) — port
+* [tamias-store](/tamias/api/tamias_store/index.html) — port
+* [tamias-cache-cf](/tamias/api/tamias_cache_cf/index.html) — adapter
+* [tamias-cache-local](/tamias/api/tamias_cache_local/index.html) — adapter
+* [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
+* [tamias-config-yml](/tamias/api/tamias_config_yml/index.html) — adapter
+* [tamias-deploy-cf](/tamias/api/tamias_deploy_cf/index.html) — adapter
+* [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
+* [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
+* [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
+* [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
+* [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
+* [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter
+* [tamias-serve](/tamias/api/tamias_serve/index.html) — adapter
+* [tamias-shell](/tamias/api/tamias_shell/index.html) — adapter
+* [tamias-source-cf](/tamias/api/tamias_source_cf/index.html) — adapter
+* [tamias-source-fs](/tamias/api/tamias_source_fs/index.html) — adapter
+* [tamias-source-git](/tamias/api/tamias_source_git/index.html) — adapter
+* [tamias-source-http](/tamias/api/tamias_source_http/index.html) — adapter
+* [tamias-store-cf](/tamias/api/tamias_store_cf/index.html) — adapter
+* [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
+* [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
+* [tamias-testkit](/tamias/api/tamias_testkit/index.html) — adapter
+* [tamias](/tamias/api/tamias/index.html) — binary
 
 ---
 
@@ -552,7 +862,41 @@ distribution; every content *meaning* is an adapter.
 | `cache` | content-addressed fetch cache | `-local`, `-cf` |
 | `registry` | index + publish | `-local`, `-cf` (Worker + R2 + D1/KV) |
 | `deploy` | service unit + teardown | `-local` (systemd) |
-| `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, JSON) |
+| `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, argv) |
+
+## Crate map
+
+| crate | layer | purpose |
+|---|---|---|
+| `tamias-core` | domain | Pure domain — package identity (@scope/name@semver), refs, manifests, records, digests (no I/O) |
+| `tamias-cache` | port | cache port — read-through fetched content |
+| `tamias-config` | port | Config port — where tamias.toml-shaped config comes from |
+| `tamias-deploy` | port | deploy port — provision a remote registry (Worker + R2 + D1/KV) |
+| `tamias-registry` | port | registry port — index + publish |
+| `tamias-source` | port | source port — turn a ref into bytes |
+| `tamias-store` | port | store port — content-addressed blobs |
+| `tamias-cache-cf` | adapter | Cloudflare adapter (P6) |
+| `tamias-cache-local` | adapter | local cache impl — content-addressed fetch cache |
+| `tamias-config-toml` | adapter | TOML config impl |
+| `tamias-config-yml` | adapter | YAML config impl (the standard) — tamias.yml / tamias.yaml |
+| `tamias-deploy-cf` | adapter | Cloudflare deploy impl — the registry Worker + wrangler config |
+| `tamias-deploy-local` | adapter | local deploy impl — manage a per-user service unit (systemd/launchd) |
+| `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-\<type> (no product knowledge) |
+| `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
+| `tamias-publish` | adapter | author side — pack + push |
+| `tamias-registry-cf` | adapter | Cloudflare registry impl — a Worker + R2 over HTTP |
+| `tamias-registry-local` | adapter | dir registry impl — a folder index, servable over HTTP |
+| `tamias-serve` | adapter | ndjson JSON-RPC over stdio — the embedding surface |
+| `tamias-shell` | adapter | Run a command in a working directory via bash -c — the generic shell-out helper |
+| `tamias-source-cf` | adapter | Cloudflare registry source impl — the `cf:` ref arm |
+| `tamias-source-fs` | adapter | fs source impl — local dirs and tarballs |
+| `tamias-source-git` | adapter | git source impl — clone URL //subdir #rev |
+| `tamias-source-http` | adapter | http source impl — .tgz GET + optional sha256 pin |
+| `tamias-store-cf` | adapter | Cloudflare adapter (P6) |
+| `tamias-store-local` | adapter | local store impl — a directory |
+| `tamias-telemetry` | adapter | Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation |
+| `tamias-testkit` | adapter | Fixtures + adapter conformance for every port |
+| `tamias` | binary | tamias — package & content manager: fetch, store, cache, dispense |
 
 ## The install path
 
@@ -575,7 +919,29 @@ what makes repeat installs and air-gapped nodes free.
 ## Provenance
 
 `verify` recomputes the payload digest against the record. Digest-pinned
-refs (`#sha256:…`, resolved shas) are the integrity contract.
+refs (`#sha256:…`, resolved shas) are the integrity contract — see
+[Security model](/explanation/security) for the full trust story,
+including the `--allow-drivers` consent gate on payload-shipped drivers.
+
+## The embedding surface
+
+`tamias serve` (the `tamias-serve` crate) runs the same install/list/
+info/verify/remove verbs as an **ndjson JSON-RPC service over stdio** —
+for agents and daemons that want a persistent handle instead of
+one-shot CLI calls. The protocol is specified in
+[serve reference](/reference/serve).
+
+## Observability
+
+`tamias-telemetry` is an opt-in OpenTelemetry layer over the tracing
+stack. Nothing exports unless you set an endpoint:
+
+* `TAMIAS_OTEL_ENDPOINT` — OTLP/HTTP base URL (the opt-in switch), or
+  the standard `OTEL_EXPORTER_OTLP_ENDPOINT` /
+  `…_TRACES_ENDPOINT`.
+* `TAMIAS_OTEL_SERVICE_NAME` / `OTEL_SERVICE_NAME` — `service.name`.
+* W3C `traceparent`/`tracestate` propagation is installed when export
+  is on; `RUST_LOG`-style filtering still applies.
 
 ---
 
@@ -593,8 +959,8 @@ where and how a package installs.
 A content type is *data first*: the package's manifest names its `type`
 (`kind`). The manager never links a product crate. When a product must do
 real work (materialize a node config, enable a systemd unit), it ships a
-**driver** binary the manager launches over a pipe — "no plugin system:
-files" (peregrin’s own ADR).
+**driver** binary the manager launches as a subprocess — "no plugin
+system: files" (peregrin’s own ADR).
 
 ## The roster
 
@@ -609,21 +975,119 @@ files" (peregrin’s own ADR).
 Adding a type is a new `tamias-driver-<type>` binary — never a change to
 the engine.
 
-## Providers (and the driver system)
+## Drivers
 
-The engine is generic — it moves *bytes + a manifest* and unpacks into the
-store. Everything product-specific beyond that is a **provider**: tamias
-shells `<provider> provision {install,deploy,uninstall} --dir … --name … [--config …]` and never learns the product's schema.
+The engine is generic — it moves *bytes + a manifest* and unpacks into
+the store. Everything product-specific beyond that is a **driver**:
+when a package's `type:` isn't `files`, tamias resolves a
+`tamias-driver-<type>` executable — on `PATH` or in
+`<tamias-home>/drivers/` — and runs it as a subprocess:
 
-* `peregrin-bundle` → provider **`peregrin`** (materializes a node config +
-  a systemd unit).
-* `files` → no provider (the store install is the whole story).
+```text
+tamias-driver-<type> install --dir <payload> --name <name> [--config <file>]
+tamias-driver-<type> deploy   --dir <dir>     --name <name> [--config <file>]
+tamias-driver-<type> uninstall --dir <dir>    --name <name>
+tamias-driver-<type> capabilities            # → {"types":[…]}
+```
 
-This is generalizing into a first-class **driver system** (`P10`): each
-product ships a Rust binary **`tamias-driver-<name>`**, tamias discovers it
-on `PATH`/`<tamias-home>/drivers/`, and speaks JSON over stdio
-(`capabilities`/`install`/`deploy`/`uninstall`). Installing a product drops
-its driver; tamias finds it. No compile-time coupling either way.
+The driver owns the product's schema — where it materializes, what
+"deployed" means, how to tear down. tamias never learns it.
+
+A package can **ship its own driver** under `drivers/` in the payload;
+installing registers it into `<tamias-home>/drivers/`. Because that's
+arbitrary code, it requires `--allow-drivers` /
+`TAMIAS_ALLOW_DRIVERS=1` — see [Security model](/explanation/security).
+
+`files` is the built-in type: the store entry is the whole story, no
+driver needed. Any other type **fails to install** without a
+discoverable driver — fail closed, never silent.
+
+See [Write a driver](/how-to/write-a-driver) for the authoring side.
+
+---
+
+---
+url: /tamias/explanation/security.md
+---
+# Security model
+
+Tamias moves other people's code onto your machine, so the threat model
+is **supply chain**: a malicious or tampered package, a hijacked ref, a
+poisoned registry. This page explains the layers; `SECURITY.md` at the
+repo root is the reporting policy.
+
+## Integrity: digests and pins
+
+Every install records three things in the store entry: the **source
+ref**, the **resolved sha** (commit sha for git, payload sha256 for
+tarballs), and the **payload digest**. `tamias verify` recomputes the
+digest and fails on mismatch — tampering with the store is detected.
+
+Prefer pinned refs:
+
+* `…#sha256:<hex>` on an http tarball — verified *before* unpack.
+* git refs resolve to a commit sha up front, so the recorded `resolved`
+  is immutable even when the branch moves.
+
+Two honest caveats:
+
+* `http://` refs **without** a `#sha256:` pin fetch cleartext and warn
+  on stderr. Use `https://` or pin the digest.
+* `cf:` registry installs are TLS-authenticated but **not**
+  sha-pinned at transport — the registry records a payload *directory*
+  digest, not the tarball sha256. For end-to-end integrity prefer `git:`
+  or an http ref with `#sha256:`.
+
+## Drivers are code — consent is explicit
+
+A package's `type:` names a **driver** (`tamias-driver-<type>`), which
+tamias executes as a subprocess. Drivers on `PATH` or in
+`<tamias-home>/drivers/` are trusted host tooling.
+
+A package that **ships its own `drivers/` dir** is different: those
+binaries are arbitrary code inside the payload. Installing one requires
+explicit consent:
+
+```sh
+tamias install --allow-drivers <ref>
+# or once per environment:
+TAMIAS_ALLOW_DRIVERS=1 tamias install <ref>
+```
+
+Without consent the install **fails before anything is registered or
+run** — no partial store entry, no copied driver. The same gate exists
+in the `tamias-serve` protocol as `"allow_drivers": true`.
+
+## Missing drivers fail closed
+
+Installing a package whose `type` has **no** discoverable driver fails
+the install (for any type other than `files`) — tamias never silently
+"installs" content it can't place. `tamias doctor` lists the drivers it
+found so you can see what's resolvable.
+
+## Secrets are names, never values
+
+* Registry tokens live in env vars — `TAMIAS_REGISTRY_TOKEN` for http
+  registries, or the env var *named* by a config `token_env` field.
+  `tamias.yaml` / `tamias.lock` hold refs, names, and digests only.
+* `tamias registry serve` is an open dev server unless you set
+  `TAMIAS_REGISTRY_SERVE_TOKEN` (then every request needs
+  `Authorization: Bearer …`).
+
+## Git fetch hardening
+
+* Clone URLs are allowlisted: `https`, `http`, `ssh`, `git`, `file`,
+  and scp-style `git@host:…`. Other schemes are rejected.
+* Revs are validated — no leading `-`, whitespace, `..`, or `//`, so a
+  ref can't smuggle git options. Relative revs (`HEAD~2`, `main^`) are
+  allowed.
+* `GIT_TERMINAL_PROMPT=0` — a fetch never blocks on a credential
+  prompt; it fails instead.
+
+## Reporting
+
+Vulnerabilities go to the maintainers via GitHub private advisories —
+see `SECURITY.md`. Don't open public issues for security reports.
 
 ---
 
@@ -651,45 +1115,6 @@ Tamias owns **content distribution**: refs, transport, the install store
 
 A hosted registry is in scope (it's a `registry` impl). A daemon or
 multi-actor arbitration belongs to peregrin.
-
----
-
----
-url: /tamias/reference/crate-api.md
----
-# Crate API
-
-Rustdoc for every workspace crate — public APIs are
-documented at source (doc comments).
-
-* [tamias-core](/tamias/api/tamias_core/index.html) — domain
-* [tamias-config](/tamias/api/tamias_config/index.html) — port
-* [tamias-deploy](/tamias/api/tamias_deploy/index.html) — port
-* [tamias-cache](/tamias/api/tamias_cache/index.html) — adapter
-* [tamias-cache-cf](/tamias/api/tamias_cache_cf/index.html) — adapter
-* [tamias-cache-local](/tamias/api/tamias_cache_local/index.html) — adapter
-* [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
-* [tamias-config-yml](/tamias/api/tamias_config_yml/index.html) — adapter
-* [tamias-deploy-cf](/tamias/api/tamias_deploy_cf/index.html) — adapter
-* [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
-* [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
-* [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
-* [tamias-registry](/tamias/api/tamias_registry/index.html) — adapter
-* [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
-* [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter
-* [tamias-serve](/tamias/api/tamias_serve/index.html) — adapter
-* [tamias-shell](/tamias/api/tamias_shell/index.html) — adapter
-* [tamias-source](/tamias/api/tamias_source/index.html) — adapter
-* [tamias-source-cf](/tamias/api/tamias_source_cf/index.html) — adapter
-* [tamias-source-fs](/tamias/api/tamias_source_fs/index.html) — adapter
-* [tamias-source-git](/tamias/api/tamias_source_git/index.html) — adapter
-* [tamias-source-http](/tamias/api/tamias_source_http/index.html) — adapter
-* [tamias-store](/tamias/api/tamias_store/index.html) — adapter
-* [tamias-store-cf](/tamias/api/tamias_store_cf/index.html) — adapter
-* [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
-* [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
-* [tamias-testkit](/tamias/api/tamias_testkit/index.html) — adapter
-* [tamias](/tamias/api/tamias/index.html) — binary
 
 ---
 

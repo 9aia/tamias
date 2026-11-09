@@ -17,6 +17,7 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 ### How-to
 
 - [How to install from a git repo](/tamias/how-to/install-from-git.md)
+- [How to manage project dependencies](/tamias/how-to/manage-deps.md)
 - [How to publish to a registry](/tamias/how-to/publish-to-a-registry.md)
 - [How to provision and service-manage a package](/tamias/how-to/provision-a-service.md)
 - [How to write a content driver](/tamias/how-to/write-a-driver.md)
@@ -25,15 +26,18 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 
 - [tamias CLI](/tamias/reference/cli.md)
 - [Ref grammar](/tamias/reference/refs.md)
-- [Config — `tamias.toml`](/tamias/reference/config.md)
+- [Config — `tamias.yml` / `tamias.yaml` / `tamias.toml`](/tamias/reference/config.md)
+- [Scripting tamias](/tamias/reference/scripting.md)
+- [`tamias serve` — JSON-RPC over stdio](/tamias/reference/serve.md)
+- [Crate API](/tamias/reference/crate-api.md)
 
 ### Explanation
 
 - [Architecture](/tamias/explanation/architecture.md)
 - [Content types](/tamias/explanation/content-types.md)
+- [Security model](/tamias/explanation/security.md)
 - [Boundaries](/tamias/explanation/boundaries.md)
 
 ### Other
 
-- [Crate API](/tamias/reference/crate-api.md)
 - [Untitled](/tamias/public/api/static.files/SourceSerif4-LICENSE-a2cfd9d5.md)
