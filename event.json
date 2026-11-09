@@ -1,0 +1,1 @@
+{"id":"","ws":"tamias-io002","actor":"luis","ts":1794195622,"op":{"op":"claim","glob":"crates/tamias-core/** crates/tamias-driver/** crates/tamias-publish/** crates/tamias-cli/** examples/**","ttl_secs":3600}}
