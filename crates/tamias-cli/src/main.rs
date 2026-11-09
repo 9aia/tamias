@@ -1910,6 +1910,73 @@ mod tests {
     }
 
     #[test]
+    fn install_registers_platform_driver_bins() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
+        let e = env(tmp.path());
+        // a package shipping a *compiled*-style driver under
+        // drivers/bin/<triple>/ (a shell script stands in for the binary —
+        // registration is bytes + exec bit, platform selection is the path)
+        let dir = tmp.path().join("pkgb");
+        let triple = tamias_driver::target_triple();
+        std::fs::create_dir_all(dir.join("drivers/bin").join(triple)).unwrap();
+        std::fs::write(dir.join("tamias.yaml"), "name: b\nversion: 1.0.0\n").unwrap();
+        std::fs::write(
+            dir.join("drivers/bin")
+                .join(triple)
+                .join("tamias-driver-binfx"),
+            "#!/bin/sh\nexit 0\n",
+        )
+        .unwrap();
+        // a foreign-triple dir rides along — must not be registered
+        std::fs::create_dir_all(dir.join("drivers/bin/not-a-real-triple")).unwrap();
+        std::fs::write(
+            dir.join("drivers/bin/not-a-real-triple/tamias-driver-foreign"),
+            "bin",
+        )
+        .unwrap();
+        let r = dir.to_str().unwrap();
+        // consent gate sees the bin payload too
+        assert!(run_args(e.clone(), &["tamias", "install", r]).is_err());
+        assert!(!tmp.path().join("th/drivers/tamias-driver-binfx").exists());
+        run_args(e.clone(), &["tamias", "install", r, "--allow-drivers"]).unwrap();
+        assert!(tmp.path().join("th/drivers/tamias-driver-binfx").is_file());
+        assert!(!tmp.path().join("th/drivers/tamias-driver-foreign").exists());
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn install_platform_bins_missing_platform_fails() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        let e = env(tmp.path());
+        let dir = tmp.path().join("pkgc");
+        std::fs::create_dir_all(dir.join("drivers/bin/wasm32-unknown-unknown")).unwrap();
+        std::fs::write(dir.join("tamias.yaml"), "name: c\nversion: 1.0.0\n").unwrap();
+        std::fs::write(
+            dir.join("drivers/bin/wasm32-unknown-unknown/tamias-driver-w"),
+            "bin",
+        )
+        .unwrap();
+        let res = run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "install",
+                dir.to_str().unwrap(),
+                "--allow-drivers",
+            ],
+        );
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("not this platform"), "{err}");
+        assert!(err.contains("wasm32-unknown-unknown"), "{err}");
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
     fn install_from_cf_registry() {
         use tamias_registry_local::{serve_http, LocalRegistry};
         let tmp = tempfile::tempdir().unwrap();

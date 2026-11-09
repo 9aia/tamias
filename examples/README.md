@@ -23,11 +23,41 @@ Without it the install is refused before anything is registered.
 
 The payload must carry **ready-to-run executables**. Interpreted
 drivers (the `#!/usr/bin/env python3` examples under
-`pavo/examples/drivers/`, like `board/`'s) ship as source. Compiled
-drivers (the Rust `tamias-driver-*` bins) would need a prebuilt
-per-platform binary in the payload — the binary-distribution path is
-a release TODO; today those install via `cargo install`/`cargo xtask
-install` onto `PATH` instead.
+`pavo/examples/drivers/`, like `board/`'s) ship as source at
+`drivers/<name>`. Compiled drivers (the Rust `tamias-driver-*` bins)
+ship as **prebuilt per-platform binaries** under
+`drivers/bin/<target-triple>/`:
+
+```text
+my-driver-payload/
+├── tamias.yaml
+└── drivers/
+    ├── tamias-driver-board            # interpreted — any platform
+    └── bin/
+        ├── x86_64-unknown-linux-gnu/
+        │   └── tamias-driver-foo       # compiled — this target only
+        └── aarch64-apple-darwin/
+            └── tamias-driver-foo
+```
+
+At install time tamias copies `drivers/bin/<triple>/` only when
+`<triple>` equals the host's rustc target triple (e.g.
+`x86_64-unknown-linux-gnu`); the binaries land flat and executable in
+`<tamias-home>/drivers/`. A package that ships platform dirs but none
+for this host fails the install with a clear error — it can't silently
+drop the driver. Everything under `drivers/` is part of the payload
+digest, so `tamias verify` covers the binaries like any other file.
+
+Publishing recipe for a compiled driver (e.g. `tamias-driver-foo` in a
+product repo): build per target —
+`cargo build --release --target <triple>` (or `dist build`, which this
+repo's `dist-workspace.toml` already plans) — then stage each binary at
+`drivers/bin/<triple>/tamias-driver-foo` in the payload dir and
+`tamias publish` / `bundle pack` it like any other package. The `.tgz`
+is digest-pinned by the registry/index exactly like interpreted
+payloads; no separate binary channel is needed. (A
+cargo-install-style fetch/build recipe was considered and rejected:
+tamias packages are content-addressed artifacts, not build recipes.)
 
 A *pavo* driver (manifest `capabilities: ["pavo"]`) should answer
 `capabilities` with `"types": []` so tamias's content-type lookup

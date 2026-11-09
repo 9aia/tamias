@@ -15,6 +15,21 @@
 //! `capabilities`. Installing a product drops its driver into
 //! `<tamias-home>/drivers/` (from the payload's `drivers/` dir), so tamias
 //! finds it. The engine never links a product crate.
+//!
+//! **Bundled drivers.** A payload's `drivers/` dir ships ready-to-run
+//! driver files:
+//!
+//! - `drivers/<name>` — portable drivers (interpreted scripts like
+//!   `#!/usr/bin/env python3` ship as source).
+//! - `drivers/bin/<target-triple>/<name>` — compiled drivers, one dir per
+//!   rustc target triple (`x86_64-unknown-linux-gnu`, …). At install time
+//!   only the dir matching [`target_triple`] is copied; a package that
+//!   ships platform dirs but none for this host fails the install with a
+//!   clear error rather than silently dropping the driver.
+//!
+//! Both forms land flat in `<tamias-home>/drivers/` (executable bit set),
+//! stay inside the payload digest, and are consent-gated — see
+//! [`drivers_allowed`].
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -28,6 +43,18 @@ const DISPATCH_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// `capabilities` is a discovery probe — seconds, not minutes.
 const CAPABILITIES_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The rustc target triple this build was compiled for
+/// (`x86_64-unknown-linux-gnu`) — captured at compile time by `build.rs`
+/// (`cargo:rustc-env`), so it always names a real cargo target even where
+/// `std::env::consts` can't reconstruct the vendor/os/env spelling.
+///
+/// This is the selector for a payload's `drivers/bin/<triple>/` dir —
+/// see [`register_bundled_drivers`].
+#[must_use]
+pub fn target_triple() -> &'static str {
+    env!("TAMIAS_TARGET_TRIPLE")
+}
 
 /// `<tamias-home>` — `$TAMIAS_HOME` → `$XDG_DATA_HOME/tamias` →
 /// `~/.local/share/tamias` → `./.tamias`.
@@ -187,8 +214,11 @@ pub fn drivers_allowed(flag: bool) -> bool {
 }
 
 /// Names of the driver files a payload ships under `drivers/` — regular
-/// files only, mirroring `register_bundled_drivers`'s filter. Lets callers
-/// detect (and gate) bundled drivers *before* copying or dispatching them.
+/// files only, mirroring `register_bundled_drivers`'s filter, plus the
+/// platform bins under `drivers/bin/<triple>/` (reported as
+/// `bin/<triple>/<name>`). Lets callers detect (and gate) bundled drivers
+/// *before* copying or dispatching them — including binaries for other
+/// platforms, which are still bundled executable content.
 ///
 /// # Errors
 /// Propagates read failures.
@@ -200,26 +230,73 @@ pub fn bundled_drivers(payload_root: &Path) -> Result<Vec<String>, Error> {
     let mut names = Vec::new();
     for entry in std::fs::read_dir(&src).map_err(Error::io(format!("read {}", src.display())))? {
         let entry = entry.map_err(Error::io("read driver entry"))?;
-        // `file_type` never follows symlinks — same filter as registration.
-        let is_file = entry
+        let file_type = entry
             .file_type()
-            .map_err(Error::io(format!("stat {}", entry.path().display())))?
-            .is_file();
-        if is_file {
-            if let Some(name) = entry.file_name().to_str() {
-                names.push(name.to_string());
-            }
+            .map_err(Error::io(format!("stat {}", entry.path().display())))?;
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        // `file_type` never follows symlinks — a linked `bin/` dir can't
+        // smuggle outside paths into the listing (mirrors registration).
+        if file_type.is_file() {
+            names.push(name.to_string());
+        } else if name == "bin" && file_type.is_dir() {
+            // `drivers/bin/<triple>/<name>` — compiled driver payloads.
+            names.extend(platform_bin_names(&entry.path())?);
         }
     }
     names.sort();
     Ok(names)
 }
 
-/// Copy any bundled drivers a payload ships (`<payload>/drivers/*`) into
-/// `<tamias-home>/drivers/` so tamias discovers them. Returns action lines.
+/// `bin/<triple>/<name>` labels for every regular file one level under
+/// each `drivers/bin/<triple>/` dir — all platforms, not just this host's.
+fn platform_bin_names(bin: &Path) -> Result<Vec<String>, Error> {
+    let mut names = Vec::new();
+    let Ok(triples) = std::fs::read_dir(bin) else {
+        return Ok(names);
+    };
+    for triple in triples {
+        let triple = triple.map_err(Error::io("read driver bin entry"))?;
+        if !triple
+            .file_type()
+            .map_err(Error::io(format!("stat {}", triple.path().display())))?
+            .is_dir()
+        {
+            continue;
+        }
+        let Some(triple_name) = triple.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        for file in std::fs::read_dir(triple.path())
+            .map_err(Error::io(format!("read {}", triple.path().display())))?
+        {
+            let file = file.map_err(Error::io("read driver bin file"))?;
+            let is_file = file
+                .file_type()
+                .map_err(Error::io(format!("stat {}", file.path().display())))?
+                .is_file();
+            if is_file {
+                if let Some(name) = file.file_name().to_str() {
+                    names.push(format!("bin/{triple_name}/{name}"));
+                }
+            }
+        }
+    }
+    Ok(names)
+}
+
+/// Copy any bundled drivers a payload ships into `<tamias-home>/drivers/`
+/// so tamias discovers them: top-level `drivers/<name>` files as-is, plus
+/// the `drivers/bin/<target-triple>/` dir matching this host (see
+/// [`target_triple`]). Platform bins for other triples are skipped; a
+/// payload that ships platform dirs but none for this host is an error —
+/// the package intended a runnable compiled driver and can't provide one.
+/// Returns action lines.
 ///
 /// # Errors
-/// Propagates read/copy failures.
+/// Propagates read/copy failures, and the no-matching-platform error.
 pub fn register_bundled_drivers(payload_root: &Path) -> Result<Vec<String>, Error> {
     let src = payload_root.join("drivers");
     if !src.is_dir() {
@@ -228,29 +305,96 @@ pub fn register_bundled_drivers(payload_root: &Path) -> Result<Vec<String>, Erro
     let dest = drivers_dir();
     std::fs::create_dir_all(&dest).map_err(Error::io(format!("create {}", dest.display())))?;
     let mut actions = Vec::new();
+    let mut bin = None;
     for entry in std::fs::read_dir(&src).map_err(Error::io(format!("read {}", src.display())))? {
         let entry = entry.map_err(Error::io("read driver entry"))?;
         // `file_type` never follows symlinks — a payload can't install a
         // linked "driver" that resolves outside the payload.
-        let is_file = entry
+        let file_type = entry
             .file_type()
-            .map_err(Error::io(format!("stat {}", entry.path().display())))?
-            .is_file();
-        if !is_file {
+            .map_err(Error::io(format!("stat {}", entry.path().display())))?;
+        if file_type.is_dir() && entry.file_name() == "bin" {
+            bin = Some(entry.path());
+            continue;
+        }
+        if !file_type.is_file() {
             continue;
         }
         let path = entry.path();
         let name = path.file_name().unwrap_or_default();
         let to = dest.join(name);
         std::fs::copy(&path, &to).map_err(Error::io(format!("copy {}", path.display())))?;
-        #[cfg(unix)]
+        set_executable(&to);
+        actions.push(format!("driver: {}", to.display()));
+    }
+    if let Some(bin) = bin {
+        actions.extend(register_platform_bins(&bin, &dest)?);
+    }
+    Ok(actions)
+}
+
+/// The `drivers/bin/<target-triple>/` payload: copy the dir matching this
+/// host into `dest` (flat, executable). Errors when platform dirs exist
+/// but none match — listing what the package does ship.
+fn register_platform_bins(bin: &Path, dest: &Path) -> Result<Vec<String>, Error> {
+    let mut triples = Vec::new();
+    for entry in std::fs::read_dir(bin).map_err(Error::io(format!("read {}", bin.display())))? {
+        let entry = entry.map_err(Error::io("read driver bin entry"))?;
+        if entry
+            .file_type()
+            .map_err(Error::io(format!("stat {}", entry.path().display())))?
+            .is_dir()
         {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o755));
+            if let Some(name) = entry.file_name().to_str() {
+                triples.push(name.to_string());
+            }
         }
+    }
+    triples.sort();
+    if triples.is_empty() {
+        return Ok(Vec::new());
+    }
+    let current = target_triple();
+    if !triples.iter().any(|t| t == current) {
+        return Err(Error::Failed(format!(
+            "package ships driver binaries for {} but not this platform ({current})",
+            triples.join(", ")
+        )));
+    }
+    let mut actions = Vec::new();
+    let platform = bin.join(current);
+    for entry in
+        std::fs::read_dir(&platform).map_err(Error::io(format!("read {}", platform.display())))?
+    {
+        let entry = entry.map_err(Error::io("read driver bin file"))?;
+        if !entry
+            .file_type()
+            .map_err(Error::io(format!("stat {}", entry.path().display())))?
+            .is_file()
+        {
+            continue;
+        }
+        let path = entry.path();
+        let name = path.file_name().unwrap_or_default();
+        let to = dest.join(name);
+        std::fs::copy(&path, &to).map_err(Error::io(format!("copy {}", path.display())))?;
+        set_executable(&to);
         actions.push(format!("driver: {}", to.display()));
     }
     Ok(actions)
+}
+
+/// Best-effort exec bit on unix — mirrors the previous inline block.
+fn set_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
 }
 
 #[cfg(test)]
@@ -422,6 +566,90 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("timed out"), "{err}");
         assert!(start.elapsed() < Duration::from_secs(10));
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn platform_bins_select_current_triple() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        let payload = tmp.path().join("payload");
+        let current = target_triple();
+        // a triple that can never be this host's (rustc has no such target)
+        let foreign = "not-a-real-target-triple";
+        assert_ne!(current, foreign);
+        let cur = payload.join("drivers/bin").join(current);
+        let oth = payload.join("drivers/bin").join(foreign);
+        std::fs::create_dir_all(&cur).unwrap();
+        std::fs::create_dir_all(&oth).unwrap();
+        std::fs::write(cur.join("tamias-driver-cur"), "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::write(oth.join("tamias-driver-oth"), "#!/bin/sh\nexit 0\n").unwrap();
+        // interpreted driver alongside the bins still registers
+        std::fs::create_dir_all(payload.join("drivers")).unwrap();
+        std::fs::write(payload.join("drivers/tamias-driver-script"), "#!/bin/sh\n").unwrap();
+        let actions = register_bundled_drivers(&payload).unwrap();
+        assert_eq!(actions.len(), 2);
+        assert!(drivers_dir().join("tamias-driver-cur").is_file());
+        assert!(drivers_dir().join("tamias-driver-script").is_file());
+        // the foreign-platform binary is never copied
+        assert!(!drivers_dir().join("tamias-driver-oth").exists());
+        // exec bit set on the registered bin
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(drivers_dir().join("tamias-driver-cur"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o111, 0o111);
+        }
+        // consent detection sees both forms, labeled by platform
+        let shipped = bundled_drivers(&payload).unwrap();
+        assert!(shipped.contains(&"tamias-driver-script".to_string()));
+        assert!(shipped.contains(&format!("bin/{current}/tamias-driver-cur")));
+        assert!(shipped.contains(&format!("bin/{foreign}/tamias-driver-oth")));
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn platform_bins_missing_platform_errors() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        let payload = tmp.path().join("payload");
+        let foreign = "aarch64-pc-windows-gnullvm";
+        assert_ne!(target_triple(), foreign);
+        let dir = payload.join("drivers/bin").join(foreign);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("tamias-driver-x"), "bin").unwrap();
+        let err = register_bundled_drivers(&payload).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains(foreign), "{msg}");
+        assert!(msg.contains(target_triple()), "{msg}");
+        assert!(msg.contains("not this platform"), "{msg}");
+        // nothing landed in the drivers dir
+        assert!(!drivers_dir().join("tamias-driver-x").exists());
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn platform_bins_empty_and_nested_dirs_ignored() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        let payload = tmp.path().join("payload");
+        // drivers/bin exists but holds no platform dirs → no-op
+        std::fs::create_dir_all(payload.join("drivers/bin")).unwrap();
+        assert!(register_bundled_drivers(&payload).unwrap().is_empty());
+        // a file directly under bin/ is not a platform dir → still no-op
+        std::fs::write(payload.join("drivers/bin/loose"), "x").unwrap();
+        assert!(register_bundled_drivers(&payload).unwrap().is_empty());
+        // deeper nesting under a triple dir is ignored
+        let cur = payload.join("drivers/bin").join(target_triple());
+        std::fs::create_dir_all(cur.join("nested")).unwrap();
+        std::fs::write(cur.join("nested/deep"), "x").unwrap();
+        assert!(register_bundled_drivers(&payload).unwrap().is_empty());
         std::env::remove_var("TAMIAS_HOME");
     }
 
