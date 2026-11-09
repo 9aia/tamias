@@ -23,7 +23,9 @@ tamias verify ci-gate        # recompute the payload digest
 
 ```sh
 tamias bundle pack ./my-bundle
-tamias publish ./my-bundle --registry local
+tamias publish ./my-bundle            # writes to the default local registry
+# or a served registry:
+# tamias publish ./my-bundle --registry http://127.0.0.1:8788
 ```
 
 ## Next

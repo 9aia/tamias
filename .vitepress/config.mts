@@ -45,6 +45,7 @@ export default defineConfig({
           { text: "CLI", link: "/reference/cli" },
           { text: "Ref grammar", link: "/reference/refs" },
           { text: "Config", link: "/reference/config" },
+          { text: "Crate API", link: "/reference/crate-api" },
         ],
       },
       {

@@ -6,20 +6,18 @@ import os, pathlib, re, sys
 # Sources live in the main checkout — normally docs/ is a worktree of it
 # (so `..` works); under bupha the docs sha runs detached, so TAMIAS_ROOT
 # points at the real repo.
-ROOT = pathlib.Path(
-    os.environ.get("TAMIAS_ROOT") or pathlib.Path(__file__).parent / "..")
+_R = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(os.environ.get("TAMIAS_ROOT") or str(_R))
 OUT  = pathlib.Path(__file__).parent / "reference" / "config.md"
 
 # file → {struct: section title}; order preserved
 SRCS = {
-    "crates/tamias-core/src/config.rs": {
+    "crates/tamias-config/src/lib.rs": {
+        "Location": "`[locations.NAME]` — an install/fetch location",
+        "Registry": "`[registries.NAME]` — a content registry",
+        "Publish": "`[publish]` — publish routing",
         "Config": "Top level",
-        "VaultConfig": "`[vaults.NAME]` — a named vault backend",
-        "EnvRouteTable": "`[envs]` — env → vault routing (table form)",
-        "DeployConfig": "`[deploy.NAME]` — a write-only push target",
-        "Guardrails": "`[guardrails]` — advisory op table",
-        "ServeConfig": "`[serve]` — the `tamias serve` surface",
-        "PdpConfig": "`[serve.pdp]` — the external policy decision point",
+        "ConfigFormat": "format trait (parse/render)",
     },
 }
 SRC = {n: (ROOT / f).read_text()

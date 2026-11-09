@@ -13,9 +13,11 @@ LAYER = {
     "tamias": "binary",
     "tamias-core": "domain",
     "tamias-config": "port",
-    "tamias-vault": "port",
     "tamias-deploy": "port",
-    "tamias-ops": "ops",
+    "tamias-source": "port",
+    "tamias-store": "port",
+    "tamias-cache": "port",
+    "tamias-registry": "port",
 }
 
 # workspace members — match `"crates/…"` paths only (not dep paths)
