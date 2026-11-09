@@ -31,10 +31,10 @@ members = [
     "crates/tamias-testkit",
     "xtask",
 ]
-# tamias-driver-tamias is excluded: its pavo-protocol/pavo-testkit deps are
-# sibling-checkout path deps (pavo isn't on crates.io yet), so a fresh clone
-# couldn't resolve the workspace. It keeps its own `[workspace]` and is still
-# covered by xtask check/test when the pavo checkout is present.
+# tamias-driver-tamias is excluded: it keeps its own `[workspace]` +
+# lockfile and ships as a standalone driver binary (its pavo deps are
+# git deps now, so no sibling checkout is needed). It is still covered
+# by xtask check/test via its own manifest.
 exclude = ["crates/tamias-driver-tamias"]
 
 [workspace.package]

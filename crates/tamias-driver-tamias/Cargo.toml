@@ -10,8 +10,7 @@ documentation = "https://9aia.com/tamias"
 authors = ["9aia"]
 keywords = ["pavo", "tamias", "package-manager"]
 categories = ["development-tools"]
-# Never published to crates.io: pavo-protocol is a sibling-checkout path
-# dep until it lands on the registry, and this binary ships as a tamias
+# Never published to crates.io: this binary ships as a tamias
 # driver, not a library.
 publish = false
 
@@ -27,16 +26,18 @@ tamias-registry = { path = "../tamias-registry" }
 tamias-registry-local = { path = "../tamias-registry-local" }
 tamias-driver = { path = "../tamias-driver" }
 serde_json = "1"
-# The public wire contract — sibling-checkout path dep until
-# pavo-protocol is published (the whole 9aia org lives side-by-side
-# under one parent dir; `version` is the crates.io fallback).
-pavo-protocol = { path = "../../../pavo/crates/pavo-protocol", version = "0.1.0" }
+# The public wire contract + driver-authoring kit — git deps until
+# pavo lands on the registry (`version` is the crates.io fallback).
+# All pavo crates share the one git source so the kit's
+# pavo-protocol types stay identical to this crate's.
+pavo-protocol = { git = "https://github.com/9aia/pavo", version = "0.1.0" }
+pavo-driver-kit = { git = "https://github.com/9aia/pavo", version = "0.1.0" }
 
 [dev-dependencies]
 tempfile = "3"
 # Conformance gate — `cargo test` runs pavo's wire-contract suite
 # against this crate's own `tamias-driver-tamias serve` binary.
-pavo-testkit = { path = "../../../pavo/crates/pavo-testkit" }
+pavo-testkit = { git = "https://github.com/9aia/pavo", version = "0.1.0" }
 
 # Mirrors the parent workspace's [workspace.lints] — this crate is
 # excluded from that workspace (see the root Cargo.toml `exclude`).

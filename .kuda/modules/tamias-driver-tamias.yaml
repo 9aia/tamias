@@ -12,35 +12,25 @@ api:
   file: crates/tamias-driver-tamias/src/data.rs
   line: 65
   module: tamias-driver-tamias
-- name: binding
-  kind: function
-  file: crates/tamias-driver-tamias/src/views.rs
-  line: 99
-  module: tamias-driver-tamias
-- name: bound
-  kind: function
-  file: crates/tamias-driver-tamias/src/views.rs
-  line: 43
-  module: tamias-driver-tamias
 - name: cache_payload
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 614
+  line: 561
   module: tamias-driver-tamias
 - name: cache_stats
   kind: function
   file: crates/tamias-driver-tamias/src/data.rs
-  line: 290
+  line: 304
   module: tamias-driver-tamias
 - name: capabilities_json
   kind: function
   file: crates/tamias-driver-tamias/src/main.rs
-  line: 48
+  line: 47
   module: tamias-driver-tamias
 - name: col
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 51
+  line: 38
   module: tamias-driver-tamias
 - name: data
   kind: module
@@ -55,12 +45,22 @@ api:
 - name: dispatch
   kind: function
   file: crates/tamias-driver-tamias/src/main.rs
-  line: 59
+  line: 61
+  module: tamias-driver-tamias
+- name: driver_bin
+  kind: function
+  file: crates/tamias-driver-tamias/tests/conformance.rs
+  line: 16
   module: tamias-driver-tamias
 - name: driver_claims
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 473
+  line: 420
+  module: tamias-driver-tamias
+- name: driver_passes_pavo_conformance
+  kind: function
+  file: crates/tamias-driver-tamias/tests/conformance.rs
+  line: 31
   module: tamias-driver-tamias
 - name: env_cache_root
   kind: function
@@ -85,82 +85,82 @@ api:
 - name: every_binding_is_a_known_query
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 733
+  line: 680
   module: tamias-driver-tamias
 - name: flag
   kind: function
   file: crates/tamias-driver-tamias/src/data.rs
-  line: 329
+  line: 343
   module: tamias-driver-tamias
 - name: fmt_ts
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 313
+  line: 260
   module: tamias-driver-tamias
 - name: fmt_ts_renders_unix_utc
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 742
+  line: 689
   module: tamias-driver-tamias
 - name: graph
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 83
+  line: 57
   module: tamias-driver-tamias
 - name: graph_payload
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 639
+  line: 586
   module: tamias-driver-tamias
 - name: graph_payload_shape
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 769
+  line: 716
   module: tamias-driver-tamias
 - name: kind_of
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 348
+  line: 295
   module: tamias-driver-tamias
 - name: known_query
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 284
+  line: 231
   module: tamias-driver-tamias
 - name: kv
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 59
+  line: 42
   module: tamias-driver-tamias
 - name: load
   kind: function
   file: crates/tamias-driver-tamias/src/data.rs
-  line: 342
+  line: 356
   module: tamias-driver-tamias
 - name: main
   kind: function
   file: crates/tamias-driver-tamias/src/main.rs
-  line: 120
+  line: 118
   module: tamias-driver-tamias
 - name: manifest
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 242
+  line: 205
   module: tamias-driver-tamias
 - name: manifest_advertises_pavo_and_lists_every_view
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 704
+  line: 651
   module: tamias-driver-tamias
 - name: manifest_json
   kind: function
   file: crates/tamias-driver-tamias/src/main.rs
-  line: 44
+  line: 43
   module: tamias-driver-tamias
 - name: md
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 92
+  line: 65
   module: tamias-driver-tamias
 - name: ok
   kind: function
@@ -170,22 +170,22 @@ api:
 - name: package_detail
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 414
+  line: 361
   module: tamias-driver-tamias
 - name: package_detail_requires_name
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 754
+  line: 701
   module: tamias-driver-tamias
 - name: packages_rows
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 389
+  line: 336
   module: tamias-driver-tamias
 - name: param
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 340
+  line: 287
   module: tamias-driver-tamias
 - name: param_path
   kind: function
@@ -195,15 +195,16 @@ api:
 - name: query_data
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 294
+  line: 241
   module: tamias-driver-tamias
 - name: registry_entries
   kind: function
   file: crates/tamias-driver-tamias/src/data.rs
-  line: 317
+  line: 331
   module: tamias-driver-tamias
-api_omitted: 20
+api_omitted: 19
 deps:
+- pavo-driver-kit
 - pavo-protocol
 - serde_json
 - tamias-cache-local
@@ -212,6 +213,7 @@ deps:
 - tamias-registry
 - tamias-registry-local
 - tamias-store-local
+- pavo-testkit
 - tempfile
 - serde_json
 - tamias-cache-local
@@ -226,17 +228,20 @@ verify:
 - crates/tamias-driver-tamias/src/data.rs
 - crates/tamias-driver-tamias/src/main.rs
 - crates/tamias-driver-tamias/src/views.rs
+- crates/tamias-driver-tamias/tests/conformance.rs
 provenance:
   files:
   - crates/tamias-driver-tamias/Cargo.toml
   - crates/tamias-driver-tamias/src/data.rs
   - crates/tamias-driver-tamias/src/main.rs
   - crates/tamias-driver-tamias/src/views.rs
+  - crates/tamias-driver-tamias/tests/conformance.rs
   hashes:
-  - d46b4b42711504ab1edbf97d84d8aeeccd95abe0
-  - 8150d8ae7e6bc15fb4cf0f26dd3606a06252276f
-  - 4e02639111f650e7cacd4b781a68eaf4dfb65266
-  - a8f4b9c61fcee5c105fc1d32096c87bb35798243
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - 11f2351f85b20057d47bc3e457c6799e9f23364c
+  - 8e3cc8faff66be7233a710287b83493be76d5ad9
+  - 37528756586ba6e475e2e43ea51564cae770f776
+  - a8d8e24763d0b030c35ed482f6a25ca8a4ff4193
+  - da6ee25ea49c5751fdf325a58fd3f016205b0c4b
+  commit_sha: 06ed741746e982057fd2bec75f2e5949c2507902
+  generated_at: '1794246922'
   generator: kuda-template/0.1.2

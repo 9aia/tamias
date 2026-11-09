@@ -22,86 +22,48 @@
 //! | kind → driver dispatch           | `tamias:graph` graph      |
 //! | roots + counts                    | `tamias:status` kv        |
 
-use pavo_protocol::{
-    ColumnNode, Contributes, Contribution, DriverManifest, GraphNode, KvNode, MarkdownNode,
-    NodeBase, QueryBinding, TableColumn, TableNode, ViewNode, ViewSpec,
-};
+use pavo_driver_kit as kit;
+use pavo_protocol::{DriverManifest, ViewNode, ViewSpec};
 use serde_json::{json, Map, Value};
 use tamias_core::StoreEntry;
 
 use crate::data::Snapshot;
 
 // ---------------------------------------------------------------- helpers
-
-fn titled(title: &str) -> NodeBase {
-    NodeBase {
-        title: Some(title.to_string()),
-        ..NodeBase::default()
-    }
-}
-
-fn bound(title: &str, query: &str) -> NodeBase {
-    NodeBase {
-        title: Some(title.to_string()),
-        query: Some(query.to_string()),
-        ..NodeBase::default()
-    }
-}
+//
+// Thin local wrappers over `pavo-driver-kit`'s node constructors —
+// they pin this driver's conventions (every declared node is
+// query-bound and titled; tables are sortable) in one place.
 
 fn col(title: &str, children: Vec<ViewNode>) -> ViewNode {
-    ViewNode::Column(ColumnNode {
-        base: titled(title),
-        children,
-        gap: None,
-    })
+    kit::column(kit::base().title(title), children)
 }
 
 fn kv(title: &str, query: &str) -> ViewNode {
-    ViewNode::Kv(KvNode {
-        base: bound(title, query),
-        pairs: Vec::new(),
-    })
+    kit::kv(kit::base().title(title).query(query), Vec::new())
 }
 
 fn table(title: &str, query: &str, columns: &[(&str, &str)]) -> ViewNode {
-    ViewNode::Table(TableNode {
-        base: bound(title, query),
-        columns: columns
+    kit::sortable_table(
+        kit::base().title(title).query(query),
+        columns
             .iter()
-            .map(|(key, t)| TableColumn {
-                key: (*key).to_string(),
-                title: (*t).to_string(),
-                align: None,
-                width: None,
-            })
+            .map(|&(key, t)| kit::table_column(key, t))
             .collect(),
-        rows: Vec::new(),
-        sortable: true,
-    })
+        Vec::new(),
+    )
 }
 
 fn graph(title: &str, query: &str) -> ViewNode {
-    ViewNode::Graph(GraphNode {
-        base: bound(title, query),
-        nodes: Vec::new(),
-        edges: Vec::new(),
-        layout: None,
-    })
+    kit::graph(
+        kit::base().title(title).query(query),
+        Vec::new(),
+        Vec::new(),
+    )
 }
 
 fn md(title: &str, text: &str) -> ViewNode {
-    ViewNode::Markdown(MarkdownNode {
-        base: titled(title),
-        text: text.to_string(),
-    })
-}
-
-fn binding(name: &str) -> QueryBinding {
-    QueryBinding {
-        name: name.to_string(),
-        op: "query".to_string(),
-        params: Map::new(),
-    }
+    kit::markdown(kit::base().title(title), text)
 }
 
 fn spec(
@@ -112,14 +74,13 @@ fn spec(
     queries: &[&str],
     root: ViewNode,
 ) -> ViewSpec {
-    ViewSpec {
-        id: id.to_string(),
-        title: title.to_string(),
-        route: route.to_string(),
-        description: Some(description.to_string()),
-        queries: queries.iter().map(|q| binding(q)).collect(),
-        root,
+    let mut view = kit::view(id, title, route, root).description(description);
+    for &q in queries {
+        // Local binding: op `query`, the binding name is the query
+        // name `query_data` dispatches on, no static params.
+        view = view.query(kit::binding(q, "query"));
     }
+    view.build()
 }
 
 // ---------------------------------------------------------------- manifest
@@ -238,43 +199,29 @@ pub fn specs() -> Vec<ViewSpec> {
     ]
 }
 
-/// The `manifest` op result.
+/// The `manifest` op result — built with `pavo-driver-kit`'s
+/// [`kit::Manifest`] (defaults already match: `verbs`
+/// `["manifest","serve"]`, `capabilities` `["pavo"]`).
 pub fn manifest() -> DriverManifest {
-    DriverManifest {
-        name: "tamias".to_string(),
-        title: "Tamias".to_string(),
-        icon: Some("🐿".to_string()),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        verbs: vec!["manifest".to_string(), "serve".to_string()],
-        capabilities: vec!["pavo".to_string()],
-        contributes: Contributes {
-            navbar: vec![Contribution {
-                id: "packages".to_string(),
-                title: "Tamias".to_string(),
-                route: "/tamias/packages".to_string(),
-                priority: 30,
-                icon: None,
-            }],
-            dashboard: vec![Contribution {
-                id: "status".to_string(),
-                title: "Tamias status".to_string(),
-                route: "/tamias/status".to_string(),
-                priority: 40,
-                icon: None,
-            }],
-            statusbar: vec![Contribution {
-                id: "packages".to_string(),
-                title: "Tamias packages".to_string(),
-                route: "/tamias/packages".to_string(),
-                priority: 50,
-                icon: None,
-            }],
-            routes: Vec::new(),
-            extra: Default::default(),
-        },
-        views: specs(),
-        renderers: Vec::new(),
+    let mut m = kit::Manifest::new("tamias", "Tamias")
+        .version(env!("CARGO_PKG_VERSION"))
+        .icon("🐿");
+    for spec in specs() {
+        m = m.view(spec);
     }
+    // `priority` is the only non-default field each contribution
+    // sets — the kit's `contribution` leaves the public fields
+    // mutable for exactly this.
+    let mut navbar = kit::contribution("packages", "Tamias", "/tamias/packages");
+    navbar.priority = 30;
+    let mut dashboard = kit::contribution("status", "Tamias status", "/tamias/status");
+    dashboard.priority = 40;
+    let mut statusbar = kit::contribution("packages", "Tamias packages", "/tamias/packages");
+    statusbar.priority = 50;
+    m.navbar(navbar)
+        .dashboard(dashboard)
+        .statusbar(statusbar)
+        .build()
 }
 
 // ---------------------------------------------------------------- queries

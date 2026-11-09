@@ -37,8 +37,7 @@
 mod data;
 mod views;
 
-use std::io::{BufRead, Write};
-
+use pavo_driver_kit as kit;
 use pavo_protocol::wire::{self, Request, Response, ViewSummary};
 
 fn manifest_json() -> serde_json::Value {
@@ -47,16 +46,19 @@ fn manifest_json() -> serde_json::Value {
 
 fn capabilities_json() -> serde_json::Value {
     let m = views::manifest();
-    serde_json::json!({
-        "capabilities": m.capabilities,
-        "verbs": m.verbs,
-        "types": [],
-        "views": m.views.len(),
-    })
+    // The kit's shared shape plus this driver's extras: `types` (the
+    // empty claim that keeps tamias's content-driver host from
+    // routing install verbs here) and the view count.
+    let mut value = kit::capabilities_value(&m);
+    if let serde_json::Value::Object(map) = &mut value {
+        map.insert("types".to_string(), serde_json::json!([]));
+        map.insert("views".to_string(), serde_json::json!(m.views.len()));
+    }
+    value
 }
 
 /// Dispatch one parsed request to its response.
-fn dispatch(req: Request) -> Response {
+fn dispatch(req: &Request) -> Response {
     match req {
         Request::Manifest => Response::ok_typed(&views::manifest()),
         Request::Views => {
@@ -64,7 +66,7 @@ fn dispatch(req: Request) -> Response {
                 views::specs().iter().map(ViewSummary::from).collect();
             Response::ok_typed(&summaries)
         }
-        Request::View { view, params } => match views::view_result(&view, &params) {
+        Request::View { view, params } => match views::view_result(view, params) {
             Ok(result) => Response::ok_typed(&result),
             Err(e) => Response::err(e),
         },
@@ -73,13 +75,13 @@ fn dispatch(req: Request) -> Response {
             // `ok:true` — degraded snapshots travel as
             // `{"error": …}` data (the marker renderers understand),
             // matching the reference drivers' contract.
-            if !views::known_query(&query) {
+            if !views::known_query(query) {
                 return Response::err(format!("unknown query: {query}"));
             }
-            let snap = data::load(&params);
-            let payload = views::query_data(&query, &params, &snap);
+            let snap = data::load(params);
+            let payload = views::query_data(query, params, &snap);
             Response::ok_typed(&wire::QueryResult {
-                query,
+                query: query.clone(),
                 data: payload,
             })
         }
@@ -94,32 +96,23 @@ fn dispatch(req: Request) -> Response {
         Request::Submit { .. } => {
             Response::err("tamias-driver-tamias is read-only and implements no forms")
         }
+        // `jobs`/`notifications` — the manifest declares no
+        // `contributes.jobs`/`contributes.notifications` slots, so
+        // there is no feed to answer; `ok:false` is the "no feed"
+        // convention hosts read.
+        Request::Jobs => Response::err("tamias-driver-tamias provides no jobs feed"),
+        Request::Notifications => {
+            Response::err("tamias-driver-tamias provides no notifications feed")
+        }
     }
 }
 
 fn serve() -> i32 {
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
-        if line.trim().is_empty() {
-            continue;
-        }
-        let response = match wire::parse_request(&line) {
-            Ok(req) => dispatch(req),
-            // Malformed JSON or an unknown op — the conformance
-            // contract wants `ok:false`, never a dropped line.
-            Err(e) => Response::err(e.to_string()),
-        };
-        let Ok(text) = wire::response_line(&response) else {
-            continue;
-        };
-        if writeln!(out, "{text}").is_err() || out.flush().is_err() {
-            break; // host went away — exit quietly
-        }
+    if kit::serve_stdio(dispatch).is_ok() {
+        0
+    } else {
+        1
     }
-    0
 }
 
 fn main() {

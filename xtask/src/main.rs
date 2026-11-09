@@ -55,15 +55,14 @@ fn have_cargo_sub(sub: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// `tamias-driver-tamias` is excluded from the workspace (its pavo-protocol
-/// dep is a sibling-checkout path dep until pavo-protocol is published), so
-/// `--workspace` commands skip it. When the pavo checkout is present we still
-/// fmt/clippy/test it via its own manifest; on a fresh clone it's skipped.
+/// `tamias-driver-tamias` is excluded from the workspace (it keeps its
+/// own `[workspace]` + lockfile and ships as a standalone driver binary),
+/// so `--workspace` commands skip it. We still fmt/clippy/test it via its
+/// own manifest whenever the crate is present.
 const DRIVER_TAMIAS_MANIFEST: &str = "crates/tamias-driver-tamias/Cargo.toml";
 
 fn driver_tamias_available() -> bool {
     std::path::Path::new(DRIVER_TAMIAS_MANIFEST).exists()
-        && std::path::Path::new("../pavo/crates/pavo-protocol/Cargo.toml").exists()
 }
 
 fn check() -> i32 {
