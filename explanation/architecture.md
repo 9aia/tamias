@@ -16,7 +16,7 @@ distribution; every content *meaning* is an adapter.
 | `cache` | content-addressed fetch cache | `-local`, `-cf` |
 | `registry` | index + publish | `-local`, `-cf` (Worker + R2 + D1/KV) |
 | `deploy` | service unit + teardown | `-local` (systemd) |
-| `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, JSON) |
+| `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, argv) |
 
 ## Crate map
 
@@ -74,4 +74,26 @@ what makes repeat installs and air-gapped nodes free.
 ## Provenance
 
 `verify` recomputes the payload digest against the record. Digest-pinned
-refs (`#sha256:…`, resolved shas) are the integrity contract.
+refs (`#sha256:…`, resolved shas) are the integrity contract — see
+[Security model](/explanation/security) for the full trust story,
+including the `--allow-drivers` consent gate on payload-shipped drivers.
+
+## The embedding surface
+
+`tamias serve` (the `tamias-serve` crate) runs the same install/list/
+info/verify/remove verbs as an **ndjson JSON-RPC service over stdio** —
+for agents and daemons that want a persistent handle instead of
+one-shot CLI calls. The protocol is specified in
+[serve reference](/reference/serve).
+
+## Observability
+
+`tamias-telemetry` is an opt-in OpenTelemetry layer over the tracing
+stack. Nothing exports unless you set an endpoint:
+
+- `TAMIAS_OTEL_ENDPOINT` — OTLP/HTTP base URL (the opt-in switch), or
+  the standard `OTEL_EXPORTER_OTLP_ENDPOINT` /
+  `…_TRACES_ENDPOINT`.
+- `TAMIAS_OTEL_SERVICE_NAME` / `OTEL_SERVICE_NAME` — `service.name`.
+- W3C `traceparent`/`tracestate` propagation is installed when export
+  is on; `RUST_LOG`-style filtering still applies.

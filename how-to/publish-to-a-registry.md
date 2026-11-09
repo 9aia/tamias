@@ -11,6 +11,11 @@ tamias publish ./hello --registry http://127.0.0.1:8788
 tamias search hello --registry http://127.0.0.1:8788
 ```
 
+`registry serve` is an **open dev server** — anyone who can reach the
+port can read and write the index. Set `TAMIAS_REGISTRY_SERVE_TOKEN`
+before serving and clients must send `Authorization: Bearer <token>`
+(the client's token comes from `TAMIAS_REGISTRY_TOKEN`).
+
 Without `--registry`, `publish` writes to the default local directory.
 
 ## Consume it
@@ -50,7 +55,9 @@ Digest-pin the tarball (`#sha256:<hex>`) when you have the bytes.
 
 The protocol is the same either way: the client does a read-modify-write
 of `index.json`; the server is a token-guarded blob store (`GET`/`PUT
-/<key>`). Auth is a bearer token from `token_env` — never inline.
+/<key>`). Auth is a bearer token — the config `token_env` field names
+the env var that carries it; in practice the http client reads
+`TAMIAS_REGISTRY_TOKEN`. Never inline a token.
 
 ## See also
 

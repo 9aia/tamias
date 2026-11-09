@@ -67,12 +67,13 @@ tamias verify hello   # → digest mismatch
 Reinstall to restore, then try a git ref:
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
-tamias list --type peregrin-bundle
+tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias info ci-gate    # provenance: source ref, resolved sha, digest
 ```
 
 ## Next
 
 - [How-to guides](/how-to/publish-to-a-registry)
+- [Manage project dependencies](/how-to/manage-deps) — `add` + `tamias.lock`
 - [Ref grammar](/reference/refs)
 - [CLI reference](/reference/cli)

@@ -34,6 +34,7 @@ export default defineConfig({
         text: "How-to",
         items: [
           { text: "Install from a git repo", link: "/how-to/install-from-git" },
+          { text: "Manage project dependencies", link: "/how-to/manage-deps" },
           { text: "Publish to a registry", link: "/how-to/publish-to-a-registry" },
           { text: "Provision and service", link: "/how-to/provision-a-service" },
           { text: "Write a driver", link: "/how-to/write-a-driver" },
@@ -45,6 +46,8 @@ export default defineConfig({
           { text: "CLI", link: "/reference/cli" },
           { text: "Ref grammar", link: "/reference/refs" },
           { text: "Config", link: "/reference/config" },
+          { text: "Scripting tamias", link: "/reference/scripting" },
+          { text: "`tamias serve`", link: "/reference/serve" },
           { text: "Crate API", link: "/reference/crate-api" },
         ],
       },
@@ -53,6 +56,7 @@ export default defineConfig({
         items: [
           { text: "Architecture", link: "/explanation/architecture" },
           { text: "Content types", link: "/explanation/content-types" },
+          { text: "Security model", link: "/explanation/security" },
           { text: "Boundaries", link: "/explanation/boundaries" },
         ],
       },

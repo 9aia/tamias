@@ -9,8 +9,8 @@ where and how a package installs.
 A content type is *data first*: the package's manifest names its `type`
 (`kind`). The manager never links a product crate. When a product must do
 real work (materialize a node config, enable a systemd unit), it ships a
-**driver** binary the manager launches over a pipe — "no plugin system:
-files" (peregrin’s own ADR).
+**driver** binary the manager launches as a subprocess — "no plugin
+system: files" (peregrin’s own ADR).
 
 ## The roster
 
@@ -25,19 +25,31 @@ files" (peregrin’s own ADR).
 Adding a type is a new `tamias-driver-<type>` binary — never a change to
 the engine.
 
-## Providers (and the driver system)
+## Drivers
 
-The engine is generic — it moves *bytes + a manifest* and unpacks into the
-store. Everything product-specific beyond that is a **provider**: tamias
-shells `<provider> provision {install,deploy,uninstall} --dir … --name …
-[--config …]` and never learns the product's schema.
+The engine is generic — it moves *bytes + a manifest* and unpacks into
+the store. Everything product-specific beyond that is a **driver**:
+when a package's `type:` isn't `files`, tamias resolves a
+`tamias-driver-<type>` executable — on `PATH` or in
+`<tamias-home>/drivers/` — and runs it as a subprocess:
 
-- `peregrin-bundle` → provider **`peregrin`** (materializes a node config +
-  a systemd unit).
-- `files` → no provider (the store install is the whole story).
+```text
+tamias-driver-<type> install --dir <payload> --name <name> [--config <file>]
+tamias-driver-<type> deploy   --dir <dir>     --name <name> [--config <file>]
+tamias-driver-<type> uninstall --dir <dir>    --name <name>
+tamias-driver-<type> capabilities            # → {"types":[…]}
+```
 
-This is generalizing into a first-class **driver system** (`P10`): each
-product ships a Rust binary **`tamias-driver-<name>`**, tamias discovers it
-on `PATH`/`<tamias-home>/drivers/`, and speaks JSON over stdio
-(`capabilities`/`install`/`deploy`/`uninstall`). Installing a product drops
-its driver; tamias finds it. No compile-time coupling either way.
+The driver owns the product's schema — where it materializes, what
+"deployed" means, how to tear down. tamias never learns it.
+
+A package can **ship its own driver** under `drivers/` in the payload;
+installing registers it into `<tamias-home>/drivers/`. Because that's
+arbitrary code, it requires `--allow-drivers` /
+`TAMIAS_ALLOW_DRIVERS=1` — see [Security model](/explanation/security).
+
+`files` is the built-in type: the store entry is the whole story, no
+driver needed. Any other type **fails to install** without a
+discoverable driver — fail closed, never silent.
+
+See [Write a driver](/how-to/write-a-driver) for the authoring side.

@@ -13,10 +13,11 @@ cargo xtask install
 ## Install a package
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#v0.2.0
+tamias install git:9aia/peregrin//libraries/ci-gate#main
 tamias list
 tamias info ci-gate
 tamias verify ci-gate        # recompute the payload digest
+tamias doctor                # store, cache, git, registry, drivers — all green?
 ```
 
 ## Author and publish
@@ -32,4 +33,6 @@ tamias publish ./my-bundle            # writes to the default local registry
 
 - [Architecture](/explanation/architecture)
 - [Content types](/explanation/content-types)
+- [Security model](/explanation/security) — digests, drivers, `--allow-drivers`
+- [Manage project dependencies](/how-to/manage-deps)
 - [CLI reference](/reference/cli)
