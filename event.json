@@ -1,1 +1,1 @@
-{"id":"","ws":"tamias-xtask-test-fix","actor":"luis","ts":1794196183,"op":{"op":"claim","glob":"xtask/**","ttl_secs":3600}}
+{"id":"","ws":"tamias-xtask-test-fix","actor":"luis","ts":1794196813,"op":{"op":"presence","status":"left"}}
