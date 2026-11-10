@@ -15,6 +15,22 @@
 //! drivers may declare further provider verbs (`health`, `hooks`, …)
 //! in `capabilities.verbs`, reached through [`dispatch_with_args`] —
 //! `tamias driver exec`. A driver may also answer `capabilities`.
+//!
+//! **`config-schema` — a reserved verb by convention.** A driver that
+//! consumes a `--config` file *may* implement `config-schema`: dispatch
+//! it and the driver prints a JSON Schema (draft 2020-12) on stdout
+//! describing that file's format, exit 0. Drivers without one exit
+//! non-zero with a clear stderr message — callers treat that as
+//! "unsupported" and surface it, never a crash. The standard
+//! `--dir`/`--name`/`--config` flags are appended like any verb, but
+//! the schema should be instance-agnostic. Fetch it with
+//! [`config_schema`] or `tamias driver config-schema <pkg>`.
+//!
+//! Validating a config *against* the schema is deliberately
+//! driver-side, not engine-side: tamias ships no JSON Schema validator,
+//! so a driver that wants validation implements it as an ordinary
+//! provider verb — `tamias driver exec <pkg> config validate
+//! --config <file>` is the intended shape.
 //! Installing a product drops its driver into
 //! `<tamias-home>/drivers/` (from the payload's `drivers/` dir), so tamias
 //! finds it. The engine never links a product crate.
@@ -217,6 +233,38 @@ pub fn dispatch_with_args(
     args: &[String],
 ) -> Result<Option<DriverOutput>, Error> {
     dispatch_with_timeout(kind, verb, dir, name, config, args, DISPATCH_TIMEOUT)
+}
+
+/// Fetch a kind driver's `config-schema` — the reserved verb that
+/// prints a JSON Schema (draft 2020-12) describing the `--config` file
+/// the driver consumes. Bounded like `capabilities` (a probe, not a
+/// lifecycle verb). `Ok(None)` = no driver found; a driver that doesn't
+/// implement the verb exits non-zero and surfaces as [`Error`] with its
+/// stderr — "unsupported" is a normal outcome, not a crash.
+///
+/// # Errors
+/// Fails when a driver is found but exits non-zero or prints non-JSON.
+pub fn config_schema(
+    kind: &str,
+    dir: &Path,
+    name: &str,
+    config: Option<&Path>,
+) -> Result<Option<serde_json::Value>, Error> {
+    let Some((stdout, _)) = dispatch_with_timeout(
+        kind,
+        "config-schema",
+        dir,
+        name,
+        config,
+        &[],
+        CAPABILITIES_TIMEOUT,
+    )?
+    else {
+        return Ok(None);
+    };
+    serde_json::from_slice(&stdout)
+        .map(Some)
+        .map_err(|e| Error::Failed(format!("config-schema: bad JSON: {e}")))
 }
 
 /// [`dispatch`] with an explicit bound — tests shrink it; production
@@ -544,6 +592,34 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         path
+    }
+
+    #[test]
+    fn config_schema_fetch_and_unsupported() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        let dd = drivers_dir();
+        // No driver → Ok(None).
+        assert!(config_schema("cs-none", tmp.path(), "n", None)
+            .unwrap()
+            .is_none());
+        // Driver answers `config-schema` with JSON.
+        write_driver(
+            &dd,
+            "tamias-driver-cs",
+            "#!/bin/sh\nif [ \"$1\" = config-schema ]; then\n  echo '{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\"}'\n  exit 0\nfi\necho 'unsupported' >&2\nexit 1\n",
+        );
+        let schema = config_schema("cs", tmp.path(), "n", None).unwrap().unwrap();
+        assert_eq!(schema["type"], "object");
+        // Driver exits non-zero → Err carrying its stderr ("unsupported").
+        write_driver(&dd, "tamias-driver-csbad", "#!/bin/sh\nexit 3\n");
+        let err = config_schema("csbad", tmp.path(), "n", None).unwrap_err();
+        assert!(err.to_string().contains("config-schema failed"), "{err}");
+        // Driver prints non-JSON → Err.
+        write_driver(&dd, "tamias-driver-csjunk", "#!/bin/sh\necho nope\n");
+        assert!(config_schema("csjunk", tmp.path(), "n", None).is_err());
+        std::env::remove_var("TAMIAS_HOME");
     }
 
     #[test]
