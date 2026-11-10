@@ -1,0 +1,162 @@
+name: tamias-provider
+path: crates/tamias-provider/Cargo.toml
+purpose: provider lifecycle — installed `provider:` blocks → units, deploy/uninstall, run exec specs, journal argv
+api:
+- name: DeployReport
+  kind: type
+  file: crates/tamias-provider/src/lib.rs
+  line: 92
+  module: tamias-provider
+- name: ExecSpec
+  kind: type
+  file: crates/tamias-provider/src/lib.rs
+  line: 76
+  module: tamias-provider
+- name: ProviderPackage
+  kind: type
+  file: crates/tamias-provider/src/lib.rs
+  line: 46
+  module: tamias-provider
+- name: ProviderView
+  kind: type
+  file: crates/tamias-provider/src/lib.rs
+  line: 57
+  module: tamias-provider
+- name: ServiceRow
+  kind: type
+  file: crates/tamias-provider/src/lib.rs
+  line: 28
+  module: tamias-provider
+- name: UnitAction
+  kind: type
+  file: crates/tamias-provider/src/lib.rs
+  line: 101
+  module: tamias-provider
+- name: deploy
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 290
+  module: tamias-provider
+- name: exec_spec
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 513
+  module: tamias-provider
+- name: exec_spec_rejects_missing_provider
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 676
+  module: tamias-provider
+- name: list
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 200
+  module: tamias-provider
+- name: list_and_rows_empty_store
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 669
+  module: tamias-provider
+- name: provider_base
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 129
+  module: tamias-provider
+- name: provider_of
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 117
+  module: tamias-provider
+- name: service_rows
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 243
+  module: tamias-provider
+- name: service_spec
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 152
+  module: tamias-provider
+- name: store_root
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 702
+  module: tamias-provider
+- name: surviving_units
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 352
+  module: tamias-provider
+- name: tamias-provider
+  kind: module
+  file: crates/tamias-provider/Cargo.toml
+  line: 1
+  module: tamias-provider
+- name: tests
+  kind: module
+  file: crates/tamias-provider/src/lib.rs
+  line: 631
+  module: tamias-provider
+- name: uninstall
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 414
+  module: tamias-provider
+- name: unit_action
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 618
+  module: tamias-provider
+- name: unit_name
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 145
+  module: tamias-provider
+- name: unit_name_uses_provider_name_then_scope
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 637
+  module: tamias-provider
+- name: unit_state
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 180
+  module: tamias-provider
+- name: units_of
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 257
+  module: tamias-provider
+- name: unquote_env
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 493
+  module: tamias-provider
+- name: unquote_env_strips_matching_quotes
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 660
+  module: tamias-provider
+deps:
+- tamias-core
+- tamias-deploy-local
+- tamias-driver
+- tamias-store-local
+- tempfile
+- tamias-core
+- tamias-deploy-local
+- tamias-store-local
+notes: ''
+verify:
+- crates/tamias-provider/Cargo.toml
+- crates/tamias-provider/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-provider/Cargo.toml
+  - crates/tamias-provider/src/lib.rs
+  hashes:
+  - 30c68883ca3b3314838f80925e77194aa3cd7376
+  - 8cd147fed004545dae75e6bc142fdf701a1fc3e4
+  commit_sha: 97e6b658ae8365ef995430cae6fe0691068b5928
+  generated_at: '1794296496'
+  generator: kuda-template/0.1.2

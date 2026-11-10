@@ -178,7 +178,11 @@ impl Drained {
             {
                 return;
             }
-            assert!(Instant::now() < deadline, "never saw {needle:?}");
+            assert!(
+                Instant::now() < deadline,
+                "never saw {needle:?} — screen: {:?}",
+                String::from_utf8_lossy(&self.output.lock().unwrap())
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
     }
@@ -268,6 +272,41 @@ fn detail_verify_and_registry_pane() {
     std::thread::sleep(Duration::from_millis(200));
     d.send(":verify widget\r");
     d.wait_for(b"widget@1.2.3: ok");
+    d.send("q");
+    let status = wait_exit(&mut child);
+    assert!(
+        status.success(),
+        "exit {:?}: {}",
+        status.exit_code(),
+        d.text()
+    );
+}
+
+#[test]
+fn services_manifest_author_panes() {
+    let f = fixture();
+    let (mut master, mut child) = spawn_pty(command(&f));
+    let d = drain(&mut master);
+    d.wait_for(b"widget@1.2.3");
+    // `3` — Services: the fixture package has no provider block, so
+    // the refresh lands on the empty-state hint. (ratatui diffs
+    // cell-by-cell, so needles must be short contiguous runs — the
+    // styled hint's "`provider:`" fragment is the reliable one.)
+    d.send("3");
+    d.wait_for(b"provider:");
+    // `4` — Manifest: no project manifest in cwd → the deps table
+    // title carries the default tamias.yaml path.
+    d.send("4");
+    d.wait_for(b"tamias.yaml");
+    // `5` — Author: the pane header + key hints render.
+    d.send("5");
+    d.wait_for(b"author");
+    d.wait_for(b"publish");
+    // `:manifest` reload + `:registries` report run on the worker.
+    d.send(":manifest\r");
+    std::thread::sleep(Duration::from_millis(300));
+    d.send(":registries\r");
+    std::thread::sleep(Duration::from_millis(300));
     d.send("q");
     let status = wait_exit(&mut child);
     assert!(

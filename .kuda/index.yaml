@@ -19,6 +19,7 @@ modules:
 - tamias-driver-tamias
 - tamias-fuzz
 - tamias-install
+- tamias-provider
 - tamias-publish
 - tamias-registry
 - tamias-registry-cf
@@ -41,8 +42,8 @@ modules:
 commands:
 - cargo check
 - cargo test --workspace
-tree_digest: 7e5106e6b85283b88141beb385b9dbc8cdf13f5e
-files_total: 158
+tree_digest: 1c00c7780a8d5e148ca1b0d54884fc45999b96d1
+files_total: 160
 provenance:
   files:
   - Cargo.toml
@@ -61,6 +62,7 @@ provenance:
   - crates/tamias-driver/Cargo.toml
   - crates/tamias-driver-tamias/Cargo.toml
   - crates/tamias-install/Cargo.toml
+  - crates/tamias-provider/Cargo.toml
   - crates/tamias-publish/Cargo.toml
   - crates/tamias-registry/Cargo.toml
   - crates/tamias-registry-cf/Cargo.toml
@@ -82,12 +84,12 @@ provenance:
   - fuzz/Cargo.toml
   - xtask/Cargo.toml
   hashes:
-  - 8e4605c03f4c3f2cec8002b0ba824f50a09de9fc
+  - c30eb93fb6ef98ef41ac64cbe1277d5cb2847545
   - 04d265af98301ec718eaed9327983d62e379e5b5
   - d3af5c2636a8492ae8561db2d7eabe89a24c1deb
   - 95adcd142d2c55cd9d4e27639ed03ca898bbca04
   - 5b9a61b04a88f684b5ffe12c51bd26d10effcc7a
-  - 75a680ff0505991fc1ac7ac745f30d25ab76bab8
+  - 54718e509b67773051f25e15cb742835611a7a30
   - 632480163263ef27edab2d729003066436e1a9d5
   - e2354bf66bcc103954918876c89f75663f28633e
   - ea0b53562003a16213fbdc77d5703be0e3914475
@@ -98,6 +100,7 @@ provenance:
   - d6affaac6d38ba853246c8395a498bcbf7928cbd
   - 11f2351f85b20057d47bc3e457c6799e9f23364c
   - d9d65c8f2cae1cfa4ac61a5f7a72aef6a52f9be7
+  - 30c68883ca3b3314838f80925e77194aa3cd7376
   - 9440703dd04a239939c9344b76f465db689a29ad
   - 9ab3d6d666009614cefb8ee05e7662792a43f5dd
   - 4f714bbab201b2a39c74f752ad5126919e1ccbb3
@@ -115,9 +118,9 @@ provenance:
   - b72ecdfc35205627f0652e893fcaa0e5558afc3b
   - 11e5afcee2642dd5e6031549c4c19e03372969fc
   - 371a0d2a29dd41b3a5c93b1a96fc6aea0ea11cfe
-  - ddce2671c89099f98e5838fe9838f9715a1b4c40
+  - 5cc2cdb66c95ca712551d8f2f30c31f00e1bab61
   - 57ca36cf313852cc8f22ea5be173bded5d2f1ed6
   - b082fd52c6693e2e905507a9e7605d68880524fe
-  commit_sha: 5e5b46788e2c7f1ff1cd1c1eda89c7ee48005eee
-  generated_at: '1794294404'
+  commit_sha: 97e6b658ae8365ef995430cae6fe0691068b5928
+  generated_at: '1794296496'
   generator: kuda/0.1.0

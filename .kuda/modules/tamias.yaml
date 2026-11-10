@@ -15,7 +15,7 @@ api:
 - name: CWD
   kind: const
   file: crates/tamias-cli/src/main.rs
-  line: 2105
+  line: 1748
   module: tamias
 - name: CacheCommand
   kind: type
@@ -35,7 +35,7 @@ api:
 - name: DRVENV
   kind: const
   file: crates/tamias-cli/src/main.rs
-  line: 2107
+  line: 1750
   module: tamias
 - name: DriverCommand
   kind: type
@@ -50,7 +50,7 @@ api:
 - name: PATHL
   kind: const
   file: crates/tamias-cli/src/main.rs
-  line: 2109
+  line: 1752
   module: tamias
 - name: ProviderCommand
   kind: type
@@ -75,12 +75,12 @@ api:
 - name: add_records_manifest_and_lock
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2438
+  line: 2081
   module: tamias
 - name: add_with_existing_manifest_and_service_verbs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2855
+  line: 2498
   module: tamias
 - name: add_writes_manifest_and_lock
   kind: function
@@ -100,17 +100,17 @@ api:
 - name: blocking_arms_execute
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2579
+  line: 2222
   module: tamias
 - name: cache_clean_all_conflicts_with_days
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3373
+  line: 3016
   module: tamias
 - name: cache_hit_fetch_error_and_scoped_info
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2661
+  line: 2304
   module: tamias
 - name: cache_root
   kind: function
@@ -135,22 +135,22 @@ api:
 - name: config_locations_resolve_store_and_cache
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3583
+  line: 3226
   module: tamias
 - name: config_verb
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3126
+  line: 2769
   module: tamias
 - name: corrupt_cache_entry_never_installs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2507
+  line: 2150
   module: tamias
 - name: corrupt_cache_entry_replaced_on_refetch
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2558
+  line: 2201
   module: tamias
 - name: deploy_and_uninstall_use_the_driver
   kind: function
@@ -160,49 +160,49 @@ api:
 - name: deploy_package
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 1240
+  line: 1193
   module: tamias
 - name: deploy_provider_name_scopes_unit_name
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2767
+  line: 2410
   module: tamias
 - name: deploy_registry_bakes_configured_upload_limit
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 4108
+  line: 3751
   module: tamias
 - name: deploy_renders_provider_services_and_uninstall_removes
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2736
+  line: 2379
   module: tamias
 - name: doctor
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 1983
+  line: 1626
   module: tamias
 - name: doctor_and_add_save_errors
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2949
+  line: 2592
   module: tamias
 - name: doctor_fails_on_unwritable_roots
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3675
+  line: 3318
   module: tamias
 - name: doctor_registry
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 1948
+  line: 1591
   module: tamias
 - name: driver_config_schema
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 1554
+  line: 1339
   module: tamias
-api_omitted: 99
+api_omitted: 92
 deps:
 - clap
 - clap_complete
@@ -219,6 +219,7 @@ deps:
 - tamias-deploy-local
 - tamias-driver
 - tamias-install
+- tamias-provider
 - tamias-publish
 - tamias-registry
 - tamias-registry-local
@@ -300,10 +301,10 @@ provenance:
   - e58c70bea39d5b252a1e819f242bbdcdf20e8b87
   - 30a263d674ef19de11c756d6f7537f91a421909e
   - 51b6a07dd57174197a937034b7eecebd5768ff8a
-  - 8e4605c03f4c3f2cec8002b0ba824f50a09de9fc
-  - 75a680ff0505991fc1ac7ac745f30d25ab76bab8
-  - e330ac1530a78608699616163e23a097e2547ae2
+  - c30eb93fb6ef98ef41ac64cbe1277d5cb2847545
+  - 54718e509b67773051f25e15cb742835611a7a30
+  - a681f25d10d75055b9852b588a1e15ca2ffabfb3
   - f13e6c2b3a89ad84759a0315dda7f22274045c7c
-  commit_sha: 48480e8d20b87b043ec8f20b9df136b85e93eabc
-  generated_at: '1794293917'
+  commit_sha: 97e6b658ae8365ef995430cae6fe0691068b5928
+  generated_at: '1794296496'
   generator: kuda-template/0.1.2

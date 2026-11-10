@@ -157,6 +157,36 @@ impl LocalDeploy {
             .run("systemctl", &["--user", "disable", "--now", &unit(name)?])
     }
 
+    /// `systemctl --user start <unit>`.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid unit name; propagates the runner
+    /// failure.
+    pub fn start(&self, name: &str) -> Result<(), Error> {
+        self.runner
+            .run("systemctl", &["--user", "start", &unit(name)?])
+    }
+
+    /// `systemctl --user stop <unit>`.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid unit name; propagates the runner
+    /// failure.
+    pub fn stop(&self, name: &str) -> Result<(), Error> {
+        self.runner
+            .run("systemctl", &["--user", "stop", &unit(name)?])
+    }
+
+    /// `systemctl --user restart <unit>`.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid unit name; propagates the runner
+    /// failure.
+    pub fn restart(&self, name: &str) -> Result<(), Error> {
+        self.runner
+            .run("systemctl", &["--user", "restart", &unit(name)?])
+    }
+
     /// `systemctl --user status <unit>`.
     ///
     /// # Errors
@@ -186,20 +216,7 @@ impl LocalDeploy {
     /// [`Error::Failed`] on an invalid/empty unit list; propagates the
     /// runner failure.
     pub fn logs_with(&self, names: &[String], lines: u32, follow: bool) -> Result<(), Error> {
-        if names.is_empty() {
-            return Err(Error::Failed("logs: no units given".into()));
-        }
-        let mut args: Vec<String> = vec!["--user".into()];
-        for name in names {
-            args.push("-u".into());
-            args.push(unit(name)?);
-        }
-        args.push("-n".into());
-        args.push(lines.to_string());
-        args.push("--no-pager".into());
-        if follow {
-            args.push("-f".into());
-        }
+        let args = journalctl_args(names, lines, follow)?;
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
         self.runner.run("journalctl", &refs)
     }
@@ -225,6 +242,32 @@ impl Default for LocalDeploy {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The `journalctl --user -u <unit>… -n <lines>` argv — journalctl
+/// accepts repeated `-u` flags, so a package's several provider units
+/// share one stream. `follow` adds `-f`. [`LocalDeploy::logs_with`]
+/// runs it through the [`Runner`] seam; interactive surfaces spawn
+/// `journalctl` with the same argv so the two can't diverge.
+///
+/// # Errors
+/// [`Error::Failed`] on an invalid/empty unit list.
+pub fn journalctl_args(names: &[String], lines: u32, follow: bool) -> Result<Vec<String>, Error> {
+    if names.is_empty() {
+        return Err(Error::Failed("logs: no units given".into()));
+    }
+    let mut args: Vec<String> = vec!["--user".into()];
+    for name in names {
+        args.push("-u".into());
+        args.push(unit(name)?);
+    }
+    args.push("-n".into());
+    args.push(lines.to_string());
+    args.push("--no-pager".into());
+    if follow {
+        args.push("-f".into());
+    }
+    Ok(args)
 }
 
 /// A valid unit base name: `[A-Za-z0-9_.@-]`, no separators, no `..`,

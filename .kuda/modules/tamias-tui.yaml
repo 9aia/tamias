@@ -10,22 +10,22 @@ api:
 - name: ALL
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 90
+  line: 93
   module: tamias-tui
 - name: Base
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 471
+  line: 635
   module: tamias-tui
 - name: CACHE_MAX_AGE
   kind: const
   file: crates/tamias-tui/src/ops.rs
-  line: 27
+  line: 32
   module: tamias-tui
 - name: Cmd
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 195
+  line: 208
   module: tamias-tui
 - name: Ctx
   kind: type
@@ -35,7 +35,7 @@ api:
 - name: Detail
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 182
+  line: 195
   module: tamias-tui
 - name: Drained
   kind: type
@@ -55,12 +55,17 @@ api:
 - name: Job
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 32
+  line: 37
   module: tamias-tui
 - name: LOG_CAP
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 42
+  line: 45
+  module: tamias-tui
+- name: LOG_LINES
+  kind: const
+  file: crates/tamias-tui/src/ops.rs
+  line: 928
   module: tamias-tui
 - name: MUTED
   kind: const
@@ -70,62 +75,62 @@ api:
 - name: Modal
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 146
+  line: 156
   module: tamias-tui
 - name: Mode
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 127
+  line: 137
   module: tamias-tui
 - name: Model
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 277
+  line: 418
   module: tamias-tui
 - name: Msg
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 168
+  line: 178
   module: tamias-tui
 - name: Outcome
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 131
+  line: 281
   module: tamias-tui
 - name: Pane
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 64
+  line: 67
   module: tamias-tui
 - name: PromptKind
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 113
+  line: 105
   module: tamias-tui
 - name: RESCAN_TICKS
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 36
+  line: 39
   module: tamias-tui
 - name: Row
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 54
+  line: 57
   module: tamias-tui
 - name: SEARCH_DEBOUNCE
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 46
+  line: 49
   module: tamias-tui
 - name: SPINNER
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 49
+  line: 52
   module: tamias-tui
 - name: STATUS_TTL
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 39
+  line: 42
   module: tamias-tui
 - name: UNITS
   kind: const
@@ -137,6 +142,11 @@ api:
   file: crates/tamias-tui/src/render.rs
   line: 17
   module: tamias-tui
+- name: add_dep
+  kind: function
+  file: crates/tamias-tui/src/ops.rs
+  line: 772
+  module: tamias-tui
 - name: app
   kind: module
   file: crates/tamias-tui/src/lib.rs
@@ -145,12 +155,17 @@ api:
 - name: arm_watch
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 481
+  line: 704
+  module: tamias-tui
+- name: author_verb
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 1415
   module: tamias-tui
 - name: cache_clean
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 308
+  line: 472
   module: tamias-tui
 - name: chrome
   kind: function
@@ -160,7 +175,7 @@ api:
 - name: closed_pty_surfaces_an_error
   kind: function
   file: crates/tamias-tui/tests/pty.rs
-  line: 307
+  line: 346
   module: tamias-tui
 - name: command
   kind: function
@@ -170,39 +185,24 @@ api:
 - name: command_parsing
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1353
+  line: 1913
   module: tamias-tui
 - name: confirm_job
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 778
+  line: 1069
   module: tamias-tui
 - name: ctx
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 567
+  line: 1091
   module: tamias-tui
 - name: ctx_from_env_resolves_roots
   kind: function
   file: crates/tamias-tui/src/lib.rs
   line: 182
   module: tamias-tui
-- name: detail_verify_and_registry_pane
-  kind: function
-  file: crates/tamias-tui/tests/pty.rs
-  line: 249
-  module: tamias-tui
-- name: dismiss_error
-  kind: function
-  file: crates/tamias-tui/src/app.rs
-  line: 742
-  module: tamias-tui
-- name: doctor
-  kind: function
-  file: crates/tamias-tui/src/ops.rs
-  line: 323
-  module: tamias-tui
-api_omitted: 106
+api_omitted: 137
 deps:
 - crossterm
 - notify
@@ -210,16 +210,21 @@ deps:
 - tamias-cache-local
 - tamias-config
 - tamias-core
+- tamias-deploy-local
 - tamias-driver
 - tamias-install
+- tamias-provider
+- tamias-publish
 - tamias-registry
 - tamias-registry-open
+- tamias-shell
 - tamias-store-local
 - portable-pty
 - tempfile
 - portable_pty
 - tamias-core
 - tamias-store-local
+- tamias-provider
 - tamias-registry
 - tamias-cache-local
 - tamias-install
@@ -244,13 +249,13 @@ provenance:
   - crates/tamias-tui/src/render.rs
   - crates/tamias-tui/tests/pty.rs
   hashes:
-  - ddce2671c89099f98e5838fe9838f9715a1b4c40
-  - 89e9c328c20edf80027a061421925b5585dae793
+  - 5cc2cdb66c95ca712551d8f2f30c31f00e1bab61
+  - 33e51d0e901080cd688d4dd812a4168ae6d82fff
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - bd00958d7fe45b286a4599e36677c73d1e42e74a
-  - 53a9a3e5cc0dd7869ce6d0b20369248b247d1f08
-  - 5dfc0aab8d2f1fe0bb600e1fa519f747e871153d
-  commit_sha: 5e5b46788e2c7f1ff1cd1c1eda89c7ee48005eee
-  generated_at: '1794294404'
+  - d77fd2e56addc6401e7b0d0eb00e45bbb91b2914
+  - 288e4e94bd777386b56883fdabda96b8e6c28f53
+  - 5b9b7c378e5500638fbf90629bc649400abf4336
+  commit_sha: 97e6b658ae8365ef995430cae6fe0691068b5928
+  generated_at: '1794296496'
   generator: kuda-template/0.1.2

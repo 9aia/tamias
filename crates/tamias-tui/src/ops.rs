@@ -11,16 +11,21 @@
 //! [`tamias_install::Progress`] phases through it, and every op
 //! returns a one-line summary the status bar/log can show.
 
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tamias_cache_local::FetchCache;
-use tamias_core::{Error, Lock, StoreEntry};
+use tamias_core::{payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord};
 use tamias_install::{self, Progress, Surface};
 use tamias_registry::{parse_registry_ref, RegistryEntry, RegistryRef};
 use tamias_registry_open as ro;
 use tamias_store_local::Store;
 
+use crate::app::Msg;
 use crate::Ctx;
 
 /// `cache clean` default window — same 30 days as `tamias cache clean`.
@@ -76,6 +81,100 @@ pub enum Job {
         /// Bundled-driver consent.
         allow_drivers: bool,
     },
+    // --- phase 4: provider lifecycle ---
+    /// Services-pane data — every installed package's provider
+    /// services + `systemctl is-enabled` state (worker: shells out).
+    ServicesRefresh,
+    /// `systemctl --user` lifecycle verb on a unit base name.
+    UnitAction {
+        /// Unit base name (no `.service`).
+        unit: String,
+        /// The verb.
+        action: tamias_provider::UnitAction,
+    },
+    /// Provider deploy — kind driver `deploy` + declarative units
+    /// (`tamias deploy <name> [--config]`).
+    ProviderDeploy {
+        /// Store label.
+        name: String,
+        /// Optional driver `--config` path.
+        config: Option<String>,
+    },
+    /// Provider teardown + store remove — the heavy `tamias
+    /// uninstall <name>` (driver uninstall, shared-unit survivor
+    /// re-render, unit removal).
+    ProviderUninstall {
+        /// Store label.
+        name: String,
+    },
+    /// Foreground provider-service exec — spawns the resolved argv
+    /// with a scrubbed env, streams stdout/stderr into the log until
+    /// exit or `x` (stream job — see [`stream`]).
+    RunService {
+        /// Store label of the provider package.
+        package: String,
+        /// Provider service name; `None` → sole-service pick (errors
+        /// listing choices when ambiguous).
+        service: Option<String>,
+    },
+    /// `journalctl --user` tail (`follow: false`) or follow
+    /// (`follow: true`) over a package's units or a bare unit name —
+    /// same argv `tamias logs`/`tamias service logs` build (stream
+    /// job).
+    Logs {
+        /// Store label or unit base name.
+        name: String,
+        /// `-f` follow mode — runs until `x` kills it.
+        follow: bool,
+    },
+    // --- phase 5: manifest deps form ---
+    /// `tamias add` equivalent — install the ref, push it into
+    /// `tamias.yaml`/`tamias.yml` `deps:`, upsert `tamias.lock`.
+    AddDep {
+        /// The source ref.
+        reference: String,
+        /// Bundled-driver consent.
+        allow_drivers: bool,
+    },
+    /// Drop a ref from the project manifest's `deps:` — manifest-only
+    /// (no CLI verb uninstalls on dep removal; `tamias remove` is the
+    /// Installed pane's job).
+    RemoveDep {
+        /// The dep ref to drop.
+        reference: String,
+    },
+    /// Replace a dep ref — install the new ref (consent applies),
+    /// swap the `deps:` entry, upsert `tamias.lock`.
+    SetDep {
+        /// The dep ref being replaced.
+        old: String,
+        /// The new source ref.
+        new: String,
+        /// Bundled-driver consent.
+        allow_drivers: bool,
+    },
+    // --- phase 6: authoring ---
+    /// `tamias bundle pack <dir> [out]`.
+    Pack {
+        /// Payload dir holding `tamias.yaml`.
+        dir: String,
+        /// Optional output `.tgz` path.
+        out: Option<String>,
+    },
+    /// `tamias publish <dir> [registry]` — `open_registry` +
+    /// `registry.publish`, the same path `tamias-serve`'s `publish`
+    /// op and the CLI take (named-registry limits apply inside
+    /// `open_registry`).
+    Publish {
+        /// Payload dir.
+        dir: String,
+        /// Registry name/ref override; `None` → publish.default →
+        /// local default root.
+        registry: Option<String>,
+    },
+    /// The configured `registries` names + routing defaults — the
+    /// publish picker's data.
+    Registries,
 }
 
 impl Job {
@@ -98,7 +197,41 @@ impl Job {
             Self::Doctor => "doctor".to_string(),
             Self::Search { query, .. } => format!("search {query:?}"),
             Self::Install { reference, .. } => format!("install {reference}"),
+            Self::ServicesRefresh => "services refresh".to_string(),
+            Self::UnitAction { unit, action } => {
+                format!("{} {}", unit_action_verb(*action), unit)
+            }
+            Self::ProviderDeploy { name, .. } => format!("deploy {name}"),
+            Self::ProviderUninstall { name } => format!("uninstall {name}"),
+            Self::RunService { package, service } => match service {
+                Some(s) => format!("run {package}/{s}"),
+                None => format!("run {package}"),
+            },
+            Self::Logs { name, follow } => {
+                if *follow {
+                    format!("logs -f {name}")
+                } else {
+                    format!("logs {name}")
+                }
+            }
+            Self::AddDep { reference, .. } => format!("add dep {reference}"),
+            Self::RemoveDep { reference } => format!("remove dep {reference}"),
+            Self::SetDep { old, new, .. } => format!("set dep {old} → {new}"),
+            Self::Pack { dir, .. } => format!("pack {dir}"),
+            Self::Publish { dir, registry } => match registry {
+                Some(r) => format!("publish {dir} → {r}"),
+                None => format!("publish {dir}"),
+            },
+            Self::Registries => "registries".to_string(),
         }
+    }
+
+    /// Stream jobs spawn a child and forward its output — they run
+    /// through [`stream`], not [`run`], and their child handle comes
+    /// back over the channel for `x` to kill.
+    #[must_use]
+    pub fn is_stream(&self) -> bool {
+        matches!(self, Self::RunService { .. } | Self::Logs { .. })
     }
 
     /// The same job with bundled-driver consent granted — what the
@@ -120,13 +253,30 @@ impl Job {
                 reference,
                 allow_drivers: true,
             },
+            Self::AddDep {
+                reference,
+                allow_drivers: _,
+            } => Self::AddDep {
+                reference,
+                allow_drivers: true,
+            },
+            Self::SetDep {
+                old,
+                new,
+                allow_drivers: _,
+            } => Self::SetDep {
+                old,
+                new,
+                allow_drivers: true,
+            },
             other => other,
         }
     }
 }
 
 /// What a finished job hands back — `Text` is the one-line summary;
-/// `Search` carries typed results for the Registry pane.
+/// `Search` carries typed results for the Registry pane; `Services`
+/// carries the Services pane's rows.
 #[derive(Debug)]
 pub enum Outcome {
     /// One-line result for the log/status.
@@ -139,6 +289,20 @@ pub enum Outcome {
         /// Matching index entries.
         results: Vec<RegistryEntry>,
     },
+    /// Services-pane rows — every installed provider service with its
+    /// unit state.
+    Services(Vec<tamias_provider::ServiceRow>),
+}
+
+/// The `systemctl` verb word for a [`tamias_provider::UnitAction`].
+fn unit_action_verb(action: tamias_provider::UnitAction) -> &'static str {
+    match action {
+        tamias_provider::UnitAction::Start => "start",
+        tamias_provider::UnitAction::Stop => "stop",
+        tamias_provider::UnitAction::Restart => "restart",
+        tamias_provider::UnitAction::Enable => "enable",
+        tamias_provider::UnitAction::Disable => "disable",
+    }
 }
 
 /// The effective config for read-side resolution — same
@@ -518,6 +682,346 @@ pub fn entry_install_ref(
     }
 }
 
+/// Services-pane rows — `tamias-provider`'s service table (store
+/// entries → provider manifests → unit state probes).
+fn services_refresh(ctx: &Ctx) -> Result<Outcome, Error> {
+    Ok(Outcome::Services(tamias_provider::service_rows(
+        &ctx.store_root,
+    )?))
+}
+
+/// A `systemctl --user` lifecycle verb — start/stop/restart/enable/
+/// disable on the unit base name.
+fn unit_action(unit: &str, action: tamias_provider::UnitAction) -> Result<Outcome, Error> {
+    tamias_provider::unit_action(unit, action)?;
+    Ok(Outcome::Text(format!(
+        "{} {}",
+        unit_action_verb(action),
+        unit
+    )))
+}
+
+/// `tamias deploy <name> [--config]` — the `tamias-provider` report's
+/// lines/warnings stream to the log; the summary toasts.
+fn provider_deploy(
+    ctx: &Ctx,
+    name: &str,
+    config: Option<&str>,
+    log: &mut dyn FnMut(String),
+) -> Result<Outcome, Error> {
+    let report = tamias_provider::deploy(&ctx.store_root, name, config.map(std::path::Path::new))?;
+    for line in &report.lines {
+        log(line.clone());
+    }
+    for warning in &report.warnings {
+        log(format!("warning — {warning}"));
+    }
+    Ok(Outcome::Text(format!("deploy {name} done")))
+}
+
+/// `tamias uninstall <name>` — provider teardown + store remove; the
+/// report streams like deploy's.
+fn provider_uninstall(
+    ctx: &Ctx,
+    name: &str,
+    log: &mut dyn FnMut(String),
+) -> Result<Outcome, Error> {
+    let report = tamias_provider::uninstall(&ctx.store_root, name)?;
+    for line in &report.lines {
+        log(line.clone());
+    }
+    for warning in &report.warnings {
+        log(format!("warning — {warning}"));
+    }
+    Ok(Outcome::Text(format!("uninstalled {name}")))
+}
+
+/// The project manifest the Manifest pane edits — `./tamias.yaml`
+/// first (the file `tamias add` writes), then an existing
+/// `./tamias.yml`; a lone `tamias.toml` is refused because
+/// [`Manifest::save`] always writes YAML. Missing entirely → the
+/// default manifest at `tamias.yaml` (created on first save).
+pub fn project_manifest() -> Result<(PathBuf, Manifest), Error> {
+    for name in ["tamias.yaml", "tamias.yml"] {
+        let path = PathBuf::from(name);
+        if path.is_file() {
+            return Manifest::load_project_at(&path).map(|m| (path, m));
+        }
+    }
+    if Path::new("tamias.toml").is_file() {
+        return Err(Error::Failed(
+            "tamias.toml found — the deps form edits YAML manifests only".to_string(),
+        ));
+    }
+    Ok((PathBuf::from("tamias.yaml"), Manifest::default()))
+}
+
+/// `tamias add`'s manifest+lock tail — save the project manifest,
+/// then upsert `tamias.lock` with the installed record (the lock is
+/// created here, same as `add`).
+fn save_project_dep(path: &Path, project: &Manifest, record: &StoreRecord) -> Result<(), Error> {
+    project.save(path)?;
+    let lock_path = PathBuf::from("tamias.lock");
+    let mut lock = Lock::load(&lock_path)?;
+    lock.upsert(LockEntry::from_record(record));
+    lock.save(&lock_path)
+}
+
+/// `tamias add <ref>` — install, then record the ref in the project
+/// manifest's `deps:` + `tamias.lock` (the CLI handler's exact tail).
+fn add_dep(
+    ctx: &Ctx,
+    reference: &str,
+    allow_drivers: bool,
+    log: &mut dyn FnMut(String),
+) -> Result<Outcome, Error> {
+    let entry = install_ref(ctx, reference, allow_drivers, log)?;
+    let (path, mut project) = project_manifest()?;
+    if !project.deps.iter().any(|d| d == reference) {
+        project.deps.push(reference.to_string());
+    }
+    save_project_dep(&path, &project, &entry.record)?;
+    Ok(Outcome::Text(format!(
+        "added {reference} → {} + tamias.lock ({})",
+        path.display(),
+        short(&entry.record.digest)
+    )))
+}
+
+/// Drop `reference` from the project manifest's `deps:` — manifest
+/// only; the store entry and lock are untouched (no CLI verb couples
+/// dep removal to uninstall).
+fn remove_dep(reference: &str) -> Result<Outcome, Error> {
+    let (path, mut project) = project_manifest()?;
+    let before = project.deps.len();
+    project.deps.retain(|d| d != reference);
+    if project.deps.len() == before {
+        return Err(Error::Failed(format!(
+            "dep '{reference}' not in {}",
+            path.display()
+        )));
+    }
+    project.save(&path)?;
+    Ok(Outcome::Text(format!(
+        "removed dep {reference} → {}",
+        path.display()
+    )))
+}
+
+/// Replace dep `old` with `new` — install the new ref first (a failed
+/// install leaves the manifest untouched), swap the `deps:` entry
+/// (deduping when `new` is already listed), upsert `tamias.lock`.
+fn set_dep(
+    ctx: &Ctx,
+    old: &str,
+    new: &str,
+    allow_drivers: bool,
+    log: &mut dyn FnMut(String),
+) -> Result<Outcome, Error> {
+    if old == new {
+        return Err(Error::Failed(
+            "set dep: old and new ref are identical".into(),
+        ));
+    }
+    let entry = install_ref(ctx, new, allow_drivers, log)?;
+    let (path, mut project) = project_manifest()?;
+    let Some(pos) = project.deps.iter().position(|d| d == old) else {
+        return Err(Error::Failed(format!(
+            "dep '{old}' not in {}",
+            path.display()
+        )));
+    };
+    if project.deps.iter().any(|d| d == new) {
+        project.deps.remove(pos);
+    } else {
+        project.deps[pos] = new.to_string();
+    }
+    save_project_dep(&path, &project, &entry.record)?;
+    Ok(Outcome::Text(format!(
+        "dep {old} → {new} ({})",
+        path.display()
+    )))
+}
+
+/// `tamias bundle pack <dir> [out]` — `tamias-publish`'s pack.
+fn pack(dir: &str, out: Option<&str>) -> Result<Outcome, Error> {
+    let out_path = out.map(PathBuf::from);
+    let packed = tamias_publish::pack(Path::new(dir), out_path.as_deref())?;
+    Ok(Outcome::Text(format!("packed → {}", packed.display())))
+}
+
+/// `tamias publish <dir> [registry]` — the serve `publish` op's exact
+/// path: `publish.default` routing → `payload_root` → `Manifest::load`
+/// → `open_registry` (named-registry + per-package limits apply) →
+/// `registry.publish`.
+fn publish(
+    ctx: &Ctx,
+    dir: &str,
+    registry: Option<&str>,
+    log: &mut dyn FnMut(String),
+) -> Result<Outcome, Error> {
+    let config = env_config(ctx);
+    let target = ro::registry_target(registry, &[config.publish.default.as_deref()]);
+    let root = payload_root(Path::new(dir))?;
+    let manifest = Manifest::load(&root)?;
+    log(format!(
+        "publishing {} → {}",
+        manifest.name,
+        target.as_deref().unwrap_or("default (local root)")
+    ));
+    let registry = ro::open_registry(
+        &ctx.registry_root,
+        Some(&config),
+        target.as_deref(),
+        Some(&manifest.name),
+    )?;
+    let entry = registry.publish(&root, &manifest)?;
+    Ok(Outcome::Text(format!(
+        "published {} → {}",
+        entry.label(),
+        target.as_deref().unwrap_or("default")
+    )))
+}
+
+/// The configured `registries` as `(name, kind)` pairs plus the
+/// routing defaults — the publish picker's data and `:registries`'
+/// report. Sorted (BTreeMap) for stable display.
+pub fn registry_names(ctx: &Ctx) -> Vec<(String, String)> {
+    let config = env_config(ctx);
+    let mut out: Vec<(String, String)> = config
+        .registries
+        .iter()
+        .map(|(name, reg)| (name.clone(), reg.effective_kind()))
+        .collect();
+    if let Some(d) = &config.publish.default {
+        out.push((format!("publish.default → {d}"), String::new()));
+    }
+    if let Some(d) = &config.search.default {
+        out.push((format!("search.default → {d}"), String::new()));
+    }
+    out
+}
+
+/// `:registries`/the Author pane's list — names + kinds, one per
+/// line, defaults annotated.
+fn registries(ctx: &Ctx) -> Result<Outcome, Error> {
+    let rows = registry_names(ctx);
+    if rows.is_empty() {
+        return Ok(Outcome::Text("no registries configured".to_string()));
+    }
+    Ok(Outcome::Text(
+        rows.iter()
+            .map(|(name, kind)| {
+                if kind.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{name} ({kind})")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    ))
+}
+
+/// `journalctl` lines to tail for `logs` — same default as
+/// `tamias logs` (`-n 200`).
+const LOG_LINES: u32 = 200;
+
+/// Forward one piped stream's lines to the UI as [`Msg::Log`] —
+/// detached: it ends at EOF (or when the channel closes).
+fn pump<R: Read + Send + 'static>(pipe: Option<R>, tx: Sender<Msg>) {
+    std::thread::spawn(move || {
+        let Some(pipe) = pipe else { return };
+        for line in BufReader::new(pipe).lines() {
+            match line {
+                Ok(line) => {
+                    if tx.send(Msg::Log(line)).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+/// Stream jobs — spawn the resolved child with piped stdout/stderr,
+/// hand the killable [`Child`] back over [`Msg::StreamChild`], pump
+/// both pipes into the log, poll `try_wait` (the lock is only held
+/// for the poll itself, so `x`'s `kill` never blocks), and report the
+/// exit as the [`Outcome`]. The env is scrubbed through
+/// `tamias-shell` — the same policy `tamias run` applies.
+///
+/// # Errors
+/// Spec/argv resolution, spawn, or wait failures.
+pub fn stream(ctx: &Ctx, job: &Job, tx: &Sender<Msg>) -> Result<Outcome, Error> {
+    let (program, args, workdir, env) = match job {
+        Job::RunService { package, service } => {
+            let spec =
+                tamias_provider::exec_spec(&ctx.store_root, package, service.as_deref(), &[])?;
+            let mut argv = spec.argv;
+            let Some(program) = argv.first().cloned() else {
+                return Err(Error::Failed(format!(
+                    "{package}: provider service has an empty exec argv"
+                )));
+            };
+            argv.remove(0);
+            (program, argv, spec.workdir, spec.env)
+        }
+        Job::Logs { name, follow } => {
+            // Same resolution as `tamias logs`: a store entry tails all
+            // its provider units; anything else is a bare unit name.
+            let units = match Store::new(&ctx.store_root).find(name) {
+                Ok(entry) => tamias_provider::units_of(&entry)?,
+                Err(_) => vec![name.clone()],
+            };
+            let args = tamias_deploy_local::journalctl_args(&units, LOG_LINES, *follow)?;
+            (
+                "journalctl".to_string(),
+                args,
+                PathBuf::from("."),
+                Vec::new(),
+            )
+        }
+        other => {
+            return Err(Error::Failed(format!(
+                "not a stream job: {}",
+                other.label()
+            )))
+        }
+    };
+    let mut cmd = Command::new(&program);
+    cmd.args(&args)
+        .current_dir(&workdir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    tamias_shell::scrub_env(&mut cmd, &env);
+    let mut child = cmd.spawn().map_err(Error::io(format!("spawn {program}")))?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let child = Arc::new(Mutex::new(child));
+    let _ = tx.send(Msg::StreamChild(child.clone()));
+    pump(stdout, tx.clone());
+    pump(stderr, tx.clone());
+    let status = loop {
+        // The mutex is held only for the poll — `kill_stream` locks
+        // it briefly too, so a wedged child can't freeze the UI.
+        let waited = child.lock().map(|mut c| c.try_wait());
+        match waited {
+            Ok(Ok(Some(status))) => break status,
+            Ok(Ok(None)) => std::thread::sleep(Duration::from_millis(50)),
+            Ok(Err(e)) => return Err(Error::io(format!("wait {program}"))(e)),
+            Err(_) => return Err(Error::Failed(format!("{program}: child handle poisoned"))),
+        }
+    };
+    let summary = if status.success() {
+        format!("{} exited ok", job.label())
+    } else {
+        format!("{} exited {status}", job.label())
+    };
+    Ok(Outcome::Text(summary))
+}
+
 /// Dispatch one job — the worker thread's whole body. `log` receives
 /// phase lines (install progress, warnings); the return is the
 /// [`Outcome`] or the error (a bundled-driver consent refusal is just
@@ -547,6 +1051,26 @@ pub fn run(ctx: &Ctx, job: &Job, log: &mut dyn FnMut(String)) -> Result<Outcome,
                 short(&entry.record.digest)
             )))
         }
+        Job::ServicesRefresh => services_refresh(ctx),
+        Job::UnitAction { unit, action } => unit_action(unit, *action),
+        Job::ProviderDeploy { name, config } => provider_deploy(ctx, name, config.as_deref(), log),
+        Job::ProviderUninstall { name } => provider_uninstall(ctx, name, log),
+        Job::RunService { .. } | Job::Logs { .. } => Err(Error::Failed(
+            "stream jobs run through ops::stream, not ops::run".to_string(),
+        )),
+        Job::AddDep {
+            reference,
+            allow_drivers,
+        } => add_dep(ctx, reference, *allow_drivers, log),
+        Job::RemoveDep { reference } => remove_dep(reference),
+        Job::SetDep {
+            old,
+            new,
+            allow_drivers,
+        } => set_dep(ctx, old, new, *allow_drivers, log),
+        Job::Pack { dir, out } => pack(dir, out.as_deref()),
+        Job::Publish { dir, registry } => publish(ctx, dir, registry.as_deref(), log),
+        Job::Registries => registries(ctx),
     }
 }
 

@@ -1187,246 +1187,31 @@ enum ServiceCommand {
     Uninstall { unit: String },
 }
 
-/// The provider block of an installed package's manifest — `None` when
-/// the payload carries no manifest or no `provider:` (a plain package
-/// has nothing declarative to deploy).
-fn provider_of(entry: &StoreEntry) -> Result<Option<Manifest>, Error> {
-    if Manifest::path_in(&entry.dir).is_none() {
-        return Ok(None);
-    }
-    let manifest = entry.manifest()?;
-    Ok(manifest.provider.is_some().then_some(manifest))
-}
-
-/// The unit base name a provider service renders to —
-/// `<provider-or-package>-<service>`. `provider.name` wins; otherwise
-/// the package name (scope-qualified when scoped, so `@s/foo` and `foo`
-/// don't collide). Deterministic: two packages claiming the same unit
-/// name resolve last-deploy-wins on the unit file.
-fn provider_unit_name(manifest: &Manifest, service: &str) -> String {
-    format!("{}-{service}", provider_base(manifest))
-}
-
-/// Render a provider service as a [`ServiceSpec`] — exec string → argv
-/// via [`tamias_deploy_local::split_exec`], `~` expansion deferred to
-/// the renderer.
-fn provider_service_spec(
-    entry: &StoreEntry,
-    manifest: &Manifest,
-    service: &tamias_core::ProviderService,
-) -> Result<tamias_deploy_local::ServiceSpec, Error> {
-    Ok(tamias_deploy_local::ServiceSpec {
-        name: provider_unit_name(manifest, &service.name),
-        description: format!("{} — {}", entry.label(), service.name),
-        exec: tamias_deploy_local::split_exec(&service.exec)?,
-        env: service
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
-        env_file: service.env_file.clone(),
-        restart: service.restart.clone(),
-        restart_sec: None,
-        workdir: service.workdir.clone(),
-        after: vec![],
-    })
-}
-
-/// `deploy <name>` — run the installed package's provider deploy step:
-/// the kind driver's `deploy` verb (kind-specific setup/teardown) *and*,
-/// independently, every `provider.services[]` entry rendered as a
-/// per-user systemd unit. Units are written + daemon-reloaded but not
-/// enabled — `tamias service enable <unit>` is the operator's step.
+/// `deploy <name>` — the installed package's provider deploy step
+/// (kind driver `deploy` + declarative `provider.services[]` units),
+/// shared with `tamias ui` through `tamias-provider`.
 fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Error> {
-    let entry = Store::new(&env.store_root).find(name)?;
-    let kind = entry.record.kind.as_deref().unwrap_or("files");
-    let driver_ran =
-        tamias_driver::dispatch(kind, "deploy", &entry.dir, &entry.record.name, config)?;
-    if driver_ran {
-        println!("deployed {}", entry.label());
+    let report = tamias_provider::deploy(&env.store_root, name, config)?;
+    for line in &report.lines {
+        println!("{line}");
     }
-    let mut deployed = false;
-    if let Some(manifest) = provider_of(&entry)? {
-        let deploy = tamias_deploy_local::LocalDeploy::new();
-        if let Some(provider) = &manifest.provider {
-            for service in &provider.services {
-                let spec = provider_service_spec(&entry, &manifest, service)?;
-                let path = deploy.install(&spec)?;
-                deployed = true;
-                println!(
-                    "unit {} → {} (enable: tamias service enable {})",
-                    spec.name,
-                    path.display(),
-                    spec.name
-                );
-            }
-        }
-        if deployed {
-            // Best-effort: a missing user bus must not fail the deploy —
-            // the unit files are already on disk.
-            let _ = deploy.daemon_reload();
-        }
-        // Ingress hooks stay manual for v1: `public_url` fronts a tunnel
-        // the operator confirms first — auto-registering forge hooks at
-        // deploy time would point repos at whatever URL happens to be
-        // declared. Point at the explicit verb instead.
-        let hooks: usize = manifest
-            .provider
-            .as_ref()
-            .map(|p| p.ingress.iter().map(|i| i.hooks.len()).sum())
-            .unwrap_or(0);
-        if hooks > 0 {
-            eprintln!(
-                "tamias: {} ingress hook(s) declared — review with `tamias driver exec {} hooks register --dry-run`, then drop --dry-run to register",
-                hooks,
-                entry.label()
-            );
-        }
-    }
-    if !driver_ran && !deployed {
-        println!("{}: nothing to deploy (type {kind})", entry.label());
+    for warning in &report.warnings {
+        eprintln!("tamias: warning — {warning}");
     }
     Ok(())
 }
 
-/// `uninstall <name>` — provider teardown + drop the store entry.
+/// `uninstall <name>` — provider teardown + drop the store entry,
+/// shared with `tamias ui` through `tamias-provider`.
 fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
-    let store = Store::new(&env.store_root);
-    let entry = store.find(name)?;
-    let kind = entry.record.kind.as_deref().unwrap_or("files");
-    // Capture the provider spec before teardown — the store entry is
-    // dropped below, and the manifest is needed both to remove this
-    // package's units and to tell whether a *surviving* provider still
-    // declares them (unit names can be shared: several packages may
-    // render the same `<provider>-<service>` unit, e.g. one campaign
-    // host spanning bundles).
-    let manifest = provider_of(&entry)?;
-    let unit_names: Vec<String> = manifest
-        .as_ref()
-        .map(|m| {
-            m.provider
-                .as_ref()
-                .map(|p| {
-                    p.services
-                        .iter()
-                        .map(|s| provider_unit_name(m, &s.name))
-                        .collect()
-                })
-                .unwrap_or_default()
-        })
-        .unwrap_or_default();
-    // Teardown runs before the entry is dropped: a failing driver keeps the
-    // store entry so the uninstall can be retried instead of leaking
-    // provider-side resources under a false "uninstalled".
-    if !tamias_driver::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None)?
-        && kind != "files"
-    {
-        eprintln!("tamias: warning — no driver for type '{kind}'; provider resources may remain");
+    let report = tamias_provider::uninstall(&env.store_root, name)?;
+    for line in &report.lines {
+        println!("{line}");
     }
-    let record = store.remove(name)?;
-    // Declarative provider services are tamias-native — remove their
-    // units too, unless a surviving installed provider still declares
-    // the same unit name: that unit is re-rendered from the survivor's
-    // spec instead (shared units must declare identical `exec`; the
-    // survivor is the honest source once this package is gone). Units
-    // are best-effort per name: a failure warns but doesn't fail the
-    // uninstall — the store entry is already dropped.
-    let deploy = tamias_deploy_local::LocalDeploy::new();
-    let survivors = surviving_units(
-        &env.store_root,
-        &unit_names
-            .iter()
-            .cloned()
-            .collect::<std::collections::BTreeSet<_>>(),
-    );
-    for unit in &unit_names {
-        match survivors.get(unit) {
-            Some(Some((spec, label))) => match deploy.install(spec) {
-                Ok(path) => println!(
-                    "unit {unit} is shared — re-rendered from {label} → {}",
-                    path.display()
-                ),
-                Err(e) => {
-                    eprintln!("tamias: warning — could not refresh shared unit {unit}: {e}")
-                }
-            },
-            Some(None) => eprintln!(
-                "tamias: warning — unit {unit} is still declared but its surviving spec is invalid; left untouched"
-            ),
-            None => {
-                if let Err(e) = deploy.uninstall(unit) {
-                    eprintln!("tamias: warning — could not remove unit {unit}: {e}");
-                }
-            }
-        }
+    for warning in &report.warnings {
+        eprintln!("tamias: warning — {warning}");
     }
-    if !unit_names.is_empty() {
-        // Best-effort: a missing user bus must not fail the uninstall —
-        // the unit files are already written/removed.
-        let _ = deploy.daemon_reload();
-    }
-    println!("uninstalled {}@{}", record.name, record.resolved);
     Ok(())
-}
-
-/// Of `names` (unit base names a just-uninstalled package declared),
-/// the ones *other* still-installed providers also declare — unit →
-/// `(spec, declaring package label)`, first declarer in sorted store
-/// order wins. A `None` spec means the survivor's `exec` won't parse:
-/// the unit is left untouched (warned by the caller's match arm can't
-/// see it — warned here instead). Store/manifest read failures degrade
-/// to "not declared" so a broken sibling never blocks an uninstall.
-fn surviving_units(
-    store_root: &Path,
-    names: &std::collections::BTreeSet<String>,
-) -> std::collections::BTreeMap<String, Option<(tamias_deploy_local::ServiceSpec, String)>> {
-    let mut out = std::collections::BTreeMap::new();
-    if names.is_empty() {
-        return out;
-    }
-    let entries = match Store::new(store_root).entries() {
-        Ok(entries) => entries,
-        Err(e) => {
-            eprintln!("tamias: warning — could not rescan store for shared units: {e}");
-            return out;
-        }
-    };
-    for entry in entries {
-        let manifest = match provider_of(&entry) {
-            Ok(Some(manifest)) => manifest,
-            Ok(None) => continue,
-            Err(e) => {
-                eprintln!(
-                    "tamias: warning — skipping {} in shared-unit scan: {e}",
-                    entry.label()
-                );
-                continue;
-            }
-        };
-        let Some(provider) = manifest.provider.as_ref() else {
-            continue;
-        };
-        for service in &provider.services {
-            let unit = provider_unit_name(&manifest, &service.name);
-            if !names.contains(&unit) || out.contains_key(&unit) {
-                continue;
-            }
-            match provider_service_spec(&entry, &manifest, service) {
-                Ok(spec) => {
-                    out.insert(unit, Some((spec, entry.label())));
-                }
-                Err(e) => {
-                    eprintln!(
-                        "tamias: warning — {} service '{}': bad exec for shared unit {unit}: {e}",
-                        entry.label(),
-                        service.name
-                    );
-                    out.insert(unit, None);
-                }
-            }
-        }
-    }
-    out
 }
 
 /// `service …` — the per-user unit (systemd) mechanism.
@@ -1658,79 +1443,43 @@ fn drivers_list(json: bool) -> Result<(), Error> {
     Ok(())
 }
 
-/// Best-effort `systemctl --user is-enabled <unit>` — bounded at 3s;
-/// `None` when systemd can't answer (no user bus, timeout). `is-enabled`
-/// exits non-zero for `disabled`/`masked`/`not-found`, so the state is
-/// read from stdout (stderr as fallback), not the exit status.
-fn unit_state(unit: &str) -> Option<String> {
-    let mut cmd = std::process::Command::new("systemctl");
-    cmd.args(["--user", "is-enabled", unit]);
-    let out = tamias_core::output_with_timeout(&mut cmd, Duration::from_secs(3)).ok()?;
-    let state = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if state.is_empty() {
-        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        return (!err.is_empty()).then_some(err);
-    }
-    Some(state)
-}
-
-/// The provider display/identity base — `provider.name`, else the
-/// scope-qualified package name (shared by [`provider_unit_name`] and
-/// `provider list`).
-fn provider_base(manifest: &Manifest) -> String {
-    manifest
-        .provider
-        .as_ref()
-        .and_then(|p| p.name.clone())
-        .unwrap_or_else(|| match &manifest.scope {
-            Some(scope) => format!("{scope}-{}", manifest.name),
-            None => manifest.name.clone(),
-        })
-}
-
 /// `provider list` — installed packages' `provider:` blocks. Default:
 /// only packages that declare one; `--all` adds the rest as
-/// provider-less rows.
+/// provider-less rows. The data comes from `tamias-provider` — the
+/// same source `tamias ui`'s Services pane reads.
 fn provider_list(env: &Env, all: bool, json: bool) -> Result<(), Error> {
+    let packages = tamias_provider::list(&env.store_root)?;
     let mut rows = Vec::new();
     let mut texts = Vec::new();
-    for entry in Store::new(&env.store_root).entries()? {
-        let manifest = entry.manifest().ok();
-        let Some(manifest) = manifest.filter(|m| m.provider.is_some()) else {
+    for package in packages {
+        let Some(view) = package.provider else {
             if all {
                 rows.push(serde_json::json!({
-                    "package": entry.label(),
+                    "package": package.label,
                     "provider": null,
                 }));
-                texts.push(format!("{}  (no provider block)", entry.label()));
+                texts.push(format!("{}  (no provider block)", package.label));
             }
             continue;
         };
-        // `filter` above guarantees `provider` is `Some` here.
-        let Some(provider) = manifest.provider.as_ref() else {
-            continue;
-        };
-        let base = provider_base(&manifest);
         let mut service_rows = Vec::new();
         let mut service_lines = Vec::new();
-        for service in &provider.services {
-            let unit = provider_unit_name(&manifest, &service.name);
-            let state = unit_state(&unit);
+        for service in &view.services {
             service_rows.push(serde_json::json!({
-                "name": service.name,
-                "unit": format!("{unit}.service"),
+                "name": service.service,
+                "unit": format!("{}.service", service.unit),
                 "exec": service.exec,
-                "state": state,
+                "state": service.state,
             }));
             service_lines.push(format!(
                 "  service {} → {}.service ({})\n    exec: {}",
-                service.name,
-                unit,
-                state.as_deref().unwrap_or("-"),
+                service.service,
+                service.unit,
+                service.state.as_deref().unwrap_or("-"),
                 service.exec
             ));
         }
-        let ingress: Vec<serde_json::Value> = provider
+        let ingress: Vec<serde_json::Value> = view
             .ingress
             .iter()
             .map(|i| {
@@ -1741,22 +1490,21 @@ fn provider_list(env: &Env, all: bool, json: bool) -> Result<(), Error> {
                 })
             })
             .collect();
-        let health = provider.health.as_ref().map(|h| h.cmd.clone());
         rows.push(serde_json::json!({
-            "package": entry.label(),
-            "provider": base,
+            "package": package.label,
+            "provider": view.base,
             "services": service_rows,
             "ingress": ingress,
-            "verbs": provider.verbs,
-            "health": health,
-            "dir": entry.dir.display().to_string(),
+            "verbs": view.verbs,
+            "health": view.health,
+            "dir": package.dir.display().to_string(),
         }));
-        let mut block = format!("{} — provider {}", entry.label(), base);
+        let mut block = format!("{} — provider {}", package.label, view.base);
         for line in service_lines {
             block.push('\n');
             block.push_str(&line);
         }
-        for i in &provider.ingress {
+        for i in &view.ingress {
             let mut line = format!("  ingress {}", i.public_url);
             if let Some(listen) = &i.listen {
                 line.push_str(&format!(" (listen {listen}"));
@@ -1770,10 +1518,10 @@ fn provider_list(env: &Env, all: bool, json: bool) -> Result<(), Error> {
             block.push('\n');
             block.push_str(&line);
         }
-        if !provider.verbs.is_empty() {
-            block.push_str(&format!("\n  verbs: {}", provider.verbs.join(", ")));
+        if !view.verbs.is_empty() {
+            block.push_str(&format!("\n  verbs: {}", view.verbs.join(", ")));
         }
-        if let Some(cmd) = &health {
+        if let Some(cmd) = &view.health {
             block.push_str(&format!("\n  health: {cmd}"));
         }
         texts.push(block);
@@ -1794,115 +1542,21 @@ fn provider_list(env: &Env, all: bool, json: bool) -> Result<(), Error> {
 /// (`env_file` parsed as `K=V` lines, inline `env` overriding — the same
 /// order systemd applies), `workdir` (`~` expanded) or the payload dir
 /// as cwd, and a scrubbed child environment (parent credentials never
-/// leak). This is the no-systemd counterpart of the rendered unit —
-/// `provider.health.cmd` and richer verbs are T8-5's job.
+/// leak). The spec resolution lives in `tamias-provider` — shared with
+/// `tamias ui`'s streamed `run`.
 fn run_provider_service(
     env: &Env,
     name: &str,
     service: Option<&str>,
     extra: &[String],
 ) -> Result<(), Error> {
-    let entry = Store::new(&env.store_root).find(name)?;
-    let manifest = provider_of(&entry)?.ok_or_else(|| {
-        Error::Failed(format!(
-            "{}: no provider: block — `tamias run` needs provider.services",
-            entry.label()
-        ))
-    })?;
-    let provider = manifest
-        .provider
-        .as_ref()
-        .ok_or_else(|| Error::Failed(format!("{}: no provider: block", entry.label())))?;
-    let names = || {
-        provider
-            .services
-            .iter()
-            .map(|s| s.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    let svc = match service {
-        Some(s) => provider
-            .services
-            .iter()
-            .find(|x| x.name == s)
-            .ok_or_else(|| {
-                Error::Failed(format!(
-                    "{}: no provider service '{s}' (have: {})",
-                    entry.label(),
-                    names()
-                ))
-            })?,
-        None => match provider.services.as_slice() {
-            [] => {
-                return Err(Error::Failed(format!(
-                    "{}: provider declares no services",
-                    entry.label()
-                )));
-            }
-            [one] => one,
-            many => {
-                return Err(Error::Failed(format!(
-                    "{}: provider declares {} services — pass one: {}",
-                    entry.label(),
-                    many.len(),
-                    names()
-                )));
-            }
-        },
-    };
-    let mut argv = tamias_deploy_local::split_exec(&svc.exec)?;
-    argv.extend(extra.iter().cloned());
-    // env_file first, inline env overrides — systemd's order.
-    let mut vars: Vec<(String, String)> = Vec::new();
-    if let Some(env_file) = &svc.env_file {
-        let path = PathBuf::from(tamias_deploy_local::expand_home(env_file));
-        // The unit renders `EnvironmentFile=-` (optional) — a missing
-        // file is not an error here either.
-        if path.is_file() {
-            let text = std::fs::read_to_string(&path)
-                .map_err(Error::io(format!("read {}", path.display())))?;
-            for line in text.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                match line.split_once('=') {
-                    Some((k, v)) => vars.push((k.trim().to_string(), unquote_env(v.trim()))),
-                    None => eprintln!(
-                        "tamias: warning — ignoring malformed env_file line in {}",
-                        path.display()
-                    ),
-                }
-            }
-        }
-    }
-    vars.extend(svc.env.iter().map(|(k, v)| (k.clone(), v.clone())));
-    let workdir = svc
-        .workdir
-        .as_deref()
-        .map(tamias_deploy_local::expand_home)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| entry.dir.clone());
-    let status = tamias_shell::exec_with_env(&workdir, &argv, &vars)
+    let spec = tamias_provider::exec_spec(&env.store_root, name, service, extra)?;
+    let status = tamias_shell::exec_with_env(&spec.workdir, &spec.argv, &spec.env)
         .map_err(Error::io("exec provider service"))?;
     if !status.success() {
-        return Err(Error::Failed(format!("{} exited {status}", svc.name)));
+        return Err(Error::Failed(format!("{} exited {status}", spec.service)));
     }
     Ok(())
-}
-
-/// Strip one layer of matching surrounding quotes from an env_file
-/// value — systemd unquotes `KEY="a b"`/`KEY='a b'` the same way.
-fn unquote_env(value: &str) -> String {
-    let bytes = value.as_bytes();
-    if bytes.len() >= 2
-        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
-            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
-    {
-        return value[1..value.len() - 1].to_string();
-    }
-    value.to_string()
 }
 
 /// `logs <pkg|unit>` — journalctl over a provider package's units, or a
@@ -1911,28 +1565,17 @@ fn logs(env: &Env, name: &str, lines: u32, follow: bool) -> Result<(), Error> {
     let deploy = tamias_deploy_local::LocalDeploy::new();
     match Store::new(&env.store_root).find(name) {
         Ok(entry) => {
-            let Some(manifest) = provider_of(&entry)? else {
-                return Err(Error::Failed(format!(
-                    "{}: no provider: block — `tamias logs` needs provider.services (or pass a unit name)",
-                    entry.label()
-                )));
-            };
-            let units: Vec<String> = manifest
-                .provider
-                .as_ref()
-                .map(|p| {
-                    p.services
-                        .iter()
-                        .map(|s| provider_unit_name(&manifest, &s.name))
-                        .collect()
-                })
-                .unwrap_or_default();
-            if units.is_empty() {
-                return Err(Error::Failed(format!(
-                    "{}: provider declares no services",
-                    entry.label()
-                )));
-            }
+            let units = tamias_provider::units_of(&entry).map_err(|e| {
+                // Keep the CLI's fuller hint for the no-provider case.
+                if e.to_string().contains("no provider: block") {
+                    Error::Failed(format!(
+                        "{}: no provider: block — `tamias logs` needs provider.services (or pass a unit name)",
+                        entry.label()
+                    ))
+                } else {
+                    e
+                }
+            })?;
             deploy.logs_with(&units, lines, follow)
         }
         // Not a store entry → treat the name as a unit base name.
@@ -3663,11 +3306,11 @@ mod tests {
 
     #[test]
     fn unquote_env_strips_matching_quotes() {
-        assert_eq!(unquote_env("\"a b\""), "a b");
-        assert_eq!(unquote_env("'a b'"), "a b");
-        assert_eq!(unquote_env("plain"), "plain");
-        assert_eq!(unquote_env("\"unclosed"), "\"unclosed");
-        assert_eq!(unquote_env("\"\""), "");
+        assert_eq!(tamias_provider::unquote_env("\"a b\""), "a b");
+        assert_eq!(tamias_provider::unquote_env("'a b'"), "a b");
+        assert_eq!(tamias_provider::unquote_env("plain"), "plain");
+        assert_eq!(tamias_provider::unquote_env("\"unclosed"), "\"unclosed");
+        assert_eq!(tamias_provider::unquote_env("\"\""), "");
     }
 
     #[cfg(unix)]

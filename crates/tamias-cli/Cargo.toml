@@ -32,6 +32,7 @@ tamias-deploy.workspace = true
 tamias-deploy-cf.workspace = true
 tamias-deploy-local.workspace = true
 tamias-publish.workspace = true
+tamias-provider.workspace = true
 tamias-config.workspace = true
 tamias-config-yml.workspace = true
 tamias-config-toml.workspace = true

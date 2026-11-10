@@ -2584,6 +2584,7 @@ dependencies = [
  "tamias-deploy-local",
  "tamias-driver",
  "tamias-install",
+ "tamias-provider",
  "tamias-publish",
  "tamias-registry",
  "tamias-registry-local",
@@ -2715,6 +2716,17 @@ dependencies = [
  "tamias-store-local",
  "tempfile",
  "tracing",
+]
+
+[[package]]
+name = "tamias-provider"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+ "tamias-deploy-local",
+ "tamias-driver",
+ "tamias-store-local",
+ "tempfile",
 ]
 
 [[package]]
@@ -2904,10 +2916,14 @@ dependencies = [
  "tamias-cache-local",
  "tamias-config",
  "tamias-core",
+ "tamias-deploy-local",
  "tamias-driver",
  "tamias-install",
+ "tamias-provider",
+ "tamias-publish",
  "tamias-registry",
  "tamias-registry-open",
+ "tamias-shell",
  "tamias-store-local",
  "tempfile",
 ]

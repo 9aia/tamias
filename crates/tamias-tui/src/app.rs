@@ -19,12 +19,15 @@
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::process::Child;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use tamias_core::{Manifest, StoreEntry};
+use tamias_provider::ServiceRow;
 use tamias_registry::RegistryEntry;
 use tamias_store_local::Store;
 
@@ -59,7 +62,7 @@ pub struct Row {
 }
 
 /// Which pane the tab bar shows. `ALL` fixes the `1`-`5` jump order
-/// and tab labels; Services/Manifest/Author are still placeholders.
+/// and tab labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
     /// Store entries — name/type/source/resolved/digest/size.
@@ -94,17 +97,6 @@ impl Pane {
         Pane::Manifest,
         Pane::Author,
     ];
-
-    /// One-line placeholder for the not-yet-built panes.
-    pub fn placeholder(self) -> &'static str {
-        match self {
-            Pane::Installed => "",
-            Pane::Registry => "",
-            Pane::Services => "provider lifecycle lands in phase 4 — `tamias provider list` works today",
-            Pane::Manifest => "the tamias.yaml deps form lands in phase 5 — `tamias add` works today",
-            Pane::Author => "bundle pack / publish land in phase 6 — `tamias bundle pack` / `tamias publish` work today",
-        }
-    }
 }
 
 /// What a `:` prompt is collecting — `Enter` turns the buffer into a
@@ -120,6 +112,24 @@ pub enum PromptKind {
     InstallRef,
     /// `:registry <name>` — the search/install target override.
     RegistryTarget,
+    /// Manifest pane `a` — a dep ref to install + record (`tamias
+    /// add` equivalent).
+    AddDep,
+    /// Manifest pane `e` — a new ref replacing dep `old`.
+    SetDep {
+        /// The dep ref being replaced.
+        old: String,
+    },
+    /// Services pane `d` — optional driver `--config` path for
+    /// `deploy <name>` (empty = none).
+    DeployConfig {
+        /// Store label being deployed.
+        name: String,
+    },
+    /// Author pane `p` — `bundle pack` spec: `dir [out.tgz]`.
+    PackSpec,
+    /// Author pane `P` — `publish` spec: `dir [registry]`.
+    PublishSpec,
 }
 
 /// UI mode — the active pane handles keys differently per mode.
@@ -171,6 +181,9 @@ pub enum Msg {
     /// The install was refused for bundled-driver consent — the UI
     /// shows the modal; `y` re-runs `job` with consent.
     Consent(Job, String),
+    /// A stream job (`run`/`logs`) spawned its child — the handle
+    /// `x` kills. Readers keep pumping lines after this arrives.
+    StreamChild(Arc<Mutex<Child>>),
     /// The job finished — summary text or typed search results.
     Done(Result<Outcome, String>),
 }
@@ -215,6 +228,39 @@ enum Cmd {
     Clean(bool),
     /// `:doctor`.
     Doctor,
+    /// `:services` — refresh the Services pane's unit states.
+    Services,
+    /// `:service <verb> <unit>` — start/stop/restart/enable/disable.
+    Service {
+        /// The systemctl verb.
+        action: String,
+        /// Unit base name.
+        unit: String,
+    },
+    /// `:run <pkg> [service]` — foreground provider-service exec.
+    Run {
+        /// Store label.
+        package: String,
+        /// Provider service name (`None` → sole-service pick).
+        service: Option<String>,
+    },
+    /// `:logs <pkg|unit> [-f]` — journal tail/follow.
+    Logs {
+        /// Store label or unit base name.
+        name: String,
+        /// Follow mode.
+        follow: bool,
+    },
+    /// `:deploy <name>` — provider deploy (driver + units).
+    Deploy(String),
+    /// `:pack <dir> [out]` — `bundle pack`.
+    Pack(String),
+    /// `:publish <dir> [registry]` — publish flow (confirm modal).
+    Publish(String),
+    /// `:registries` — configured registry names into the log.
+    Registries,
+    /// `:manifest` — (re)load the project manifest.
+    Manifest,
 }
 
 /// Parse a `:` command line (the leading `:` already stripped).
@@ -269,8 +315,103 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
         })),
         "clean" | "cache" => Ok(Cmd::Clean(rest == "all" || rest == "--all")),
         "doctor" | "d" => Ok(Cmd::Doctor),
+        "services" => Ok(Cmd::Services),
+        "service" => {
+            // `:service <verb> <unit>` — verb then unit base name.
+            let mut it = rest.splitn(2, char::is_whitespace);
+            let action = it.next().unwrap_or("");
+            let unit = it.next().unwrap_or("").trim();
+            if !matches!(action, "start" | "stop" | "restart" | "enable" | "disable")
+                || unit.is_empty()
+            {
+                Err("usage: :service <start|stop|restart|enable|disable> <unit>".into())
+            } else {
+                Ok(Cmd::Service {
+                    action: action.to_string(),
+                    unit: unit.to_string(),
+                })
+            }
+        }
+        "run" => {
+            // `:run <pkg> [service]` — two tokens max; the service
+            // name can't contain spaces.
+            let mut it = rest.split_whitespace();
+            let package = it.next().unwrap_or("");
+            let service = it.next();
+            if package.is_empty() || it.next().is_some() {
+                Err("usage: :run <pkg> [service]".into())
+            } else {
+                Ok(Cmd::Run {
+                    package: package.to_string(),
+                    service: service.map(str::to_string),
+                })
+            }
+        }
+        "logs" => {
+            // `:logs <name> [-f]` — trailing -f/--follow flips follow.
+            let mut it = rest.split_whitespace();
+            let name = it.next().unwrap_or("");
+            let follow = it.any(|t| t == "-f" || t == "--follow" || t == "-F");
+            if name.is_empty() {
+                Err("usage: :logs <pkg|unit> [-f]".into())
+            } else {
+                Ok(Cmd::Logs {
+                    name: name.to_string(),
+                    follow,
+                })
+            }
+        }
+        "deploy" => {
+            if rest.is_empty() {
+                Err("usage: :deploy <name>".into())
+            } else {
+                Ok(Cmd::Deploy(rest))
+            }
+        }
+        "pack" => {
+            if rest.is_empty() {
+                Err("usage: :pack <dir> [out]".into())
+            } else {
+                Ok(Cmd::Pack(rest))
+            }
+        }
+        "publish" => {
+            if rest.is_empty() {
+                Err("usage: :publish <dir> [registry]".into())
+            } else {
+                Ok(Cmd::Publish(rest))
+            }
+        }
+        "registries" | "registry-list" => Ok(Cmd::Registries),
+        "manifest" => Ok(Cmd::Manifest),
         other => Err(format!("unknown command ':{other}'")),
     }
+}
+
+/// Display word for a [`tamias_provider::UnitAction`] — confirm-modal
+/// titles and `:service` feedback.
+fn unit_action_word(action: tamias_provider::UnitAction) -> &'static str {
+    match action {
+        tamias_provider::UnitAction::Start => "start",
+        tamias_provider::UnitAction::Stop => "stop",
+        tamias_provider::UnitAction::Restart => "restart",
+        tamias_provider::UnitAction::Enable => "enable",
+        tamias_provider::UnitAction::Disable => "disable",
+    }
+}
+
+/// `:service <verb>` word → action (`parse_command` already
+/// whitelists, this is the typed bridge).
+fn unit_action_from_word(word: &str) -> Option<tamias_provider::UnitAction> {
+    use tamias_provider::UnitAction as A;
+    Some(match word {
+        "start" => A::Start,
+        "stop" => A::Stop,
+        "restart" => A::Restart,
+        "enable" => A::Enable,
+        "disable" => A::Disable,
+        _ => return None,
+    })
 }
 
 /// The whole TUI state.
@@ -365,6 +506,37 @@ pub struct Model {
     /// The query the in-flight search was spawned with — results
     /// arriving after the query moved on are dropped as stale.
     search_inflight: Option<String>,
+
+    // --- services pane (phase 4) ---
+    /// Provider service rows (package/service/unit/state/exec) —
+    /// refreshed by [`Job::ServicesRefresh`].
+    pub svc_rows: Vec<ServiceRow>,
+    /// Cursor into `svc_rows`.
+    pub svc_sel: usize,
+    /// Services rows are stale — pane entry, unit mutations, and
+    /// `:services` set it; `tick` turns it into a refresh job.
+    pub svc_stale: bool,
+    /// Last services-refresh failure.
+    pub svc_err: Option<String>,
+    /// The running stream's killable child (`run`/`logs -f`) — `x`
+    /// kills it; quitting the app kills it too.
+    pub stream_child: Option<Arc<Mutex<Child>>>,
+
+    // --- manifest pane (phase 5) ---
+    /// The project manifest path the deps form edits.
+    pub manifest_path: PathBuf,
+    /// The parsed project manifest (`deps:` editable; the rest is
+    /// rendered read-only).
+    pub project: Option<Manifest>,
+    /// Why the manifest is absent/unloadable.
+    pub man_err: Option<String>,
+    /// Cursor into `project.deps`.
+    pub man_sel: usize,
+
+    // --- author pane (phase 6) ---
+    /// Configured registry names for the publish picker — loaded on
+    /// pane entry (`ops::registry_names`).
+    pub author_regs: Vec<(String, String)>,
 }
 
 impl Model {
@@ -409,6 +581,16 @@ impl Model {
             reg_err: None,
             search_typed_at: None,
             search_inflight: None,
+            svc_rows: Vec::new(),
+            svc_sel: 0,
+            svc_stale: true,
+            svc_err: None,
+            stream_child: None,
+            manifest_path: PathBuf::from("tamias.yaml"),
+            project: None,
+            man_err: None,
+            man_sel: 0,
+            author_regs: Vec::new(),
         };
         m.reload();
         Ok(m)
@@ -437,6 +619,40 @@ impl Model {
         }
         self.rebuild_sel(keep.as_deref(), at);
         self.arm_watch();
+        self.load_manifest();
+    }
+
+    /// (Re)read the project manifest for the Manifest pane — a tiny
+    /// file read, cheap enough for the event loop (same posture as the
+    /// detail view's `entry.manifest()`). Runs on every reload so
+    /// dep edits — ours or another `tamias add`'s — show up without a
+    /// keypress; `:manifest` forces one.
+    pub fn load_manifest(&mut self) {
+        match ops::project_manifest() {
+            Ok((path, manifest)) => {
+                self.manifest_path = path;
+                self.man_err = None;
+                let n = manifest.deps.len();
+                self.project = Some(manifest);
+                self.man_sel = self.man_sel.min(n.saturating_sub(1));
+            }
+            Err(e) => {
+                self.man_err = Some(e.to_string());
+                self.project = None;
+            }
+        }
+    }
+
+    /// Kill the running stream child (`run`/`logs -f`) — `x` and app
+    /// shutdown both land here. The worker's `try_wait` loop observes
+    /// the exit and reports `Done`.
+    pub fn kill_stream(&mut self) {
+        if let Some(child) = self.stream_child.take() {
+            if let Ok(mut c) = child.lock() {
+                let _ = c.kill();
+            }
+            self.push_log("killed stream".to_string());
+        }
     }
 
     /// Event-loop heartbeat — expire the status toast, drain watcher
@@ -449,6 +665,13 @@ impl Model {
             self.status.clear();
         }
         self.drain_work();
+        // A stale Services table becomes a refresh job — pane entry,
+        // unit mutations, and `:services` all set the flag; `busy`
+        // gates it so refreshes never queue behind ops.
+        if self.pane == Pane::Services && self.svc_stale && self.busy.is_none() {
+            self.svc_stale = false;
+            self.spawn(Job::ServicesRefresh);
+        }
         self.maybe_search();
         self.dirty |= self.drain_watch();
         let scan_due = self.tick_n.is_multiple_of(RESCAN_TICKS);
@@ -513,6 +736,15 @@ impl Model {
         let ctx = self.ctx.clone();
         let tx = self.work_tx.clone();
         let j = job.clone();
+        if j.is_stream() {
+            // Stream jobs own a child + reader threads; the handle
+            // comes back as Msg::StreamChild for `x` to kill.
+            std::thread::spawn(move || {
+                let result = ops::stream(&ctx, &j, &tx);
+                let _ = tx.send(Msg::Done(result.map_err(|e| e.to_string())));
+            });
+            return;
+        }
         std::thread::spawn(move || {
             // Phase lines stream to the log as they happen.
             let mut log = |line: String| {
@@ -543,8 +775,13 @@ impl Model {
                     self.busy = None;
                     self.modal = Some(Modal::Consent { job, reason });
                 }
+                Msg::StreamChild(child) => {
+                    self.stream_child = Some(child);
+                }
                 Msg::Done(Ok(Outcome::Text(text))) => {
                     self.busy = None;
+                    self.stream_child = None;
+                    self.svc_stale = true;
                     self.push_log(format!("ok — {text}"));
                     self.say(text);
                     self.reload();
@@ -567,8 +804,20 @@ impl Model {
                         self.push_log(format!("search {:?}: {n} result(s)", self.reg_query));
                     }
                 }
+                Msg::Done(Ok(Outcome::Services(rows))) => {
+                    self.busy = None;
+                    self.svc_err = None;
+                    self.svc_rows = rows;
+                    self.svc_sel = self.svc_sel.min(self.svc_rows.len().saturating_sub(1));
+                    self.push_log(format!("services: {} row(s)", self.svc_rows.len()));
+                }
                 Msg::Done(Err(e)) => {
                     self.busy = None;
+                    self.stream_child = None;
+                    self.svc_stale = true;
+                    if self.pane == Pane::Services {
+                        self.svc_err = Some(e.clone());
+                    }
                     self.push_log(format!("error — {e}"));
                     self.say_err(e);
                 }
@@ -667,6 +916,18 @@ impl Model {
         self.reg_results.get(self.reg_sel)
     }
 
+    /// The Services row under the cursor.
+    pub fn svc_selected(&self) -> Option<&ServiceRow> {
+        self.svc_rows.get(self.svc_sel)
+    }
+
+    /// The dep ref under the Manifest cursor.
+    pub fn dep_selected(&self) -> Option<String> {
+        self.project
+            .as_ref()
+            .and_then(|m| m.deps.get(self.man_sel).cloned())
+    }
+
     /// Keep the cursor on `keep`'s label when it survives the reload,
     /// else clamp `at` into the filtered range.
     fn rebuild_sel(&mut self, keep: Option<&str>, at: usize) {
@@ -687,27 +948,57 @@ impl Model {
     /// Pane-aware move — Registry walks `reg_results`, everything
     /// else walks the filtered installed rows.
     fn move_sel(&mut self, delta: isize) {
-        if self.pane == Pane::Registry {
-            let len = self.reg_results.len();
-            if len == 0 {
-                self.reg_sel = 0;
-                return;
+        match self.pane {
+            Pane::Registry => {
+                let len = self.reg_results.len();
+                if len == 0 {
+                    self.reg_sel = 0;
+                    return;
+                }
+                self.reg_sel = (self.reg_sel as isize + delta).clamp(0, len as isize - 1) as usize;
             }
-            self.reg_sel = (self.reg_sel as isize + delta).clamp(0, len as isize - 1) as usize;
-            return;
+            Pane::Services => {
+                let len = self.svc_rows.len();
+                if len == 0 {
+                    self.svc_sel = 0;
+                    return;
+                }
+                self.svc_sel = (self.svc_sel as isize + delta).clamp(0, len as isize - 1) as usize;
+            }
+            Pane::Manifest => {
+                let len = self.project.as_ref().map_or(0, |m| m.deps.len());
+                if len == 0 {
+                    self.man_sel = 0;
+                    return;
+                }
+                self.man_sel = (self.man_sel as isize + delta).clamp(0, len as isize - 1) as usize;
+            }
+            _ => {
+                let len = self.visible().len();
+                if len == 0 {
+                    self.sel = 0;
+                    return;
+                }
+                self.sel = (self.sel as isize + delta).clamp(0, len as isize - 1) as usize;
+            }
         }
-        let len = self.visible().len();
-        if len == 0 {
-            self.sel = 0;
-            return;
-        }
-        self.sel = (self.sel as isize + delta).clamp(0, len as isize - 1) as usize;
     }
 
     fn switch_pane(&mut self, pane: Pane) {
         self.pane = pane;
         self.detail = None;
         self.sel_label = self.selected().map(|r| r.entry.label());
+        match pane {
+            // Services entry marks the table stale — `tick` fires the
+            // refresh once the worker frees up.
+            Pane::Services => self.svc_stale = true,
+            // Manifest entry re-reads the project manifest — a tiny
+            // file read, same posture as the detail view.
+            Pane::Manifest => self.load_manifest(),
+            // Author entry refreshes the configured-registry list.
+            Pane::Author => self.author_regs = ops::registry_names(&self.ctx),
+            _ => {}
+        }
         // Leaving the registry pane mid-search keeps the query —
         // results stay; re-entering resumes where it left off.
     }
@@ -860,6 +1151,67 @@ impl Model {
                     self.fire_search();
                 }
             }
+            PromptKind::AddDep => {
+                if text.is_empty() {
+                    self.say_err("add dep: empty ref");
+                } else {
+                    self.spawn(Job::AddDep {
+                        reference: text,
+                        allow_drivers: false,
+                    });
+                }
+            }
+            PromptKind::SetDep { old } => {
+                if text.is_empty() {
+                    self.say_err("set dep: empty ref");
+                } else {
+                    self.confirm_job(
+                        &format!("set dep {old} → {text}"),
+                        Job::SetDep {
+                            old,
+                            new: text,
+                            allow_drivers: false,
+                        },
+                    );
+                }
+            }
+            PromptKind::DeployConfig { name } => {
+                // Empty answer = no driver config, same as `:deploy`.
+                let config = if text.is_empty() { None } else { Some(text) };
+                self.confirm_job(
+                    &format!("deploy {name}"),
+                    Job::ProviderDeploy { name, config },
+                );
+            }
+            PromptKind::PackSpec => {
+                let mut it = text.split_whitespace();
+                let dir = it.next().unwrap_or("");
+                let out = it.next();
+                if dir.is_empty() {
+                    self.say_err("pack: empty spec — usage: dir [out.tgz]");
+                } else {
+                    self.spawn(Job::Pack {
+                        dir: dir.to_string(),
+                        out: out.map(str::to_string),
+                    });
+                }
+            }
+            PromptKind::PublishSpec => {
+                let mut it = text.split_whitespace();
+                let dir = it.next().unwrap_or("");
+                let registry = it.next();
+                if dir.is_empty() {
+                    self.say_err("publish: empty spec — usage: dir [registry]");
+                } else {
+                    self.confirm_job(
+                        &format!("publish {dir}"),
+                        Job::Publish {
+                            dir: dir.to_string(),
+                            registry: registry.map(str::to_string),
+                        },
+                    );
+                }
+            }
         }
     }
 
@@ -962,6 +1314,122 @@ impl Model {
         }
     }
 
+    // --- Services pane verbs ---
+
+    /// `s`/`S`/`r`/`e`/`E`/`d`/`x`/`t`/`T`/`n`/`R` on the selected
+    /// service row — start/stop/restart/enable/disable, deploy,
+    /// uninstall, logs tail/follow, foreground `run`, refresh.
+    fn svc_verb(&mut self, key: char) {
+        let Some(row) = self.svc_selected().cloned() else {
+            self.say_err("no service selected");
+            return;
+        };
+        use tamias_provider::UnitAction as A;
+        let action = match key {
+            's' => Some(A::Start),
+            'S' => Some(A::Stop),
+            'r' => Some(A::Restart),
+            'e' => Some(A::Enable),
+            'E' => Some(A::Disable),
+            _ => None,
+        };
+        if let Some(action) = action {
+            self.confirm_job(
+                unit_action_word(action),
+                Job::UnitAction {
+                    unit: row.unit.clone(),
+                    action,
+                },
+            );
+            return;
+        }
+        match key {
+            'd' => {
+                self.prompt_buf.clear();
+                self.mode = Mode::Prompt(PromptKind::DeployConfig {
+                    name: row.package.clone(),
+                });
+            }
+            'x' => {
+                self.confirm_job(
+                    &format!("uninstall {}", row.package),
+                    Job::ProviderUninstall {
+                        name: row.package.clone(),
+                    },
+                );
+            }
+            't' => self.spawn(Job::Logs {
+                name: row.package.clone(),
+                follow: false,
+            }),
+            'T' => self.spawn(Job::Logs {
+                name: row.package.clone(),
+                follow: true,
+            }),
+            // Foreground run — streams the service's stdout/stderr
+            // into the log; `x` kills the child.
+            'n' => self.spawn(Job::RunService {
+                package: row.package.clone(),
+                service: Some(row.service.clone()),
+            }),
+            'R' => {
+                self.svc_stale = true;
+                self.say("services refresh queued");
+            }
+            _ => {}
+        }
+    }
+
+    // --- Manifest pane verbs ---
+
+    /// `a`/`x`/`d`/`e` on the selected dep row — add/remove/set-ref.
+    fn man_verb(&mut self, key: char) {
+        match key {
+            'a' => {
+                self.prompt_buf.clear();
+                self.mode = Mode::Prompt(PromptKind::AddDep);
+            }
+            // `d`/`x` both drop the dep (the proposal's two remove
+            // keys); `a` adds, `e` edits the ref.
+            'x' | 'd' => match self.dep_selected() {
+                Some(dep) => {
+                    self.confirm_job("remove dep", Job::RemoveDep { reference: dep });
+                }
+                None => self.say_err("no dep selected"),
+            },
+            'e' => match self.dep_selected() {
+                Some(old) => {
+                    self.prompt_buf.clear();
+                    self.mode = Mode::Prompt(PromptKind::SetDep { old });
+                }
+                None => self.say_err("no dep selected"),
+            },
+            'R' => self.load_manifest(),
+            _ => {}
+        }
+    }
+
+    // --- Author pane verbs ---
+
+    /// `p`/`P`/`r`/`R` on the Author pane — pack/publish/registries.
+    fn author_verb(&mut self, key: char) {
+        match key {
+            'p' => {
+                self.prompt_buf.clear();
+                self.mode = Mode::Prompt(PromptKind::PackSpec);
+            }
+            'P' => {
+                self.prompt_buf.clear();
+                self.mode = Mode::Prompt(PromptKind::PublishSpec);
+            }
+            'r' => self.spawn(Job::Registries),
+            'R' => {
+                self.author_regs = ops::registry_names(&self.ctx);
+            }
+            _ => {}
+        }
+    }
+
     // --- `:` commands ---
 
     /// `:` command line — parse + execute. `q` is handled by the
@@ -1035,6 +1503,57 @@ impl Model {
             },
             Ok(Cmd::Clean(all)) => self.verb_cache_clean(all),
             Ok(Cmd::Doctor) => self.verb_doctor(),
+            Ok(Cmd::Services) => {
+                self.svc_stale = true;
+                self.say("services refresh queued");
+            }
+            Ok(Cmd::Service { action, unit }) => {
+                let Some(action) = unit_action_from_word(&action) else {
+                    self.say_err(format!("unknown service verb '{action}'"));
+                    return;
+                };
+                self.confirm_job(unit_action_word(action), Job::UnitAction { unit, action });
+            }
+            Ok(Cmd::Run { package, service }) => self.spawn(Job::RunService { package, service }),
+            Ok(Cmd::Logs { name, follow }) => self.spawn(Job::Logs { name, follow }),
+            Ok(Cmd::Deploy(name)) => {
+                self.prompt_buf.clear();
+                self.mode = Mode::Prompt(PromptKind::DeployConfig { name });
+            }
+            Ok(Cmd::Pack(spec)) => {
+                let mut it = spec.split_whitespace();
+                let dir = it.next().unwrap_or("");
+                let out = it.next();
+                if dir.is_empty() {
+                    self.say_err("pack: empty spec — usage: dir [out.tgz]");
+                } else {
+                    self.spawn(Job::Pack {
+                        dir: dir.to_string(),
+                        out: out.map(str::to_string),
+                    });
+                }
+            }
+            Ok(Cmd::Publish(spec)) => {
+                let mut it = spec.split_whitespace();
+                let dir = it.next().unwrap_or("");
+                let registry = it.next();
+                if dir.is_empty() {
+                    self.say_err("publish: empty spec — usage: dir [registry]");
+                } else {
+                    self.confirm_job(
+                        &format!("publish {dir}"),
+                        Job::Publish {
+                            dir: dir.to_string(),
+                            registry: registry.map(str::to_string),
+                        },
+                    );
+                }
+            }
+            Ok(Cmd::Registries) => self.spawn(Job::Registries),
+            Ok(Cmd::Manifest) => {
+                self.load_manifest();
+                self.say("manifest reloaded");
+            }
             Err(e) if e.is_empty() => {}
             Err(e) => self.say_err(e),
         }
@@ -1190,10 +1709,12 @@ impl Model {
     }
 
     /// One key event → `true` when the app should quit. Ctrl-C is
-    /// the force-quit and works from every mode (even under a modal).
+    /// the force-quit and works from every mode (even under a modal);
+    /// quitting kills a running stream child first.
     pub fn key(&mut self, k: KeyEvent) -> bool {
         self.dismiss_error();
         if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL) {
+            self.kill_stream();
             return true;
         }
         if self.key_modal(k) {
@@ -1208,7 +1729,10 @@ impl Model {
             Mode::Normal => {}
         }
         match k.code {
-            KeyCode::Char('q') => return true,
+            KeyCode::Char('q') => {
+                self.kill_stream();
+                return true;
+            }
             KeyCode::Char('1') => self.switch_pane(Pane::Installed),
             KeyCode::Char('2') => self.switch_pane(Pane::Registry),
             KeyCode::Char('3') => self.switch_pane(Pane::Services),
@@ -1232,21 +1756,26 @@ impl Model {
                 self.move_sel(-1);
                 self.sync_sel_label();
             }
-            KeyCode::Char('g') => {
-                if self.pane == Pane::Registry {
-                    self.reg_sel = 0;
-                } else {
-                    self.sel = 0;
+            KeyCode::Char('g') => match self.pane {
+                Pane::Registry => self.reg_sel = 0,
+                Pane::Services => self.svc_sel = 0,
+                Pane::Manifest => self.man_sel = 0,
+                _ => self.sel = 0,
+            },
+            KeyCode::Char('G') => match self.pane {
+                Pane::Registry => self.reg_sel = self.reg_results.len().saturating_sub(1),
+                Pane::Services => self.svc_sel = self.svc_rows.len().saturating_sub(1),
+                Pane::Manifest => {
+                    self.man_sel = self
+                        .project
+                        .as_ref()
+                        .map_or(0, |m| m.deps.len().saturating_sub(1));
                 }
-            }
-            KeyCode::Char('G') => {
-                if self.pane == Pane::Registry {
-                    self.reg_sel = self.reg_results.len().saturating_sub(1);
-                } else {
+                _ => {
                     self.sel = self.visible().len().saturating_sub(1);
                     self.sync_sel_label();
                 }
-            }
+            },
             KeyCode::Char('/') => {
                 self.mode = if self.pane == Pane::Registry {
                     Mode::Search
@@ -1267,10 +1796,14 @@ impl Model {
                 self.filter.clear();
                 self.rebuild_sel(None, self.sel);
             }
-            KeyCode::Char('R') => {
+            KeyCode::Char('R') if matches!(self.pane, Pane::Installed | Pane::Registry) => {
                 self.reload();
                 self.say("reloaded");
             }
+            // `x` while a stream child runs kills it — takes
+            // precedence over the pane's own `x` (uninstall/remove
+            // dep) since a live child is the more urgent target.
+            KeyCode::Char('x') if self.stream_child.is_some() => self.kill_stream(),
             // --- verbs ---
             KeyCode::Char('v') if self.pane == Pane::Installed => self.verb_verify(),
             KeyCode::Char('u') if self.pane == Pane::Installed => self.verb_update(),
@@ -1286,6 +1819,19 @@ impl Model {
             KeyCode::Char('C') if self.pane == Pane::Installed => self.verb_cache_clean(true),
             KeyCode::Char('d') if self.pane == Pane::Installed => self.verb_doctor(),
             KeyCode::Char('i') => self.verb_install(),
+            // Services-pane verbs route through `svc_verb` — the keys
+            // don't collide with Installed's (pane-gated).
+            KeyCode::Char(
+                c @ ('s' | 'S' | 'r' | 'e' | 'E' | 'd' | 'x' | 't' | 'T' | 'n' | 'R'),
+            ) if self.pane == Pane::Services => self.svc_verb(c),
+            // Manifest pane: add/remove/edit dep + reload.
+            KeyCode::Char(c @ ('a' | 'x' | 'd' | 'e' | 'R')) if self.pane == Pane::Manifest => {
+                self.man_verb(c)
+            }
+            // Author pane: pack/publish/registries.
+            KeyCode::Char(c @ ('p' | 'P' | 'r' | 'R')) if self.pane == Pane::Author => {
+                self.author_verb(c)
+            }
             KeyCode::Char('?') => self.mode = Mode::Help,
             _ => {}
         }
@@ -1324,15 +1870,29 @@ impl Model {
                         return;
                     };
                     let idx = self.viewport_top + data_row;
-                    if self.pane == Pane::Registry {
-                        if idx < self.reg_results.len() {
-                            self.reg_sel = idx;
+                    match self.pane {
+                        Pane::Registry => {
+                            if idx < self.reg_results.len() {
+                                self.reg_sel = idx;
+                            }
                         }
-                    } else {
-                        let vis = self.visible();
-                        if idx < vis.len() {
-                            self.sel = idx;
-                            self.sync_sel_label();
+                        Pane::Services => {
+                            if idx < self.svc_rows.len() {
+                                self.svc_sel = idx;
+                            }
+                        }
+                        Pane::Manifest => {
+                            let n = self.project.as_ref().map_or(0, |m| m.deps.len());
+                            if idx < n {
+                                self.man_sel = idx;
+                            }
+                        }
+                        _ => {
+                            let vis = self.visible();
+                            if idx < vis.len() {
+                                self.sel = idx;
+                                self.sync_sel_label();
+                            }
                         }
                     }
                 }
@@ -1387,6 +1947,64 @@ mod tests {
         assert!(parse_command("bogus").is_err());
         assert!(parse_command("install").is_err());
         assert!(parse_command("").is_err());
+    }
+
+    #[test]
+    fn phase4_6_command_parsing() {
+        assert_eq!(parse_command("services").unwrap(), Cmd::Services);
+        assert_eq!(
+            parse_command("service restart my-unit").unwrap(),
+            Cmd::Service {
+                action: "restart".into(),
+                unit: "my-unit".into(),
+            }
+        );
+        assert!(parse_command("service bogus u").is_err());
+        assert!(parse_command("service start").is_err());
+        assert_eq!(
+            parse_command("run @s/w web").unwrap(),
+            Cmd::Run {
+                package: "@s/w".into(),
+                service: Some("web".into()),
+            }
+        );
+        assert_eq!(
+            parse_command("run @s/w").unwrap(),
+            Cmd::Run {
+                package: "@s/w".into(),
+                service: None,
+            }
+        );
+        assert_eq!(
+            parse_command("logs @s/w -f").unwrap(),
+            Cmd::Logs {
+                name: "@s/w".into(),
+                follow: true,
+            }
+        );
+        assert_eq!(
+            parse_command("logs my-unit").unwrap(),
+            Cmd::Logs {
+                name: "my-unit".into(),
+                follow: false,
+            }
+        );
+        assert_eq!(
+            parse_command("deploy @s/w").unwrap(),
+            Cmd::Deploy("@s/w".into())
+        );
+        assert_eq!(
+            parse_command("pack ./pkg out.tgz").unwrap(),
+            Cmd::Pack("./pkg out.tgz".into())
+        );
+        assert_eq!(
+            parse_command("publish ./pkg mine").unwrap(),
+            Cmd::Publish("./pkg mine".into())
+        );
+        assert_eq!(parse_command("registries").unwrap(), Cmd::Registries);
+        assert_eq!(parse_command("manifest").unwrap(), Cmd::Manifest);
+        assert!(parse_command("pack").is_err());
+        assert!(parse_command("publish").is_err());
     }
 
     #[test]

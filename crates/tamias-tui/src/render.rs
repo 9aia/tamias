@@ -145,17 +145,228 @@ fn draw_pane(f: &mut Frame, m: &mut Model, area: Rect) {
             }
         }
         Pane::Registry => draw_registry(f, m, area),
-        other => {
-            let text = format!(
-                "{}\n\n(the {} pane is a phase-1 placeholder)",
-                other.placeholder(),
-                other.label().to_lowercase()
+        Pane::Services => draw_services(f, m, area),
+        Pane::Manifest => draw_manifest(f, m, area),
+        Pane::Author => draw_author(f, m, area),
+    }
+}
+
+/// The Services pane — every installed provider service with its
+/// unit state. Rows come from [`Job::ServicesRefresh`]; the table
+/// marks stale while a refresh is queued/running via the busy bar.
+fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
+    if let Some(err) = &m.svc_err {
+        if m.svc_rows.is_empty() {
+            f.render_widget(
+                Paragraph::new(format!("services: {err}")).style(Style::default().fg(Color::Red)),
+                area,
             );
-            f.render_widget(Paragraph::new(text).style(Style::default().fg(MUTED)), area);
             m.board_area = Rect::default();
             m.viewport_top = 0;
+            return;
         }
     }
+    if m.svc_rows.is_empty() {
+        let hint = if m.busy.is_some() {
+            "loading services…"
+        } else {
+            "no provider services — install a package with a `provider:` block"
+        };
+        f.render_widget(Paragraph::new(hint).style(Style::default().fg(MUTED)), area);
+        m.board_area = Rect::default();
+        m.viewport_top = 0;
+        return;
+    }
+    let header = Row::new(vec!["PACKAGE", "SERVICE", "UNIT", "STATE", "EXEC"])
+        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    let rows: Vec<Row> = m
+        .svc_rows
+        .iter()
+        .map(|r| {
+            Row::new(vec![
+                r.package.clone(),
+                r.service.clone(),
+                r.unit.clone(),
+                r.state.clone().unwrap_or_else(|| "-".into()),
+                r.exec.clone(),
+            ])
+        })
+        .collect();
+    let widths = [
+        Constraint::Min(14),
+        Constraint::Length(12),
+        Constraint::Min(14),
+        Constraint::Length(10),
+        Constraint::Min(16),
+    ];
+    let title = if m.svc_stale || m.busy.is_some() {
+        " services — refreshing… "
+    } else {
+        " services "
+    };
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .row_highlight_style(Style::default().bg(Color::Indexed(238)));
+    let mut state = ratatui::widgets::TableState::default().with_selected(Some(m.svc_sel));
+    f.render_stateful_widget(table, area, &mut state);
+    note_table_area(m, area, state.offset());
+}
+
+/// The Manifest pane — the project manifest's `deps:` as editable
+/// rows; every other field renders read-only above the table. Writes
+/// go through `Manifest::save` + `tamias.lock` sync on the worker.
+fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
+    // Read-only header — path plus the manifest's scalar fields.
+    let mut info: Vec<Line> = Vec::new();
+    match (&m.project, &m.man_err) {
+        (Some(manifest), _) => {
+            info.push(Line::from(vec![
+                Span::styled("manifest: ", Style::default().fg(ACCENT)),
+                Span::raw(m.manifest_path.display().to_string()),
+            ]));
+            let mut scalars = Vec::new();
+            if !manifest.name.is_empty() {
+                scalars.push(format!("name {}", manifest.name));
+            }
+            if let Some(v) = &manifest.version {
+                scalars.push(format!("v{v}"));
+            }
+            if let Some(d) = &manifest.description {
+                scalars.push(d.clone());
+            }
+            if !scalars.is_empty() {
+                info.push(Line::from(Span::styled(
+                    scalars.join(" · "),
+                    Style::default().fg(MUTED),
+                )));
+            }
+            if !manifest.include.is_empty() {
+                info.push(Line::from(vec![
+                    Span::styled("include:  ", Style::default().fg(ACCENT)),
+                    Span::raw(manifest.include.join(", ")),
+                ]));
+            }
+            if manifest.provider.is_some() {
+                info.push(Line::from(vec![
+                    Span::styled("provider: ", Style::default().fg(ACCENT)),
+                    Span::raw("declared (read-only here)"),
+                ]));
+            }
+        }
+        (None, Some(err)) => {
+            info.push(Line::from(Span::styled(
+                format!("{err} — `:manifest` retries, `a` creates tamias.yaml on save"),
+                Style::default().fg(WARN),
+            )));
+        }
+        (None, None) => {
+            info.push(Line::from(Span::styled(
+                "no project manifest — `a` writes tamias.yaml + tamias.lock",
+                Style::default().fg(MUTED),
+            )));
+        }
+    }
+    // Deps table gets the rest of the frame; the info strip yields on
+    // short terminals.
+    let info_h = if area.height > 14 {
+        5.min(area.height / 3)
+    } else {
+        0
+    };
+    let (info_area, table_area) = if info_h > 0 {
+        let chunks = Layout::vertical([Constraint::Length(info_h), Constraint::Min(0)]).split(area);
+        (chunks[0], chunks[1])
+    } else {
+        (Rect::default(), area)
+    };
+    if info_h > 0 {
+        f.render_widget(Paragraph::new(info), info_area);
+    }
+    let deps: Vec<String> = m
+        .project
+        .as_ref()
+        .map(|p| p.deps.clone())
+        .unwrap_or_default();
+    if deps.is_empty() {
+        f.render_widget(
+            Paragraph::new("no deps — `a` add ref · rows edit via `e`/`x`")
+                .style(Style::default().fg(MUTED)),
+            table_area,
+        );
+        m.board_area = Rect::default();
+        m.viewport_top = 0;
+        return;
+    }
+    let header =
+        Row::new(vec!["#", "REF"]).style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    let rows: Vec<Row> = deps
+        .iter()
+        .enumerate()
+        .map(|(i, d)| Row::new(vec![(i + 1).to_string(), d.clone()]))
+        .collect();
+    let table = Table::new(rows, [Constraint::Length(4), Constraint::Min(30)])
+        .header(header)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" deps — {} ", m.manifest_path.display())),
+        )
+        .row_highlight_style(Style::default().bg(Color::Indexed(238)));
+    let mut state = ratatui::widgets::TableState::default().with_selected(Some(m.man_sel));
+    f.render_stateful_widget(table, table_area, &mut state);
+    note_table_area(m, table_area, state.offset());
+}
+
+/// The Author pane — configured registries plus the pack/publish
+/// entry points; results land in the op log like every other job.
+fn draw_author(f: &mut Frame, m: &mut Model, area: Rect) {
+    let mut lines: Vec<Line> = vec![Line::from(vec![
+        Span::styled(
+            "authoring",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" — bundle pack/publish"),
+    ])];
+    lines.push(Line::from(""));
+    if m.author_regs.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "no registries configured — publish routes to the default local root",
+            Style::default().fg(MUTED),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "registries:",
+            Style::default().fg(ACCENT),
+        )));
+        for (name, kind) in &m.author_regs {
+            let label = if kind.is_empty() {
+                name.clone()
+            } else {
+                format!("{name}  ({kind})")
+            };
+            lines.push(Line::from(Span::raw(format!("  {label}"))));
+        }
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "p  pack <dir> [out.tgz]      P  publish <dir> [registry]",
+        Style::default().fg(MUTED),
+    )));
+    lines.push(Line::from(Span::styled(
+        "r  :registries report        R  reload registry list",
+        Style::default().fg(MUTED),
+    )));
+    lines.push(Line::from(Span::styled(
+        "publish asks for confirmation; progress streams to the log",
+        Style::default().fg(MUTED),
+    )));
+    f.render_widget(
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" author ")),
+        area,
+    );
+    m.board_area = Rect::default();
+    m.viewport_top = 0;
 }
 
 /// Record where a bordered table's data rows landed — the border
@@ -467,7 +678,26 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                     )
                 }
             }
-            _ => format!("{} pane — placeholder", m.pane.label()),
+            Pane::Services => {
+                if m.svc_rows.is_empty() {
+                    "services — s/S start/stop · r restart · e/E enable/disable".to_string()
+                } else {
+                    format!(
+                        "{} service row(s){}",
+                        m.svc_rows.len(),
+                        if m.svc_stale || m.busy.is_some() {
+                            " · refreshing"
+                        } else {
+                            ""
+                        }
+                    )
+                }
+            }
+            Pane::Manifest => match &m.project {
+                Some(p) => format!("{} — {} dep(s)", m.manifest_path.display(), p.deps.len()),
+                None => format!("{} — no manifest", m.manifest_path.display()),
+            },
+            Pane::Author => "author — p pack · P publish · r registries".to_string(),
         }
     };
     let style = if m.status_err {
@@ -484,7 +714,15 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
             }
         }
         Pane::Registry => "j/k · i install · / query · : cmds · q quit",
-        _ => "Tab panes · / filter · : cmds · ? help · q quit",
+        Pane::Services => {
+            if m.stream_child.is_some() {
+                "streaming — x kill · q quit"
+            } else {
+                "j/k · s/S start/stop · r restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
+            }
+        }
+        Pane::Manifest => "j/k · a add dep · d/x remove · e edit ref · R reload · : cmds · q quit",
+        Pane::Author => "p pack · P publish · r registries · R reload · : cmds · q quit",
     };
     let spans = vec![
         Span::styled(left, style),
@@ -506,6 +744,11 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
                 PromptKind::Pin { .. } => "pin > ",
                 PromptKind::InstallRef => "install > ",
                 PromptKind::RegistryTarget => "registry > ",
+                PromptKind::AddDep => "dep+ > ",
+                PromptKind::SetDep { .. } => "dep→ > ",
+                PromptKind::DeployConfig { .. } => "deploy cfg > ",
+                PromptKind::PackSpec => "pack dir [out] > ",
+                PromptKind::PublishSpec => "publish dir [registry] > ",
             };
             (l, m.prompt_buf.as_str())
         }
@@ -581,9 +824,17 @@ registry pane:  / search-as-you-type (debounced) · i install result ·
 commands:  :q  :r/:reload  :help  :install <ref>  :remove <name>
            :verify <name>  :update [name]  :pin <name> <ref>
            :search <q>  :registry <name>  :clean [all]  :doctor
+           :services  :service <verb> <unit>  :run <pkg> [svc]
+           :logs <pkg|unit> [-f]  :deploy <name>  :manifest
+           :pack <dir> [out]  :publish <dir> [registry]  :registries
 mouse:     wheel scrolls · click row selects · click tab switches
 
-later phases: provider run/logs · manifest deps form · bundle pack/publish";
+services pane:  provider services + unit state · s/S start/stop ·
+                r restart · e/E enable/disable · d deploy · x uninstall
+                t/T journal tail/follow · n foreground run (x kills)
+manifest pane:  deps rows editable — a add · d/x remove · e new ref
+                (writes tamias.yaml + tamias.lock like `tamias add`)
+author pane:    p bundle pack · P publish (confirm) · r registries";
     let width = area.width.min(72) as usize;
     let h = text.lines().count() as u16 + 2;
     let w = (width as u16 + 2).min(area.width);
