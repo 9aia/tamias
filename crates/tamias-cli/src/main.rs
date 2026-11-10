@@ -1249,7 +1249,7 @@ fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
 
 /// `service …` — the per-user unit (systemd) mechanism.
 fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
-    use tamias_deploy_local::{LocalDeploy, ServiceSpec};
+    use tamias_deploy_systemd::{LocalDeploy, ServiceSpec};
     let deploy = LocalDeploy::new();
     match cmd {
         ServiceCommand::Install {
@@ -1276,7 +1276,7 @@ fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
             let spec = ServiceSpec {
                 name: unit.clone(),
                 description,
-                exec: tamias_deploy_local::split_exec(&exec)?,
+                exec: tamias_deploy_systemd::split_exec(&exec)?,
                 env,
                 env_file,
                 restart,
@@ -1595,7 +1595,7 @@ fn run_provider_service(
 /// `logs <pkg|unit>` — journalctl over a provider package's units, or a
 /// bare unit base name (`tamias service logs` with `--lines`/`--follow`).
 fn logs(env: &Env, name: &str, lines: u32, follow: bool) -> Result<(), Error> {
-    let deploy = tamias_deploy_local::LocalDeploy::new();
+    let deploy = tamias_deploy_systemd::LocalDeploy::new();
     match Store::new(&env.store_root).find(name) {
         Ok(entry) => {
             let units = tamias_provider::units_of(&entry).map_err(|e| {

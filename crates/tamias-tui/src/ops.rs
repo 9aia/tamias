@@ -965,7 +965,7 @@ pub fn stream(ctx: &Ctx, job: &Job, tx: &Sender<Msg>) -> Result<Outcome, Error> 
                 Ok(entry) => tamias_provider::units_of(&entry)?,
                 Err(_) => vec![name.clone()],
             };
-            let args = tamias_deploy_local::journalctl_args(&units, LOG_LINES, *follow)?;
+            let args = tamias_deploy_systemd::journalctl_args(&units, LOG_LINES, *follow)?;
             (
                 "journalctl".to_string(),
                 args,

@@ -216,7 +216,7 @@ deps:
 - tamias-core
 - tamias-deploy
 - tamias-deploy-cf
-- tamias-deploy-local
+- tamias-deploy-systemd
 - tamias-driver
 - tamias-install
 - tamias-provider
@@ -242,7 +242,7 @@ deps:
 - tamias-registry
 - tamias-registry-local
 - tamias-store-local
-- tamias-deploy-local
+- tamias-deploy-systemd
 notes: ''
 verify:
 - .agents/skills/skill-creator/scripts/__init__.py

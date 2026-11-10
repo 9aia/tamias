@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tamias_core::{output_with_timeout, Error, Manifest, ProviderIngress, StoreEntry};
-use tamias_deploy_local::{LocalDeploy, ServiceSpec};
+use tamias_deploy_systemd::{LocalDeploy, ServiceSpec};
 use tamias_store_local::Store;
 
 /// One provider service as the Services surfaces show it — package
@@ -147,7 +147,7 @@ pub fn unit_name(manifest: &Manifest, service: &str) -> String {
 }
 
 /// Render a provider service as a [`ServiceSpec`] — exec string →
-/// argv via [`tamias_deploy_local::split_exec`], `~` expansion
+/// argv via [`tamias_deploy_systemd::split_exec`], `~` expansion
 /// deferred to the renderer.
 fn service_spec(
     entry: &StoreEntry,
@@ -157,7 +157,7 @@ fn service_spec(
     Ok(ServiceSpec {
         name: unit_name(manifest, &service.name),
         description: format!("{} — {}", entry.label(), service.name),
-        exec: tamias_deploy_local::split_exec(&service.exec)?,
+        exec: tamias_deploy_systemd::split_exec(&service.exec)?,
         env: service
             .env
             .iter()
@@ -565,12 +565,12 @@ pub fn exec_spec(
             }
         },
     };
-    let mut argv = tamias_deploy_local::split_exec(&svc.exec)?;
+    let mut argv = tamias_deploy_systemd::split_exec(&svc.exec)?;
     argv.extend(extra.iter().cloned());
     // env_file first, inline env overrides — systemd's order.
     let mut vars: Vec<(String, String)> = Vec::new();
     if let Some(env_file) = &svc.env_file {
-        let path = PathBuf::from(tamias_deploy_local::expand_home(env_file));
+        let path = PathBuf::from(tamias_deploy_systemd::expand_home(env_file));
         // The unit renders `EnvironmentFile=-` (optional) — a missing
         // file is not an error here either.
         if path.is_file() {
@@ -597,7 +597,7 @@ pub fn exec_spec(
     let workdir = svc
         .workdir
         .as_deref()
-        .map(tamias_deploy_local::expand_home)
+        .map(tamias_deploy_systemd::expand_home)
         .map(PathBuf::from)
         .unwrap_or_else(|| entry.dir.clone());
     Ok(ExecSpec {

@@ -1,8 +1,8 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
-//! tamias-deploy-local — the `deploy` port's local adapter: manage a
-//! **per-user service unit** (systemd on Linux; launchd on macOS is
-//! documented but not yet implemented — every verb is systemd-only for
-//! now). tamias owns the host-service *mechanism*; a package's
+//! tamias-deploy-systemd — the `deploy` port's systemd adapter (Linux):
+//! manage a **per-user service unit** via systemd. Future launchd /
+//! windows backends are sibling crates. tamias owns the host-service
+//! *mechanism*; a package's
 //! `provider.services[]` manifest block supplies the domain spec
 //! (ExecStart argv, env, workdir), and `tamias deploy` renders it here.
 
