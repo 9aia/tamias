@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["DepStatus","Progress","Surface","SyncSource"],"fn":["install","install_with_progress","is_driver_consent_refusal","remove","sync_project"],"struct":["DepOutcome","Env","SyncOptions","SyncReport"]};
+window.SIDEBAR_ITEMS = {"enum":["DepStatus","IncludeResolution","Progress","Surface","SyncSource"],"fn":["install","install_with_progress","is_driver_consent_refusal","plan_install","remove","sync_project"],"struct":["DepOutcome","Env","InstallPlan","PlanManifest","PlannedInclude","PlannedService","SyncOptions","SyncReport"]};

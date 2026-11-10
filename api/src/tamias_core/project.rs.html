@@ -150,36 +150,38 @@
 <a href=#150 id=150 data-nosnippet>150</a>            resolved: <span class="string">"sha256:abc"</span>.into(),
 <a href=#151 id=151 data-nosnippet>151</a>            digest: <span class="string">"sha256:def"</span>.into(),
 <a href=#152 id=152 data-nosnippet>152</a>            signature: <span class="prelude-val">None</span>,
-<a href=#153 id=153 data-nosnippet>153</a>            installed_at: <span class="number">7</span>,
-<a href=#154 id=154 data-nosnippet>154</a>        }
-<a href=#155 id=155 data-nosnippet>155</a>    }
-<a href=#156 id=156 data-nosnippet>156</a>
-<a href=#157 id=157 data-nosnippet>157</a>    <span class="attr">#[test]
-<a href=#158 id=158 data-nosnippet>158</a>    </span><span class="kw">fn </span>load_missing_is_empty_and_roundtrips() {
-<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">let </span>dir = tempfile::tempdir().unwrap();
-<a href=#160 id=160 data-nosnippet>160</a>        <span class="kw">let </span>path = dir.path().join(<span class="string">"tamias.lock"</span>);
-<a href=#161 id=161 data-nosnippet>161</a>        <span class="macro">assert_eq!</span>(Lock::load(<span class="kw-2">&amp;</span>path).unwrap(), Lock::default());
-<a href=#162 id=162 data-nosnippet>162</a>        <span class="kw">let </span><span class="kw-2">mut </span>lock = Lock::default();
-<a href=#163 id=163 data-nosnippet>163</a>        lock.upsert(LockEntry::from_record(<span class="kw-2">&amp;</span>record()));
-<a href=#164 id=164 data-nosnippet>164</a>        lock.upsert(LockEntry::from_record(<span class="kw-2">&amp;</span>record()));
-<a href=#165 id=165 data-nosnippet>165</a>        <span class="macro">assert_eq!</span>(lock.packages.len(), <span class="number">1</span>);
-<a href=#166 id=166 data-nosnippet>166</a>        lock.save(<span class="kw-2">&amp;</span>path).unwrap();
-<a href=#167 id=167 data-nosnippet>167</a>        <span class="kw">let </span>back = Lock::load(<span class="kw-2">&amp;</span>path).unwrap();
-<a href=#168 id=168 data-nosnippet>168</a>        <span class="macro">assert_eq!</span>(back.packages[<span class="number">0</span>].name, <span class="string">"x"</span>);
-<a href=#169 id=169 data-nosnippet>169</a>        <span class="macro">assert_eq!</span>(back.packages[<span class="number">0</span>].scope.as_deref(), <span class="prelude-val">Some</span>(<span class="string">"acme"</span>));
-<a href=#170 id=170 data-nosnippet>170</a>    }
-<a href=#171 id=171 data-nosnippet>171</a>
-<a href=#172 id=172 data-nosnippet>172</a>    <span class="attr">#[cfg(unix)]
-<a href=#173 id=173 data-nosnippet>173</a>    #[test]
-<a href=#174 id=174 data-nosnippet>174</a>    </span><span class="kw">fn </span>load_error_arms() {
-<a href=#175 id=175 data-nosnippet>175</a>        <span class="kw">use </span>std::os::unix::fs::PermissionsExt;
-<a href=#176 id=176 data-nosnippet>176</a>        <span class="kw">let </span>dir = tempfile::tempdir().unwrap();
-<a href=#177 id=177 data-nosnippet>177</a>        <span class="kw">let </span>p = dir.path().join(<span class="string">"tamias.lock"</span>);
-<a href=#178 id=178 data-nosnippet>178</a>        std::fs::write(<span class="kw-2">&amp;</span>p, <span class="string">": not : yaml :"</span>).unwrap();
-<a href=#179 id=179 data-nosnippet>179</a>        <span class="macro">assert!</span>(Lock::load(<span class="kw-2">&amp;</span>p).is_err());
-<a href=#180 id=180 data-nosnippet>180</a>        std::fs::set_permissions(<span class="kw-2">&amp;</span>p, std::fs::Permissions::from_mode(<span class="number">0o000</span>)).unwrap();
+<a href=#153 id=153 data-nosnippet>153</a>            signer: <span class="prelude-val">None</span>,
+<a href=#154 id=154 data-nosnippet>154</a>            trust: <span class="prelude-val">None</span>,
+<a href=#155 id=155 data-nosnippet>155</a>            installed_at: <span class="number">7</span>,
+<a href=#156 id=156 data-nosnippet>156</a>        }
+<a href=#157 id=157 data-nosnippet>157</a>    }
+<a href=#158 id=158 data-nosnippet>158</a>
+<a href=#159 id=159 data-nosnippet>159</a>    <span class="attr">#[test]
+<a href=#160 id=160 data-nosnippet>160</a>    </span><span class="kw">fn </span>load_missing_is_empty_and_roundtrips() {
+<a href=#161 id=161 data-nosnippet>161</a>        <span class="kw">let </span>dir = tempfile::tempdir().unwrap();
+<a href=#162 id=162 data-nosnippet>162</a>        <span class="kw">let </span>path = dir.path().join(<span class="string">"tamias.lock"</span>);
+<a href=#163 id=163 data-nosnippet>163</a>        <span class="macro">assert_eq!</span>(Lock::load(<span class="kw-2">&amp;</span>path).unwrap(), Lock::default());
+<a href=#164 id=164 data-nosnippet>164</a>        <span class="kw">let </span><span class="kw-2">mut </span>lock = Lock::default();
+<a href=#165 id=165 data-nosnippet>165</a>        lock.upsert(LockEntry::from_record(<span class="kw-2">&amp;</span>record()));
+<a href=#166 id=166 data-nosnippet>166</a>        lock.upsert(LockEntry::from_record(<span class="kw-2">&amp;</span>record()));
+<a href=#167 id=167 data-nosnippet>167</a>        <span class="macro">assert_eq!</span>(lock.packages.len(), <span class="number">1</span>);
+<a href=#168 id=168 data-nosnippet>168</a>        lock.save(<span class="kw-2">&amp;</span>path).unwrap();
+<a href=#169 id=169 data-nosnippet>169</a>        <span class="kw">let </span>back = Lock::load(<span class="kw-2">&amp;</span>path).unwrap();
+<a href=#170 id=170 data-nosnippet>170</a>        <span class="macro">assert_eq!</span>(back.packages[<span class="number">0</span>].name, <span class="string">"x"</span>);
+<a href=#171 id=171 data-nosnippet>171</a>        <span class="macro">assert_eq!</span>(back.packages[<span class="number">0</span>].scope.as_deref(), <span class="prelude-val">Some</span>(<span class="string">"acme"</span>));
+<a href=#172 id=172 data-nosnippet>172</a>    }
+<a href=#173 id=173 data-nosnippet>173</a>
+<a href=#174 id=174 data-nosnippet>174</a>    <span class="attr">#[cfg(unix)]
+<a href=#175 id=175 data-nosnippet>175</a>    #[test]
+<a href=#176 id=176 data-nosnippet>176</a>    </span><span class="kw">fn </span>load_error_arms() {
+<a href=#177 id=177 data-nosnippet>177</a>        <span class="kw">use </span>std::os::unix::fs::PermissionsExt;
+<a href=#178 id=178 data-nosnippet>178</a>        <span class="kw">let </span>dir = tempfile::tempdir().unwrap();
+<a href=#179 id=179 data-nosnippet>179</a>        <span class="kw">let </span>p = dir.path().join(<span class="string">"tamias.lock"</span>);
+<a href=#180 id=180 data-nosnippet>180</a>        std::fs::write(<span class="kw-2">&amp;</span>p, <span class="string">": not : yaml :"</span>).unwrap();
 <a href=#181 id=181 data-nosnippet>181</a>        <span class="macro">assert!</span>(Lock::load(<span class="kw-2">&amp;</span>p).is_err());
-<a href=#182 id=182 data-nosnippet>182</a>        std::fs::set_permissions(<span class="kw-2">&amp;</span>p, std::fs::Permissions::from_mode(<span class="number">0o644</span>)).unwrap();
-<a href=#183 id=183 data-nosnippet>183</a>    }
-<a href=#184 id=184 data-nosnippet>184</a>}
+<a href=#182 id=182 data-nosnippet>182</a>        std::fs::set_permissions(<span class="kw-2">&amp;</span>p, std::fs::Permissions::from_mode(<span class="number">0o000</span>)).unwrap();
+<a href=#183 id=183 data-nosnippet>183</a>        <span class="macro">assert!</span>(Lock::load(<span class="kw-2">&amp;</span>p).is_err());
+<a href=#184 id=184 data-nosnippet>184</a>        std::fs::set_permissions(<span class="kw-2">&amp;</span>p, std::fs::Permissions::from_mode(<span class="number">0o644</span>)).unwrap();
+<a href=#185 id=185 data-nosnippet>185</a>    }
+<a href=#186 id=186 data-nosnippet>186</a>}
 </code></pre></div></section></main></body></html>

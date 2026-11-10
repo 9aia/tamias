@@ -19,17 +19,20 @@
 <a href=#19 id=19 data-nosnippet>19</a><span class="kw">pub mod </span>process;
 <a href=#20 id=20 data-nosnippet>20</a><span class="kw">pub mod </span>project;
 <a href=#21 id=21 data-nosnippet>21</a><span class="kw">pub mod </span>records;
-<a href=#22 id=22 data-nosnippet>22</a><span class="kw">pub use </span>archive::{pack_tgz, pack_tgz_atomic, untar, untar_gz};
-<a href=#23 id=23 data-nosnippet>23</a><span class="kw">pub use </span>atomic::write_atomic;
-<a href=#24 id=24 data-nosnippet>24</a><span class="kw">pub use </span>digest::{content_digest, dir_digest, dir_size, file_digest, sha256_hex, short_digest};
-<a href=#25 id=25 data-nosnippet>25</a><span class="kw">pub use </span>error::Error;
-<a href=#26 id=26 data-nosnippet>26</a><span class="kw">pub use </span>identity::{Identity, IdentityError};
-<a href=#27 id=27 data-nosnippet>27</a><span class="kw">pub use </span>manifest::{
-<a href=#28 id=28 data-nosnippet>28</a>    is_valid_name, is_valid_version, Manifest, Provider, ProviderHealth, ProviderHook,
-<a href=#29 id=29 data-nosnippet>29</a>    ProviderIngress, ProviderService, MANIFEST_NAMES,
-<a href=#30 id=30 data-nosnippet>30</a>};
-<a href=#31 id=31 data-nosnippet>31</a><span class="kw">pub use </span>overlay::{find_store_entry, overlay, payload_root};
-<a href=#32 id=32 data-nosnippet>32</a><span class="kw">pub use </span>process::output_with_timeout;
-<a href=#33 id=33 data-nosnippet>33</a><span class="kw">pub use </span>project::{Lock, LockEntry};
-<a href=#34 id=34 data-nosnippet>34</a><span class="kw">pub use </span>records::{copy_tree, StoreEntry, StoreRecord, RECORD_FILE};
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">pub use </span>archive::{
+<a href=#23 id=23 data-nosnippet>23</a>    pack_tgz, pack_tgz_atomic, untar, untar_gz, untar_gz_limited, untar_limited,
+<a href=#24 id=24 data-nosnippet>24</a>    DEFAULT_MAX_ENTRIES, DEFAULT_MAX_UNPACK_BYTES,
+<a href=#25 id=25 data-nosnippet>25</a>};
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">pub use </span>atomic::write_atomic;
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">pub use </span>digest::{content_digest, dir_digest, dir_size, file_digest, sha256_hex, short_digest};
+<a href=#28 id=28 data-nosnippet>28</a><span class="kw">pub use </span>error::Error;
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">pub use </span>identity::{Identity, IdentityError};
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">pub use </span>manifest::{
+<a href=#31 id=31 data-nosnippet>31</a>    is_valid_kind, is_valid_name, is_valid_version, Manifest, Provider, ProviderHealth,
+<a href=#32 id=32 data-nosnippet>32</a>    ProviderHook, ProviderIngress, ProviderService, MANIFEST_NAMES,
+<a href=#33 id=33 data-nosnippet>33</a>};
+<a href=#34 id=34 data-nosnippet>34</a><span class="kw">pub use </span>overlay::{find_store_entry, overlay, payload_root};
+<a href=#35 id=35 data-nosnippet>35</a><span class="kw">pub use </span>process::output_with_timeout;
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">pub use </span>project::{Lock, LockEntry};
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">pub use </span>records::{copy_tree, StoreEntry, StoreRecord, RECORD_FILE};
 </code></pre></div></section></main></body></html>

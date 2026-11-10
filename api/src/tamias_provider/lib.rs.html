@@ -970,16 +970,18 @@
 <a href=#970 id=970 data-nosnippet>970</a>                    resolved: <span class="string">"sha256:0123456789abcdef"</span>.into(),
 <a href=#971 id=971 data-nosnippet>971</a>                    digest: String::new(),
 <a href=#972 id=972 data-nosnippet>972</a>                    signature: <span class="prelude-val">None</span>,
-<a href=#973 id=973 data-nosnippet>973</a>                    installed_at: <span class="number">0</span>,
-<a href=#974 id=974 data-nosnippet>974</a>                },
-<a href=#975 id=975 data-nosnippet>975</a>            )
-<a href=#976 id=976 data-nosnippet>976</a>            .unwrap();
-<a href=#977 id=977 data-nosnippet>977</a>        <span class="comment">// no provider: block → the run spec errors like the CLI
-<a href=#978 id=978 data-nosnippet>978</a>        </span><span class="macro">assert!</span>(exec_spec(<span class="kw-2">&amp;</span>store_root(tmp.path()), <span class="string">"w"</span>, <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span>[]).is_err());
-<a href=#979 id=979 data-nosnippet>979</a>    }
-<a href=#980 id=980 data-nosnippet>980</a>
-<a href=#981 id=981 data-nosnippet>981</a>    <span class="kw">fn </span>store_root(tmp: <span class="kw-2">&amp;</span>Path) -&gt; PathBuf {
-<a href=#982 id=982 data-nosnippet>982</a>        tmp.join(<span class="string">"store"</span>)
-<a href=#983 id=983 data-nosnippet>983</a>    }
-<a href=#984 id=984 data-nosnippet>984</a>}
+<a href=#973 id=973 data-nosnippet>973</a>                    signer: <span class="prelude-val">None</span>,
+<a href=#974 id=974 data-nosnippet>974</a>                    trust: <span class="prelude-val">None</span>,
+<a href=#975 id=975 data-nosnippet>975</a>                    installed_at: <span class="number">0</span>,
+<a href=#976 id=976 data-nosnippet>976</a>                },
+<a href=#977 id=977 data-nosnippet>977</a>            )
+<a href=#978 id=978 data-nosnippet>978</a>            .unwrap();
+<a href=#979 id=979 data-nosnippet>979</a>        <span class="comment">// no provider: block → the run spec errors like the CLI
+<a href=#980 id=980 data-nosnippet>980</a>        </span><span class="macro">assert!</span>(exec_spec(<span class="kw-2">&amp;</span>store_root(tmp.path()), <span class="string">"w"</span>, <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span>[]).is_err());
+<a href=#981 id=981 data-nosnippet>981</a>    }
+<a href=#982 id=982 data-nosnippet>982</a>
+<a href=#983 id=983 data-nosnippet>983</a>    <span class="kw">fn </span>store_root(tmp: <span class="kw-2">&amp;</span>Path) -&gt; PathBuf {
+<a href=#984 id=984 data-nosnippet>984</a>        tmp.join(<span class="string">"store"</span>)
+<a href=#985 id=985 data-nosnippet>985</a>    }
+<a href=#986 id=986 data-nosnippet>986</a>}
 </code></pre></div></section></main></body></html>

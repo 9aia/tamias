@@ -99,6 +99,25 @@ it can't place — so either ship the driver, publish
 `tamias deploy`/`uninstall` behave the same way: they dispatch to the
 driver for the package's type and warn when none exists.
 
+## Trust boundary
+
+Your driver binary runs with **full user privileges** over an
+**untrusted `--dir` payload** — the payload came from a package ref you
+may not control. Treat everything under `--dir` as hostile:
+
+* **Never execute payload files yourself.** If the payload ships a
+  script or binary, running it is the payload's privilege escalation,
+  not yours.
+* **Validate every path** you read or write — reject `..` traversal,
+  absolute paths, and symlink escapes before touching the filesystem.
+* **Don't trust manifest-declared paths or names** — a manifest is
+  package-controlled data, not an instruction from the operator.
+
+The consent gates (`--allow-drivers` / `TAMIAS_ALLOW_DRIVERS=1` /
+per-package consent memory) decide whether tamias *registers* a bundled
+driver — they are **not a sandbox**. Your driver is the last line of
+defense.
+
 ## Check
 
 ```sh

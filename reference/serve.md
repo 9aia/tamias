@@ -24,7 +24,7 @@ service exits when stdin closes.
 | `sync` | `locked?`, `allow_drivers?`, `dir?` | `{deps: [{dep, status, detail}], failed}` — reconciles the project manifest's `deps:` against the store + `tamias.lock` (`dir` defaults to the server's cwd) |
 | `list` | — | `[{label, source_ref, digest}]` |
 | `info` | `name` | `{label, resolved, digest, size}` |
-| `verify` | `name` | `{name, ok}` |
+| `verify` | `name` | `{name, ok, signature, trust, signer}` — `trust`/`signer` are re-derived live, same rule as `tamias verify` |
 | `remove` | `name` | `{name}` — runs driver teardown first, like `tamias uninstall` |
 | `search` | `query`, `registry?` | `{results: [{label, name, scope, version, kind, digest, file}]}` |
 | `publish` | `dir`, `registry?` | `{label, name, scope, version, kind, digest, file}` |
@@ -48,7 +48,17 @@ never a token value.
 `install` refuses payload-shipped `drivers/` unless the request carries
 `"allow_drivers": true` (or `TAMIAS_ALLOW_DRIVERS=1` is set) — identical
 to `--allow-drivers`. Bundled drivers are never registered or executed
-without it.
+without it; once consented, the grant is remembered per package +
+payload digest in `consented.json` (see
+[Security model](/explanation/security)).
+
+## Trust boundary
+
+**Stdin is fully trusted.** Any process that can write to the service's
+stdin can pass `"allow_drivers": true` and reach every op — there is no
+per-request authentication. Embed `tamias serve` only behind a harness
+that has already made the trust decision; never expose it to untrusted
+input.
 
 ## Environment
 
