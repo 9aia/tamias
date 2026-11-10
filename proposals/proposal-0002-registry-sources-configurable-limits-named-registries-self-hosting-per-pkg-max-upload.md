@@ -1,7 +1,7 @@
 +++
 id = "P-002"
 title = "registry sources + configurable limits — named registries, self-hosting, per-pkg max-upload"
-status = "claimed"
+status = "in-progress"
 created = "2026-11-10"
 owner = "devin"
 priority = "high"
