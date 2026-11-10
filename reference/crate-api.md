@@ -18,7 +18,8 @@ documented at source (doc comments).
 * [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
 * [tamias-config-yml](/tamias/api/tamias_config_yml/index.html) — adapter
 * [tamias-deploy-cf](/tamias/api/tamias_deploy_cf/index.html) — adapter
-* [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
+* [tamias-deploy-systemd](/tamias/api/tamias_deploy_systemd/index.html) — adapter
+* [tamias-deploy-windows](/tamias/api/tamias_deploy_windows/index.html) — adapter
 * [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
 * [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
 * [tamias-install](/tamias/api/tamias_install/index.html) — adapter

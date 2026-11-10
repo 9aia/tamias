@@ -37,7 +37,8 @@ distribution; every content *meaning* is an adapter.
 | `tamias-config-toml` | adapter | TOML config impl |
 | `tamias-config-yml` | adapter | YAML config impl (the standard) — tamias.yml / tamias.yaml |
 | `tamias-deploy-cf` | adapter | Cloudflare deploy impl — the registry Worker + wrangler config |
-| `tamias-deploy-local` | adapter | local deploy impl — manage a per-user service unit (systemd/launchd) |
+| `tamias-deploy-systemd` | adapter | systemd deploy impl — manage a per-user service unit (Linux) |
+| `tamias-deploy-windows` | adapter | windows deploy impl — manage a per-user scheduled task (Task Scheduler via schtasks.exe) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-\<type> (no product knowledge) |
 | `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
 | `tamias-install` | adapter | The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit |

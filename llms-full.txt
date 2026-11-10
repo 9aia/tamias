@@ -255,6 +255,43 @@ left alone (`add` is what creates it).
 `update` re-runs the install path, so a package that ships `drivers/`
 needs `--allow-drivers` (or `TAMIAS_ALLOW_DRIVERS=1`) again.
 
+## Sync a fresh checkout
+
+`deps:` + `tamias.lock` are a write-only ledger until you reconcile
+them — **`tamias sync`** installs the project's whole dep set, the
+missing half of the dependency story:
+
+```sh
+tamias sync          # install what's missing or drifted
+tamias sync --json   # per-dep outcomes as JSON
+tamias sync --locked # strict: refuse to move anything the lock pins
+```
+
+For each `deps:` ref, sync checks the store entry against the lock
+entry (`source_ref`/`resolved`/`digest`):
+
+* **current** — the store record matches the lock; nothing is fetched.
+* **installed / reinstalled** — the dep was missing or drifted, so the
+  shared install pipeline runs and `tamias.lock` is refreshed (moving
+  refs like `#branch` re-resolve, same as `add`).
+* **failed** — the dep's install errored; sync keeps going and exits
+  non-zero at the end.
+
+Sync **never removes** store entries — the store is global, not
+project-scoped, so extraneous packages are `tamias remove`'s job. A
+dep that ships `drivers/` needs `--allow-drivers` (or
+`TAMIAS_ALLOW_DRIVERS=1`) like `install`/`add`.
+
+`--locked` is the reproducible-install mode: every dep must already be
+`current` per `tamias.lock` + the store. Drift, a missing store entry,
+or a dep with no lock entry fails that dep instead of installing or
+moving it — the lockfile must already describe the world.
+
+The same reconcile is available to embedders as the `sync` op of
+`tamias serve` (`{"op":"sync","locked":…,"allow_drivers":…,"dir":…}` —
+`dir` defaults to the server's cwd) and in the TUI's Manifest pane
+(`s` or `:sync`, behind a confirm).
+
 ## Remove
 
 ```sh
@@ -312,7 +349,9 @@ tamias ui
 * **Manifest** — the project manifest's `deps:` as an editable table:
   `a` add a ref, `d`/`x` remove, `e` edit (installs the new ref, then
   swaps — a failed install leaves the manifest untouched). Writes go
-  through the same manifest+lock path as `tamias add`.
+  through the same manifest+lock path as `tamias add`. `s` (or
+  `:sync`) reconciles the whole `deps:` set — `tamias sync`'s
+  install-missing-or-drifted pass, behind a confirm.
 * **Author** — `p` packs a payload dir (`bundle pack`), `P` publishes
   (dir + registry prompts, confirmed); `r` lists configured registries.
 
@@ -326,7 +365,7 @@ Vim-style, same conventions as `myco ui`:
 | `/` | filter (Installed) / query (Registry) |
 | `i` | install-by-ref prompt (Installed) / install result (Registry) |
 | `v` `u` `U` `p` `r` `c` `C` `d` | verify · update · update-all · pin · remove · cache clean (>30d) · cache clean all · doctor |
-| `:` | command line — `:install <ref>`, `:remove <name>`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:deploy`, `:manifest`, `:registries`, `:reload`, `:q` |
+| `:` | command line — `:install <ref>`, `:remove <name>`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:deploy`, `:manifest`, `:sync`, `:registries`, `:reload`, `:q` |
 | `?` | help overlay |
 | `R` | reload |
 | `q` / `Ctrl-C` | quit (kills any live service stream) |
@@ -1042,6 +1081,7 @@ service exits when stdin closes.
 | op | fields | result |
 | --- | --- | --- |
 | `install` | `ref`, `allow_drivers?` | `{label, resolved, digest}` |
+| `sync` | `locked?`, `allow_drivers?`, `dir?` | `{deps: [{dep, status, detail}], failed}` — reconciles the project manifest's `deps:` against the store + `tamias.lock` (`dir` defaults to the server's cwd) |
 | `list` | — | `[{label, source_ref, digest}]` |
 | `info` | `name` | `{label, resolved, digest, size}` |
 | `verify` | `name` | `{name, ok}` |
@@ -1115,7 +1155,8 @@ documented at source (doc comments).
 * [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
 * [tamias-config-yml](/tamias/api/tamias_config_yml/index.html) — adapter
 * [tamias-deploy-cf](/tamias/api/tamias_deploy_cf/index.html) — adapter
-* [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
+* [tamias-deploy-systemd](/tamias/api/tamias_deploy_systemd/index.html) — adapter
+* [tamias-deploy-windows](/tamias/api/tamias_deploy_windows/index.html) — adapter
 * [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
 * [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
 * [tamias-install](/tamias/api/tamias_install/index.html) — adapter
@@ -1179,7 +1220,8 @@ distribution; every content *meaning* is an adapter.
 | `tamias-config-toml` | adapter | TOML config impl |
 | `tamias-config-yml` | adapter | YAML config impl (the standard) — tamias.yml / tamias.yaml |
 | `tamias-deploy-cf` | adapter | Cloudflare deploy impl — the registry Worker + wrangler config |
-| `tamias-deploy-local` | adapter | local deploy impl — manage a per-user service unit (systemd/launchd) |
+| `tamias-deploy-systemd` | adapter | systemd deploy impl — manage a per-user service unit (Linux) |
+| `tamias-deploy-windows` | adapter | windows deploy impl — manage a per-user scheduled task (Task Scheduler via schtasks.exe) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-\<type> (no product knowledge) |
 | `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
 | `tamias-install` | adapter | The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit |

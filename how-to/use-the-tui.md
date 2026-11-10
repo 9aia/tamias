@@ -32,7 +32,9 @@ tamias ui
 * **Manifest** — the project manifest's `deps:` as an editable table:
   `a` add a ref, `d`/`x` remove, `e` edit (installs the new ref, then
   swaps — a failed install leaves the manifest untouched). Writes go
-  through the same manifest+lock path as `tamias add`.
+  through the same manifest+lock path as `tamias add`. `s` (or
+  `:sync`) reconciles the whole `deps:` set — `tamias sync`'s
+  install-missing-or-drifted pass, behind a confirm.
 * **Author** — `p` packs a payload dir (`bundle pack`), `P` publishes
   (dir + registry prompts, confirmed); `r` lists configured registries.
 
@@ -46,7 +48,7 @@ Vim-style, same conventions as `myco ui`:
 | `/` | filter (Installed) / query (Registry) |
 | `i` | install-by-ref prompt (Installed) / install result (Registry) |
 | `v` `u` `U` `p` `r` `c` `C` `d` | verify · update · update-all · pin · remove · cache clean (>30d) · cache clean all · doctor |
-| `:` | command line — `:install <ref>`, `:remove <name>`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:deploy`, `:manifest`, `:registries`, `:reload`, `:q` |
+| `:` | command line — `:install <ref>`, `:remove <name>`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:deploy`, `:manifest`, `:sync`, `:registries`, `:reload`, `:q` |
 | `?` | help overlay |
 | `R` | reload |
 | `q` / `Ctrl-C` | quit (kills any live service stream) |
