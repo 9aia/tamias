@@ -1,9 +1,12 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-tui — the interactive package-manager surface behind
-//! `tamias ui` (ratatui/crossterm, PL-0004). Phase 1 is a read-only
-//! skeleton: the Installed pane lists store entries with a
-//! client-side `/` filter; the Registry/Services/Manifest/Author
-//! panes are placeholders until their phases land. Terminal
+//! `tamias ui` (ratatui/crossterm, PL-0004). Phases 1–3: the Installed
+//! pane lists store entries with a `/` filter, `Enter` opens a detail
+//! view, and `v`/`u`/`p`/`r`/`c`/`d`/`i` run the same library calls
+//! `tamias-serve`/the CLI use on worker threads (confirm + consent
+//! modals, streamed phase log); the Registry pane searches a registry
+//! as-you-type and `i` installs a result. Services/Manifest/Author
+//! stay placeholders until their phases land. Terminal
 //! discipline mirrors `myco-tui`: alternate screen, raw mode, a
 //! drop guard, a panic hook, mouse capture, and a `notify` watcher
 //! on the store root that reloads the entry list when installs land
@@ -19,6 +22,7 @@
 //! be re-plumbed.
 
 mod app;
+mod ops;
 mod render;
 
 use std::io;

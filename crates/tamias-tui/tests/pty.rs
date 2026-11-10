@@ -246,6 +246,39 @@ fn filter_and_command_quit() {
 }
 
 #[test]
+fn detail_verify_and_registry_pane() {
+    let f = fixture();
+    let (mut master, mut child) = spawn_pty(command(&f));
+    let d = drain(&mut master);
+    d.wait_for(b"widget@1.2.3");
+    // Enter opens the detail view — provenance fields render
+    d.send("\r");
+    d.wait_for(b"source:");
+    d.wait_for(b"./pkg");
+    // esc backs out to the table
+    d.send("\x1b");
+    std::thread::sleep(Duration::from_millis(300));
+    // `2` → the registry pane's search hint (phase 3) — the hint's
+    // head survives the 80-col truncation
+    d.send("2");
+    d.wait_for(b"registry search");
+    // back to installed; `:verify` runs the op on a worker — the
+    // result lands in the log/status stream
+    d.send("1");
+    std::thread::sleep(Duration::from_millis(200));
+    d.send(":verify widget\r");
+    d.wait_for(b"widget@1.2.3: ok");
+    d.send("q");
+    let status = wait_exit(&mut child);
+    assert!(
+        status.success(),
+        "exit {:?}: {}",
+        status.exit_code(),
+        d.text()
+    );
+}
+
+#[test]
 fn unknown_command_echoes_and_r_quits() {
     let f = fixture();
     let (mut master, mut child) = spawn_pty(command(&f));

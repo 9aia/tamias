@@ -59,6 +59,8 @@ pub enum Surface {
     Cli,
     /// `tamias serve` `{"op":"install","allow_drivers":true}`.
     Rpc,
+    /// `tamias ui` — the TUI's bundled-driver consent modal.
+    Tui,
 }
 
 impl Surface {
@@ -67,6 +69,7 @@ impl Surface {
         match self {
             Self::Cli => "re-run with --allow-drivers or TAMIAS_ALLOW_DRIVERS=1 to consent",
             Self::Rpc => "pass \"allow_drivers\":true or set TAMIAS_ALLOW_DRIVERS=1 to consent",
+            Self::Tui => "answer the consent prompt to allow them",
         }
     }
 
@@ -76,8 +79,18 @@ impl Surface {
         match self {
             Self::Cli => "--allow-drivers or TAMIAS_ALLOW_DRIVERS=1",
             Self::Rpc => "\"allow_drivers\":true or TAMIAS_ALLOW_DRIVERS=1",
+            Self::Tui => "the consent prompt",
         }
     }
+}
+
+/// Whether `err` is the bundled-driver consent refusal — the one
+/// failure an interactive surface can recover from by re-running with
+/// consent (`tamias ui`'s modal). Matches the marker the pipeline
+/// embeds; the [`Surface`] only changes the trailing hint.
+#[must_use]
+pub fn is_driver_consent_refusal(err: &Error) -> bool {
+    matches!(err, Error::Failed(msg) if msg.contains("refusing to install + run them"))
 }
 
 /// A progress event emitted during [`install_with_progress`] — the CLI

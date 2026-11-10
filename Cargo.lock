@@ -2901,7 +2901,13 @@ dependencies = [
  "notify",
  "portable-pty",
  "ratatui",
+ "tamias-cache-local",
+ "tamias-config",
  "tamias-core",
+ "tamias-driver",
+ "tamias-install",
+ "tamias-registry",
+ "tamias-registry-open",
  "tamias-store-local",
  "tempfile",
 ]
