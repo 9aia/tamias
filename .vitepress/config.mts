@@ -35,6 +35,7 @@ export default defineConfig({
         items: [
           { text: "Install from a git repo", link: "/how-to/install-from-git" },
           { text: "Manage project dependencies", link: "/how-to/manage-deps" },
+          { text: "Link package binaries", link: "/how-to/link-binaries" },
           { text: "Use the TUI", link: "/how-to/use-the-tui" },
           { text: "Publish to a registry", link: "/how-to/publish-to-a-registry" },
           { text: "Provision and service", link: "/how-to/provision-a-service" },
