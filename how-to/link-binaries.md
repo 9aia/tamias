@@ -66,6 +66,32 @@ installed. Provider services that named the bare binary keep working
 until the links go away; after that, update their `exec:` to a full
 path or reinstall the binaries.
 
+## Upgrading the binary you're running
+
+`tamias update <name>` upgrades a package, but the *running*
+executable can't replace itself — a process keeps its old inode even
+after the store entry swaps. **`tamias self-upgrade`** closes that
+loop for tamias-managed binaries: it detects that the running exe
+resolves into the store (directly, or through the `bin-alias`/bin-dir
+link chain — a cargo or distro install fails with "not installed via
+tamias"), then re-installs the package's recorded source ref, exactly
+like `tamias update`. The install retargets the alias, so the *next*
+invocation runs the new version; this process keeps the old one —
+restart to pick it up.
+
+```sh
+tamias self-upgrade --check   # current vs what the ref resolves to
+                              # — no install, fetches to the cache only
+tamias self-upgrade           # update + retarget the alias
+```
+
+A release install pinned to a `#sha256:` ref re-fetches exactly those
+bytes; a moving ref (branch, `latest`) re-resolves. `--allow-drivers`
+and `--json` behave as they do for `install`/`update`. On Windows —
+where `tamias bin` copies rather than symlinks — the running exe file
+can be locked; self-upgrade warns before attempting and you may need
+to close other tamias processes and retry.
+
 ## Errors you'll see
 
 * `package 'x' is not installed` — install it first (`tamias install`).
@@ -73,3 +99,6 @@ path or reinstall the binaries.
   `bin/` directory (or it's empty); nothing to do.
 * `<path> already exists — refusing to overwrite (use --force)` —
   something else owns the link path.
+* `… is not a tamias-managed binary` (`self-upgrade`) — the running
+  exe wasn't installed via tamias; use your package manager or
+  `cargo install` instead.
