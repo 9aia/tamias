@@ -159,6 +159,38 @@ enum Command {
         /// The new ref to record.
         reference: String,
     },
+    /// Update the tamias package this binary belongs to.
+    ///
+    /// `self-upgrade` answers "am I a tamias-managed binary?" first:
+    /// the running executable is canonicalized and checked against the
+    /// store root — `~/.local/bin/tamias` resolves through the
+    /// `bin-alias`/`bin` symlink chain straight into the versioned
+    /// entry dir, so one canonical path covers direct store installs,
+    /// alias links, and bin-dir links alike. On copy platforms (where
+    /// `tamias bin` copies rather than symlinks) the bin-dir copy is
+    /// matched against entries' `bin/` payloads by file name. A cargo
+    /// or distro install fails cleanly — there is no package to update.
+    ///
+    /// A managed binary re-installs its recorded source ref — the same
+    /// path `tamias update <name>` takes. A release install pinned to a
+    /// `#sha256:` ref fetches exactly those bytes; a moving ref
+    /// re-resolves. The install retargets the bin alias, so the *next*
+    /// invocation runs the new version — this process keeps the old
+    /// binary until restarted (a running exe can't replace itself).
+    SelfUpgrade {
+        /// Consent to register + run bundled `drivers/` on re-install.
+        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1` — a global env bypass
+        /// honored by every surface (CLI, serve, TUI).
+        #[arg(long)]
+        allow_drivers: bool,
+        /// Report current vs what the recorded ref resolves to,
+        /// without installing.
+        #[arg(long)]
+        check: bool,
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
+    },
     /// Link a package's `bin/` payload into the bin dir so bare binary
     /// names run — provider `services[].exec` and shells resolve them.
     ///
@@ -1221,6 +1253,13 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             sync_lock(&record)?;
             println!("pinned {} → {}", record.name, record.source_ref);
         }
+        Some(Command::SelfUpgrade {
+            allow_drivers,
+            check,
+            json,
+        }) => {
+            self_upgrade(&env, allow_drivers, check, json)?;
+        }
         Some(Command::Bin {
             name,
             unlink,
@@ -1780,6 +1819,215 @@ fn refresh_bin_alias(env: &Env, entry: &StoreEntry) {
     if let Err(e) = retarget_alias(&alias, &entry.dir, false) {
         eprintln!("tamias: warning — bin alias {}: {e}", alias.display());
     }
+}
+
+/// `@scope/name` or `name` — the package identity without the version
+/// label (the `scoped` spelling `print_plan` uses).
+fn scoped_name(record: &StoreRecord) -> String {
+    match &record.scope {
+        Some(scope) => format!("@{scope}/{}", record.name),
+        None => record.name.clone(),
+    }
+}
+
+/// Canonicalize `path`, falling back to the literal path when it can't
+/// be resolved (dangling link, vanished file) — detection must still
+/// produce an honest error rather than panic.
+fn canon(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// The running executable resolved to its owning store entry —
+/// `self-upgrade`'s "am I tamias-managed?" answer.
+#[derive(Debug)]
+struct SelfTarget {
+    /// The store entry the exe lives under (pre-update).
+    entry: StoreEntry,
+    /// Canonical path of the running exe.
+    exe: PathBuf,
+}
+
+/// `self-upgrade` detection — is `exe` a tamias-managed binary, and
+/// which store entry owns it?
+///
+/// The exe is canonicalized first, which collapses the whole link
+/// chain at once: `~/.local/bin/tamias` → `bin-alias/<name>/bin/tamias`
+/// → `<store>/…/name@<label>/bin/tamias` (on unix `current_exe`
+/// already reports the fully-resolved path). A canonical path inside a
+/// store entry dir means the payload's `bin/` file is what's running.
+///
+/// On copy platforms — where `tamias bin` copies the payload into the
+/// bin dir instead of symlinking — the canonical exe is the copy
+/// itself, outside the store. Fall back to matching its file name
+/// against each entry's `bin/` payload; zero matches is "not managed",
+/// several is an honest ambiguity error.
+fn self_target(env: &Env, exe: &Path) -> Result<SelfTarget, Error> {
+    let canon_exe = canon(exe);
+    let store = Store::new(&env.store_root);
+    // Store roots can sit behind symlinked homes — compare canonical
+    // paths on both sides.
+    let canon_root = canon(&env.store_root);
+    if canon_exe.starts_with(&canon_root) {
+        // Inside the store: the owner is the deepest entry dir that
+        // contains the exe (entry dirs can't nest, but longest-match
+        // keeps a hand-built layout honest).
+        let mut best: Option<(StoreEntry, usize)> = None;
+        for e in store.entries()? {
+            let dir = canon(&e.dir);
+            let depth = dir.components().count();
+            if canon_exe.starts_with(&dir) && best.as_ref().is_none_or(|(_, d)| depth > *d) {
+                best = Some((e, depth));
+            }
+        }
+        return match best {
+            Some((entry, _)) => Ok(SelfTarget {
+                entry,
+                exe: canon_exe,
+            }),
+            None => Err(Error::Failed(format!(
+                "{} is inside the tamias store but no install record owns it",
+                canon_exe.display()
+            ))),
+        };
+    }
+    // Copy-platform fallback: a bin-dir copy matched by payload file
+    // name. Also covers a hand-copied binary on unix.
+    let canon_bindir = canon(&env.bin_dir);
+    if canon_exe.starts_with(&canon_bindir) {
+        if let Some(file) = canon_exe.file_name() {
+            let mut matches: Vec<StoreEntry> = store
+                .entries()?
+                .into_iter()
+                .filter(|e| e.dir.join("bin").join(file).is_file())
+                .collect();
+            match matches.len() {
+                1 => {
+                    let entry = matches.swap_remove(0);
+                    return Ok(SelfTarget {
+                        entry,
+                        exe: canon_exe,
+                    });
+                }
+                0 => {}
+                _ => {
+                    let labels: Vec<String> = matches.iter().map(StoreEntry::label).collect();
+                    return Err(Error::Failed(format!(
+                        "{} matches bin/ payloads of several installs — pick one: {}",
+                        canon_exe.display(),
+                        labels.join(", ")
+                    )));
+                }
+            }
+        }
+    }
+    // A path shaped like a bin-alias link that didn't resolve into the
+    // store gets a clearer error than "not managed".
+    let alias_root = canon(&bin_alias_root(&env.store_root));
+    if canon_exe.starts_with(&alias_root) {
+        return Err(Error::Failed(format!(
+            "{} resolves through the tamias bin alias but no store entry owns it — \
+             reinstall the package or re-run `tamias bin <name>`",
+            exe.display()
+        )));
+    }
+    Err(Error::Failed(format!(
+        "{} is not a tamias-managed binary — not installed via tamias; \
+         use your package manager or `cargo install`",
+        exe.display()
+    )))
+}
+
+/// `self-upgrade` — see the `SelfUpgrade` variant docs. Detects the
+/// owning store entry from the running exe, then runs the same
+/// re-install `tamias update` does on the recorded source ref. The
+/// install's `refresh_bin_alias` retargets the alias, so new
+/// invocations get the new binary; this process keeps the old one.
+fn self_upgrade(env: &Env, allow_drivers: bool, check: bool, json: bool) -> Result<(), Error> {
+    let exe = std::env::current_exe().map_err(Error::io("resolve current executable"))?;
+    let target = self_target(env, &exe)?;
+    let old = target.entry;
+    let reference = old.record.source_ref.clone();
+    let package = scoped_name(&old.record);
+    if check {
+        let plan = plan_install(env, &reference, allow_drivers)?;
+        // "Available" ≈ the plan's payload digest differs from the
+        // installed record's — for `include:` packages the plan digests
+        // the raw payload while the record digests the composed tree,
+        // so those always report as an update (same caveat as
+        // `install --plan`'s digest note).
+        let same_payload = !plan.has_includes && plan.payload_digest == old.record.digest;
+        if json {
+            print_json(&serde_json::json!({
+                "package": package,
+                "current": old.label(),
+                "exe": target.exe.display().to_string(),
+                "plan": serde_json::to_value(&plan)
+                    .map_err(|e| Error::Failed(e.to_string()))?,
+                "same_payload": same_payload,
+            }))?;
+        } else {
+            println!("tamias: self-upgrade check — {package}");
+            println!("current:  {}  ({})", old.label(), target.exe.display());
+            println!("ref:      {reference}");
+            let planned = match &plan.manifest.version {
+                Some(v) => format!("{package}@{v}"),
+                None => package.clone(),
+            };
+            println!(
+                "planned:  {planned}  digest {}{}",
+                short_digest(&plan.payload_digest),
+                if plan.cache_hit { "  (cache hit)" } else { "" }
+            );
+            if plan.consent_required {
+                println!("note:     bundled drivers need consent — pass --allow-drivers");
+            }
+            for p in &plan.problems {
+                println!("problem:  {p}");
+            }
+            println!(
+                "status:   {}",
+                if same_payload {
+                    "already current — reinstall would be a no-op"
+                } else {
+                    "update available"
+                }
+            );
+        }
+        return Ok(());
+    }
+    if cfg!(windows) {
+        // `tamias bin` copies on Windows — the running exe file is the
+        // copy the update may need to replace, and a running executable
+        // can't be overwritten/removed there.
+        eprintln!(
+            "tamias: warning — self-upgrade on Windows replaces the copied binary in the \
+             bin dir; the running executable may be locked. If this fails, close other \
+             tamias processes and retry."
+        );
+    }
+    let entry = install(env, &reference, allow_drivers)?;
+    sync_lock(&entry.record)?;
+    let new_label = entry.label();
+    if json {
+        print_json(&serde_json::json!({
+            "package": package,
+            "from": old.label(),
+            "to": new_label,
+            "exe": target.exe.display().to_string(),
+            "changed": entry.dir != old.dir || entry.record.digest != old.record.digest,
+            "restart": true,
+        }))?;
+    } else {
+        if entry.dir == old.dir && entry.record.digest == old.record.digest {
+            println!("already up to date — {new_label}");
+        } else {
+            println!("self-upgraded {package}: {} → {new_label}", old.label());
+        }
+        println!(
+            "note: this process still runs the previous binary — restart tamias to pick up {new_label}"
+        );
+    }
+    Ok(())
 }
 
 /// Create the dest for payload file `src`: a symlink to `target` (the
@@ -2896,6 +3144,72 @@ mod tests {
         run_args(e.clone(), &["tamias", "bin", "w", "--unlink"]).unwrap();
         assert!(!link.exists() && !link.is_symlink());
         assert!(std::fs::symlink_metadata(bin_alias_of(&e)).is_err());
+    }
+
+    #[test]
+    fn self_target_detects_store_alias_copy_and_rejects_foreign() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = bin_pkg(tmp.path(), "1.0.0");
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        let entry = Store::new(&e.store_root).find("w").unwrap();
+
+        // exe directly inside the entry's bin/ payload
+        let t = self_target(&e, &entry.dir.join("bin/tool")).unwrap();
+        assert_eq!(t.entry.dir, entry.dir);
+        assert_eq!(t.entry.record.name, "w");
+
+        // through the bin link → bin-alias → entry chain: canonicalize
+        // collapses the symlinks into the store path (unix); on copy
+        // platforms the bin-dir copy falls back to the payload-name
+        // match — both resolve to the same entry.
+        run_args(e.clone(), &["tamias", "bin", "w"]).unwrap();
+        let link = e.bin_dir.join("tool");
+        let t = self_target(&e, &link).unwrap();
+        assert_eq!(t.entry.record.name, "w");
+
+        // a second version makes the copy-fallback ambiguous
+        let dir2 = bin_pkg(tmp.path(), "1.0.1");
+        run_args(e.clone(), &["tamias", "install", dir2.to_str().unwrap()]).unwrap();
+
+        // foreign exe — outside store, bin dir, and alias root
+        let foreign = tmp.path().join("foreign-bin");
+        std::fs::write(&foreign, "x").unwrap();
+        let err = self_target(&e, &foreign).unwrap_err();
+        assert!(
+            err.to_string().contains("not installed via tamias"),
+            "{err}"
+        );
+
+        // inside the store root but owned by no entry record
+        let stray = e.store_root.join("stray.txt");
+        std::fs::write(&stray, "x").unwrap();
+        let err = self_target(&e, &stray).unwrap_err();
+        assert!(
+            err.to_string().contains("no install record owns it"),
+            "{err}"
+        );
+
+        // alias-shaped path that resolves nowhere near the store
+        let dangling = bin_alias_root(&e.store_root).join("ghost/bin/x");
+        std::fs::create_dir_all(dangling.parent().unwrap()).unwrap();
+        std::fs::write(&dangling, "x").unwrap();
+        let err = self_target(&e, &dangling).unwrap_err();
+        assert!(err.to_string().contains("bin alias"), "{err}");
+
+        // copy fallback: a real file at the bin-dir link path (what
+        // Windows `tamias bin` leaves behind) matches by payload name —
+        // but two installs ship `bin/tool`, so it's ambiguous
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(&link).unwrap();
+            std::fs::copy(&foreign, &link).unwrap();
+        }
+        let err = self_target(&e, &link).unwrap_err();
+        assert!(err.to_string().contains("several installs"), "{err}");
+        assert!(err.to_string().contains("w@1.0.0"), "{err}");
+        assert!(err.to_string().contains("w@1.0.1"), "{err}");
     }
 
     #[test]
@@ -4075,6 +4389,7 @@ mod tests {
             "verify",
             "update",
             "pin",
+            "self-upgrade",
             "bin",
             "cache",
             "version",

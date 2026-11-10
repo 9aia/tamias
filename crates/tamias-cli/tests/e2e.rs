@@ -1358,3 +1358,85 @@ fn bin_links_payload_into_bin_dir() {
     assert!(!link.exists() && !link.is_symlink());
     assert!(std::fs::symlink_metadata(home.join("bin-alias/widget")).is_err());
 }
+
+#[test]
+fn self_upgrade_rejects_unmanaged_binary() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    // The test binary lives in target/, not in the temp TAMIAS_HOME
+    // store — every self-upgrade shape must fail with the same clean
+    // "not installed via tamias" error (detection runs before --check
+    // or any fetch).
+    for args in [
+        &["self-upgrade"][..],
+        &["self-upgrade", "--check"][..],
+        &["self-upgrade", "--json"][..],
+    ] {
+        let o = tamias(&home, &cache, args);
+        assert!(!o.status.success(), "{args:?}: {}", stdout(&o));
+        assert!(
+            stderr(&o).contains("not installed via tamias"),
+            "{args:?}: {}",
+            stderr(&o)
+        );
+    }
+}
+
+/// Full self-upgrade: the payload's `bin/tamias` is a copy of the real
+/// binary, so running the store copy makes `current_exe` resolve inside
+/// the store entry — `self-upgrade` finds its record and re-installs
+/// the recorded ref. Unix-only: the update swaps the entry dir out from
+/// under the running exe, which Windows can't do to a locked image.
+#[cfg(unix)]
+#[test]
+fn self_upgrade_updates_the_owning_package() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(pkg.join("bin")).unwrap();
+    std::fs::copy(tamias_bin(), pkg.join("bin/tamias")).unwrap();
+    let manifest = pkg.join("tamias.yaml");
+    std::fs::write(&manifest, "name: selfbin\nversion: 1.0.0\n").unwrap();
+
+    let o = tamias(&home, &cache, &["install", pkg.to_str().unwrap()]);
+    assert!(o.status.success(), "install: {}", stderr(&o));
+
+    // Bump the payload — the recorded source_ref is the pkg dir, so
+    // self-upgrade's re-install picks up 1.0.1.
+    std::fs::write(&manifest, "name: selfbin\nversion: 1.0.1\n").unwrap();
+
+    // --check reports the pending update without touching the store.
+    let exe = home.join("store/selfbin@1.0.0/bin/tamias");
+    assert!(exe.exists(), "store exe missing: {}", exe.display());
+    let run_exe = |args: &[&str]| {
+        Command::new(&exe)
+            .args(args)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("TAMIAS_CONSENT_FILE", cache.join("consented.json"))
+            .env_remove("TAMIAS_ALLOW_DRIVERS")
+            .output()
+            .unwrap()
+    };
+    let o = run_exe(&["self-upgrade", "--check"]);
+    assert!(o.status.success(), "check: {}", stderr(&o));
+    assert!(stdout(&o).contains("selfbin@1.0.0"), "{}", stdout(&o));
+    assert!(stdout(&o).contains("update available"), "{}", stdout(&o));
+
+    let o = run_exe(&["self-upgrade", "--json"]);
+    assert!(o.status.success(), "self-upgrade: {}", stderr(&o));
+    let v: serde_json::Value = serde_json::from_str(stdout(&o).trim()).unwrap();
+    assert_eq!(v["package"], "selfbin");
+    assert_eq!(v["from"], "selfbin@1.0.0");
+    assert_eq!(v["to"], "selfbin@1.0.1");
+    assert_eq!(v["restart"], true);
+
+    // The store now carries both labels — `update` semantics keep
+    // coexisting versions (same as `tamias update <name>`); the old
+    // entry is `tamias remove`'s job, not self-upgrade's.
+    let o = tamias(&home, &cache, &["list"]);
+    assert!(stdout(&o).contains("selfbin@1.0.1"), "{}", stdout(&o));
+    assert!(stdout(&o).contains("selfbin@1.0.0"), "{}", stdout(&o));
+}
