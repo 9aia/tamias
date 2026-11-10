@@ -1,7 +1,7 @@
 +++
 id = "P-004"
 title = "payload composition — include:/overlay() on install+publish, lock-only install"
-status = "open"
+status = "claimed"
 created = "2026-11-10"
 owner = "devin"
 priority = "high"
