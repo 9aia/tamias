@@ -402,6 +402,7 @@ fn write_config(path: &Path, config: &Config) -> Result<(), Error> {
 pub fn registry_json(name: &str, reg: &ConfigRegistry) -> serde_json::Value {
     serde_json::json!({
         "name": name,
+        "id": reg.id,
         "kind": reg.kind,
         "effective_kind": reg.effective_kind(),
         "url": reg.url,
@@ -424,21 +425,41 @@ fn registry_kind(kind: &str) -> Result<&'static str, Error> {
     }
 }
 
-/// `registry add` — validate kind/url, refuse duplicates, render the
+/// Validate a `registry add --id` value — must be usable as a ref
+/// label (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`, same charset the registry-ref
+/// grammar claims), so a uuid or any slug-safe string works.
+fn registry_id(id: &str) -> Result<&str, Error> {
+    let valid = !id.is_empty()
+        && id.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+    if valid {
+        Ok(id)
+    } else {
+        Err(Error::Failed(format!(
+            "invalid registry id '{id}' — expected [a-zA-Z0-9][a-zA-Z0-9_.-]*"
+        )))
+    }
+}
+
+/// `registry add` — validate kind/url/id, refuse duplicates, render the
 /// config back through its own format. Returns the config path
 /// written. http/cf need an http(s) url; local takes a dir (or
 /// anything — the explicit kind wins over url-scheme inference at
-/// resolve time).
+/// resolve time). `id` is the optional stable identifier registry-scoped
+/// install refs (`<id>:<name>@<version>`) match before the map key.
 ///
 /// # Errors
-/// Fails on an unknown kind, a non-http(s) url for http/cf, a
-/// duplicate name, or a config read/write error.
+/// Fails on an unknown kind, a non-http(s) url for http/cf, a bad or
+/// duplicate id, a duplicate name, or a config read/write error.
 pub fn add_registry(
     file: Option<&Path>,
     name: &str,
     kind: &str,
     url: &str,
     token_env: Option<String>,
+    id: Option<String>,
 ) -> Result<PathBuf, Error> {
     let kind = registry_kind(kind)?;
     if kind != "local" {
@@ -451,13 +472,24 @@ pub fn add_registry(
             }
         }
     }
+    let id = id.as_deref().map(registry_id).transpose()?;
     let (path, mut config) = config_target(file)?;
     if config.registries.contains_key(name) {
         return Err(Error::Failed(format!("registry '{name}' already exists")));
     }
+    if let Some(id) = id {
+        if config
+            .registries
+            .values()
+            .any(|reg| reg.id.as_deref() == Some(id))
+        {
+            return Err(Error::Failed(format!("registry id '{id}' already exists")));
+        }
+    }
     config.registries.insert(
         name.to_string(),
         ConfigRegistry {
+            id: id.map(str::to_string),
             kind: Some(kind.to_string()),
             url: Some(url.to_string()),
             token_env,
@@ -516,12 +548,13 @@ mod tests {
             "local",
             "/tmp/reg",
             Some("MY_TOKEN".into()),
+            None,
         )
         .unwrap();
         assert_eq!(path, file);
         assert!(file.is_file());
         // duplicate name errors
-        assert!(add_registry(Some(&file), "mine", "local", "/x", None).is_err());
+        assert!(add_registry(Some(&file), "mine", "local", "/x", None, None).is_err());
         // get returns the entry; list sees it; token_env is a name only
         let reg = get_registry(Some(&file), "mine").unwrap();
         assert_eq!(reg.effective_kind(), "local");
@@ -541,11 +574,55 @@ mod tests {
     fn add_validates_kind_and_url() {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("tamias.yml");
-        assert!(add_registry(Some(&file), "b", "bogus", "/x", None).is_err());
-        assert!(add_registry(Some(&file), "b", "http", "/not-http", None).is_err());
-        assert!(add_registry(Some(&file), "b", "HTTP", "http://h/r", None).is_ok());
+        assert!(add_registry(Some(&file), "b", "bogus", "/x", None, None).is_err());
+        assert!(add_registry(Some(&file), "b", "http", "/not-http", None, None).is_err());
+        assert!(add_registry(Some(&file), "b", "HTTP", "http://h/r", None, None).is_ok());
         // local accepts a bare dir
-        assert!(add_registry(Some(&file), "l", "local", "/tmp/reg", None).is_ok());
+        assert!(add_registry(Some(&file), "l", "local", "/tmp/reg", None, None).is_ok());
+    }
+
+    #[test]
+    fn add_registry_id_round_trip_and_validation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("tamias.yml");
+        // a uuid-shaped id is accepted and shows up in get/json
+        add_registry(
+            Some(&file),
+            "org",
+            "http",
+            "https://reg.example",
+            None,
+            Some("018f3c2e-7b1a-7c4d-9e5f-2a6b8c0d1e2f".into()),
+        )
+        .unwrap();
+        let reg = get_registry(Some(&file), "org").unwrap();
+        assert_eq!(
+            reg.id.as_deref(),
+            Some("018f3c2e-7b1a-7c4d-9e5f-2a6b8c0d1e2f")
+        );
+        assert_eq!(
+            registry_json("org", &reg)["id"],
+            "018f3c2e-7b1a-7c4d-9e5f-2a6b8c0d1e2f"
+        );
+        // bad charset / empty rejected; duplicate id rejected
+        assert!(add_registry(
+            Some(&file),
+            "bad",
+            "http",
+            "https://x",
+            None,
+            Some("has space".into())
+        )
+        .is_err());
+        assert!(add_registry(
+            Some(&file),
+            "dup",
+            "http",
+            "https://x",
+            None,
+            Some("018f3c2e-7b1a-7c4d-9e5f-2a6b8c0d1e2f".into())
+        )
+        .is_err());
     }
 
     #[test]
@@ -625,7 +702,7 @@ mod tests {
         assert_eq!(load_config(Some(&missing)).unwrap(), Config::default());
         // written file round-trips
         let file = tmp.path().join("tamias.yml");
-        add_registry(Some(&file), "r", "local", "/x", None).unwrap();
+        add_registry(Some(&file), "r", "local", "/x", None, None).unwrap();
         assert!(load_config(Some(&file))
             .unwrap()
             .registries

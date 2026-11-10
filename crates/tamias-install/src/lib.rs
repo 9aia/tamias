@@ -38,6 +38,7 @@ use tamias_source_cf::{CfRefKind, CfSource};
 use tamias_source_fs::{FsRefKind, FsSource};
 use tamias_source_git::{GitRefKind, GitSource};
 use tamias_source_http::{HttpRefKind, HttpSource};
+use tamias_source_registry::RegistryRefKind;
 use tamias_store_local::Store;
 
 mod consent;
@@ -387,12 +388,17 @@ pub(crate) fn install_inner(
     Ok(entry)
 }
 
-/// The ref grammar — kinds in claim order; the fs fallback (paths) is last.
+/// The ref grammar — kinds in claim order; the fs fallback (paths) is
+/// last. `RegistryRefKind` sits before `FsRefKind` because a scoped
+/// registry ref (`9aia:@scope/pkg@1.0.0`) contains `/` and would
+/// otherwise be claimed as a path; its `claims` is shape-only (no
+/// config IO) and `parse` does the registry lookup.
 fn refs() -> Refs {
     Refs::new()
         .with(Arc::new(GitRefKind))
         .with(Arc::new(CfRefKind))
         .with(Arc::new(HttpRefKind))
+        .with(Arc::new(RegistryRefKind::new()))
         .with(Arc::new(FsRefKind))
 }
 

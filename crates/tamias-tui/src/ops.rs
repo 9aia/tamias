@@ -1182,11 +1182,15 @@ mod tests {
     use super::*;
 
     fn ctx(dir: &std::path::Path) -> Ctx {
+        // A nonexistent explicit config file → `load_config` returns
+        // defaults, so the developer's real `~/.config/tamias` (or a
+        // stray `TAMIAS_CONFIG`) can't leak registry routing into the
+        // assertions below.
         Ctx::new(
             dir.join("store"),
             dir.join("cache"),
             dir.join("registry"),
-            None,
+            Some(dir.join("no-such-config.yml")),
         )
     }
 

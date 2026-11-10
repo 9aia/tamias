@@ -1440,3 +1440,144 @@ fn self_upgrade_updates_the_owning_package() {
     assert!(stdout(&o).contains("selfbin@1.0.1"), "{}", stdout(&o));
     assert!(stdout(&o).contains("selfbin@1.0.0"), "{}", stdout(&o));
 }
+
+#[test]
+fn install_via_named_registry_ref() {
+    use std::time::Duration;
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    // Isolated user-config dir — the real ~/.config/tamias must never
+    // leak registries into the ref resolution under test.
+    let xdg = tmp.path().join("xdg");
+    // The cwd carrying the project `tamias.yml` with `registries:`.
+    let work = tmp.path().join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let reg = tmp.path().join("registry");
+
+    // Two payloads: unscoped `demo` + scoped `@acme/scoped`.
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: demo\nversion: 1.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let spkg = tmp.path().join("spkg");
+    std::fs::create_dir_all(&spkg).unwrap();
+    std::fs::write(
+        spkg.join("tamias.yaml"),
+        "name: scoped\nscope: acme\nversion: 2.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(spkg.join("b.txt"), "b").unwrap();
+
+    // Serve the registry on an ephemeral port, publish both packages.
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap().to_string();
+    drop(l);
+    let mut server = Command::new(tamias_bin())
+        .args([
+            "registry",
+            "serve",
+            "--addr",
+            &addr,
+            "--dir",
+            reg.to_str().unwrap(),
+        ])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(&addr).is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let url = format!("http://{addr}");
+    for dir in [&pkg, &spkg] {
+        let o = Command::new(tamias_bin())
+            .args(["publish", dir.to_str().unwrap(), "--registry", &url])
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "publish: {}", stderr(&o));
+    }
+
+    // The project config names the registry twice: by slug (`localreg`)
+    // and by stable id (`mirror`, matched before the slug).
+    let reg_id = "018f3c2e-7b1a-7c4d-9e5f-2a6b8c0d1e2f";
+    std::fs::write(
+        work.join("tamias.yml"),
+        format!(
+            "registries:\n  localreg:\n    kind: http\n    url: {url}\n  \
+             mirror:\n    id: {reg_id}\n    kind: http\n    url: {url}\n  \
+             localdir:\n    kind: local\n    url: {}\n",
+            reg.display()
+        ),
+    )
+    .unwrap();
+
+    // tamias in `work` — picks up ./tamias.yml + the isolated XDG dir.
+    let tamias_at = |args: &[&str]| {
+        Command::new(tamias_bin())
+            .args(args)
+            .current_dir(&work)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("TAMIAS_CONSENT_FILE", cache.join("consented.json"))
+            .env("XDG_CONFIG_HOME", &xdg)
+            .env_remove("TAMIAS_ALLOW_DRIVERS")
+            .env_remove("TAMIAS_REGISTRY")
+            .env_remove("TAMIAS_REGISTRY_TOKEN")
+            .env_remove("TAMIAS_CONFIG")
+            .output()
+            .unwrap()
+    };
+
+    // <slug>:<name>@<version>
+    let o = tamias_at(&["install", "localreg:demo@1.0.0"]);
+    assert!(o.status.success(), "install localreg: {}", stderr(&o));
+    // <id>:@scope/<name>@<version> — id match + scoped package name
+    let o = tamias_at(&["install", &format!("{reg_id}:@acme/scoped@2.0.0")]);
+    assert!(o.status.success(), "install by id scoped: {}", stderr(&o));
+    let o = tamias_at(&["list"]);
+    assert!(stdout(&o).contains("demo@1.0.0"), "{}", stdout(&o));
+    assert!(stdout(&o).contains("@acme/scoped@2.0.0"), "{}", stdout(&o));
+
+    // provenance — the store record keeps the verbatim registry ref
+    let o = tamias_at(&["info", "demo", "--json"]);
+    assert!(o.status.success(), "info: {}", stderr(&o));
+    let info: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    assert_eq!(info["source_ref"], "localreg:demo@1.0.0");
+
+    // unknown label → hard error (never an fs-path fallback)
+    let o = tamias_at(&["install", "nope:demo@1.0.0"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr(&o).contains("unknown registry 'nope'"),
+        "{}",
+        stderr(&o)
+    );
+    // bare name — @<version> required
+    let o = tamias_at(&["install", "localreg:demo"]);
+    assert!(!o.status.success());
+    // local-kind registry → clear error
+    let o = tamias_at(&["install", "localdir:demo@1.0.0"]);
+    assert!(!o.status.success());
+    assert!(stderr(&o).contains("kind local"), "{}", stderr(&o));
+
+    // registry get --json surfaces the id
+    let o = tamias_at(&["registry", "get", "mirror", "--json"]);
+    assert!(o.status.success(), "get: {}", stderr(&o));
+    let got: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    assert_eq!(got["id"], reg_id);
+
+    server.kill().ok();
+    let _ = server.wait();
+}

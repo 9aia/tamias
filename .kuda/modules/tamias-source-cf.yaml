@@ -5,7 +5,7 @@ api:
 - name: CfPlan
   kind: type
   file: crates/tamias-source-cf/src/lib.rs
-  line: 121
+  line: 162
   module: tamias-source-cf
 - name: CfRefKind
   kind: type
@@ -15,7 +15,7 @@ api:
 - name: CfSource
   kind: type
   file: crates/tamias-source-cf/src/lib.rs
-  line: 92
+  line: 106
   module: tamias-source-cf
 - name: CfSpec
   kind: type
@@ -25,67 +25,72 @@ api:
 - name: ForeignPlan
   kind: type
   file: crates/tamias-source-cf/src/lib.rs
-  line: 199
+  line: 246
   module: tamias-source-cf
 - name: accepts
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 137
+  line: 178
   module: tamias-source-cf
 - name: cf_base_url
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 71
+  line: 85
   module: tamias-source-cf
 - name: claims
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 39
+  line: 51
   module: tamias-source-cf
 - name: default
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 116
+  line: 130
   module: tamias-source-cf
 - name: fetch
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 163
+  line: 210
   module: tamias-source-cf
 - name: fetch_rejects_payload_digest_mismatch
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 287
+  line: 335
   module: tamias-source-cf
 - name: grammar_plan_fetch_and_errors
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 234
+  line: 281
   module: tamias-source-cf
-- name: new
-  kind: function
-  file: crates/tamias-source-cf/src/lib.rs
-  line: 101
-  module: tamias-source-cf
-- name: parse
-  kind: function
-  file: crates/tamias-source-cf/src/lib.rs
-  line: 43
-  module: tamias-source-cf
-- name: parse_cf
-  kind: function
-  file: crates/tamias-source-cf/src/lib.rs
-  line: 49
-  module: tamias-source-cf
-- name: plan
+- name: http_client
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
   line: 141
   module: tamias-source-cf
+- name: new
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 115
+  module: tamias-source-cf
+- name: parse
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 55
+  module: tamias-source-cf
+- name: parse_cf
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 61
+  module: tamias-source-cf
+- name: plan
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 182
+  module: tamias-source-cf
 - name: serve_registry
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 204
+  line: 251
   module: tamias-source-cf
 - name: tamias-source-cf
   kind: module
@@ -95,12 +100,12 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-source-cf/src/lib.rs
-  line: 193
+  line: 240
   module: tamias-source-cf
 - name: with_max_download
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 109
+  line: 123
   module: tamias-source-cf
 deps:
 - tamias-core
@@ -129,8 +134,8 @@ provenance:
   - crates/tamias-source-cf/tests/props.rs
   hashes:
   - 1455812a4c18d352c6d58bbc8102e69502d7e09e
-  - db045dbc90ec2494c16222aa38b602a0c6d8c6c2
+  - 3365703919f6e281ff1fd71375e3b9aae99d4e90
   - 32215f5222a96dc1a54fe876d70b722b8adf36d1
-  commit_sha: d6bae6ac4d86bafaf6bb174e84f0d253e3df19d3
-  generated_at: '1794348291'
+  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
+  generated_at: '1794355185'
   generator: kuda-template/0.1.2

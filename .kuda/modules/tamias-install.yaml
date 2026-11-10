@@ -20,7 +20,7 @@ api:
 - name: DRVENV
   kind: const
   file: crates/tamias-install/src/lib.rs
-  line: 776
+  line: 782
   module: tamias-install
 - name: DepOutcome
   kind: type
@@ -35,12 +35,12 @@ api:
 - name: Env
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 50
+  line: 51
   module: tamias-install
 - name: EnvGuard
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 785
+  line: 791
   module: tamias-install
 - name: FILE_NAME
   kind: const
@@ -55,7 +55,7 @@ api:
 - name: IncludeResolution
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 502
+  line: 508
   module: tamias-install
 - name: IncludeState
   kind: type
@@ -65,7 +65,7 @@ api:
 - name: InstallPlan
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 540
+  line: 546
   module: tamias-install
 - name: MAX_INCLUDE_DEPTH
   kind: const
@@ -75,27 +75,27 @@ api:
 - name: PlanManifest
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 488
+  line: 494
   module: tamias-install
 - name: PlannedInclude
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 517
+  line: 523
   module: tamias-install
 - name: PlannedService
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 527
+  line: 533
   module: tamias-install
 - name: Progress
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 138
+  line: 139
   module: tamias-install
 - name: Surface
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 94
+  line: 95
   module: tamias-install
 - name: SyncOptions
   kind: type
@@ -115,7 +115,7 @@ api:
 - name: allow
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1041
+  line: 1047
   module: tamias-install
 - name: as_str
   kind: function
@@ -125,27 +125,27 @@ api:
 - name: bad_ref_and_missing_manifest_fail
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1407
+  line: 1413
   module: tamias-install
 - name: consent
   kind: module
   file: crates/tamias-install/src/lib.rs
-  line: 43
+  line: 44
   module: tamias-install
 - name: consent_env
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 926
+  line: 932
   module: tamias-install
 - name: consent_gate_and_surface_hints
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 867
+  line: 873
   module: tamias-install
 - name: consent_memory_skips_reprompt_for_identical_bytes
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 936
+  line: 942
   module: tamias-install
 - name: consent_path
   kind: function
@@ -160,7 +160,7 @@ api:
 - name: consent_refusal
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 106
+  line: 107
   module: tamias-install
 - name: consent_round_trip_and_digest_binding
   kind: function
@@ -180,22 +180,22 @@ api:
 - name: corrupt_consent_file_means_no_consent
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 973
+  line: 979
   module: tamias-install
 - name: drivers_hint
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 116
+  line: 117
   module: tamias-install
 - name: drop
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 805
+  line: 811
   module: tamias-install
 - name: env
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 818
+  line: 824
   module: tamias-install
 - name: env
   kind: function
@@ -216,6 +216,7 @@ deps:
 - tamias-source-fs
 - tamias-source-git
 - tamias-source-http
+- tamias-source-registry
 - tamias-store-local
 - tempfile
 - tracing
@@ -230,6 +231,7 @@ deps:
 - tamias-store-local
 - tamias-cache-local
 - tamias-source-cf
+- tamias-source-registry
 - sync
 notes: ''
 verify:
@@ -246,11 +248,11 @@ provenance:
   - crates/tamias-install/src/lib.rs
   - crates/tamias-install/src/sync.rs
   hashes:
-  - 553429949c12eb36842eb7089396d023cab5bddd
+  - 972e344f7d62e475c6be8b3c3ed490de7c73a4c1
   - ee8d6763ab4fc04a6bdd00a690e31db67bba55e9
   - e925dbcec065152ea5f89e15e861c2407aedaea0
-  - 953b15c5998466d2b5682e46ed2c912486b46e76
+  - 501fe15e3781870609e5a5229d9026d22fafaa56
   - c17f6b8edb459d412e238eb3e1f3cbcdc6fe8028
-  commit_sha: d6bae6ac4d86bafaf6bb174e84f0d253e3df19d3
-  generated_at: '1794348291'
+  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
+  generated_at: '1794355185'
   generator: kuda-template/0.1.2

@@ -53,6 +53,13 @@ impl Location {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Registry {
+    /// Stable identifier (typically a uuid) — registry-scoped install
+    /// refs (`<label>:<name>@<version>`) match `id` before the map key
+    /// (`name`), so an entry can be renamed without breaking refs that
+    /// pin the id. Must be ref-label-safe (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`)
+    /// to be usable in a ref.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     /// Explicit kind — `local` | `http` | `cf`. Unset → inferred from
     /// `url` (http(s) → `http`, anything else → `local`), so configs
     /// written before kinds were explicit keep working.
@@ -89,6 +96,9 @@ impl Registry {
 
     /// Overlay `upper` — its set fields win, unset fields keep `self`.
     pub fn overlay(&mut self, upper: &Self) {
+        if upper.id.is_some() {
+            self.id = upper.id.clone();
+        }
         if upper.kind.is_some() {
             self.kind = upper.kind.clone();
         }
@@ -388,7 +398,9 @@ pub struct Config {
     /// Fetch-cache location — same resolution rule as `store`.
     pub cache: Location,
     /// Named registries — `publish`/`search --registry <name>` and the
-    /// `publish.default`/`search.default` routing resolve through these.
+    /// `publish.default`/`search.default` routing resolve through these;
+    /// registry-scoped install refs (`<label>:<name>@<version>`) match
+    /// an entry's `id` first, then its map key.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub registries: BTreeMap<String, Registry>,
     /// Publish routing.

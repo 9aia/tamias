@@ -1,0 +1,28 @@
+[package]
+name = "tamias-source-registry"
+description = "Registry-scoped install refs — the `<registry>:<name>[@<version>]` ref arm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[dependencies]
+tamias-core.workspace = true
+tamias-config.workspace = true
+tamias-source.workspace = true
+tamias-source-cf.workspace = true
+tamias-registry-open.workspace = true
+
+[dev-dependencies]
+tamias-registry.workspace = true
+tamias-registry-local.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

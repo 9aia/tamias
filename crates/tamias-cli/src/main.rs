@@ -453,6 +453,11 @@ enum RegistryCommand {
         /// is read from the environment at connect time, never stored.
         #[arg(long)]
         token_env: Option<String>,
+        /// Stable identifier (uuid or slug-safe string) — registry-scoped
+        /// install refs (`<id>:<name>@<version>`) match it before the
+        /// registry name.
+        #[arg(long)]
+        id: Option<String>,
     },
     /// Remove a named registry from the config file.
     Remove {
@@ -903,8 +908,9 @@ fn registry_add(
     kind: RegistryKind,
     url: String,
     token_env: Option<String>,
+    id: Option<String>,
 ) -> Result<(), Error> {
-    let path = tamias_registry_open::add_registry(file, &name, kind.as_str(), &url, token_env)?;
+    let path = tamias_registry_open::add_registry(file, &name, kind.as_str(), &url, token_env, id)?;
     println!(
         "added registry {name} ({}) → {}",
         kind.as_str(),
@@ -927,6 +933,9 @@ fn registry_get(file: Option<&Path>, name: &str, json: bool) -> Result<(), Error
         print_json(&tamias_registry_open::registry_json(name, &reg))?;
     } else {
         println!("name:      {name}");
+        if let Some(id) = &reg.id {
+            println!("id:        {id}");
+        }
         println!("kind:      {}", reg.kind.as_deref().unwrap_or("(inferred)"));
         println!("effective: {}", reg.effective_kind());
         println!("url:       {}", reg.url.as_deref().unwrap_or("-"));
@@ -963,12 +972,16 @@ fn registry_list(file: Option<&Path>, json: bool) -> Result<(), Error> {
     } else {
         for (name, reg) in &config.registries {
             println!(
-                "{name}  {}  {}  {}",
+                "{name}  {}  {}  {}{}",
                 reg.effective_kind(),
                 reg.url.as_deref().unwrap_or("-"),
                 reg.token_env
                     .as_deref()
                     .map(|t| format!("token: ${t}"))
+                    .unwrap_or_default(),
+                reg.id
+                    .as_deref()
+                    .map(|id| format!("  id: {id}"))
                     .unwrap_or_default()
             );
         }
@@ -1443,7 +1456,8 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 kind,
                 url,
                 token_env,
-            } => registry_add(file.as_deref(), name, kind, url, token_env)?,
+                id,
+            } => registry_add(file.as_deref(), name, kind, url, token_env, id)?,
             RegistryCommand::Remove { name } => registry_remove(file.as_deref(), &name)?,
             RegistryCommand::Get { name, json } => registry_get(file.as_deref(), &name, json)?,
             RegistryCommand::List { json } => registry_list(file.as_deref(), json)?,

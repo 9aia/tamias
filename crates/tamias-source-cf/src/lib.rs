@@ -25,14 +25,26 @@ pub struct CfRefKind;
 /// A parsed `cf:` ref.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CfSpec {
-    /// Registry base URL, derived from the address.
+    /// Registry base URL, derived from the address (`cf:`) or taken
+    /// verbatim from the named registry's `url` (registry refs).
     pub base_url: String,
-    /// The `<account>/<bucket…>` address as written (provenance).
+    /// The `<account>/<bucket…>` address as written, or the registry
+    /// label — provenance only, never fetched.
     pub address: String,
     /// Bare package name.
     pub name: String,
+    /// `@scope/` namespace when the package is scoped — `None` for
+    /// `cf:` refs (the `cf:` grammar can't express scopes) and for
+    /// unscoped registry-ref names.
+    pub scope: Option<String>,
     /// Declared version.
     pub version: String,
+    /// Env var **name** holding the bearer token — set by
+    /// registry-scoped refs (`<registry>:<name>@<version>`) from the
+    /// registry's `token_env`; `None` → `TAMIAS_REGISTRY_TOKEN` only
+    /// (the `cf:` behavior). The token *value* is resolved at plan
+    /// time, never stored in the spec.
+    pub token_env: Option<String>,
 }
 
 impl RefKind for CfRefKind {
@@ -61,7 +73,9 @@ fn parse_cf(body: &str) -> Result<Spec, Error> {
         base_url: cf_base_url(address),
         address: address.to_string(),
         name: name.to_string(),
+        scope: None,
         version: version.to_string(),
+        token_env: None,
     }))
 }
 
@@ -118,6 +132,33 @@ impl Default for CfSource {
     }
 }
 
+/// The index client — `token_env` names the env var holding the bearer
+/// token (registry-scoped refs carry the named registry's `token_env`;
+/// `cf:` refs pass `None`). An unset/empty named var warns and falls
+/// back to `TAMIAS_REGISTRY_TOKEN`, preserving the `cf:` behavior.
+/// Only env var *names* live in specs — values resolve here, at plan
+/// time.
+fn http_client(base: &str, token_env: Option<&str>) -> HttpRegistry {
+    let token = token_env
+        .and_then(|var| match std::env::var(var) {
+            Ok(value) if !value.is_empty() => Some(value),
+            _ => {
+                eprintln!("tamias: warning — ${var} is unset; no token");
+                None
+            }
+        })
+        .or_else(|| {
+            std::env::var("TAMIAS_REGISTRY_TOKEN")
+                .ok()
+                .filter(|t| !t.is_empty())
+        });
+    let mut registry = HttpRegistry::new(base);
+    if let Some(token) = token {
+        registry = registry.with_token(token);
+    }
+    registry
+}
+
 struct CfPlan {
     url: String,
     /// The index's recorded `dir_digest` of the published payload root —
@@ -142,16 +183,22 @@ impl Source for CfSource {
         let CfSpec {
             base_url,
             name,
+            scope,
             version,
+            token_env,
             ..
         } = spec
             .downcast_ref::<CfSpec>()
             .ok_or_else(|| Error::Failed("CfSource only plans cf refs".to_string()))?;
         let base = base_url.trim_end_matches('/').to_string();
-        let entries = HttpRegistry::from_env(base.clone()).entries()?;
+        let entries = http_client(&base, token_env.as_deref()).entries()?;
         let entry = entries
             .into_iter()
-            .find(|e| &e.name == name && e.version.as_deref() == Some(version.as_str()))
+            .find(|e| {
+                &e.name == name
+                    && e.scope.as_deref() == scope.as_deref()
+                    && e.version.as_deref() == Some(version.as_str())
+            })
             .ok_or_else(|| Error::Failed(format!("{name}@{version} not found in {base}")))?;
         Ok(Box::new(CfPlan {
             url: format!("{base}/{}", entry.file),
@@ -242,6 +289,7 @@ mod tests {
             address,
             name,
             version,
+            ..
         } = *spec.downcast::<CfSpec>().unwrap();
         assert_eq!(base_url, "https://9aia.workers.dev/bucket");
         assert_eq!(address, "9aia/bucket");

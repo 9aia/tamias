@@ -31,6 +31,7 @@ members = [
     "crates/tamias-source-fs",
     "crates/tamias-source-git",
     "crates/tamias-source-http",
+    "crates/tamias-source-registry",
     "crates/tamias-store",
     "crates/tamias-store-local",
     "crates/tamias-tui",
@@ -92,6 +93,7 @@ tamias-source-cf = { path = "crates/tamias-source-cf", version = "0.1.0" }
 tamias-source-fs = { path = "crates/tamias-source-fs", version = "0.1.0" }
 tamias-source-git = { path = "crates/tamias-source-git", version = "0.1.0" }
 tamias-source-http = { path = "crates/tamias-source-http", version = "0.1.0" }
+tamias-source-registry = { path = "crates/tamias-source-registry", version = "0.1.0" }
 tamias-store = { path = "crates/tamias-store", version = "0.1.0" }
 tamias-store-local = { path = "crates/tamias-store-local", version = "0.1.0" }
 tamias-tui = { path = "crates/tamias-tui", version = "0.1.0" }

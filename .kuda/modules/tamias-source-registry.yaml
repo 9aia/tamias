@@ -1,0 +1,127 @@
+name: tamias-source-registry
+path: crates/tamias-source-registry/Cargo.toml
+purpose: Registry-scoped install refs — the `<registry>:<name>[@<version>]` ref arm
+api:
+- name: RESERVED_LABELS
+  kind: const
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 34
+  module: tamias-source-registry
+- name: RegistryRefKind
+  kind: type
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 42
+  module: tamias-source-registry
+- name: claims
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 67
+  module: tamias-source-registry
+- name: claims_shape_without_io
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 196
+  module: tamias-source-registry
+- name: config_with
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 179
+  module: tamias-source-registry
+- name: find_registry
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 166
+  module: tamias-source-registry
+- name: http_registry
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 187
+  module: tamias-source-registry
+- name: id_beats_slug_on_collision
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 262
+  module: tamias-source-registry
+- name: local_kind_registry_errors
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 297
+  module: tamias-source-registry
+- name: new
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 49
+  module: tamias-source-registry
+- name: parse
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 88
+  module: tamias-source-registry
+- name: parse_output_plans_through_cf_source
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 340
+  module: tamias-source-registry
+- name: parse_resolves_by_name_and_id
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 228
+  module: tamias-source-registry
+- name: tamias-source-registry
+  kind: module
+  file: crates/tamias-source-registry/Cargo.toml
+  line: 1
+  module: tamias-source-registry
+- name: tests
+  kind: module
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 176
+  module: tamias-source-registry
+- name: token_env_and_kind_cf_pass_through
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 309
+  module: tamias-source-registry
+- name: unknown_label_and_bad_shapes_error
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 282
+  module: tamias-source-registry
+- name: valid_label
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 158
+  module: tamias-source-registry
+- name: with_config
+  kind: function
+  file: crates/tamias-source-registry/src/lib.rs
+  line: 55
+  module: tamias-source-registry
+deps:
+- tamias-config
+- tamias-core
+- tamias-registry-open
+- tamias-source
+- tamias-source-cf
+- tamias-registry
+- tamias-registry-local
+- tempfile
+- tamias-config
+- tamias-core
+- tamias-registry-open
+- tamias-source
+- tamias-source-cf
+notes: ''
+verify:
+- crates/tamias-source-registry/Cargo.toml
+- crates/tamias-source-registry/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-source-registry/Cargo.toml
+  - crates/tamias-source-registry/src/lib.rs
+  hashes:
+  - e6fdc5f58e8bd5defa894a94d38f16a68e449bbb
+  - 04ae4e0e9e08ba15e99b8712cdc77fd4b3e1370e
+  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
+  generated_at: '1794355185'
+  generator: kuda-template/0.1.2

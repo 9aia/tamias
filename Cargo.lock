@@ -2738,6 +2738,7 @@ dependencies = [
  "tamias-source-fs",
  "tamias-source-git",
  "tamias-source-http",
+ "tamias-source-registry",
  "tamias-store-local",
  "tempfile",
  "tracing",
@@ -2901,6 +2902,20 @@ dependencies = [
  "tamias-source",
  "tempfile",
  "ureq",
+]
+
+[[package]]
+name = "tamias-source-registry"
+version = "0.1.0"
+dependencies = [
+ "tamias-config",
+ "tamias-core",
+ "tamias-registry",
+ "tamias-registry-local",
+ "tamias-registry-open",
+ "tamias-source",
+ "tamias-source-cf",
+ "tempfile",
 ]
 
 [[package]]

@@ -321,12 +321,14 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 .get("token_env")
                 .and_then(Value::as_str)
                 .map(str::to_string);
+            let id = req.get("id").and_then(Value::as_str).map(str::to_string);
             let path = tamias_registry_open::add_registry(
                 env.config_file.as_deref(),
                 name,
                 kind,
                 url,
                 token_env,
+                id,
             )?;
             Ok(json!({"name": name, "config": path.display().to_string()}))
         }
