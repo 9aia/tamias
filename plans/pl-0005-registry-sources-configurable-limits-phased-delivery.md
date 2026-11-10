@@ -5,6 +5,7 @@ status = "open"
 created = "2026-11-10"
 owner = "devin"
 priority = "high"
+blocks = ["PL-004"]
 links = ["P-002"]
 +++
 
