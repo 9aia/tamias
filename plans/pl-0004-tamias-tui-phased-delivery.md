@@ -1,7 +1,7 @@
 +++
 id = "PL-004"
 title = "tamias TUI — phased delivery"
-status = "in-progress"
+status = "done"
 created = "2026-11-10"
 owner = "devin"
 priority = "medium"
