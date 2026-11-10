@@ -1,7 +1,7 @@
 +++
 id = "I-001"
 title = "pavo-core paths.rs still falls back to ./tamias (tamias fixed to ./.tamias)"
-status = "open"
+status = "done"
 created = "2026-11-08"
 priority = "medium"
 +++
