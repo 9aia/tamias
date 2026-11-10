@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-ci-bupha","actor":"luis","ts":1794339767,"op":{"op":"claim","glob":"fs:CONTRIBUTING.md","ttl_secs":3600}}
+{"id":"","ws":"devin-ci-bupha","actor":"luis","ts":1794339992,"op":{"op":"presence","status":"left"}}
