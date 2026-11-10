@@ -2,7 +2,8 @@
 //! tamias-provider — the provider lifecycle shared by `tamias` (CLI
 //! verbs) and `tamias ui` (the Services pane). Everything here used to
 //! live private in `tamias-cli`: resolving an installed package's
-//! `provider:` block into unit names, `systemctl` state probes,
+//! `provider:` block into unit/task names, host-backend state probes
+//! (systemd `systemctl` / Windows `schtasks` via [`ServiceBackend`]),
 //! deploy/uninstall teardown (driver verb + declarative units +
 //! shared-unit survivor re-render), the foreground `run` exec spec
 //! (env_file → env → workdir, the same order the unit renders), and
@@ -17,7 +18,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tamias_core::{output_with_timeout, Error, Manifest, ProviderIngress, StoreEntry};
-use tamias_deploy_systemd::{LocalDeploy, ServiceSpec};
+use tamias_deploy::{expand_home, split_exec, ServiceSpec};
+use tamias_deploy_systemd::{journalctl_args, LocalDeploy};
+use tamias_deploy_windows::WindowsDeploy;
 use tamias_store_local::Store;
 
 /// One provider service as the Services surfaces show it — package
@@ -99,16 +102,234 @@ pub struct DeployReport {
 /// A `systemctl --user` lifecycle verb on a unit base name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnitAction {
-    /// `systemctl --user start`.
+    /// `systemctl --user start` (or `schtasks /run` on Windows).
     Start,
-    /// `systemctl --user stop`.
+    /// `systemctl --user stop` (or `schtasks /end` on Windows).
     Stop,
-    /// `systemctl --user restart`.
+    /// `systemctl --user restart` (or `/end`+`/run` on Windows).
     Restart,
-    /// `systemctl --user enable --now`.
+    /// `systemctl --user enable --now` (or `schtasks /change /enable`).
     Enable,
-    /// `systemctl --user disable --now`.
+    /// `systemctl --user disable --now` (or `schtasks /change /disable`).
     Disable,
+}
+
+/// The per-user service backend for this host — systemd `--user`
+/// units on Unix, Task Scheduler per-user tasks on Windows. Both
+/// render the same [`ServiceSpec`] from the `tamias-deploy` port;
+/// [`ServiceBackend::new`] picks by `cfg!(windows)` once, so callers
+/// never branch on platform themselves.
+pub enum ServiceBackend {
+    /// systemd user units — [`LocalDeploy`].
+    Systemd(LocalDeploy),
+    /// Task Scheduler tasks — [`WindowsDeploy`].
+    Tasks(WindowsDeploy),
+}
+
+impl ServiceBackend {
+    /// The backend for this host — Task Scheduler on Windows, systemd
+    /// everywhere else.
+    #[must_use]
+    pub fn new() -> Self {
+        if cfg!(windows) {
+            Self::Tasks(WindowsDeploy::new())
+        } else {
+            Self::Systemd(LocalDeploy::new())
+        }
+    }
+
+    /// Write + register `spec` — returns the rendered artifact path
+    /// (unit file on systemd, task XML on Windows).
+    ///
+    /// # Errors
+    /// Propagates the backend's install failure.
+    pub fn install(&self, spec: &ServiceSpec) -> Result<PathBuf, Error> {
+        match self {
+            Self::Systemd(d) => d.install(spec),
+            Self::Tasks(d) => d.install(spec),
+        }
+    }
+
+    /// Best-effort reload so the host sees just-written artifacts —
+    /// `systemctl --user daemon-reload` on systemd; a no-op on Windows
+    /// (`schtasks /create` registers immediately).
+    ///
+    /// # Errors
+    /// Propagates the backend's failure (never on Windows).
+    pub fn daemon_reload(&self) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.daemon_reload(),
+            Self::Tasks(d) => d.daemon_reload(),
+        }
+    }
+
+    /// Enable the service (systemd `enable --now` / `schtasks /change
+    /// /enable`).
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid name; propagates the backend
+    /// failure.
+    pub fn enable(&self, name: &str) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.enable(name),
+            Self::Tasks(d) => d.enable(name),
+        }
+    }
+
+    /// Disable the service (systemd `disable --now` / `schtasks
+    /// /change /disable`).
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid name; propagates the backend
+    /// failure.
+    pub fn disable(&self, name: &str) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.disable(name),
+            Self::Tasks(d) => d.disable(name),
+        }
+    }
+
+    /// Start the service.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid name; propagates the backend
+    /// failure.
+    pub fn start(&self, name: &str) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.start(name),
+            Self::Tasks(d) => d.start(name),
+        }
+    }
+
+    /// Stop the service.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid name; propagates the backend
+    /// failure.
+    pub fn stop(&self, name: &str) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.stop(name),
+            Self::Tasks(d) => d.stop(name),
+        }
+    }
+
+    /// Restart the service.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid name; propagates the backend
+    /// failure.
+    pub fn restart(&self, name: &str) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.restart(name),
+            Self::Tasks(d) => d.restart(name),
+        }
+    }
+
+    /// Service status probe.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid name; propagates the backend
+    /// failure.
+    pub fn status(&self, name: &str) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.status(name),
+            Self::Tasks(d) => d.status(name),
+        }
+    }
+
+    /// Journal/log tail over one or more services — `journalctl` on
+    /// systemd; best-effort `schtasks /query` snapshots on Windows
+    /// (Task Scheduler keeps no per-task log; `lines`/`follow` are
+    /// ignored there).
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an empty/invalid name list; propagates the
+    /// backend failure.
+    pub fn logs_with(&self, names: &[String], lines: u32, follow: bool) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.logs_with(names, lines, follow),
+            Self::Tasks(d) => d.logs_with(names, lines, follow),
+        }
+    }
+
+    /// The `(program, argv)` a streaming surface spawns to tail logs —
+    /// `journalctl` on systemd; on Windows a `schtasks /query` snapshot
+    /// (`cmd /c`-chained for several tasks; `follow`/`lines` have no
+    /// meaning — there is no log stream to follow).
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an empty/invalid name list.
+    pub fn log_stream(
+        &self,
+        names: &[String],
+        lines: u32,
+        follow: bool,
+    ) -> Result<(String, Vec<String>), Error> {
+        match self {
+            Self::Systemd(_) => Ok(("journalctl".into(), journalctl_args(names, lines, follow)?)),
+            Self::Tasks(_) => windows_log_stream(names),
+        }
+    }
+
+    /// Disable (best-effort) + remove the service's artifacts — unit
+    /// file on systemd, task + wrapper/XML on Windows.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid name; propagates the backend
+    /// failure.
+    pub fn uninstall(&self, name: &str) -> Result<(), Error> {
+        match self {
+            Self::Systemd(d) => d.uninstall(name),
+            Self::Tasks(d) => d.uninstall(name),
+        }
+    }
+}
+
+impl Default for ServiceBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Windows `log_stream`: one task → `schtasks /query /tn <name> /v
+/// /fo list`; several → the same queries `&`-chained under
+/// `cmd.exe /c` (names are validated — no quotes — before embedding).
+fn windows_log_stream(names: &[String]) -> Result<(String, Vec<String>), Error> {
+    if names.is_empty() {
+        return Err(Error::Failed("logs: no tasks given".into()));
+    }
+    for name in names {
+        // Validates the name for both the single- and multi-task paths.
+        tamias_deploy_windows::query_args(name)?;
+    }
+    if names.len() == 1 {
+        return Ok((
+            "schtasks".into(),
+            tamias_deploy_windows::query_args(&names[0])?,
+        ));
+    }
+    let chain = names
+        .iter()
+        .map(|n| format!("schtasks /query /tn \"{n}\" /v /fo list"))
+        .collect::<Vec<_>>()
+        .join(" & ");
+    Ok(("cmd.exe".into(), vec!["/d".into(), "/c".into(), chain]))
+}
+
+/// Best-effort `schtasks /query /tn <unit> /fo csv /nh` — bounded at
+/// 3s; the CSV status field (`Ready`/`Running`/…) is the state,
+/// stderr text the fallback when the task can't be queried.
+fn windows_unit_state(unit: &str) -> Option<String> {
+    let args = tamias_deploy_windows::query_csv_args(unit).ok()?;
+    let mut cmd = std::process::Command::new("schtasks");
+    cmd.args(&args);
+    let out = output_with_timeout(&mut cmd, Duration::from_secs(3)).ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    if let Some(state) = tamias_deploy_windows::csv_status(&text) {
+        return Some(state);
+    }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    (!err.is_empty()).then_some(err)
 }
 
 /// The provider block of an installed package's manifest — `None`
@@ -147,8 +368,7 @@ pub fn unit_name(manifest: &Manifest, service: &str) -> String {
 }
 
 /// Render a provider service as a [`ServiceSpec`] — exec string →
-/// argv via [`tamias_deploy_systemd::split_exec`], `~` expansion
-/// deferred to the renderer.
+/// argv via [`split_exec`], `~` expansion deferred to the renderer.
 fn service_spec(
     entry: &StoreEntry,
     manifest: &Manifest,
@@ -157,7 +377,7 @@ fn service_spec(
     Ok(ServiceSpec {
         name: unit_name(manifest, &service.name),
         description: format!("{} — {}", entry.label(), service.name),
-        exec: tamias_deploy_systemd::split_exec(&service.exec)?,
+        exec: split_exec(&service.exec)?,
         env: service
             .env
             .iter()
@@ -171,13 +391,18 @@ fn service_spec(
     })
 }
 
-/// Best-effort `systemctl --user is-enabled <unit>` — bounded at 3s;
-/// `None` when systemd can't answer (no user bus, timeout).
-/// `is-enabled` exits non-zero for `disabled`/`masked`/`not-found`, so
+/// Best-effort host-backend state probe — `systemctl --user
+/// is-enabled <unit>` on Unix, `schtasks /query` on Windows; bounded
+/// at 3s, `None` when the backend can't answer (no user bus, missing
+/// `schtasks`, timeout).
+/// `is-enabled`/`/query` exit non-zero for disabled/missing tasks, so
 /// the state is read from stdout (stderr as fallback), not the exit
 /// status.
 #[must_use]
 pub fn unit_state(unit: &str) -> Option<String> {
+    if cfg!(windows) {
+        return windows_unit_state(unit);
+    }
     let mut cmd = std::process::Command::new("systemctl");
     cmd.args(["--user", "is-enabled", unit]);
     let out = output_with_timeout(&mut cmd, Duration::from_secs(3)).ok()?;
@@ -298,7 +523,7 @@ pub fn deploy(store_root: &Path, name: &str, config: Option<&Path>) -> Result<De
     }
     let mut deployed = false;
     if let Some(manifest) = provider_of(&entry)? {
-        let deploy = LocalDeploy::new();
+        let deploy = ServiceBackend::new();
         if let Some(provider) = &manifest.provider {
             for service in &provider.services {
                 let spec = service_spec(&entry, &manifest, service)?;
@@ -447,7 +672,7 @@ pub fn uninstall(store_root: &Path, name: &str) -> Result<DeployReport, Error> {
     // the same unit name. Units are best-effort per name: a failure
     // warns but doesn't fail the uninstall — the store entry is
     // already dropped.
-    let deploy = LocalDeploy::new();
+    let deploy = ServiceBackend::new();
     let survivors = surviving_units(
         store_root,
         &unit_names.iter().cloned().collect::<BTreeSet<_>>(),
@@ -565,12 +790,12 @@ pub fn exec_spec(
             }
         },
     };
-    let mut argv = tamias_deploy_systemd::split_exec(&svc.exec)?;
+    let mut argv = split_exec(&svc.exec)?;
     argv.extend(extra.iter().cloned());
     // env_file first, inline env overrides — systemd's order.
     let mut vars: Vec<(String, String)> = Vec::new();
     if let Some(env_file) = &svc.env_file {
-        let path = PathBuf::from(tamias_deploy_systemd::expand_home(env_file));
+        let path = PathBuf::from(expand_home(env_file));
         // The unit renders `EnvironmentFile=-` (optional) — a missing
         // file is not an error here either.
         if path.is_file() {
@@ -597,7 +822,7 @@ pub fn exec_spec(
     let workdir = svc
         .workdir
         .as_deref()
-        .map(tamias_deploy_systemd::expand_home)
+        .map(expand_home)
         .map(PathBuf::from)
         .unwrap_or_else(|| entry.dir.clone());
     Ok(ExecSpec {
@@ -608,15 +833,15 @@ pub fn exec_spec(
     })
 }
 
-/// A `systemctl --user` lifecycle verb on a unit base name —
+/// A host-backend lifecycle verb on a unit/task base name —
 /// `tamias service enable|disable` equivalents plus start/stop/
 /// restart for the interactive surfaces.
 ///
 /// # Errors
-/// [`Error::Failed`] on an invalid unit name; propagates the runner
+/// [`Error::Failed`] on an invalid unit name; propagates the backend
 /// failure.
 pub fn unit_action(unit: &str, action: UnitAction) -> Result<(), Error> {
-    let deploy = LocalDeploy::new();
+    let deploy = ServiceBackend::new();
     match action {
         UnitAction::Start => deploy.start(unit),
         UnitAction::Stop => deploy.stop(unit),

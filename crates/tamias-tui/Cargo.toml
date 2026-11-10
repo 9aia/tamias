@@ -22,7 +22,6 @@ tamias-registry.workspace = true
 tamias-registry-open.workspace = true
 tamias-provider.workspace = true
 tamias-publish.workspace = true
-tamias-deploy-systemd.workspace = true
 tamias-shell.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true

@@ -16,7 +16,9 @@ documentation.workspace = true
 tamias-core.workspace = true
 tamias-store-local.workspace = true
 tamias-driver.workspace = true
+tamias-deploy.workspace = true
 tamias-deploy-systemd.workspace = true
+tamias-deploy-windows.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

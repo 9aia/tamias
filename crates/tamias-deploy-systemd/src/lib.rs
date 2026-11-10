@@ -13,33 +13,11 @@ use std::process::Command;
 
 use tamias_core::Error;
 
-/// What to deploy as a service.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ServiceSpec {
-    /// Unit base name (→ `<name>.service`).
-    pub name: String,
-    /// Short description.
-    pub description: String,
-    /// `ExecStart` argv — rendered with per-argument systemd quoting
-    /// (see [`quote_arg`]). Parse a command-line string with
-    /// [`split_exec`] first.
-    pub exec: Vec<String>,
-    /// `K=V` environment entries → `Environment=` lines.
-    pub env: Vec<(String, String)>,
-    /// `EnvironmentFile=` path — always rendered with systemd's `-`
-    /// (optional-file) prefix, so a missing file doesn't fail the unit.
-    /// `~` expands to `$HOME` at render time.
-    pub env_file: Option<String>,
-    /// `Restart=` policy — `on-failure` when `None`.
-    pub restart: Option<String>,
-    /// `RestartSec=` seconds — `5` when `None`.
-    pub restart_sec: Option<u32>,
-    /// `WorkingDirectory=` — `~` expands to `$HOME` at render time.
-    pub workdir: Option<String>,
-    /// Extra `After=`/`Wants=` targets beyond `network-online.target`,
-    /// which is always emitted for services.
-    pub after: Vec<String>,
-}
+// The service spec + shared helpers live in the `tamias-deploy` port —
+// every local backend (this one, `tamias-deploy-windows`, …) renders
+// the same [`ServiceSpec`]. Re-exported so `tamias_deploy_systemd::…`
+// paths keep working.
+pub use tamias_deploy::{expand_home, split_exec, ServiceSpec};
 
 /// The seam that runs host commands (`systemctl`, `journalctl`) — injected
 /// for tests.
@@ -359,96 +337,6 @@ fn unit_field(s: &str) -> String {
     s.chars()
         .filter(|c| !matches!(c, '\n' | '\r' | '\0'))
         .collect()
-}
-
-/// Expand a leading `~` (or `~/…`) to `$HOME` — the manifest `workdir` /
-/// `env_file` fields allow `~`, and YAML needs it quoted (`"~"`) since a
-/// bare `~` parses as null. `~user` forms and a missing `HOME` pass
-/// through unchanged.
-#[must_use]
-pub fn expand_home(path: &str) -> String {
-    if path == "~" {
-        return std::env::var("HOME").unwrap_or_else(|_| path.to_string());
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        return std::env::var("HOME")
-            .map(|home| format!("{home}/{rest}"))
-            .unwrap_or_else(|_| path.to_string());
-    }
-    path.to_string()
-}
-
-/// Split a command-line string into argv — a deliberately small
-/// POSIX-shell subset, no external deps:
-///
-/// - unquoted whitespace separates arguments;
-/// - `'…'` is literal (no escapes);
-/// - `"…"` is literal except `\"` → `"` and `\\` → `\`;
-/// - `\c` outside quotes yields `c` (so `\ ` escapes a space);
-/// - unterminated quotes are an error; empty/whitespace input yields an
-///   empty argv (callers reject it — a unit needs an `ExecStart`).
-///
-/// `#` comments, `$VAR`, globs, and `;`/`|`/`&` are *not* special — the
-/// string is data, never re-parsed by a shell.
-///
-/// # Errors
-/// [`Error::Failed`] on an unterminated quote.
-pub fn split_exec(exec: &str) -> Result<Vec<String>, Error> {
-    #[derive(PartialEq)]
-    enum State {
-        Bare,
-        Single,
-        Double,
-    }
-    let mut argv = Vec::new();
-    let mut cur = String::new();
-    let mut state = State::Bare;
-    let mut chars = exec.chars().peekable();
-    while let Some(c) = chars.next() {
-        match state {
-            State::Bare => match c {
-                c if c.is_whitespace() => {
-                    if !cur.is_empty() {
-                        argv.push(std::mem::take(&mut cur));
-                    }
-                }
-                '\'' => state = State::Single,
-                '"' => state = State::Double,
-                '\\' => {
-                    if let Some(next) = chars.next() {
-                        cur.push(next);
-                    } else {
-                        cur.push('\\');
-                    }
-                }
-                _ => cur.push(c),
-            },
-            State::Single => {
-                if c == '\'' {
-                    state = State::Bare;
-                } else {
-                    cur.push(c);
-                }
-            }
-            State::Double => match c {
-                '"' => state = State::Bare,
-                '\\' => match chars.peek() {
-                    Some('"' | '\\') => cur.push(chars.next().unwrap_or('\\')),
-                    _ => cur.push('\\'),
-                },
-                _ => cur.push(c),
-            },
-        }
-    }
-    if state != State::Bare {
-        return Err(Error::Failed(format!(
-            "unterminated quote in exec '{exec}'"
-        )));
-    }
-    if !cur.is_empty() {
-        argv.push(cur);
-    }
-    Ok(argv)
 }
 
 /// systemd escapes ExecStart args by double-quoting (never
