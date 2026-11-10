@@ -5,7 +5,7 @@ sources; the impl is picked by shape.
 
 ```
 ./dir                                         local (dev loop)
-git:9aia/peregrin//libraries/ci-gate#v0.2.0   git + in-repo subdir + ref
+git:9aia/bupha//libraries/ci-gate#main   git + in-repo subdir + ref
 https://…/ci-gate-0.2.0.tgz#sha256:<hex>        tarball (+ digest pin)
 cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry
 ```

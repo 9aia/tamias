@@ -13,7 +13,7 @@ cargo xtask install
 ## Install a package
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias list
 tamias info ci-gate
 tamias verify ci-gate        # recompute the payload digest

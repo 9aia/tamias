@@ -12,7 +12,7 @@ concern.
 | **mimus** | critic | `mimus-rules` packs |
 | **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
 | **sturn** | coordination | claim the store lock during concurrent installs |
-| **bupha / ci-gate** | CI gate | bupha is retired — the gate is the peregrin `ci-gate` campaign; the first published bundle |
+| **bupha / ci-gate** | CI gate | bupha is the CI repo — `type: bupha` bundles via `tamias-driver-bupha`; the org gate is mid-migration back from the peregrin `ci-gate` campaign (PL-013) |
 | **sepia** | sessions | — |
 | **cicada** | scheduling | `tamias update --all` + registry reindex |
 

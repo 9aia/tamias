@@ -67,7 +67,7 @@ tamias verify hello   # → digest mismatch
 Reinstall to restore, then try a git ref:
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias info ci-gate    # provenance: source ref, resolved sha, digest
 ```
 

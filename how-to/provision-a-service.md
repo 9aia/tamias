@@ -93,7 +93,7 @@ declarer's removal removes the unit.
 ## Deploy an installed package
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias deploy ci-gate                       # driver deploy + render provider.services units
 tamias deploy ci-gate --config ./node.yaml   # operator params ride a config file
 ```
