@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-t015","actor":"luis","ts":1794329190,"op":{"op":"claim","glob":"fs:README.md","ttl_secs":3600}}
+{"id":"","ws":"devin-t015","actor":"luis","ts":1794329303,"op":{"op":"presence","status":"left"}}
