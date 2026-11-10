@@ -1,7 +1,7 @@
 +++
 id = "PL-005"
 title = "registry sources + configurable limits — phased delivery"
-status = "open"
+status = "claimed"
 created = "2026-11-10"
 owner = "devin"
 priority = "high"
