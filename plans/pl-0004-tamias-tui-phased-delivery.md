@@ -78,3 +78,29 @@ Proposal: P-001 (`proposals/proposal-0001-…`). Precedent: `myco-tui`
       `gen-cli-docs` picks up `ui` verb automatically; README mention.
 - [ ] `cargo xtask check` + `test` green; PTY tests cover quit-path
       terminal restore (raw-mode leak regression).
+
+## Decisions locked (2026-11-10)
+
+- Verb `tamias ui`; `tui` feature in `default`; shared ops live in
+  `tamias-serve` with a widened (registry-aware) `Env`.
+
+## Scope expansion (2026-11-10) — phases revised
+
+Provider lifecycle, tamias.yml form editing, and authoring moved into
+scope. Revised phases:
+
+- Phase 0 unchanged (shared ops widening in tamias-serve).
+- Phase 1 unchanged (skeleton + installed view).
+- Phase 2 unchanged (actions on installed packages).
+- Phase 3: registry search + install + progress (unchanged).
+- Phase 4 (new): **provider lifecycle pane** — services/units table
+  (state, restart), `run` exec (PTY pane or scrollback tail), `logs`
+  follow view, `deploy`/`uninstall` with confirms. Requires extending
+  tamias-serve ops for service/run/logs/deploy or direct
+  tamias-deploy-local/-cf calls.
+- Phase 5 (new): **manifest editor** — `tamias.yml` deps as editable
+  rows (add/remove/set ref), committed through the same manifest+lock
+  write path as `tamias add`; TOML variant reads but YAML is standard.
+- Phase 6 (new): **authoring** — `bundle pack` dir flow, `publish`
+  dir+registry flow, reuse progress pane.
+- Phase 7 (was 4): polish + ship — docs, xtask check/test, PTY tests.

@@ -87,3 +87,28 @@ Panes/tabs:
    serve, and TUI share one dispatch.
 4. Does T-014 (shared install pipeline extraction) land first, or does the
    TUI's shared-ops extraction subsume it?
+
+## Decisions (2026-11-10)
+
+1. Verb: **`tamias ui`** (myco parity).
+2. Gate: **`tui` cargo feature, on by default** — `--no-default-features`
+   keeps the lean binary.
+3. Ops surface: **extend `tamias-serve`** — widen `Env` to be
+   registry-aware so CLI verbs, `tamias serve`, and `tamias ui` share one
+   dispatch; no new `tamias-ops` crate.
+
+## Scope expansion (2026-11-10)
+
+Non-goals removed — v1 now also covers:
+
+- **Provider lifecycle**: `service` (list/start/stop/restart unit ops),
+  `run` (foreground exec — spawn in a PTY pane or tail view), `logs`
+  (journal tail + follow), `deploy`/`uninstall` provider teardown.
+  These are daemon-adjacent but are first-class tamias verbs; the TUI
+  is the natural console for them.
+- **`tamias.yml` editing**: deps editor as a form — list `deps:` entries
+  with add/remove/ref-edit rows; writes the project manifest via the
+  same code path `tamias add` uses (manifest + lock update together, no
+  hand-edited YAML drift).
+- **Authoring**: `bundle pack <dir>` and `publish <dir> --registry <ref>`
+  — dir picker/prompt, registry picker, progress pane reuse.
