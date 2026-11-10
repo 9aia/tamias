@@ -24,6 +24,17 @@
 |---|---|---|---|
 | `default` | `string` | optional | Registry name `publish` targets by default. |
 
+## `[signing]` — package signing policy
+
+| field | type | required | notes |
+|---|---|---|---|
+| `key` | `string` | optional | Private key path for `publish --sign` (`~` expands) — used when `$TAMIAS_SIGNING_KEY` and `key_env`'s var are unset. |
+| `key_env` | `string` | optional | Env var **name** whose value is the signing-key path — checked after `$TAMIAS_SIGNING_KEY`, before `key`. |
+| `allowed_signers` | `string` | optional | `allowed_signers` file (authorized_keys-style, principal = `@scope/name` for scoped packages, else the bare name — with a bare-name fallback) for signature verification. `$TAMIAS_ALLOWED_SIGNERS` wins; default `~/.config/tamias/allowed_signers`. |
+| `official_signers` | `string` | optional | `official_signers` file — the smaller trust set backing the official-badge check. `$TAMIAS_OFFICIAL_SIGNERS` wins; default `~/.config/tamias/official_signers`. |
+| `required` | `bool` | optional | Every install must carry a valid signature. Only registry (`cf:`) refs can supply one — see `tamias-sign`'s docs. |
+| `namespace` | `string` | optional | `ssh-keygen -Y` namespace (default `tamias-package`). |
+
 ## Top level
 
 | field | type | required | notes |
@@ -34,6 +45,7 @@
 | `publish` | `Publish` | optional | Publish routing. |
 | `search` | `Search` | optional | Search routing. |
 | `limits` | `Limits` | optional | Global byte limits + per-package overrides. |
+| `signing` | `Signing` | optional | Package signing policy — `publish --sign` key resolution and install/verify `allowed_signers` enforcement (`tamias-sign`). |
 
 ## format trait (parse/render)
 

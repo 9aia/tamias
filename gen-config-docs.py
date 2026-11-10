@@ -16,6 +16,7 @@ SRCS = {
         "Location": "`store` / `cache` — an install/fetch location",
         "Registry": "`registries.NAME` — a named registry",
         "Publish": "`[publish]` — publish routing",
+        "Signing": "`[signing]` — package signing policy",
         "Config": "Top level",
         "ConfigFormat": "format trait (parse/render)",
     },
