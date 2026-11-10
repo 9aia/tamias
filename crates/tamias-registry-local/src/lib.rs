@@ -67,7 +67,12 @@ impl Registry for LocalRegistry {
             .map_err(|e| Error::Failed(format!("parse {}: {e}", path.display())))
     }
 
-    fn publish(&self, payload_root: &Path, manifest: &Manifest) -> Result<RegistryEntry, Error> {
+    fn publish(
+        &self,
+        payload_root: &Path,
+        manifest: &Manifest,
+        signature: Option<&str>,
+    ) -> Result<RegistryEntry, Error> {
         // The manifest may not have been validated upstream — every field
         // embedded in the blob path must be a single safe component.
         if !is_valid_name(&manifest.name) {
@@ -121,6 +126,7 @@ impl Registry for LocalRegistry {
             version: manifest.version.clone(),
             kind: manifest.kind.clone(),
             digest: dir_digest(payload_root)?,
+            signature: signature.map(str::to_string),
             file: rel,
         };
         // The index read-modify-write is serialized across processes —
@@ -430,7 +436,7 @@ mod tests {
         let reg_dir = tempfile::tempdir().unwrap();
         let registry = LocalRegistry::new(reg_dir.path());
         let manifest = Manifest::load(src.path()).unwrap();
-        let entry = registry.publish(src.path(), &manifest).unwrap();
+        let entry = registry.publish(src.path(), &manifest, None).unwrap();
         assert_eq!(entry.label(), "ci-gate@0.2.0");
         assert!(reg_dir.path().join("ci-gate/0.2.0.tgz").is_file());
         assert_eq!(registry.search("gate").unwrap().len(), 1);
@@ -447,10 +453,13 @@ mod tests {
         std::fs::write(src.path().join("main.yaml"), "x").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
         assert_eq!(
-            registry.publish(src.path(), &manifest).unwrap().label(),
+            registry
+                .publish(src.path(), &manifest, None)
+                .unwrap()
+                .label(),
             "ci@0.2.0"
         );
-        let _ = registry.publish(src.path(), &manifest).unwrap();
+        let _ = registry.publish(src.path(), &manifest, None).unwrap();
         assert_eq!(registry.entries().unwrap().len(), 1);
         assert!(registry.root().is_dir());
     }
@@ -578,17 +587,17 @@ mod tests {
         let manifest = Manifest::load(src.path()).unwrap();
         // A 1-byte cap rejects the packed .tgz and leaves no blob behind.
         let registry = LocalRegistry::new(reg_dir.path()).with_max_upload(1);
-        let err = registry.publish(src.path(), &manifest).unwrap_err();
+        let err = registry.publish(src.path(), &manifest, None).unwrap_err();
         assert!(err.to_string().contains("upload limit"), "{err}");
         assert!(!reg_dir.path().join("capped/1.0.0.tgz").exists());
         assert!(registry.entries().unwrap().is_empty());
         // Generous cap → publishes fine.
         let registry = LocalRegistry::new(reg_dir.path()).with_max_upload(1 << 20);
-        assert!(registry.publish(src.path(), &manifest).is_ok());
+        assert!(registry.publish(src.path(), &manifest, None).is_ok());
         // Default (no cap) → also fine.
         let reg2 = tempfile::tempdir().unwrap();
         assert!(LocalRegistry::new(reg2.path())
-            .publish(src.path(), &manifest)
+            .publish(src.path(), &manifest, None)
             .is_ok());
     }
 
@@ -635,7 +644,10 @@ mod tests {
                 version: Some(bad.into()),
                 ..Default::default()
             };
-            assert!(registry.publish(src.path(), &manifest).is_err(), "{bad}");
+            assert!(
+                registry.publish(src.path(), &manifest, None).is_err(),
+                "{bad}"
+            );
         }
         // an unsafe/empty name must not escape via an absolute rel path
         for name in ["../x", "", "a/b"] {
@@ -644,7 +656,10 @@ mod tests {
                 version: Some("1.0.0".into()),
                 ..Default::default()
             };
-            assert!(registry.publish(src.path(), &manifest).is_err(), "{name}");
+            assert!(
+                registry.publish(src.path(), &manifest, None).is_err(),
+                "{name}"
+            );
         }
         // nothing was published — no blob, no index
         assert!(registry.entries().unwrap().is_empty());
@@ -666,7 +681,7 @@ mod tests {
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         std::fs::write(src.path().join("a.txt"), "a").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
-        registry.publish(src.path(), &manifest).unwrap();
+        registry.publish(src.path(), &manifest, None).unwrap();
         assert!(!reg_dir.path().join("index.lock").exists());
         // no *.tmp siblings anywhere in the registry
         let mut stack = vec![reg_dir.path().to_path_buf()];
@@ -702,7 +717,7 @@ mod tests {
                 .unwrap();
                 std::fs::write(src.path().join("a.txt"), "a").unwrap();
                 let manifest = Manifest::load(src.path()).unwrap();
-                reg.publish(src.path(), &manifest).unwrap();
+                reg.publish(src.path(), &manifest, None).unwrap();
             }));
         }
         for h in handles {
@@ -726,7 +741,7 @@ mod tests {
         let src = tempfile::tempdir().unwrap();
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
-        assert!(registry.publish(src.path(), &manifest).is_err());
+        assert!(registry.publish(src.path(), &manifest, None).is_err());
         std::fs::set_permissions(&rodir, std::fs::Permissions::from_mode(0o755)).unwrap();
         // an unreadable index.json → read error
         let reg = tempfile::tempdir().unwrap();
@@ -775,7 +790,7 @@ mod tests {
         )
         .unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
-        registry.publish(src.path(), &manifest).unwrap();
+        registry.publish(src.path(), &manifest, None).unwrap();
         assert_eq!(registry.search("acme").unwrap().len(), 1);
         assert_eq!(registry.search("s").unwrap().len(), 1);
     }

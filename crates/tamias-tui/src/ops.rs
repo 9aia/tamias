@@ -362,23 +362,39 @@ fn sync_lock(record: &tamias_core::StoreRecord) -> Result<(), Error> {
     Lock::sync_record(Path::new("tamias.lock"), record)
 }
 
-/// `verify` — recompute the payload digest against the record.
+/// `verify` — recompute the payload digest against the record, plus
+/// the signature status when the entry carries one.
 fn verify(ctx: &Ctx, name: &str) -> Result<Outcome, Error> {
-    let report = Store::new(&ctx.store_root).verify(name)?;
-    if report.ok {
-        Ok(Outcome::Text(format!(
-            "{}: ok ({})",
-            report.name,
-            short(&report.recorded)
-        )))
-    } else {
-        Err(Error::Failed(format!(
+    let store = Store::new(&ctx.store_root);
+    let report = store.verify(name)?;
+    if !report.ok {
+        return Err(Error::Failed(format!(
             "{}: digest mismatch — recorded {}, computed {}",
             report.name,
             short(&report.recorded),
             short(&report.computed)
-        )))
+        )));
     }
+    let entry = store.find(name)?;
+    let config = env_config(ctx);
+    let policy = tamias_sign::SigningPolicy::resolve(Some(&config));
+    let signature = tamias_sign::record_signature_status(
+        &entry.record,
+        policy.allowed_signers.as_deref(),
+        &policy.namespace,
+    )?;
+    if signature == tamias_sign::SignatureStatus::Failed {
+        return Err(Error::Failed(format!(
+            "{}: signature verification failed",
+            report.name
+        )));
+    }
+    Ok(Outcome::Text(format!(
+        "{}: ok ({}) — signature: {}",
+        report.name,
+        short(&report.recorded),
+        signature.as_str()
+    )))
 }
 
 /// `remove` — the shared lightweight uninstall
@@ -847,7 +863,9 @@ fn publish(
         },
     )?;
     let target = plan.target.clone();
-    let entry = plan.publish()?;
+    // The TUI publish path stays unsigned — `publish --sign` is a CLI/
+    // serve surface (key resolution is interactive-by-flag).
+    let entry = plan.publish(None)?;
     Ok(Outcome::Text(format!(
         "published {} → {}",
         entry.label(),
@@ -1075,6 +1093,7 @@ mod tests {
             version: Some("1.0.0".into()),
             kind: Some("files".into()),
             digest: digest.into(),
+            signature: None,
             file: file.into(),
         }
     }

@@ -2591,6 +2591,7 @@ dependencies = [
  "tamias-registry-open",
  "tamias-serve",
  "tamias-shell",
+ "tamias-sign",
  "tamias-store-local",
  "tamias-telemetry",
  "tamias-tui",
@@ -2709,6 +2710,9 @@ dependencies = [
  "tamias-config",
  "tamias-core",
  "tamias-driver",
+ "tamias-registry",
+ "tamias-registry-local",
+ "tamias-sign",
  "tamias-source",
  "tamias-source-cf",
  "tamias-source-fs",
@@ -2797,6 +2801,7 @@ dependencies = [
  "tamias-install",
  "tamias-registry",
  "tamias-registry-open",
+ "tamias-sign",
  "tamias-store-local",
  "tempfile",
 ]
@@ -2806,6 +2811,15 @@ name = "tamias-shell"
 version = "0.1.0"
 dependencies = [
  "temp-env",
+]
+
+[[package]]
+name = "tamias-sign"
+version = "0.1.0"
+dependencies = [
+ "tamias-config",
+ "tamias-core",
+ "tempfile",
 ]
 
 [[package]]
@@ -2925,6 +2939,7 @@ dependencies = [
  "tamias-registry",
  "tamias-registry-open",
  "tamias-shell",
+ "tamias-sign",
  "tamias-store-local",
  "tempfile",
 ]

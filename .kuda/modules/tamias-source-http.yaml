@@ -15,7 +15,7 @@ api:
 - name: ForeignPlan
   kind: type
   file: crates/tamias-source-http/src/lib.rs
-  line: 230
+  line: 231
   module: tamias-source-http
 - name: HttpPlan
   kind: type
@@ -60,7 +60,7 @@ api:
 - name: cleartext_unpinned_predicate
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 362
+  line: 363
   module: tamias-source-http
 - name: default
   kind: function
@@ -75,7 +75,7 @@ api:
 - name: max_download_caps_fetch_bodies
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 347
+  line: 348
   module: tamias-source-http
 - name: new
   kind: function
@@ -95,7 +95,7 @@ api:
 - name: parse_plan_fetch_and_errors
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 264
+  line: 265
   module: tamias-source-http
 - name: plan
   kind: function
@@ -110,7 +110,7 @@ api:
 - name: serve
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 234
+  line: 235
   module: tamias-source-http
 - name: tamias-source-http
   kind: module
@@ -120,12 +120,12 @@ api:
 - name: tarball
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 254
+  line: 255
   module: tamias-source-http
 - name: tests
   kind: module
   file: crates/tamias-source-http/src/lib.rs
-  line: 221
+  line: 222
   module: tamias-source-http
 - name: with_agent
   kind: function
@@ -157,8 +157,8 @@ provenance:
   - crates/tamias-source-http/tests/props.rs
   hashes:
   - 59ec68e1f9512a030552d9b51e0e59cef86fce9d
-  - 26ce9eafa3d9e7e19ac6bdd9fbc74af670c10dc7
+  - 5eb7505a28ed1d4b8d542046eb5f34d18fb96f34
   - 32ad9146c1e60127c9418e6b92325cf32e42357b
-  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
-  generated_at: '1794323780'
+  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
+  generated_at: '1794328873'
   generator: kuda-template/0.1.2

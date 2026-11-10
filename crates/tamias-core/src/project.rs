@@ -144,6 +144,7 @@ mod tests {
             source_ref: "./x".into(),
             resolved: "sha256:abc".into(),
             digest: "sha256:def".into(),
+            signature: None,
             installed_at: 7,
         }
     }

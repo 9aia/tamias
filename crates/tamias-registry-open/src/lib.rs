@@ -219,12 +219,15 @@ pub struct PublishPlan {
 }
 
 impl PublishPlan {
-    /// Upload the packed payload — `registry.publish(&root, &manifest)`.
+    /// Upload the packed payload — `registry.publish(&root, &manifest,
+    /// signature)`. `signature` is the armored `ssh-keygen -Y` signature
+    /// over the payload's provenance anchors (`tamias publish --sign`);
+    /// `None` publishes unsigned.
     ///
     /// # Errors
     /// Propagates pack/publish failures from the registry impl.
-    pub fn publish(&self) -> Result<RegistryEntry, Error> {
-        self.registry.publish(&self.root, &self.manifest)
+    pub fn publish(&self, signature: Option<&str>) -> Result<RegistryEntry, Error> {
+        self.registry.publish(&self.root, &self.manifest, signature)
     }
 }
 

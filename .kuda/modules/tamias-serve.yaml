@@ -5,12 +5,12 @@ api:
 - name: DEFAULT_CACHE_MAX_AGE
   kind: const
   file: crates/tamias-serve/src/lib.rs
-  line: 261
+  line: 296
   module: tamias-serve
 - name: DRVENV
   kind: const
   file: crates/tamias-serve/src/lib.rs
-  line: 276
+  line: 311
   module: tamias-serve
 - name: Env
   kind: type
@@ -20,17 +20,17 @@ api:
 - name: EnvGuard
   kind: type
   file: crates/tamias-serve/src/lib.rs
-  line: 281
+  line: 316
   module: tamias-serve
 - name: cache_hit_and_missing_name_error
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 435
+  line: 470
   module: tamias-serve
 - name: corrupt_cache_entry_refetches
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 471
+  line: 506
   module: tamias-serve
 - name: dispatch
   kind: function
@@ -40,37 +40,37 @@ api:
 - name: dispatch_error_arms
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 382
+  line: 417
   module: tamias-serve
 - name: dispatch_install_git_arm
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 392
+  line: 427
   module: tamias-serve
 - name: dispatch_install_http_dead
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 422
+  line: 457
   module: tamias-serve
 - name: dispatch_install_list_info_verify_remove
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 343
+  line: 378
   module: tamias-serve
 - name: dispatch_ops
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 325
+  line: 360
   module: tamias-serve
 - name: drop
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 301
+  line: 336
   module: tamias-serve
 - name: env
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 314
+  line: 349
   module: tamias-serve
 - name: env_config
   kind: function
@@ -85,52 +85,52 @@ api:
 - name: handle_wraps_ok_and_err
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 335
+  line: 370
   module: tamias-serve
 - name: install_gates_bundled_drivers
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 516
+  line: 551
   module: tamias-serve
 - name: install_unknown_kind_fails_without_entry
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 564
+  line: 599
   module: tamias-serve
 - name: new
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 288
+  line: 323
   module: tamias-serve
 - name: publish_search_route_by_name_and_raw_ref
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 725
+  line: 760
   module: tamias-serve
 - name: registry_entry_json
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 245
+  line: 279
   module: tamias-serve
 - name: registry_env
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 654
+  line: 689
   module: tamias-serve
 - name: registry_op_error_arms
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 703
+  line: 738
   module: tamias-serve
 - name: registry_ops_round_trip
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 664
+  line: 699
   module: tamias-serve
 - name: remove_propagates_driver_failure
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 591
+  line: 626
   module: tamias-serve
 - name: serve
   kind: function
@@ -150,12 +150,12 @@ api:
 - name: serve_probe_is_covered
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 430
+  line: 465
   module: tamias-serve
 - name: store_error_arms
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 640
+  line: 675
   module: tamias-serve
 - name: str_field
   kind: function
@@ -170,7 +170,7 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-serve/src/lib.rs
-  line: 265
+  line: 300
   module: tamias-serve
 deps:
 - serde_json
@@ -180,6 +180,7 @@ deps:
 - tamias-install
 - tamias-registry
 - tamias-registry-open
+- tamias-sign
 - tamias-store-local
 - tamias-cache-local
 - tempfile
@@ -196,8 +197,8 @@ provenance:
   - crates/tamias-serve/Cargo.toml
   - crates/tamias-serve/src/lib.rs
   hashes:
-  - 83559d69718fc8674ee36e063e2959dee0b6cd7f
-  - 70df5ec06d19723205f1313595479765aa19246c
-  commit_sha: 7aa9f387819e82e57cc32445c9c4c3c6c196afb8
-  generated_at: '1794327709'
+  - 45cb9ad213b0c6397e35c4bf6eeda67fcc707709
+  - 218b6140fb268352a7610976d005629da4a86444
+  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
+  generated_at: '1794328873'
   generator: kuda-template/0.1.2

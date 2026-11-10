@@ -55,6 +55,7 @@ fn fixture() -> Fixture {
                 source_ref: "./pkg".into(),
                 resolved: "sha256:0123456789abcdef".into(),
                 digest: String::new(), // install() fills it
+                signature: None,
                 installed_at: 0,
             },
         )

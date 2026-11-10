@@ -37,6 +37,7 @@ tamias-config.workspace = true
 tamias-config-yml.workspace = true
 tamias-config-toml.workspace = true
 tamias-shell.workspace = true
+tamias-sign.workspace = true
 tamias-tui = { workspace = true, optional = true }
 clap.workspace = true
 clap_complete.workspace = true

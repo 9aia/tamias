@@ -20,6 +20,7 @@ tamias-registry.workspace = true
 tamias-registry-open.workspace = true
 tamias-store-local.workspace = true
 tamias-driver.workspace = true
+tamias-sign.workspace = true
 serde_json.workspace = true
 
 [lints]

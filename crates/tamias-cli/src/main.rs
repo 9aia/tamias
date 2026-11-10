@@ -155,6 +155,14 @@ enum Command {
         /// Registry root or http(s) base URL (default `~/.local/share/tamias/registry`).
         #[arg(long)]
         registry: Option<String>,
+        /// Sign the package (`ssh-keygen -Y`, namespace `tamias-package`) —
+        /// the signature rides the registry index to `cf:` installs.
+        #[arg(long)]
+        sign: bool,
+        /// Signing key path — overrides `$TAMIAS_SIGNING_KEY`,
+        /// `signing.key_env`, `signing.key`, `~/.ssh/id_ed25519`.
+        #[arg(long, requires = "sign")]
+        key: Option<PathBuf>,
     },
     /// Search a registry's index.
     Search {
@@ -566,6 +574,7 @@ fn entry_json(entry: &StoreEntry) -> serde_json::Value {
         "source_ref": entry.record.source_ref,
         "resolved": entry.record.resolved,
         "digest": entry.record.digest,
+        "signed": entry.record.signature.is_some(),
         "installed_at": entry.record.installed_at,
         "size": entry.size().ok(),
         "dir": entry.dir.display().to_string(),
@@ -785,18 +794,32 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             }
         }
         Some(Command::Verify { name, json }) => {
-            let report = Store::new(&env.store_root).verify(&name)?;
+            let store = Store::new(&env.store_root);
+            let report = store.verify(&name)?;
+            // Signature status alongside the digest check — the record's
+            // `signature` re-verified against `signing.allowed_signers`
+            // (env `TAMIAS_ALLOWED_SIGNERS` → config →
+            // ~/.config/tamias/allowed_signers).
+            let entry = store.find(&name)?;
+            let policy = tamias_sign::SigningPolicy::resolve(cli_config().as_ref());
+            let signature = tamias_sign::record_signature_status(
+                &entry.record,
+                policy.allowed_signers.as_deref(),
+                &policy.namespace,
+            )?;
             if json {
                 print_json(&serde_json::json!({
                     "name": report.name,
                     "recorded": report.recorded,
                     "computed": report.computed,
                     "ok": report.ok,
+                    "signature": signature.as_str(),
                 }))?;
             }
             if report.ok {
                 if !json {
                     println!("{}: ok ({})", report.name, short_digest(&report.recorded));
+                    println!("signature: {}", signature.as_str());
                 }
             } else {
                 return Err(Error::Failed(format!(
@@ -805,6 +828,22 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                     short_digest(&report.recorded),
                     short_digest(&report.computed)
                 )));
+            }
+            // A bad signature is a provenance failure, not a footnote.
+            match signature {
+                tamias_sign::SignatureStatus::Failed => {
+                    return Err(Error::Failed(format!(
+                        "{}: signature verification failed",
+                        report.name
+                    )));
+                }
+                tamias_sign::SignatureStatus::Unchecked => {
+                    eprintln!(
+                        "tamias: warning — {} is signed but no allowed_signers is configured",
+                        report.name
+                    );
+                }
+                _ => {}
             }
         }
         Some(Command::Update {
@@ -879,7 +918,12 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 config_file: None,
             })?;
         }
-        Some(Command::Publish { dir, registry }) => {
+        Some(Command::Publish {
+            dir,
+            registry,
+            sign,
+            key,
+        }) => {
             let config = cli_config();
             // The shared publish resolution (`tamias-registry-open`) —
             // same code `tamias serve`'s `publish` op and `tamias ui`
@@ -892,9 +936,34 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 &[config.as_ref().and_then(|c| c.publish.default.as_deref())],
                 &mut |_, _| {},
             )?;
+            // `--sign` — ssh-keygen -Y over the provenance anchors
+            // (name/scope/version/payload digest); the armored signature
+            // is stored on the index entry. The key is a *path* resolved
+            // by `--key` → env → config — material never touches args.
+            let signature = if sign {
+                let key_path = tamias_sign::resolve_signing_key(config.as_ref(), key.as_deref())?;
+                let policy = tamias_sign::SigningPolicy::resolve(config.as_ref());
+                eprintln!("tamias: signing with {}", key_path.display());
+                Some(tamias_sign::sign_package(
+                    &plan.root,
+                    &plan.manifest,
+                    &key_path,
+                    &policy.namespace,
+                )?)
+            } else {
+                None
+            };
             eprintln!("tamias: publishing {}", plan.manifest.name);
-            let entry = plan.publish()?;
-            println!("published {}", entry.label());
+            let entry = plan.publish(signature.as_deref())?;
+            println!(
+                "published {} ({})",
+                entry.label(),
+                if entry.signature.is_some() {
+                    "signed"
+                } else {
+                    "unsigned"
+                }
+            );
         }
         Some(Command::Search {
             query,
@@ -2960,7 +3029,9 @@ mod tests {
         let src = pkg(tmp.path());
         let reg = tmp.path().join("reg");
         let manifest = Manifest::load(&src).unwrap();
-        LocalRegistry::new(&reg).publish(&src, &manifest).unwrap();
+        LocalRegistry::new(&reg)
+            .publish(&src, &manifest, None)
+            .unwrap();
         let served = reg.clone();
         std::thread::spawn(move || {
             let _ = serve_http("127.0.0.1:8903", &served);
@@ -3048,6 +3119,7 @@ mod tests {
             source_ref: source_ref.into(),
             resolved: "sha256:resolved".into(),
             digest: digest.into(),
+            signature: None,
             installed_at: 0,
         };
         // no lockfile → left alone, never created

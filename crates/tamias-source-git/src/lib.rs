@@ -413,6 +413,7 @@ impl Source for GitSource {
             dir: dest_dir.to_path_buf(),
             resolved: sha.clone(),
             content_key: format!("git-{sha}"),
+            signature: None,
         })
     }
 }

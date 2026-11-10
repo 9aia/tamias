@@ -71,6 +71,7 @@ proptest! {
                 source_ref: "./x".into(),
                 resolved: "r".into(),
                 digest: "d".into(),
+                signature: None,
                 installed_at: 0,
             }));
         }

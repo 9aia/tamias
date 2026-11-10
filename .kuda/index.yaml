@@ -27,6 +27,7 @@ modules:
 - tamias-registry-open
 - tamias-serve
 - tamias-shell
+- tamias-sign
 - tamias-source
 - tamias-source-cf
 - tamias-source-fs
@@ -42,8 +43,8 @@ modules:
 commands:
 - cargo check
 - cargo test --workspace
-tree_digest: e4eee500ec8a842db2f08c908fa368ab9031323d
-files_total: 163
+tree_digest: b3100df7aa293da147b36193564713a491abe539
+files_total: 166
 provenance:
   files:
   - Cargo.toml
@@ -70,6 +71,7 @@ provenance:
   - crates/tamias-registry-open/Cargo.toml
   - crates/tamias-serve/Cargo.toml
   - crates/tamias-shell/Cargo.toml
+  - crates/tamias-sign/Cargo.toml
   - crates/tamias-source/Cargo.toml
   - crates/tamias-source-cf/Cargo.toml
   - crates/tamias-source-fs/Cargo.toml
@@ -84,12 +86,12 @@ provenance:
   - fuzz/Cargo.toml
   - xtask/Cargo.toml
   hashes:
-  - c30eb93fb6ef98ef41ac64cbe1277d5cb2847545
+  - eebc126af0dd36e783d180e48b9fe115f3a7967a
   - 04d265af98301ec718eaed9327983d62e379e5b5
   - d3af5c2636a8492ae8561db2d7eabe89a24c1deb
   - 95adcd142d2c55cd9d4e27639ed03ca898bbca04
   - 5b9a61b04a88f684b5ffe12c51bd26d10effcc7a
-  - 54718e509b67773051f25e15cb742835611a7a30
+  - ab3a87d034fe7eb78fc64d787378cec2f53a7128
   - 632480163263ef27edab2d729003066436e1a9d5
   - e2354bf66bcc103954918876c89f75663f28633e
   - ea0b53562003a16213fbdc77d5703be0e3914475
@@ -99,15 +101,16 @@ provenance:
   - dbaf50440fe4217f50e69cb22cfff2951f69d2f0
   - d6affaac6d38ba853246c8395a498bcbf7928cbd
   - 11f2351f85b20057d47bc3e457c6799e9f23364c
-  - d99532203a1df4aab191bcd4006eba4655b34518
+  - a62588143d4d876da318f7fa64944a8f9996240d
   - 30c68883ca3b3314838f80925e77194aa3cd7376
   - 9440703dd04a239939c9344b76f465db689a29ad
   - 9ab3d6d666009614cefb8ee05e7662792a43f5dd
   - 4f714bbab201b2a39c74f752ad5126919e1ccbb3
   - 51ef3679e4e57f8ded9dd6b8fe7be1488e63be2e
   - 36e36c96eec6b0a6c1b741f718110727d405d96d
-  - 83559d69718fc8674ee36e063e2959dee0b6cd7f
+  - 45cb9ad213b0c6397e35c4bf6eeda67fcc707709
   - dc01851714866bc619be1b91ea503f0c050c8b2c
+  - c44122c7d689e10a79ee73c20710d2f647a86a31
   - 5642cf8eac81db3c8aef874126c2638e546113ef
   - 1455812a4c18d352c6d58bbc8102e69502d7e09e
   - 3edf974934fe0d1657a0c378f864811440c8aa48
@@ -118,9 +121,9 @@ provenance:
   - b72ecdfc35205627f0652e893fcaa0e5558afc3b
   - 11e5afcee2642dd5e6031549c4c19e03372969fc
   - 371a0d2a29dd41b3a5c93b1a96fc6aea0ea11cfe
-  - 5cc2cdb66c95ca712551d8f2f30c31f00e1bab61
+  - 10503c98e46004ca23b6045843e08b1c86c9bc4c
   - 57ca36cf313852cc8f22ea5be173bded5d2f1ed6
   - b082fd52c6693e2e905507a9e7605d68880524fe
-  commit_sha: 7aa9f387819e82e57cc32445c9c4c3c6c196afb8
-  generated_at: '1794327709'
+  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
+  generated_at: '1794328873'
   generator: kuda/0.1.0

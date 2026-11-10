@@ -362,6 +362,7 @@ mod tests {
             source_ref: "./x".into(),
             resolved: "sha256:abc".into(),
             digest: String::new(),
+            signature: None,
             installed_at: 0,
         }
     }

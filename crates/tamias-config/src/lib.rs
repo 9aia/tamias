@@ -95,6 +95,41 @@ pub struct Search {
     pub default: Option<String>,
 }
 
+/// `[signing]` — optional package signing (`ssh-keygen -Y`, namespace
+/// `tamias-package`; see `tamias-sign`). Secret **names** never values:
+/// `key`/`allowed_signers` are paths, `key_env` names an env var whose
+/// value is a key *path* — key material never lives here.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Signing {
+    /// Private key path for `publish --sign` (`~` expands) — used when
+    /// `$TAMIAS_SIGNING_KEY` and `key_env`'s var are unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// Env var **name** whose value is the signing-key path — checked
+    /// after `$TAMIAS_SIGNING_KEY`, before `key`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_env: Option<String>,
+    /// `allowed_signers` file (authorized_keys-style, principal =
+    /// package name) for signature verification. `$TAMIAS_ALLOWED_SIGNERS`
+    /// wins; default `~/.config/tamias/allowed_signers`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_signers: Option<String>,
+    /// Every install must carry a valid signature. Only registry
+    /// (`cf:`) refs can supply one — see `tamias-sign`'s docs.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub required: bool,
+    /// `ssh-keygen -Y` namespace (default `tamias-package`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
+}
+
+/// `skip_serializing_if` for `false` bools — keeps `required: false`
+/// out of rendered configs.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 /// Deserialize an optional byte count — a plain integer or a human
 /// string like `"256MiB"` / `"1GiB"` / `"512KiB"` (binary suffixes;
 /// bare `K`/`M`/`G`/`T`/`B` and `KB`-style spellings accepted).
@@ -288,6 +323,9 @@ pub struct Config {
     /// Global byte limits + per-package overrides.
     #[serde(default, skip_serializing_if = "Limits::is_empty")]
     pub limits: Limits,
+    /// Package signing policy — `publish --sign` key resolution and
+    /// install/verify `allowed_signers` enforcement (`tamias-sign`).
+    pub signing: Signing,
 }
 
 impl Config {

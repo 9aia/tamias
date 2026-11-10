@@ -115,13 +115,16 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 .unwrap_or(false);
             // The shared install pipeline — silent progress, `"allow_drivers"`
             // consent hints (see `tamias_install::Surface::Rpc`).
+            let config = env_config(env);
             let entry = tamias_install::install(
                 &tamias_install::Env {
                     store_root: env.store_root.clone(),
                     cache_root: env.cache_root.clone(),
                     // Global `limits.max_download` caps http(s)/`cf:`
                     // fetches — same resolution as the CLI's install.
-                    max_download: Some(env_config(env).effective_limits(None, None).max_download),
+                    max_download: Some(config.effective_limits(None, None).max_download),
+                    // `signing.*` — package-signature verification policy.
+                    signing: tamias_sign::SigningPolicy::resolve(Some(&config)),
                 },
                 reference,
                 allow_drivers,
@@ -130,6 +133,7 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 "label": entry.label(),
                 "resolved": entry.record.resolved,
                 "digest": entry.record.digest,
+                "signed": entry.record.signature.is_some(),
             }))
         }
         "list" => {
@@ -158,8 +162,24 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
         }
         "verify" => {
             let name = str_field(&req, "name")?;
-            let report = Store::new(&env.store_root).verify(name)?;
-            Ok(json!({"name": report.name, "ok": report.ok}))
+            let store = Store::new(&env.store_root);
+            let report = store.verify(name)?;
+            // Signature status alongside the digest check — the record's
+            // `signature` re-verified against `signing.allowed_signers`.
+            let entry = store.find(name)?;
+            let config = env_config(env);
+            let policy = tamias_sign::SigningPolicy::resolve(Some(&config));
+            let signature = tamias_sign::record_signature_status(
+                &entry.record,
+                policy.allowed_signers.as_deref(),
+                &policy.namespace,
+            )?
+            .as_str();
+            Ok(json!({
+                "name": report.name,
+                "ok": report.ok,
+                "signature": signature,
+            }))
         }
         "remove" => {
             let name = str_field(&req, "name")?;
@@ -233,7 +253,21 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 &[config.publish.default.as_deref()],
                 &mut |_, _| {},
             )?;
-            let entry = plan.publish()?;
+            // `"sign":true` — ssh-keygen -Y sign the provenance anchors;
+            // the key resolves like the CLI's `publish --sign`.
+            let signature = if req.get("sign").and_then(Value::as_bool).unwrap_or(false) {
+                let key = tamias_sign::resolve_signing_key(Some(&config), None)?;
+                let policy = tamias_sign::SigningPolicy::resolve(Some(&config));
+                Some(tamias_sign::sign_package(
+                    &plan.root,
+                    &plan.manifest,
+                    &key,
+                    &policy.namespace,
+                )?)
+            } else {
+                None
+            };
+            let entry = plan.publish(signature.as_deref())?;
             Ok(registry_entry_json(&entry))
         }
         other => Err(Error::Failed(format!("unknown op '{other}'"))),
@@ -250,6 +284,7 @@ fn registry_entry_json(entry: &tamias_registry::RegistryEntry) -> Value {
         "version": entry.version,
         "kind": entry.kind,
         "digest": entry.digest,
+        "signed": entry.signature.is_some(),
         "file": entry.file,
     })
 }

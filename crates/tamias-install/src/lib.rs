@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tamias_cache_local::FetchCache;
-use tamias_core::{payload_root, Error, Manifest, StoreEntry, StoreRecord};
+use tamias_core::{dir_digest, payload_root, Error, Manifest, StoreEntry, StoreRecord};
 use tamias_source::{Planned, Refs, Sources};
 use tamias_source_cf::{CfRefKind, CfSource};
 use tamias_source_fs::{FsRefKind, FsSource};
@@ -47,6 +47,12 @@ pub struct Env {
     /// overrides can't apply here: the package name isn't known until
     /// after the fetch.
     pub max_download: Option<u64>,
+    /// Package-signature policy — `signing.*` config +
+    /// `TAMIAS_ALLOWED_SIGNERS` resolved by [`tamias_sign::SigningPolicy::resolve`].
+    /// Sources that carry a signature (registry `cf:` refs) are
+    /// verified before the store commit; `required` rejects unsigned
+    /// installs.
+    pub signing: tamias_sign::SigningPolicy,
 }
 
 impl Env {
@@ -65,6 +71,7 @@ impl Env {
             store_root,
             cache_root,
             max_download: config.map(|c| c.effective_limits(None, None).max_download),
+            signing: tamias_sign::SigningPolicy::resolve(config),
         }
     }
 }
@@ -174,7 +181,7 @@ pub fn install_with_progress(
     report(Progress::Fetching {
         reference: reference.to_string(),
     });
-    let (payload_dir, resolved_id) = fetch_or_cached(env, &planned)?;
+    let (payload_dir, resolved_id, signature) = fetch_or_cached(env, &planned)?;
     let root = payload_root(&payload_dir)?;
     let manifest = Manifest::load(&root)?;
     let base = manifest.scope.as_ref().map_or_else(
@@ -186,6 +193,19 @@ pub fn install_with_progress(
         None => base,
     };
     report(Progress::Installing { label: installing });
+    // Provenance gate: a source-carried signature (registry `cf:` refs)
+    // must verify against `allowed_signers`, and `signing.required`
+    // rejects unsigned installs — before any driver runs or the store
+    // commits (a refused install leaves no partial state).
+    let payload_digest = dir_digest(&root)?;
+    tamias_sign::enforce_signature(
+        &manifest.name,
+        manifest.scope.as_deref(),
+        manifest.version.as_deref(),
+        &payload_digest,
+        signature.as_deref(),
+        &env.signing,
+    )?;
     // Bundled drivers are arbitrary code shipped inside the package — they
     // must never be registered or executed without explicit consent. Fail
     // *before* the store entry is written so a refused install leaves no
@@ -207,6 +227,7 @@ pub fn install_with_progress(
         source_ref: reference.to_string(),
         resolved: resolved_id,
         digest: String::new(),
+        signature: signature.clone(),
         installed_at: 0,
     };
     // Driver work runs *before* the store commit: a missing or failing
@@ -290,8 +311,14 @@ pub fn remove(
     store.remove(name)
 }
 
-/// plan → cache-hit or fetch+commit → `(payload_dir, resolved_id)`.
-fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Error> {
+/// plan → cache-hit or fetch+commit → `(payload_dir, resolved_id,
+/// signature)`. Cache hits carry no signature — only `cf:` plans have
+/// one and they never prefetch-hit (no `prefetch_identity`), so a
+/// signed package is always re-fetched and re-verified.
+fn fetch_or_cached(
+    env: &Env,
+    planned: &Planned,
+) -> Result<(PathBuf, String, Option<String>), Error> {
     let cache = FetchCache::new(&env.cache_root);
     if let Some((key, resolved_id)) = planned.prefetch_identity() {
         // Integrity-checked hit: `hit` evicts a tampered or pre-metadata
@@ -299,7 +326,7 @@ fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Er
         // reach `Store::install` — the fetch below refetches instead.
         if let Some(dir) = cache.hit(&key)? {
             tracing::debug!(cache_key = %key, "fetch-cache hit");
-            return Ok((dir, resolved_id));
+            return Ok((dir, resolved_id, None));
         }
     }
     tracing::debug!("fetch-cache miss — fetching");
@@ -313,13 +340,15 @@ fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Er
     };
     let committed = cache.commit(&scratch, &fetched.content_key)?;
     tracing::debug!(content_key = %fetched.content_key, "fetched + cached");
-    Ok((committed, fetched.resolved))
+    Ok((committed, fetched.resolved, fetched.signature))
 }
 
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
+    use tamias_registry::Registry as _;
 
     use super::*;
 
@@ -371,6 +400,7 @@ mod tests {
             store_root: dir.path().join("store"),
             cache_root: dir.path().join("cache"),
             max_download: None,
+            signing: tamias_sign::SigningPolicy::default(),
         };
         (dir, env)
     }
@@ -418,6 +448,7 @@ mod tests {
             store_root: tmp.path().join("store"),
             cache_root: tmp.path().join("cache"),
             max_download: None,
+            signing: tamias_sign::SigningPolicy::default(),
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(pkg.join("drivers")).unwrap();
@@ -456,6 +487,7 @@ mod tests {
             store_root: tmp.path().join("store"),
             cache_root: tmp.path().join("cache"),
             max_download: None,
+            signing: tamias_sign::SigningPolicy::default(),
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(&pkg).unwrap();
@@ -471,6 +503,159 @@ mod tests {
         assert!(err.contains("zzz-no-driver"), "{err}");
         assert!(Store::new(&env.store_root).find("su").is_err());
         std::env::remove_var("TAMIAS_HOME");
+    }
+
+    /// `ssh-keygen -Y` needs a real key — same approach as sturn's wal
+    /// tests and `tamias-sign`'s (ssh-keygen is a de-facto dep for
+    /// git-over-ssh anyway).
+    fn gen_key(dir: &std::path::Path, name: &str) -> PathBuf {
+        let key = dir.join(name);
+        let out = std::process::Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+            .arg(&key)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "ssh-keygen keygen failed");
+        key
+    }
+
+    /// `<principal> <pubkey>` allowed_signers line via `ssh-keygen -y`.
+    fn allow(dir: &std::path::Path, principal: &str, key: &std::path::Path) -> PathBuf {
+        let pubout = std::process::Command::new("ssh-keygen")
+            .args(["-y", "-f"])
+            .arg(key)
+            .output()
+            .unwrap();
+        assert!(pubout.status.success());
+        let pubkey = String::from_utf8_lossy(&pubout.stdout).trim().to_string();
+        let path = dir.join(format!("allowed-{principal}"));
+        std::fs::write(&path, format!("{principal} {pubkey}\n")).unwrap();
+        path
+    }
+
+    /// A loopback port nothing else holds — bind :0, read, release.
+    fn free_addr() -> String {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap().to_string();
+        drop(l);
+        addr
+    }
+
+    /// Publish `name@1.0.0` to a served local registry, signed when
+    /// `key` is `Some`. Returns the `cf:` install ref.
+    fn publish_served(
+        tmp: &std::path::Path,
+        name: &str,
+        key: Option<&std::path::Path>,
+    ) -> (String, tempfile::TempDir) {
+        let src = pkg(tmp, name);
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry = tamias_registry_local::LocalRegistry::new(reg_dir.path());
+        let manifest = Manifest::load(&src).unwrap();
+        let signature = key.map(|k| {
+            tamias_sign::sign_package(&src, &manifest, k, tamias_sign::DEFAULT_NAMESPACE).unwrap()
+        });
+        registry
+            .publish(&src, &manifest, signature.as_deref())
+            .unwrap();
+        let addr = free_addr();
+        let served = reg_dir.path().to_path_buf();
+        let listen = addr.clone();
+        std::thread::spawn(move || {
+            let _ = tamias_registry_local::serve_http(&listen, &served);
+        });
+        for _ in 0..100 {
+            if std::net::TcpStream::connect(&addr).is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        (format!("cf:http://{addr}/{name}@1.0.0"), reg_dir)
+    }
+
+    fn signing_env(
+        store: &std::path::Path,
+        cache: &std::path::Path,
+        signers: &std::path::Path,
+    ) -> Env {
+        Env {
+            store_root: store.to_path_buf(),
+            cache_root: cache.to_path_buf(),
+            max_download: None,
+            signing: tamias_sign::SigningPolicy {
+                allowed_signers: Some(signers.to_path_buf()),
+                required: false,
+                namespace: tamias_sign::DEFAULT_NAMESPACE.to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn signed_cf_install_verifies_and_records() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key = gen_key(tmp.path(), "signkey");
+        let signers = allow(tmp.path(), "signed-pkg", &key);
+        let (reference, _reg) = publish_served(tmp.path(), "signed-pkg", Some(&key));
+        let env = signing_env(
+            &tmp.path().join("store"),
+            &tmp.path().join("cache"),
+            &signers,
+        );
+        let entry = install(&env, &reference, false).unwrap();
+        assert!(entry.record.signature.is_some(), "signature recorded");
+        // the recorded signature re-verifies against the same anchors
+        let status = tamias_sign::record_signature_status(
+            &entry.record,
+            Some(&signers),
+            tamias_sign::DEFAULT_NAMESPACE,
+        )
+        .unwrap();
+        assert_eq!(status, tamias_sign::SignatureStatus::Verified);
+    }
+
+    #[test]
+    fn signed_cf_install_rejects_bad_and_missing_signers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key = gen_key(tmp.path(), "signkey");
+        let other = gen_key(tmp.path(), "otherkey");
+        let wrong = allow(tmp.path(), "signed-pkg", &other);
+        let (reference, _reg) = publish_served(tmp.path(), "signed-pkg", Some(&key));
+        // wrong authorized key → hard error, no store entry
+        let env = signing_env(&tmp.path().join("store"), &tmp.path().join("cache"), &wrong);
+        let err = install(&env, &reference, false).unwrap_err().to_string();
+        assert!(err.contains("signature verification failed"), "{err}");
+        assert!(Store::new(&env.store_root).find("signed-pkg").is_err());
+        // signed package + no allowed_signers → fail closed
+        let mut env2 = signing_env(
+            &tmp.path().join("store2"),
+            &tmp.path().join("cache2"),
+            &wrong,
+        );
+        env2.signing.allowed_signers = None;
+        let err = install(&env2, &reference, false).unwrap_err().to_string();
+        assert!(err.contains("no allowed_signers"), "{err}");
+    }
+
+    #[test]
+    fn required_rejects_unsigned_but_allows_signed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key = gen_key(tmp.path(), "signkey");
+        let signers = allow(tmp.path(), "req-pkg", &key);
+        let (signed_ref, _r1) = publish_served(tmp.path(), "req-pkg", Some(&key));
+        let (unsigned_ref, _r2) = publish_served(tmp.path(), "plain-pkg", None);
+        let mut env = signing_env(
+            &tmp.path().join("store"),
+            &tmp.path().join("cache"),
+            &signers,
+        );
+        env.signing.required = true;
+        // unsigned registry package → refused before store commit
+        let err = install(&env, &unsigned_ref, false).unwrap_err().to_string();
+        assert!(err.contains("signing.required"), "{err}");
+        assert!(Store::new(&env.store_root).find("plain-pkg").is_err());
+        // signed one installs fine under required
+        let entry = install(&env, &signed_ref, false).unwrap();
+        assert!(entry.record.signature.is_some());
     }
 
     #[test]

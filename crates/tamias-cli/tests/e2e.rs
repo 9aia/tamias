@@ -1031,3 +1031,150 @@ fn kuda_and_mimus_have_their_own_drivers() {
         );
     }
 }
+
+#[test]
+fn publish_sign_and_signed_cf_install() {
+    use std::time::Duration;
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let reg = tmp.path().join("registry");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: sigpkg\nversion: 4.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+
+    // A real ed25519 key + allowed_signers line (principal = pkg name).
+    let key = tmp.path().join("sigkey");
+    let out = Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+        .arg(&key)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "ssh-keygen: {}", stderr(&out));
+    let pubout = Command::new("ssh-keygen")
+        .args(["-y", "-f"])
+        .arg(&key)
+        .output()
+        .unwrap();
+    assert!(pubout.status.success());
+    let pubkey = String::from_utf8_lossy(&pubout.stdout).trim().to_string();
+    let signers = tmp.path().join("allowed_signers");
+    std::fs::write(&signers, format!("sigpkg {pubkey}\n")).unwrap();
+
+    // publish --sign --key → the index entry carries the signature.
+    let o = Command::new(tamias_bin())
+        .args([
+            "publish",
+            pkg.to_str().unwrap(),
+            "--registry",
+            reg.to_str().unwrap(),
+            "--sign",
+            "--key",
+            key.to_str().unwrap(),
+        ])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "publish --sign: {}", stderr(&o));
+    let index: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(reg.join("index.json")).unwrap()).unwrap();
+    assert!(
+        index[0]["signature"]
+            .as_str()
+            .unwrap()
+            .contains("SSH SIGNATURE"),
+        "index entry unsigned: {index}"
+    );
+
+    // serve the registry, install via cf: with allowed_signers → the
+    // signature verifies and lands in the store record.
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap().to_string();
+    drop(l);
+    let served = reg.clone();
+    let mut server = Command::new(tamias_bin())
+        .args([
+            "registry",
+            "serve",
+            "--addr",
+            &addr,
+            "--dir",
+            served.to_str().unwrap(),
+        ])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    for _ in 0..100 {
+        if std::net::TcpStream::connect(&addr).is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let reference = format!("cf:http://{addr}/sigpkg@4.0.0");
+    let o = Command::new(tamias_bin())
+        .args(["install", &reference])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .env("TAMIAS_ALLOWED_SIGNERS", &signers)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "install cf signed: {}", stderr(&o));
+
+    // tamias verify reports the signature status.
+    let o = Command::new(tamias_bin())
+        .args(["verify", "sigpkg", "--json"])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .env("TAMIAS_ALLOWED_SIGNERS", &signers)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "verify: {}", stderr(&o));
+    assert!(
+        stdout(&o).contains("\"signature\":\"verified\""),
+        "verify json: {}",
+        stdout(&o)
+    );
+
+    // a wrong allowed_signers rejects the install outright.
+    let other = tmp.path().join("otherkey");
+    let out = Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+        .arg(&other)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let pubout = Command::new("ssh-keygen")
+        .args(["-y", "-f"])
+        .arg(&other)
+        .output()
+        .unwrap();
+    let pubkey = String::from_utf8_lossy(&pubout.stdout).trim().to_string();
+    let bad_signers = tmp.path().join("bad_signers");
+    std::fs::write(&bad_signers, format!("sigpkg {pubkey}\n")).unwrap();
+    let home2 = tmp.path().join("home2");
+    let o = Command::new(tamias_bin())
+        .args(["install", &reference])
+        .env("TAMIAS_HOME", &home2)
+        .env("TAMIAS_CACHE", &cache)
+        .env("TAMIAS_ALLOWED_SIGNERS", &bad_signers)
+        .output()
+        .unwrap();
+    assert!(!o.status.success(), "bad signer must fail");
+    assert!(
+        stderr(&o).contains("signature verification failed"),
+        "{}",
+        stderr(&o)
+    );
+
+    server.kill().ok();
+    let _ = server.wait();
+}

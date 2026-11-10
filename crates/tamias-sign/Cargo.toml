@@ -1,0 +1,23 @@
+[package]
+name = "tamias-sign"
+description = "Package signing — ssh-keygen -Y sign/verify (namespace tamias-package) over the provenance anchors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[dependencies]
+tamias-core.workspace = true
+tamias-config.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

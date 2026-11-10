@@ -125,6 +125,10 @@ struct CfPlan {
     /// no pin, so this is the only provenance check between "the registry
     /// said hello@1.0.0 lives at this URL" and "these bytes are it".
     digest: String,
+    /// The index entry's `ssh-keygen -Y` signature (`publish --sign`),
+    /// when present — handed to the install pipeline via
+    /// [`Fetched::signature`](tamias_source::Fetched::signature).
+    signature: Option<String>,
 }
 
 impl Plan for CfPlan {}
@@ -152,15 +156,20 @@ impl Source for CfSource {
         Ok(Box::new(CfPlan {
             url: format!("{base}/{}", entry.file),
             digest: entry.digest,
+            signature: entry.signature,
         }))
     }
 
     fn fetch(&self, plan: &dyn Plan, dest_dir: &Path) -> Result<Fetched, Error> {
         // A `cf:` plan is an http tarball — the http source does the rest.
-        let CfPlan { url, digest } = plan
+        let CfPlan {
+            url,
+            digest,
+            signature,
+        } = plan
             .downcast_ref::<CfPlan>()
             .ok_or_else(|| Error::Failed("CfSource only fetches cf plans".to_string()))?;
-        let fetched = HttpSource::new()
+        let mut fetched = HttpSource::new()
             .with_max_download(self.max_download)
             .fetch(&HttpPlan::new(url.clone(), None), dest_dir)?;
         // Verify the unpacked payload against the digest the registry
@@ -172,6 +181,9 @@ impl Source for CfSource {
                 "payload digest mismatch for {url}: {actual} ≠ index {digest}"
             )));
         }
+        // The index's signature rides along — the install pipeline
+        // verifies it against allowed_signers before the store commit.
+        fetched.signature = signature.clone();
         Ok(fetched)
     }
 }
@@ -202,7 +214,7 @@ mod tests {
         std::fs::write(src.path().join("a.txt"), "a").unwrap();
         let manifest = tamias_core::Manifest::load(src.path()).unwrap();
         LocalRegistry::new(&root)
-            .publish(src.path(), &manifest)
+            .publish(src.path(), &manifest, None)
             .unwrap();
         let addr = format!("127.0.0.1:{port}");
         let served = root.clone();

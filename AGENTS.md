@@ -75,6 +75,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `crates/tamias-serve` | ndjson JSON-RPC over stdio for embedding (`install`/`list`/`info`/`verify`/`remove`/`search`/`publish`/`registry.*`) — same wire as `sepia serve`/`cuora serve`/`myco serve` |
 | `crates/tamias-tui` | `tamias ui` — interactive package-manager TUI (ratatui/crossterm/notify) over `tamias-store-local`; default `tui` feature on `tamias-cli`, standalone `tamias-tui` bin reads `TAMIAS_*` env |
 | `crates/tamias-shell` | `bash -c` / direct-argv exec helper with env injection (intended for `tamias run`) — **orphan: declared in the workspace but zero dependents** |
+| `crates/tamias-sign` | optional package signing — `ssh-keygen -Y sign`/`verify` (namespace `tamias-package`, sturn-style) over name/scope/version/payload-digest; signatures ride the registry index (`publish --sign`), verified by `cf:` installs + `tamias verify` against `signing.allowed_signers` |
 | `crates/tamias-telemetry` | opt-in OpenTelemetry layer over the daemons' `tracing` stack (OTLP only when an endpoint is configured) |
 | `crates/tamias-testkit` | fixtures + impl conformance |
 | `crates/tamias-cli` | the `tamias` binary — clap, `--json`, `manifest`/`schema` |

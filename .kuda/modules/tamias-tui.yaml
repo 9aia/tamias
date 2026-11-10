@@ -15,7 +15,7 @@ api:
 - name: Base
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 609
+  line: 625
   module: tamias-tui
 - name: CACHE_MAX_AGE
   kind: const
@@ -40,7 +40,7 @@ api:
 - name: Drained
   kind: type
   file: crates/tamias-tui/tests/pty.rs
-  line: 119
+  line: 120
   module: tamias-tui
 - name: Fixture
   kind: type
@@ -65,7 +65,7 @@ api:
 - name: LOG_LINES
   kind: const
   file: crates/tamias-tui/src/ops.rs
-  line: 900
+  line: 918
   module: tamias-tui
 - name: MUTED
   kind: const
@@ -145,7 +145,7 @@ api:
 - name: add_dep
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 743
+  line: 759
   module: tamias-tui
 - name: app
   kind: module
@@ -165,7 +165,7 @@ api:
 - name: cache_clean
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 452
+  line: 468
   module: tamias-tui
 - name: chrome
   kind: function
@@ -175,12 +175,12 @@ api:
 - name: closed_pty_surfaces_an_error
   kind: function
   file: crates/tamias-tui/tests/pty.rs
-  line: 346
+  line: 347
   module: tamias-tui
 - name: command
   kind: function
   file: crates/tamias-tui/tests/pty.rs
-  line: 74
+  line: 75
   module: tamias-tui
 - name: command_parsing
   kind: function
@@ -195,7 +195,7 @@ api:
 - name: ctx
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 1062
+  line: 1080
   module: tamias-tui
 - name: ctx_from_env_resolves_roots
   kind: function
@@ -218,6 +218,7 @@ deps:
 - tamias-registry
 - tamias-registry-open
 - tamias-shell
+- tamias-sign
 - tamias-store-local
 - portable-pty
 - tempfile
@@ -249,13 +250,13 @@ provenance:
   - crates/tamias-tui/src/render.rs
   - crates/tamias-tui/tests/pty.rs
   hashes:
-  - 5cc2cdb66c95ca712551d8f2f30c31f00e1bab61
+  - 10503c98e46004ca23b6045843e08b1c86c9bc4c
   - 33e51d0e901080cd688d4dd812a4168ae6d82fff
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - 0171e39261719c8d742ef4c9558c13836ca8d47f
+  - a1a1a710963773296d6aace95ab4effd82bd0cae
   - 288e4e94bd777386b56883fdabda96b8e6c28f53
-  - 5b9b7c378e5500638fbf90629bc649400abf4336
-  commit_sha: 7aa9f387819e82e57cc32445c9c4c3c6c196afb8
-  generated_at: '1794327709'
+  - 0fb68a4ee8432d1c4cd26ab7c06e8d905a383f24
+  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
+  generated_at: '1794328873'
   generator: kuda-template/0.1.2

@@ -15,12 +15,12 @@ api:
 - name: ENV
   kind: const
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 265
+  line: 271
   module: tamias-registry-cf
 - name: EnvGuard
   kind: type
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 270
+  line: 276
   module: tamias-registry-cf
 - name: HttpRegistry
   kind: type
@@ -40,7 +40,7 @@ api:
 - name: drop
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 290
+  line: 296
   module: tamias-registry-cf
 - name: entries
   kind: function
@@ -50,7 +50,7 @@ api:
 - name: entries_without_server_errors_and_env_token
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 304
+  line: 310
   module: tamias-registry-cf
 - name: from_env
   kind: function
@@ -60,7 +60,7 @@ api:
 - name: from_env_token_header_is_sent
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 458
+  line: 476
   module: tamias-registry-cf
 - name: get
   kind: function
@@ -75,7 +75,7 @@ api:
 - name: new
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 277
+  line: 283
   module: tamias-registry-cf
 - name: publish
   kind: function
@@ -85,22 +85,22 @@ api:
 - name: publish_and_read_roundtrip
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 369
+  line: 378
   module: tamias-registry-cf
 - name: publish_enforces_max_upload_before_put
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 345
+  line: 354
   module: tamias-registry-cf
 - name: publish_failed_index_read_never_writes_index
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 515
+  line: 533
   module: tamias-registry-cf
 - name: publish_rejects_unsafe_manifest_fields
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 324
+  line: 330
   module: tamias-registry-cf
 - name: publish_tmp_path
   kind: function
@@ -110,12 +110,12 @@ api:
 - name: publish_tmp_path_stays_single_component
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 357
+  line: 366
   module: tamias-registry-cf
 - name: publish_without_server_errors
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 315
+  line: 321
   module: tamias-registry-cf
 - name: put
   kind: function
@@ -125,22 +125,22 @@ api:
 - name: put_non_success_errors
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 481
+  line: 499
   module: tamias-registry-cf
 - name: scoped_publish_put_token_and_overwrite
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 424
+  line: 436
   module: tamias-registry-cf
 - name: serve_500
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 395
+  line: 407
   module: tamias-registry-cf
 - name: server_error_status_paths
   kind: function
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 412
+  line: 424
   module: tamias-registry-cf
 - name: tamias-registry-cf
   kind: module
@@ -150,7 +150,7 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-registry-cf/src/lib.rs
-  line: 257
+  line: 263
   module: tamias-registry-cf
 - name: with_max_upload
   kind: function
@@ -182,7 +182,7 @@ provenance:
   - crates/tamias-registry-cf/src/lib.rs
   hashes:
   - 4f714bbab201b2a39c74f752ad5126919e1ccbb3
-  - 46f891cf4e7980e1522087a33fbb16d868b4b379
-  commit_sha: 2357f7f1fb1759b84d1f277189fbaad0fdfa1d9c
-  generated_at: '1794326198'
+  - eed8a3088959856f563b86aa848fd9868e1ba58a
+  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
+  generated_at: '1794328873'
   generator: kuda-template/0.1.2

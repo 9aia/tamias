@@ -5,7 +5,7 @@ api:
 - name: ForeignPlan
   kind: type
   file: crates/tamias-source-fs/src/lib.rs
-  line: 136
+  line: 137
   module: tamias-source-fs
 - name: FsPlan
   kind: type
@@ -40,7 +40,7 @@ api:
 - name: dir_tarball_and_error_arms
   kind: function
   file: crates/tamias-source-fs/src/lib.rs
-  line: 140
+  line: 141
   module: tamias-source-fs
 - name: fetch
   kind: function
@@ -70,17 +70,17 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-source-fs/src/lib.rs
-  line: 123
+  line: 124
   module: tamias-source-fs
 - name: unpack_tarball
   kind: function
   file: crates/tamias-source-fs/src/lib.rs
-  line: 101
+  line: 102
   module: tamias-source-fs
 - name: wire
   kind: function
   file: crates/tamias-source-fs/src/lib.rs
-  line: 129
+  line: 130
   module: tamias-source-fs
 deps:
 - tamias-core
@@ -102,8 +102,8 @@ provenance:
   - crates/tamias-source-fs/tests/props.rs
   hashes:
   - 3edf974934fe0d1657a0c378f864811440c8aa48
-  - 547100b3b45a74082783646148f6ac0e1b3fc806
+  - 6d0a5af6620564f7d56258f72c04f8f61f9e2d5c
   - e194a2a8b9ab50a30e5830f69e65edab56570cac
-  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
-  generated_at: '1794323780'
+  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
+  generated_at: '1794328873'
   generator: kuda-template/0.1.2

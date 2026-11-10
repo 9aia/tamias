@@ -91,6 +91,7 @@ impl Source for FsSource {
             dir: dest_dir.to_path_buf(),
             resolved: digest.clone(),
             content_key: digest.replacen("sha256:", "sha256-", 1),
+            signature: None,
         })
     }
 }

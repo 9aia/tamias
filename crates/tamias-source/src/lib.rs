@@ -178,6 +178,10 @@ pub struct Fetched {
     pub resolved: String,
     /// Content-addressed cache key (`git-<sha>` / `sha256-<hex>`).
     pub content_key: String,
+    /// Armored package signature the source carried (registry index
+    /// entries today — `cf:` refs), for the install pipeline's
+    /// provenance gate and the store record.
+    pub signature: Option<String>,
 }
 
 /// `~` / `~/…` expansion (`$HOME`, else `$USERPROFILE`, else `/`).
@@ -283,6 +287,7 @@ mod tests {
                 dir: dest_dir.to_path_buf(),
                 resolved,
                 content_key,
+                signature: None,
             })
         }
     }

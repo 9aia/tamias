@@ -24,6 +24,11 @@ pub struct RegistryEntry {
     pub kind: Option<String>,
     /// `sha256:<hex>` of the packed payload.
     pub digest: String,
+    /// Armored `ssh-keygen -Y` signature over the provenance anchors
+    /// (see `tamias-sign`) — written by `publish --sign`, checked by
+    /// `cf:` installs and `tamias verify`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
     /// Path to the `.tgz`, relative to the registry root.
     pub file: String,
 }
@@ -51,11 +56,18 @@ pub trait Registry {
     /// Adapter-specific.
     fn entries(&self) -> Result<Vec<RegistryEntry>, Error>;
 
-    /// Pack + index a payload.
+    /// Pack + index a payload. `signature` is the armored
+    /// `ssh-keygen -Y` signature over the payload's provenance anchors
+    /// (`tamias-sign`), stored on the index entry when `Some`.
     ///
     /// # Errors
     /// Adapter-specific.
-    fn publish(&self, payload_root: &Path, manifest: &Manifest) -> Result<RegistryEntry, Error>;
+    fn publish(
+        &self,
+        payload_root: &Path,
+        manifest: &Manifest,
+        signature: Option<&str>,
+    ) -> Result<RegistryEntry, Error>;
 
     /// Entries whose name/scope contains `query` (case-insensitive).
     ///
@@ -110,6 +122,7 @@ mod tests {
             version: None,
             kind: None,
             digest: "sha256:d".into(),
+            signature: None,
             file: "n/0.0.0.tgz".into(),
         };
         assert_eq!(entry.label(), "n");

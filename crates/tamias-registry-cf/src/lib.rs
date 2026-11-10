@@ -178,7 +178,12 @@ impl Registry for HttpRegistry {
         }
     }
 
-    fn publish(&self, payload_root: &Path, manifest: &Manifest) -> Result<RegistryEntry, Error> {
+    fn publish(
+        &self,
+        payload_root: &Path,
+        manifest: &Manifest,
+        signature: Option<&str>,
+    ) -> Result<RegistryEntry, Error> {
         // The manifest may not have been validated upstream — every field
         // embedded in the blob key/URL must be a single safe component.
         if !is_valid_name(&manifest.name) {
@@ -236,6 +241,7 @@ impl Registry for HttpRegistry {
             version: manifest.version.clone(),
             kind: manifest.kind.clone(),
             digest: dir_digest(payload_root)?,
+            signature: signature.map(str::to_string),
             file: rel,
         };
         let mut entries = self.entries()?;
@@ -317,7 +323,7 @@ mod tests {
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
         let registry = HttpRegistry::new("http://127.0.0.1:1");
-        assert!(registry.publish(src.path(), &manifest).is_err());
+        assert!(registry.publish(src.path(), &manifest, None).is_err());
     }
 
     #[test]
@@ -331,14 +337,17 @@ mod tests {
                 version: Some(bad.into()),
                 ..Default::default()
             };
-            assert!(registry.publish(src.path(), &manifest).is_err(), "{bad}");
+            assert!(
+                registry.publish(src.path(), &manifest, None).is_err(),
+                "{bad}"
+            );
         }
         let manifest = Manifest {
             name: "../x".into(),
             version: Some("1.0.0".into()),
             ..Default::default()
         };
-        assert!(registry.publish(src.path(), &manifest).is_err());
+        assert!(registry.publish(src.path(), &manifest, None).is_err());
     }
 
     #[test]
@@ -349,7 +358,7 @@ mod tests {
         // A 1-byte cap fails on the packed tarball before any network
         // I/O — the dead-server URL proves no PUT was attempted.
         let registry = HttpRegistry::new("http://127.0.0.1:1").with_max_upload(1);
-        let err = registry.publish(src.path(), &manifest).unwrap_err();
+        let err = registry.publish(src.path(), &manifest, None).unwrap_err();
         assert!(err.to_string().contains("upload limit"), "{err}");
     }
 
@@ -386,7 +395,10 @@ mod tests {
         // Fresh registry: index.json is absent → 404 → legitimately empty.
         assert!(registry.entries().unwrap().is_empty());
         assert_eq!(
-            registry.publish(src.path(), &manifest).unwrap().label(),
+            registry
+                .publish(src.path(), &manifest, None)
+                .unwrap()
+                .label(),
             "x@1.0.0"
         );
         assert_eq!(registry.entries().unwrap().len(), 1);
@@ -417,7 +429,7 @@ mod tests {
         let src = tempfile::tempdir().unwrap();
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
-        assert!(registry.publish(src.path(), &manifest).is_err());
+        assert!(registry.publish(src.path(), &manifest, None).is_err());
     }
 
     #[test]
@@ -443,12 +455,18 @@ mod tests {
         let manifest = Manifest::load(src.path()).unwrap();
         let registry = HttpRegistry::new("http://127.0.0.1:8796").with_token("tok");
         assert_eq!(
-            registry.publish(src.path(), &manifest).unwrap().label(),
+            registry
+                .publish(src.path(), &manifest, None)
+                .unwrap()
+                .label(),
             "@acme/s@1.0.0"
         );
         // re-publish → the existing index entry is replaced
         assert_eq!(
-            registry.publish(src.path(), &manifest).unwrap().label(),
+            registry
+                .publish(src.path(), &manifest, None)
+                .unwrap()
+                .label(),
             "@acme/s@1.0.0"
         );
         assert_eq!(registry.entries().unwrap().len(), 1);
@@ -505,7 +523,7 @@ mod tests {
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
         let registry = HttpRegistry::new(format!("http://127.0.0.1:{port}"));
-        assert!(registry.publish(src.path(), &manifest).is_err());
+        assert!(registry.publish(src.path(), &manifest, None).is_err());
     }
 
     /// A store that accepts PUTs but fails GET index.json with a 500 —
@@ -568,7 +586,7 @@ mod tests {
         std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
         let manifest = Manifest::load(src.path()).unwrap();
         let registry = HttpRegistry::new(format!("http://127.0.0.1:{port}"));
-        assert!(registry.publish(src.path(), &manifest).is_err());
+        assert!(registry.publish(src.path(), &manifest, None).is_err());
         let reqs = seen.lock().unwrap();
         assert!(
             reqs.iter().any(|r| r.starts_with("GET /index.json")),

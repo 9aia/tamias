@@ -11,10 +11,10 @@ verify:
 - project/adrs/0001-seed-tamias-from-arca-re-derive-peregrin-s-distribution-engine.md
 - project/adrs/0002-ref-source-are-ports-the-grammar-and-the-transport-leave-core.md
 - project/adrs/0003-binary-distribution-release-tarballs-ride-existing-https-refs-no-new-channel-in-v1.md
+- project/handoffs/T-014.md
 - project/handoffs/T-016.md
 - project/handoffs/T-017.md
 - project/index.md
-- project/issues/issue-0001-pavo-core-paths-rs-still-falls-back-to-tamias-tamias-fixed-to-tamias.md
 provenance:
   files:
   - project/BACKLOG.md
@@ -23,6 +23,7 @@ provenance:
   - project/adrs/0001-seed-tamias-from-arca-re-derive-peregrin-s-distribution-engine.md
   - project/adrs/0002-ref-source-are-ports-the-grammar-and-the-transport-leave-core.md
   - project/adrs/0003-binary-distribution-release-tarballs-ride-existing-https-refs-no-new-channel-in-v1.md
+  - project/handoffs/T-014.md
   - project/handoffs/T-016.md
   - project/handoffs/T-017.md
   - project/index.md
@@ -37,11 +38,12 @@ provenance:
   - project/proposals/proposal-0002-registry-sources-configurable-limits-named-registries-self-hosting-per-pkg-max-upload.md
   hashes:
   - a8d17ca6e86c1faa677ebf8bbe55112e6b79ddb9
-  - e890f6384a1e422ceaa66a6f875ea153b4eec6f8
-  - 11d53fffba8454c04c1ac6ee6074d41da13c5805
+  - d44b255c6af650db90b1ca8f250135387bcca052
+  - cce62ac68ba07db5b17b292f032a310b160c3e83
   - 19a31a3ecdddb5e163a6ce4dc8d5303c8ce74004
   - 6d84ca6eeec801f5cb5415f9a9bb30f9b0f02f07
   - 12339db8c98b70eff0e6be7ff95aa05580c54881
+  - ed0d6acdaec65bac42bd614e1de98d3859d56a5f
   - 52fdf249b2a32b05513122e37df6f152f654e9c6
   - be96a71715ddb55464233a4ed274ff0fe7445645
   - 8e032ed9afe33857903f042c5602086609df6d69
@@ -54,6 +56,6 @@ provenance:
   - 60e7a5e2b8832a441294318e4e9e5ed43f24ca60
   - 35c5e480e4e99fb8f4e5c5e6ddb9fde060a95402
   - e2fc25e216d16449105fb4ab420bebf2f02d06d4
-  commit_sha: 7aa9f387819e82e57cc32445c9c4c3c6c196afb8
-  generated_at: '1794327709'
+  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
+  generated_at: '1794328873'
   generator: kuda-template/0.1.2

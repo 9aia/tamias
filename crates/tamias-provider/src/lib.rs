@@ -691,6 +691,7 @@ mod tests {
                     source_ref: "./pkg".into(),
                     resolved: "sha256:0123456789abcdef".into(),
                     digest: String::new(),
+                    signature: None,
                     installed_at: 0,
                 },
             )

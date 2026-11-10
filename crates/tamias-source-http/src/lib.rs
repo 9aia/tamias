@@ -212,6 +212,7 @@ impl Source for HttpSource {
             dir: dest_dir.to_path_buf(),
             resolved: format!("sha256:{hex}"),
             content_key: format!("sha256-{hex}"),
+            signature: None,
         })
     }
 }

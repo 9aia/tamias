@@ -31,6 +31,12 @@ pub struct StoreRecord {
     pub resolved: String,
     /// `sha256:<hex>` of the unpacked payload — `verify` recomputes it.
     pub digest: String,
+    /// Armored `ssh-keygen -Y` signature over the provenance anchors
+    /// (name/scope/version/digest — see `tamias-sign`), when the source
+    /// carried one (registry index entries today). `verify` re-checks
+    /// it against `allowed_signers`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
     /// Unix seconds at install time.
     pub installed_at: u64,
 }
@@ -118,6 +124,7 @@ mod tests {
             source_ref: "./x".into(),
             resolved: resolved.into(),
             digest: "sha256:d".into(),
+            signature: None,
             installed_at: 0,
         }
     }
