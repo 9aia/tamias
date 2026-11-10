@@ -45,7 +45,7 @@
 | `publish` | `Publish` | optional | Publish routing. |
 | `search` | `Search` | optional | Search routing. |
 | `limits` | `Limits` | optional | Global byte limits + per-package overrides. |
-| `signing` | `Signing` | optional | Package signing policy — `publish --sign` key resolution and install/verify `allowed_signers` enforcement (`tamias-sign`). |
+| `signing` | `Signing` | optional | Package signing policy — `publish --sign` key resolution and install/verify `allowed_signers`/`official_signers` enforcement and trust-tier reporting (`tamias-sign`). |
 
 ## format trait (parse/render)
 
@@ -55,10 +55,15 @@
 ## Formats
 
 YAML is the standard — `tamias.yml` or `tamias.yaml`; `tamias.toml`
-parses into the same `Config`. `tamias config` reads the first of
-`./tamias.yml`, `./tamias.yaml`, `./tamias.toml` in the cwd
-(`--file` overrides); no file means defaults. The same file informs
-`doctor`'s registry check (`publish.default` → `registries.NAME`).
+parses into the same `Config`. Read-side resolution is **layered**:
+the user-level `~/.config/tamias/tamias.*` (`$XDG_CONFIG_HOME`
+wins) is the base and a `./tamias.{yml,yaml,toml}` in the cwd
+overlays it per-field — project wins, global fills the gaps.
+`--file`/`TAMIAS_CONFIG` replaces discovery with that one file.
+Registry *writes* (`tamias registry add|remove`) stay file-scoped:
+they edit the project `tamias.*` (or `--file` target), never the
+user layer implicitly. The merged config informs `doctor`'s
+registry check (`publish.default` → `registries.NAME`).
 
 ## Constraints
 
