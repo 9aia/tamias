@@ -9,17 +9,10 @@
 
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tamias_cache_local::FetchCache;
-use tamias_core::{payload_root, Error, Manifest, StoreRecord};
-use tamias_source::{Planned, Refs, Sources};
-use tamias_source_cf::{CfRefKind, CfSource};
-use tamias_source_fs::{FsRefKind, FsSource};
-use tamias_source_git::{GitRefKind, GitSource};
-use tamias_source_http::{HttpRefKind, HttpSource};
+use tamias_core::Error;
 use tamias_store_local::Store;
 
 /// Store + cache roots.
@@ -91,7 +84,16 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 .get("allow_drivers")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            let entry = install(env, reference, allow_drivers)?;
+            // The shared install pipeline — silent progress, `"allow_drivers"`
+            // consent hints (see `tamias_install::Surface::Rpc`).
+            let entry = tamias_install::install(
+                &tamias_install::Env {
+                    store_root: env.store_root.clone(),
+                    cache_root: env.cache_root.clone(),
+                },
+                reference,
+                allow_drivers,
+            )?;
             Ok(json!({
                 "label": entry.label(),
                 "resolved": entry.record.resolved,
@@ -149,103 +151,6 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
     }
 }
 
-/// The ref grammar — kinds in claim order; the fs fallback (paths) is last.
-fn refs() -> Refs {
-    Refs::new()
-        .with(Arc::new(GitRefKind))
-        .with(Arc::new(CfRefKind))
-        .with(Arc::new(HttpRefKind))
-        .with(Arc::new(FsRefKind))
-}
-
-/// The source registry.
-fn sources() -> Sources {
-    Sources::new()
-        .with(Arc::new(GitSource::new()))
-        .with(Arc::new(CfSource::new()))
-        .with(Arc::new(HttpSource::new()))
-        .with(Arc::new(FsSource::new()))
-}
-
-fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Error> {
-    let cache = FetchCache::new(&env.cache_root);
-    if let Some((key, resolved_id)) = planned.prefetch_identity() {
-        // Integrity-checked hit — a tampered or pre-metadata entry is
-        // evicted inside `hit` and reported as a miss → refetch.
-        if let Some(dir) = cache.hit(&key)? {
-            return Ok((dir, resolved_id));
-        }
-    }
-    let scratch = cache.scratch()?;
-    let fetched = match planned.fetch(&scratch) {
-        Ok(fetched) => fetched,
-        Err(e) => {
-            cache.discard(&scratch);
-            return Err(e);
-        }
-    };
-    let committed = cache.commit(&scratch, &fetched.content_key)?;
-    Ok((committed, fetched.resolved))
-}
-
-fn install(
-    env: &Env,
-    reference: &str,
-    allow_drivers: bool,
-) -> Result<tamias_core::StoreEntry, Error> {
-    let span = tracing::info_span!("install", reference);
-    let _enter = span.enter();
-    let spec = refs().parse(reference)?;
-    let planned = sources().plan(&*spec)?;
-    let (payload_dir, resolved_id) = fetch_or_cached(env, &planned)?;
-    let root = payload_root(&payload_dir)?;
-    let manifest = Manifest::load(&root)?;
-    if manifest.name.is_empty() {
-        return Err(Error::Failed(
-            "package manifest is missing a name".to_string(),
-        ));
-    }
-    // Bundled drivers are arbitrary code shipped inside the package — refuse
-    // before the store entry is written unless the caller consented via
-    // `allow_drivers` or `TAMIAS_ALLOW_DRIVERS=1`.
-    let shipped = tamias_driver::bundled_drivers(&root)?;
-    if !shipped.is_empty() && !tamias_driver::drivers_allowed(allow_drivers) {
-        return Err(Error::Failed(format!(
-            "package ships bundled driver(s): {} — refusing to install + run them; \
-             pass \"allow_drivers\":true or set TAMIAS_ALLOW_DRIVERS=1 to consent",
-            shipped.join(", ")
-        )));
-    }
-    let record = StoreRecord {
-        name: manifest.name.clone(),
-        scope: manifest.scope.clone(),
-        version: manifest.version.clone(),
-        kind: manifest.kind.clone(),
-        source_ref: reference.to_string(),
-        resolved: resolved_id,
-        digest: String::new(),
-        installed_at: 0,
-    };
-    // Same semantics as `tamias install`: driver registration + dispatch
-    // run *before* the store commit, so a missing or failing driver fails
-    // the install with no committed entry.
-    let kind = manifest.kind.as_deref().unwrap_or("files");
-    tamias_driver::register_bundled_drivers(&root)?;
-    if !tamias_driver::dispatch(kind, "install", &root, &record.name, None)? && kind != "files" {
-        return Err(Error::Failed(format!(
-            "no driver for content type '{kind}' — install `tamias-driver-{kind}` on PATH \
-             or ship one in the package's `drivers/` dir{}",
-            if shipped.is_empty() {
-                String::new()
-            } else {
-                "; bundled drivers need \"allow_drivers\":true or TAMIAS_ALLOW_DRIVERS=1"
-                    .to_string()
-            }
-        )));
-    }
-    Store::new(&env.store_root).install(&root, record)
-}
-
 /// A convenience default cache eviction window re-exported for callers that
 /// embed the loop and manage their own cache.
 pub const DEFAULT_CACHE_MAX_AGE: Duration = Duration::from_secs(30 * 86_400);
@@ -254,6 +159,8 @@ pub const DEFAULT_CACHE_MAX_AGE: Duration = Duration::from_secs(30 * 86_400);
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
+    use tamias_cache_local::FetchCache;
 
     use super::*;
 

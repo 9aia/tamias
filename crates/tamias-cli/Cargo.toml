@@ -18,11 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 tamias-core.workspace = true
-tamias-source.workspace = true
-tamias-source-fs.workspace = true
-tamias-source-http.workspace = true
-tamias-source-cf.workspace = true
-tamias-source-git.workspace = true
+tamias-install.workspace = true
 tamias-store-local.workspace = true
 tamias-telemetry.workspace = true
 tracing.workspace = true
