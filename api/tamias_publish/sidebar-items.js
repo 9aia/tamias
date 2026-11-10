@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["pack"]};
+window.SIDEBAR_ITEMS = {"enum":["Includes"],"fn":["compose","pack"],"struct":["Composed"]};

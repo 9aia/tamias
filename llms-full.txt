@@ -287,8 +287,13 @@ dep that ships `drivers/` needs `--allow-drivers` (or
 or a dep with no lock entry fails that dep instead of installing or
 moving it — the lockfile must already describe the world.
 
+`tamias sync --from-lock` flips the spec: `tamias.lock` entries are
+the source of truth — each recorded `source_ref` installs pinned, the
+manifest's `deps:` are ignored, and the lock is never rewritten. Use it
+for reproducible restores; use plain `sync` to move with your refs.
+
 The same reconcile is available to embedders as the `sync` op of
-`tamias serve` (`{"op":"sync","locked":…,"allow_drivers":…,"dir":…}` —
+`tamias serve` (`{"op":"sync","locked":…,"from_lock":…,"allow_drivers":…,"dir":…}` —
 `dir` defaults to the server's cwd) and in the TUI's Manifest pane
 (`s` or `:sync`, behind a confirm).
 
@@ -819,6 +824,7 @@ Usage: tamias [COMMAND]
 Commands:
   install          Fetch → store a package from a ref
   add              Install a ref and record it in `tamias.yaml` + `tamias.lock`
+  sync             Reconcile the cwd project's dep set against the store — install what's missing or drifted. Never removes store entries: the store is global, not project-scoped; `tamias remove` stays the uninstall verb
   remove           Drop a store entry (cache untouched)
   list             List installed packages
   info             Show one package's manifest + provenance
@@ -1155,6 +1161,7 @@ documented at source (doc comments).
 * [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
 * [tamias-config-yml](/tamias/api/tamias_config_yml/index.html) — adapter
 * [tamias-deploy-cf](/tamias/api/tamias_deploy_cf/index.html) — adapter
+* [tamias-deploy-launchd](/tamias/api/tamias_deploy_launchd/index.html) — adapter
 * [tamias-deploy-systemd](/tamias/api/tamias_deploy_systemd/index.html) — adapter
 * [tamias-deploy-windows](/tamias/api/tamias_deploy_windows/index.html) — adapter
 * [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
@@ -1220,6 +1227,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-config-toml` | adapter | TOML config impl |
 | `tamias-config-yml` | adapter | YAML config impl (the standard) — tamias.yml / tamias.yaml |
 | `tamias-deploy-cf` | adapter | Cloudflare deploy impl — the registry Worker + wrangler config |
+| `tamias-deploy-launchd` | adapter | macos deploy impl — manage a per-user launchd agent (LaunchAgents plist + launchctl) |
 | `tamias-deploy-systemd` | adapter | systemd deploy impl — manage a per-user service unit (Linux) |
 | `tamias-deploy-windows` | adapter | windows deploy impl — manage a per-user scheduled task (Task Scheduler via schtasks.exe) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-\<type> (no product knowledge) |
@@ -1250,8 +1258,11 @@ distribution; every content *meaning* is an adapter.
 ref ─► resolve ─► (cache hit?) ─► fetch ─► driver install ─► store
 ```
 
-`overlay (include:)` is parsed and surfaced but not yet applied on the
-install path — payload composition is reserved machinery.
+`include:` composes payloads: each entry resolves to a store payload
+or a recursively-installed ref, `overlay()` deep-merges bases (earlier
+includes win, local wins) and the *composed* tree is what drivers see,
+what gets digested, and what the store commits. `publish`/`bundle pack`
+flatten includes by default (`--keep-includes` ships the raw payload).
 
 `resolve` pins git refs to a commit sha up front, so the content-
 addressed cache can be hit *before* fetching. The fetch→unpack split is

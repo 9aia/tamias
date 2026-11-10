@@ -37,6 +37,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-config-toml` | adapter | TOML config impl |
 | `tamias-config-yml` | adapter | YAML config impl (the standard) — tamias.yml / tamias.yaml |
 | `tamias-deploy-cf` | adapter | Cloudflare deploy impl — the registry Worker + wrangler config |
+| `tamias-deploy-launchd` | adapter | macos deploy impl — manage a per-user launchd agent (LaunchAgents plist + launchctl) |
 | `tamias-deploy-systemd` | adapter | systemd deploy impl — manage a per-user service unit (Linux) |
 | `tamias-deploy-windows` | adapter | windows deploy impl — manage a per-user scheduled task (Task Scheduler via schtasks.exe) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-\<type> (no product knowledge) |
@@ -67,8 +68,11 @@ distribution; every content *meaning* is an adapter.
 ref ─► resolve ─► (cache hit?) ─► fetch ─► driver install ─► store
 ```
 
-`overlay (include:)` is parsed and surfaced but not yet applied on the
-install path — payload composition is reserved machinery.
+`include:` composes payloads: each entry resolves to a store payload
+or a recursively-installed ref, `overlay()` deep-merges bases (earlier
+includes win, local wins) and the *composed* tree is what drivers see,
+what gets digested, and what the store commits. `publish`/`bundle pack`
+flatten includes by default (`--keep-includes` ships the raw payload).
 
 `resolve` pins git refs to a commit sha up front, so the content-
 addressed cache can be hit *before* fetching. The fetch→unpack split is

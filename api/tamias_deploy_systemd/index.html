@@ -6,7 +6,8 @@ windows backends are sibling crates. tamias owns the host-service
 (ExecStart argv, env, workdir), and <code>tamias deploy</code> renders it here.</p>
 </div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.LocalDeploy.html" title="struct tamias_deploy_systemd::LocalDeploy">Local<wbr>Deploy</a></dt><dd>The local deployer — a unit dir plus a <a href="trait.Runner.html" title="trait tamias_deploy_systemd::Runner"><code>Runner</code></a>.</dd><dt><a class="struct" href="struct.ServiceSpec.html" title="struct tamias_deploy_systemd::ServiceSpec">Service<wbr>Spec</a></dt><dd>What to deploy as a per-user service — the platform-neutral spec
 every local backend (<code>tamias-deploy-systemd</code>, <code>tamias-deploy-windows</code>,
-…) renders into its own unit/task format. A package’s
+<code>tamias-deploy-launchd</code>, …) renders into its own unit/task/plist
+format. A package’s
 <code>provider.services[]</code> manifest block supplies the domain data; each
 backend decides what it can honor (see its crate docs for the
 per-field mapping and honest gaps).</dd><dt><a class="struct" href="struct.SystemRunner.html" title="struct tamias_deploy_systemd::SystemRunner">System<wbr>Runner</a></dt><dd>The real runner — shells the host tool.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.Runner.html" title="trait tamias_deploy_systemd::Runner">Runner</a></dt><dd>The seam that runs host commands (<code>systemctl</code>, <code>journalctl</code>) — injected

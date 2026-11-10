@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["overlay","payload_root"]};
+window.SIDEBAR_ITEMS = {"fn":["find_store_entry","overlay","payload_root"]};
