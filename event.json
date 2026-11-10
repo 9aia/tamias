@@ -1,1 +1,1 @@
-{"id":"","ws":"t8-6-binary-distribution","actor":"luis","ts":1794279244,"op":{"op":"claim","glob":"fs:project/adrs/**","ttl_secs":3600}}
+{"id":"","ws":"t8-6-binary-distribution","actor":"luis","ts":1794279404,"op":{"op":"presence","status":"left"}}
