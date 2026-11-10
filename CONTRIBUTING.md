@@ -60,7 +60,7 @@ Never edit a crate that is already published: bump it and republish, or the
 registry copy silently drifts from your source.
 
 Crates publish to **crates.io** in dependency order via `scripts/release.sh`
-(manual — bupha watch is retired; releases are operator-run). The binary is also installable from source:
+(manual — releases are operator-run). The binary is also installable from source:
 `cargo install --git https://github.com/9aia/tamias tamias`. The script needs
 `cargo-edit` (`cargo set-version`) and, for artifacts, `cargo-dist` (`dist`) + `gh`.
 
