@@ -345,6 +345,89 @@ fn deploy_and_uninstall_use_the_driver() {
 }
 
 #[test]
+fn driver_config_schema_fetches_and_surfaces_unsupported() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: cs\nversion: 1.0.0\ntype: csx\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    // `config-schema` answers JSON; everything else is a no-op success.
+    let driver = bin.join("tamias-driver-csx");
+    std::fs::write(
+        &driver,
+        "#!/bin/sh\nif [ \"$1\" = config-schema ]; then\n  echo '{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}}}'\n  exit 0\nfi\nexit 0\n",
+    )
+    .unwrap();
+    // A driver without the verb: non-zero + clear stderr.
+    let bad = bin.join("tamias-driver-csbad");
+    std::fs::write(
+        &bad,
+        "#!/bin/sh\nif [ \"$1\" = config-schema ]; then\n  echo 'config-schema: unsupported' >&2\n  exit 1\nfi\nexit 0\n",
+    )
+    .unwrap();
+    for d in [&driver, &bad] {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(d, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+    let badpkg = tmp.path().join("badpkg");
+    std::fs::create_dir_all(&badpkg).unwrap();
+    std::fs::write(
+        badpkg.join("tamias.yaml"),
+        "name: cb\nversion: 1.0.0\ntype: csbad\n",
+    )
+    .unwrap();
+    std::fs::write(badpkg.join("a.txt"), "a").unwrap();
+    let path_env = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let run = |args: &[&str]| {
+        Command::new(tamias_bin())
+            .args(args)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("PATH", &path_env)
+            .output()
+            .unwrap()
+    };
+    assert!(run(&["install", pkg.to_str().unwrap()]).status.success());
+    assert!(run(&["install", badpkg.to_str().unwrap()]).status.success());
+    // Fetch: stdout is the driver's schema JSON, verbatim.
+    let o = run(&["driver", "config-schema", "cs"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let schema: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    assert_eq!(schema["type"], "object");
+    // Unsupported verb → non-zero, driver stderr surfaced.
+    let o = run(&["driver", "config-schema", "cb"]);
+    assert!(!o.status.success());
+    assert!(stderr(&o).contains("unsupported"), "{}", stderr(&o));
+    // Unknown package → error.
+    let o = run(&["driver", "config-schema", "ghost"]);
+    assert!(!o.status.success());
+    // Installed package with no driver → notice on stdout, success.
+    let plain = tmp.path().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    std::fs::write(plain.join("tamias.yaml"), "name: nd\nversion: 1.0.0\n").unwrap();
+    std::fs::write(plain.join("a.txt"), "a").unwrap();
+    assert!(run(&["install", plain.to_str().unwrap()]).status.success());
+    let o = run(&["driver", "config-schema", "nd"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(stdout(&o).contains("no driver"), "{}", stdout(&o));
+}
+
+#[test]
 fn driver_discovery_dispatches() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
