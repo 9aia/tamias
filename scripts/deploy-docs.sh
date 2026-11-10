@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build the VitePress site and publish .vitepress/dist to the `gh-pages`
 # branch. Runs identically by hand (from the docs/ worktree) and under
-# bupha — the watcher runs `bash scripts/deploy-docs.sh` in a detached
-# worktree of the pushed docs sha, so cwd is the docs checkout root and
+# the CI gate — the peregrin ci-gate campaign (bupha is retired) runs
+# `bash scripts/deploy-docs.sh` in a detached worktree of the pushed
+# docs sha, so cwd is the docs checkout root and
 # `..` is NOT the main repo. Cargo work happens in TAMIAS_REPO (the real
 # checkout); the gen-*.py scripts honor TAMIAS_ROOT for the same reason.
 set -euo pipefail
