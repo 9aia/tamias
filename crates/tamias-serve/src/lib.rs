@@ -3,10 +3,17 @@
 //! request per line on stdin, write one JSON response per line on stdout.
 //! Same wire as `sepia serve` / `cuora serve` / `myco serve`.
 //!
-//! Ops: `install`, `list`, `info`, `verify`, `remove`, `search`,
+//! Ops: `install`, `sync`, `list`, `info`, `verify`, `remove`, `search`,
 //! `publish`, `registry.list`, `registry.get`, `registry.add`,
 //! `registry.remove`. Requests are `{"op":"…", …}`; responses are
 //! `{"ok":true,"result":…}` or `{"ok":false,"error":"…"}`.
+//!
+//! `sync` reconciles the *server's* cwd project manifest
+//! (`tamias.yaml` `deps:`) against the store + `tamias.lock` — the
+//! same `tamias sync` semantics (`{"op":"sync","locked":…,
+//! "allow_drivers":…,"dir":…}`; `dir` defaults to `.`). Per-dep
+//! outcomes come back in `result.deps`; a bundled-driver consent
+//! refusal is an `ok:false` error like `install`'s.
 //!
 //! `search`/`publish`/`registry.*` resolve named registry sources and
 //! config writes through `tamias-registry-open` — the same code the
@@ -135,6 +142,49 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 "digest": entry.record.digest,
                 "signed": entry.record.signature.is_some(),
             }))
+        }
+        "sync" => {
+            // `tamias sync` — reconcile the project manifest's `deps:`
+            // against the store + `tamias.lock`. `dir` (default `.`)
+            // is the project dir; fs refs inside `deps:` still resolve
+            // against the server's cwd, same as `install`.
+            let allow_drivers = req
+                .get("allow_drivers")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let locked = req.get("locked").and_then(Value::as_bool).unwrap_or(false);
+            let dir = req
+                .get("dir")
+                .and_then(Value::as_str)
+                .map_or_else(|| Path::new("."), Path::new);
+            let config = env_config(env);
+            let report = tamias_install::sync_project(
+                &tamias_install::Env {
+                    store_root: env.store_root.clone(),
+                    cache_root: env.cache_root.clone(),
+                    max_download: Some(config.effective_limits(None, None).max_download),
+                    signing: tamias_sign::SigningPolicy::resolve(Some(&config)),
+                },
+                dir,
+                tamias_install::Surface::Rpc,
+                tamias_install::SyncOptions {
+                    allow_drivers,
+                    locked,
+                },
+                &mut |_| {},
+            )?;
+            let deps: Vec<Value> = report
+                .outcomes
+                .iter()
+                .map(|o| {
+                    json!({
+                        "dep": o.dep,
+                        "status": o.status.as_str(),
+                        "detail": o.detail,
+                    })
+                })
+                .collect();
+            Ok(json!({"deps": deps, "failed": report.failed()}))
         }
         "list" => {
             let entries = Store::new(&env.store_root).entries()?;
@@ -411,6 +461,34 @@ mod tests {
             dispatch(&env, r#"{"op":"remove","name":"srv"}"#).unwrap()["name"],
             "srv"
         );
+    }
+
+    #[test]
+    fn dispatch_sync_reconciles_cwd_project() {
+        let _g = EnvGuard::new();
+        let env = env();
+        let tmp = tempfile::tempdir().unwrap();
+        // a package fixture + a project manifest depending on it
+        let pkg = tmp.path().join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(pkg.join("tamias.yaml"), "name: sw\nversion: 1.0.0\n").unwrap();
+        std::fs::write(pkg.join("a.txt"), "a").unwrap();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(
+            proj.join("tamias.yaml"),
+            format!("deps:\n  - {}\n", pkg.display()),
+        )
+        .unwrap();
+        std::env::set_current_dir(&proj).unwrap();
+        let res = dispatch(&env, r#"{"op":"sync"}"#).unwrap();
+        assert_eq!(res["failed"], 0);
+        assert_eq!(res["deps"][0]["status"], "installed");
+        // locked now agrees — the dep is current
+        let res = dispatch(&env, r#"{"op":"sync","locked":true}"#).unwrap();
+        assert_eq!(res["deps"][0]["status"], "current");
+        // an explicit dir override works too, and a missing manifest errs
+        assert!(dispatch(&env, r#"{"op":"sync","dir":"/no/such/dir"}"#).is_err());
     }
 
     #[test]

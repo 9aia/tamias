@@ -261,6 +261,9 @@ enum Cmd {
     Registries,
     /// `:manifest` — (re)load the project manifest.
     Manifest,
+    /// `:sync` — reconcile the project manifest's `deps:` (Manifest
+    /// pane `s` too).
+    Sync,
 }
 
 /// Parse a `:` command line (the leading `:` already stripped).
@@ -384,6 +387,7 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
         }
         "registries" | "registry-list" => Ok(Cmd::Registries),
         "manifest" => Ok(Cmd::Manifest),
+        "sync" | "s" => Ok(Cmd::Sync),
         other => Err(format!("unknown command ':{other}'")),
     }
 }
@@ -1382,13 +1386,21 @@ impl Model {
 
     // --- Manifest pane verbs ---
 
-    /// `a`/`x`/`d`/`e` on the selected dep row — add/remove/set-ref.
+    /// `a`/`x`/`d`/`e`/`s` on the deps form — add/remove/set-ref/sync.
     fn man_verb(&mut self, key: char) {
         match key {
             'a' => {
                 self.prompt_buf.clear();
                 self.mode = Mode::Prompt(PromptKind::AddDep);
             }
+            // `s` reconciles the whole `deps:` set (`tamias sync`) —
+            // confirm first like the other mutating verbs.
+            's' => self.confirm_job(
+                "sync deps",
+                Job::Sync {
+                    allow_drivers: false,
+                },
+            ),
             // `d`/`x` both drop the dep (the proposal's two remove
             // keys); `a` adds, `e` edits the ref.
             'x' | 'd' => match self.dep_selected() {
@@ -1553,6 +1565,14 @@ impl Model {
             Ok(Cmd::Manifest) => {
                 self.load_manifest();
                 self.say("manifest reloaded");
+            }
+            Ok(Cmd::Sync) => {
+                self.confirm_job(
+                    "sync deps",
+                    Job::Sync {
+                        allow_drivers: false,
+                    },
+                );
             }
             Err(e) if e.is_empty() => {}
             Err(e) => self.say_err(e),
@@ -1824,8 +1844,10 @@ impl Model {
             KeyCode::Char(
                 c @ ('s' | 'S' | 'r' | 'e' | 'E' | 'd' | 'x' | 't' | 'T' | 'n' | 'R'),
             ) if self.pane == Pane::Services => self.svc_verb(c),
-            // Manifest pane: add/remove/edit dep + reload.
-            KeyCode::Char(c @ ('a' | 'x' | 'd' | 'e' | 'R')) if self.pane == Pane::Manifest => {
+            // Manifest pane: add/remove/edit dep + sync + reload.
+            KeyCode::Char(c @ ('a' | 'x' | 'd' | 'e' | 's' | 'R'))
+                if self.pane == Pane::Manifest =>
+            {
                 self.man_verb(c)
             }
             // Author pane: pack/publish/registries.
@@ -2003,6 +2025,8 @@ mod tests {
         );
         assert_eq!(parse_command("registries").unwrap(), Cmd::Registries);
         assert_eq!(parse_command("manifest").unwrap(), Cmd::Manifest);
+        assert_eq!(parse_command("sync").unwrap(), Cmd::Sync);
+        assert_eq!(parse_command("s").unwrap(), Cmd::Sync);
         assert!(parse_command("pack").is_err());
         assert!(parse_command("publish").is_err());
     }
@@ -2016,6 +2040,14 @@ mod tests {
         assert!(j.label().contains("./x"));
         match j.with_drivers_allowed() {
             Job::Install { allow_drivers, .. } => assert!(allow_drivers),
+            _ => panic!("wrong variant"),
+        }
+        let s = Job::Sync {
+            allow_drivers: false,
+        };
+        assert!(s.label().contains("sync"));
+        match s.with_drivers_allowed() {
+            Job::Sync { allow_drivers } => assert!(allow_drivers),
             _ => panic!("wrong variant"),
         }
         let v = Job::Verify("w".into());

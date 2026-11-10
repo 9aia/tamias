@@ -21,6 +21,11 @@
 //! keeps its own rendering: the CLI prints `tamias:` lines to stderr
 //! and driver actions to stdout; `tamias serve` drops them. Consent
 //! hints embedded in errors are surface-tuned via [`Surface`].
+//!
+//! [`sync_project`] (the `sync` module) reuses the same pipeline to
+//! reconcile a project manifest's `deps:` against the store +
+//! `tamias.lock` — install-if-missing-or-drifted per dep, never
+//! removes.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -33,6 +38,9 @@ use tamias_source_fs::{FsRefKind, FsSource};
 use tamias_source_git::{GitRefKind, GitSource};
 use tamias_source_http::{HttpRefKind, HttpSource};
 use tamias_store_local::Store;
+
+mod sync;
+pub use sync::{sync_project, DepOutcome, DepStatus, SyncOptions, SyncReport};
 
 /// Store + fetch-cache roots the pipeline writes through.
 #[derive(Clone, Debug)]

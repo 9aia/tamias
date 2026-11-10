@@ -721,7 +721,9 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                 "j/k · s/S start/stop · r restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
             }
         }
-        Pane::Manifest => "j/k · a add dep · d/x remove · e edit ref · R reload · : cmds · q quit",
+        Pane::Manifest => {
+            "j/k · a add dep · d/x remove · e edit ref · s sync · R reload · : cmds · q quit"
+        }
         Pane::Author => "p pack · P publish · r registries · R reload · : cmds · q quit",
     };
     let spans = vec![
@@ -827,6 +829,7 @@ commands:  :q  :r/:reload  :help  :install <ref>  :remove <name>
            :services  :service <verb> <unit>  :run <pkg> [svc]
            :logs <pkg|unit> [-f]  :deploy <name>  :manifest
            :pack <dir> [out]  :publish <dir> [registry]  :registries
+           :sync
 mouse:     wheel scrolls · click row selects · click tab switches
 
 services pane:  provider services + unit state · s/S start/stop ·
@@ -834,6 +837,7 @@ services pane:  provider services + unit state · s/S start/stop ·
                 t/T journal tail/follow · n foreground run (x kills)
 manifest pane:  deps rows editable — a add · d/x remove · e new ref
                 (writes tamias.yaml + tamias.lock like `tamias add`)
+                s / :sync reconciles deps: against the store + lock
 author pane:    p bundle pack · P publish (confirm) · r registries";
     let width = area.width.min(72) as usize;
     let h = text.lines().count() as u16 + 2;

@@ -59,9 +59,8 @@ pub struct Manifest {
     /// Direct dependencies — refs this project wants installed.
     /// Recorded by `tamias add` (and the TUI deps form) into the
     /// project manifest; `tamias.lock` pins each resolved record.
-    /// No verb re-installs the dep set from the manifest yet — the
-    /// lock is the resolved-record ledger `add`/`update`/`pin` keep
-    /// honest.
+    /// `tamias sync` (CLI/serve/TUI) reconciles this set against the
+    /// store + lock — install-if-missing-or-drifted, never removes.
     pub deps: Vec<String>,
     /// `provider:` — the declarative runtime spec a deploy driver
     /// materializes (service units, ingress/forge hooks, health probe).

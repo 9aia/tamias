@@ -60,6 +60,25 @@ enum Command {
         #[arg(long)]
         allow_drivers: bool,
     },
+    /// Reconcile the cwd project's `deps:` (tamias.yaml + tamias.lock)
+    /// against the store — install what's missing or drifted.
+    ///
+    /// Never removes store entries: the store is global, not
+    /// project-scoped; `tamias remove` stays the uninstall verb.
+    Sync {
+        /// Strict mode — every dep must already be current per
+        /// `tamias.lock` + the store; drift or a missing lock entry
+        /// fails the dep instead of installing/moving it.
+        #[arg(long)]
+        locked: bool,
+        /// Consent to register + run the packages' bundled `drivers/`.
+        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1`.
+        #[arg(long)]
+        allow_drivers: bool,
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
+    },
     /// Drop a store entry (cache untouched).
     Remove {
         /// `@scope/name` or `name`.
@@ -514,6 +533,18 @@ fn registry_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".tamias/registry"))
 }
 
+/// The CLI's [`Progress`] rendering — `tamias:` lines to stderr,
+/// driver actions to stdout. Shared by `install`/`add`/`update` and
+/// `sync`.
+fn progress_lines(progress: Progress) {
+    match progress {
+        Progress::Fetching { reference } => eprintln!("tamias: fetching {reference}"),
+        Progress::Installing { label } => eprintln!("tamias: installing {label}"),
+        Progress::DriverAction { action } => println!("  {action}"),
+        Progress::Done { label } => eprintln!("tamias: done — {label}"),
+    }
+}
+
 /// `install`/`add`/`update` — the shared pipeline in `tamias-install`,
 /// rendered with the CLI's progress lines (`tamias:` → stderr, driver
 /// actions → stdout).
@@ -527,12 +558,26 @@ fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry
         reference,
         allow_drivers,
         Surface::Cli,
-        &mut |progress| match progress {
-            Progress::Fetching { reference } => eprintln!("tamias: fetching {reference}"),
-            Progress::Installing { label } => eprintln!("tamias: installing {label}"),
-            Progress::DriverAction { action } => println!("  {action}"),
-            Progress::Done { label } => eprintln!("tamias: done — {label}"),
+        &mut progress_lines,
+    )
+}
+
+/// `sync` — the shared dep-set reconcile in `tamias-install` over the
+/// cwd project manifest + `tamias.lock` (same discovery `add` uses).
+fn sync(env: &Env, locked: bool, allow_drivers: bool) -> Result<tamias_install::SyncReport, Error> {
+    tamias_install::sync_project(
+        &tamias_install::Env::for_config(
+            env.store_root.clone(),
+            env.cache_root.clone(),
+            cli_config().as_ref(),
+        ),
+        Path::new("."),
+        Surface::Cli,
+        tamias_install::SyncOptions {
+            allow_drivers,
+            locked,
         },
+        &mut progress_lines,
     )
 }
 
@@ -741,6 +786,40 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 entry.label(),
                 short_digest(&entry.record.digest)
             );
+        }
+        Some(Command::Sync {
+            locked,
+            allow_drivers,
+            json,
+        }) => {
+            let report = sync(&env, locked, allow_drivers)?;
+            if json {
+                let deps: Vec<serde_json::Value> = report
+                    .outcomes
+                    .iter()
+                    .map(|o| {
+                        serde_json::json!({
+                            "dep": o.dep,
+                            "status": o.status.as_str(),
+                            "detail": o.detail,
+                        })
+                    })
+                    .collect();
+                print_json(&serde_json::json!({
+                    "deps": deps,
+                    "failed": report.failed(),
+                }))?;
+            } else {
+                for o in &report.outcomes {
+                    println!("{}  {}  {}", o.status.as_str(), o.dep, o.detail);
+                }
+            }
+            if report.failed() > 0 {
+                return Err(Error::Failed(format!(
+                    "sync: {} dep(s) failed",
+                    report.failed()
+                )));
+            }
         }
         Some(Command::Remove { name }) => {
             let record = Store::new(&env.store_root).remove(&name)?;
@@ -3066,6 +3145,7 @@ mod tests {
         let mut expected = vec![
             "install",
             "add",
+            "sync",
             "remove",
             "list",
             "info",
@@ -3204,6 +3284,46 @@ mod tests {
                 .source_ref,
             "./other"
         );
+    }
+
+    #[test]
+    fn sync_reconciles_project_deps() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        let dep = dir.display().to_string();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("tamias.yaml"), format!("deps:\n  - {dep}\n")).unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&proj).unwrap();
+        // --locked with no lock entries → every dep fails
+        assert!(run_args(e.clone(), &["tamias", "sync", "--locked"]).is_err());
+        assert!(Store::new(&e.store_root).find("w").is_err());
+        // plain sync installs + writes tamias.lock
+        run_args(e.clone(), &["tamias", "sync"]).unwrap();
+        assert!(Store::new(&e.store_root).find("w").is_ok());
+        assert!(proj.join("tamias.lock").is_file());
+        // now current — including under --locked; --json works too
+        run_args(e.clone(), &["tamias", "sync", "--locked"]).unwrap();
+        run_args(e.clone(), &["tamias", "sync", "--json"]).unwrap();
+        // a bogus dep aggregates as a failure → non-zero
+        std::fs::write(
+            proj.join("tamias.yaml"),
+            format!("deps:\n  - {dep}\n  - /no/such/pkg\n"),
+        )
+        .unwrap();
+        assert!(run_args(e.clone(), &["tamias", "sync"]).is_err());
+        // sync never removes: the good dep is still installed
+        assert!(Store::new(&e.store_root).find("w").is_ok());
+        std::env::set_current_dir(&prev).unwrap();
+        // no project manifest → error
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        std::env::set_current_dir(&empty).unwrap();
+        assert!(run_args(e.clone(), &["tamias", "sync"]).is_err());
+        std::env::set_current_dir(&prev).unwrap();
     }
 
     #[cfg(unix)]

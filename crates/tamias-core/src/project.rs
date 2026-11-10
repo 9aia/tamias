@@ -9,11 +9,10 @@ use crate::{Error, StoreRecord};
 
 /// The lockfile — resolved packages, sorted by (scope, name).
 ///
-/// Written by `tamias add` ([`Lock::upsert_record`]) and kept honest by
-/// `update`/`pin` ([`Lock::sync_record`]). Nothing reads it back to
-/// drive installs yet — there is no `tamias sync`/install-from-lock
-/// verb; it is the resolved-record ledger a reproducible-install verb
-/// will consume.
+/// Written by `tamias add` ([`Lock::upsert_record`]), kept honest by
+/// `update`/`pin` ([`Lock::sync_record`]), and consumed by `tamias
+/// sync` — the dep-set reconcile that installs what's missing or
+/// drifted and refreshes entries via [`Lock::upsert_record`].
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Lock {
