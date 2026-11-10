@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-plt005c","actor":"luis","ts":1794293180,"op":{"op":"claim","glob":"fs:Cargo.toml","ttl_secs":3600}}
+{"id":"","ws":"devin-plt005c","actor":"luis","ts":1794293526,"op":{"op":"presence","status":"left"}}
