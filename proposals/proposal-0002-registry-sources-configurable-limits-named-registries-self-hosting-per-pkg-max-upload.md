@@ -6,7 +6,8 @@ created = "2026-11-10"
 owner = "devin"
 priority = "high"
 labels = ["registry"]
-links = ["P-001"]
+blocks = ["P-001"]
+links = ["P-001", "PL-004"]
 +++
 
 ## Problem
