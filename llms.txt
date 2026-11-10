@@ -18,6 +18,7 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 
 - [How to install from a git repo](/tamias/how-to/install-from-git.md)
 - [How to manage project dependencies](/tamias/how-to/manage-deps.md)
+- [How to put a package's binaries on your PATH](/tamias/how-to/link-binaries.md)
 - [How to use the TUI](/tamias/how-to/use-the-tui.md)
 - [How to publish to a registry](/tamias/how-to/publish-to-a-registry.md)
 - [How to provision and service-manage a package](/tamias/how-to/provision-a-service.md)

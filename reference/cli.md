@@ -18,6 +18,7 @@ Commands:
   verify           Digest-check a package against its record
   update           Re-resolve + re-install a package from its recorded ref
   pin              Retarget an installed package's recorded source ref
+  bin              Link a package's `bin/` payload into the bin dir so bare binary names run — provider `services[].exec` and shells resolve them
   cache            Fetch-cache maintenance
   version          Print the tamias version
   manifest         Print the machine-readable capability manifest
