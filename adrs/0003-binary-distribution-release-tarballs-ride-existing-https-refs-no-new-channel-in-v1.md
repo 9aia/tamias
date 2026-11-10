@@ -1,14 +1,14 @@
 +++
 id = "ADR-0003"
 title = "binary distribution — release tarballs ride existing https refs; no new channel in v1"
-status = "open"
+status = "done"
 created = "2026-11-10"
 priority = "medium"
 +++
 
 # binary distribution — release tarballs ride existing https refs; no new channel in v1
 
-Status: **proposed**
+Status: **accepted**
 
 ## Context
 
@@ -32,8 +32,12 @@ What already exists:
   `cargo xtask package`/`smoke` in tamias).
 - **`cf:` registry** (`tamias-registry-cf`) is scaffolded — a hosted
   index + Worker could carry artifacts later.
-- **Signing is unimplemented** (T-013): AGENTS.md promises optional
-  ssh-sign/cosign; no verification code exists.
+- **Package signing shipped** (P-005/I-003): `tamias-sign` verifies
+  ssh-sign signatures on registry (`cf:`) installs and `tamias verify`,
+  with computed trust tiers (`official`/`signed`/`pinned`/`unpinned`/
+  `bad`) and a separate `official_signers` root. https-tarball pins
+  remain integrity-only — the authenticity gap this ADR flags is
+  narrower than when proposed but still open for the https channel.
 
 ## Decision
 
@@ -79,10 +83,11 @@ proves the release asset itself is what the project published. That
 authenticity layer is T-013 (ssh-sign/cosign over git:/registry refs);
 for https tarballs the pragmatic v1 pin-sources are (a) the operator's
 hand-written ref, (b) a checked-in lockfile-style pin per deployment,
-(c) later, signed release metadata from the `cf:` registry. Signing
-lands as a *verification* step on top of this channel, not a reason to
-block it — an unsigned pinned tarball is strictly better than today's
-"no binary channel at all".
+(c) later, signed release metadata from the `cf:` registry. Registry-
+carried packages already verify signatures + trust tiers today;
+extending that to https tarballs (detached sigs alongside the asset)
+is the honest v2 — an unsigned pinned tarball is still strictly better
+than "no binary channel at all".
 
 ## Consequences
 
@@ -98,7 +103,7 @@ block it — an unsigned pinned tarball is strictly better than today's
   artifacts per repo.
 - **`tamias bin` + `self-upgrade` are new verbs** — small, but they
   are code, not just docs. This ADR decides the *channel*; the verbs
-  are follow-up tasks.
+  are follow-up tasks (`tamias bin` in flight).
 - **Registry (`cf:`) becomes the natural v2**: index entries can carry
   per-target artifacts + signatures in one record instead of N pinned
   URLs.
