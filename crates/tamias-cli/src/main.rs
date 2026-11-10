@@ -247,6 +247,11 @@ enum Command {
         #[arg(long, short)]
         follow: bool,
     },
+    /// Interactive package-manager TUI (ratatui) — installed entries,
+    /// registry search, provider lifecycle, manifest deps, authoring.
+    /// Phase 1 is read-only: the Installed pane + `/` filter.
+    #[cfg(feature = "tui")]
+    Ui,
 }
 
 #[derive(Subcommand)]
@@ -1052,6 +1057,18 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             follow,
         }) => {
             logs(&env, &name, lines, follow)?;
+        }
+        #[cfg(feature = "tui")]
+        Some(Command::Ui) => {
+            // Same roots `tamias serve` gets — `config_file: None`
+            // honors TAMIAS_CONFIG then ./tamias.* discovery per op.
+            tamias_tui::run(&tamias_tui::Ctx::new(
+                env.store_root.clone(),
+                env.cache_root.clone(),
+                env.registry_root.clone(),
+                None,
+            ))
+            .map_err(Error::Failed)?;
         }
         Some(Command::Version) => {
             println!("tamias {}", env!("CARGO_PKG_VERSION"));
@@ -3314,41 +3331,42 @@ mod tests {
     fn manifest_verbs_cover_every_subcommand() {
         // The generated list must name every top-level verb — including
         // the ones the old hardcoded list dropped.
-        assert_eq!(
-            cli_verbs(),
-            [
-                "install",
-                "add",
-                "remove",
-                "list",
-                "info",
-                "verify",
-                "update",
-                "pin",
-                "cache",
-                "version",
-                "manifest",
-                "schema",
-                "gen-cli-docs",
-                "completions",
-                "doctor",
-                "config",
-                "serve",
-                "publish",
-                "search",
-                "bundle",
-                "registry",
-                "deploy-registry",
-                "deploy",
-                "uninstall",
-                "service",
-                "drivers",
-                "driver",
-                "provider",
-                "run",
-                "logs",
-            ]
-        );
+        let mut expected = vec![
+            "install",
+            "add",
+            "remove",
+            "list",
+            "info",
+            "verify",
+            "update",
+            "pin",
+            "cache",
+            "version",
+            "manifest",
+            "schema",
+            "gen-cli-docs",
+            "completions",
+            "doctor",
+            "config",
+            "serve",
+            "publish",
+            "search",
+            "bundle",
+            "registry",
+            "deploy-registry",
+            "deploy",
+            "uninstall",
+            "service",
+            "drivers",
+            "driver",
+            "provider",
+            "run",
+            "logs",
+        ];
+        // `ui` exists only under the default `tui` feature.
+        #[cfg(feature = "tui")]
+        expected.push("ui");
+        assert_eq!(cli_verbs(), expected);
     }
 
     #[test]

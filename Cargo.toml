@@ -29,6 +29,7 @@ members = [
     "crates/tamias-source-http",
     "crates/tamias-store",
     "crates/tamias-store-local",
+    "crates/tamias-tui",
     "crates/tamias-telemetry",
     "crates/tamias-testkit",
     "xtask",
@@ -85,6 +86,7 @@ tamias-source-git = { path = "crates/tamias-source-git", version = "0.1.0" }
 tamias-source-http = { path = "crates/tamias-source-http", version = "0.1.0" }
 tamias-store = { path = "crates/tamias-store", version = "0.1.0" }
 tamias-store-local = { path = "crates/tamias-store-local", version = "0.1.0" }
+tamias-tui = { path = "crates/tamias-tui", version = "0.1.0" }
 tamias-telemetry = { path = "crates/tamias-telemetry", version = "0.1.0" }
 tamias-testkit = { path = "crates/tamias-testkit", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
@@ -107,6 +109,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tar = "0.4"
 flate2 = "1"
 ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
+ratatui = "0.30"
+crossterm = "0.29"
+notify = "8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

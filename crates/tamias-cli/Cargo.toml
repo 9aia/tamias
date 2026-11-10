@@ -36,11 +36,18 @@ tamias-config.workspace = true
 tamias-config-yml.workspace = true
 tamias-config-toml.workspace = true
 tamias-shell.workspace = true
+tamias-tui = { workspace = true, optional = true }
 clap.workspace = true
 clap_complete.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
 sigpipe.workspace = true
+
+[features]
+default = ["tui"]
+## `tamias ui` — interactive package-manager TUI (ratatui/crossterm).
+## `--no-default-features` keeps the lean binary.
+tui = ["dep:tamias-tui"]
 
 [dev-dependencies]
 tempfile.workspace = true
