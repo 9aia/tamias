@@ -1292,3 +1292,69 @@ fn install_plan_is_a_dry_run() {
     let o = tamias(&home, &cache, &["list"]);
     assert!(stdout(&o).contains("no packages installed"));
 }
+
+#[test]
+fn bin_links_payload_into_bin_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let bindir = tmp.path().join("userbin");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(pkg.join("bin")).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget\nversion: 1.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("bin/widget"), "#!/bin/sh\necho hi\n").unwrap();
+    std::fs::write(pkg.join("bin/.hidden"), "h").unwrap();
+
+    // `tamias()` doesn't set TAMIAS_BIN_DIR — drive the binary directly
+    // so the link lands in the temp dir, never the real ~/.local/bin.
+    let run = |args: &[&str]| {
+        Command::new(tamias_bin())
+            .args(args)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("TAMIAS_BIN_DIR", &bindir)
+            .env("TAMIAS_CONSENT_FILE", cache.join("consented.json"))
+            .env_remove("TAMIAS_ALLOW_DRIVERS")
+            .output()
+            .unwrap()
+    };
+
+    let o = run(&["install", pkg.to_str().unwrap()]);
+    assert!(o.status.success(), "install: {}", stderr(&o));
+
+    // no bin/ payload → clean error naming the package
+    let o = run(&["bin", "ghost"]);
+    assert!(!o.status.success());
+
+    let o = run(&["bin", "widget"]);
+    assert!(o.status.success(), "bin: {}", stderr(&o));
+    let link = bindir.join("widget");
+    #[cfg(unix)]
+    {
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        // the link resolves through the stable alias under TAMIAS_HOME
+        let target = std::fs::read_link(&link).unwrap();
+        assert!(
+            target.starts_with(home.join("bin-alias/widget/bin")),
+            "{target:?}"
+        );
+    }
+    #[cfg(not(unix))]
+    assert!(link.is_file());
+    assert!(!bindir.join(".hidden").exists());
+
+    // idempotent, then --unlink removes link + alias
+    let o = run(&["bin", "widget"]);
+    assert!(o.status.success(), "re-link: {}", stderr(&o));
+    let o = run(&["bin", "widget", "--unlink"]);
+    assert!(o.status.success(), "unlink: {}", stderr(&o));
+    assert!(!link.exists() && !link.is_symlink());
+    assert!(std::fs::symlink_metadata(home.join("bin-alias/widget")).is_err());
+}

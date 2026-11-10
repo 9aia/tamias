@@ -159,6 +159,32 @@ enum Command {
         /// The new ref to record.
         reference: String,
     },
+    /// Link a package's `bin/` payload into the bin dir so bare binary
+    /// names run — provider `services[].exec` and shells resolve them.
+    ///
+    /// Store entry dirs are versioned (`name@<version>`/sha label) and
+    /// change on upgrade, so links never point at the raw entry dir:
+    /// `tamias bin` keeps a stable per-name alias — a `bin-alias/`
+    /// sibling of the store root (`~/.local/share/tamias/bin-alias`
+    /// by default) holding `<name>` → the current entry dir — and
+    /// links `<bin>/<file>` → `<alias>/bin/<file>`. Re-running `bin`
+    /// retargets the alias; installs/updates retarget it too when it
+    /// exists, so links survive upgrades. Unix links are symlinks;
+    /// elsewhere (Windows, where symlink creation needs privileges)
+    /// the payload file is copied instead.
+    Bin {
+        /// `@scope/name` or `name`.
+        name: String,
+        /// Remove the links + alias this package created instead.
+        #[arg(long)]
+        unlink: bool,
+        /// Overwrite existing files at link paths (and a foreign alias).
+        #[arg(long)]
+        force: bool,
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
+    },
     /// Fetch-cache maintenance.
     Cache {
         #[command(subcommand)]
@@ -478,6 +504,8 @@ struct Env {
     store_root: PathBuf,
     cache_root: PathBuf,
     registry_root: PathBuf,
+    /// Where `tamias bin` links payload `bin/` files.
+    bin_dir: PathBuf,
 }
 
 impl Env {
@@ -491,6 +519,7 @@ impl Env {
             store_root: store_root(config.as_ref()),
             cache_root: cache_root(config.as_ref()),
             registry_root: registry_root(),
+            bin_dir: bin_dir(),
         }
     }
 }
@@ -569,6 +598,20 @@ fn registry_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".tamias/registry"))
 }
 
+/// The bin dir `tamias bin` links into — `TAMIAS_BIN_DIR` →
+/// `XDG_BIN_HOME` → `~/.local/bin` (the freedesktop default).
+fn bin_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("TAMIAS_BIN_DIR") {
+        return PathBuf::from(dir);
+    }
+    if let Some(dir) = std::env::var_os("XDG_BIN_HOME") {
+        return PathBuf::from(dir);
+    }
+    std::env::var_os("HOME")
+        .map(|h| PathBuf::from(h).join(".local/bin"))
+        .unwrap_or_else(|| PathBuf::from(".local/bin"))
+}
+
 /// The CLI's [`Progress`] rendering — `tamias:` lines to stderr,
 /// driver actions to stdout. Shared by `install`/`add`/`update` and
 /// `sync`.
@@ -586,7 +629,7 @@ fn progress_lines(progress: Progress) {
 /// rendered with the CLI's progress lines (`tamias:` → stderr, driver
 /// actions → stdout).
 fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry, Error> {
-    tamias_install::install_with_progress(
+    let entry = tamias_install::install_with_progress(
         &tamias_install::Env::for_config(
             env.store_root.clone(),
             env.cache_root.clone(),
@@ -596,7 +639,11 @@ fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry
         allow_drivers,
         Surface::Cli,
         &mut progress_lines,
-    )
+    )?;
+    // `tamias bin` links resolve through a per-name alias — retarget it
+    // at the fresh entry dir so upgrades don't break existing links.
+    refresh_bin_alias(env, &entry);
+    Ok(entry)
 }
 
 /// `install --plan` — the dry-run in `tamias-install` over the same
@@ -996,7 +1043,12 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             }
         }
         Some(Command::Remove { name }) => {
-            let record = Store::new(&env.store_root).remove(&name)?;
+            let store = Store::new(&env.store_root);
+            // Resolve before the drop — `bin` cleanup needs the record
+            // (scope-aware alias path) after the dir is gone.
+            let entry = store.find(&name).ok();
+            let record = store.remove(&name)?;
+            bin_cleanup_after_remove(&env, &name, entry.as_ref());
             println!("removed {}@{}", record.name, record.resolved);
         }
         Some(Command::List { kind, json }) => {
@@ -1168,6 +1220,14 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             let record = Store::new(&env.store_root).retarget(&name, &reference)?;
             sync_lock(&record)?;
             println!("pinned {} → {}", record.name, record.source_ref);
+        }
+        Some(Command::Bin {
+            name,
+            unlink,
+            force,
+            json,
+        }) => {
+            bin_command(&env, &name, unlink, force, json)?;
         }
         Some(Command::Cache { cmd }) => {
             let cache = FetchCache::new(&env.cache_root);
@@ -1547,6 +1607,9 @@ fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Er
 /// `uninstall <name>` — provider teardown + drop the store entry,
 /// shared with `tamias ui` through `tamias-provider`.
 fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
+    // Resolve before teardown — `bin` cleanup needs the record after
+    // the store entry is dropped.
+    let entry = Store::new(&env.store_root).find(name).ok();
     let report = tamias_provider::uninstall(&env.store_root, name)?;
     for line in &report.lines {
         println!("{line}");
@@ -1554,7 +1617,453 @@ fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
     for warning in &report.warnings {
         eprintln!("tamias: warning — {warning}");
     }
+    bin_cleanup_after_remove(env, name, entry.as_ref());
     Ok(())
+}
+
+// ---- `tamias bin` — payload `bin/` files onto the bin dir ----
+
+/// What [`place_bin`] did with one payload file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BinStatus {
+    /// A fresh link/copy was created.
+    Linked,
+    /// The dest already resolved to this package — nothing to do.
+    Already,
+}
+
+/// `bin <name>` / `bin <name> --unlink` — see the `Bin` variant docs
+/// for the alias design. Link mode requires the package installed;
+/// unlink also works after `tamias remove` (the alias + links are
+/// still ours to clean).
+fn bin_command(env: &Env, name: &str, unlink: bool, force: bool, json: bool) -> Result<(), Error> {
+    let store = Store::new(&env.store_root);
+    if unlink {
+        let found = store.find(name).ok();
+        let out = bin_unlink(env, name, found.as_ref(), force)?;
+        if json {
+            print_json(&serde_json::json!({
+                "package": name,
+                "removed": out.removed,
+                "alias_removed": out.alias_removed,
+            }))
+        } else {
+            for r in &out.removed {
+                println!("unlinked {r}");
+            }
+            if out.alias_removed {
+                println!("removed alias {}", out.alias.display());
+            }
+            if out.removed.is_empty() && !out.alias_removed {
+                println!("nothing to unlink for {name}");
+            }
+            Ok(())
+        }
+    } else {
+        let entry = store.find(name)?;
+        bin_link(env, &entry, force, json)
+    }
+}
+
+/// The alias root — a sibling of the store root
+/// (`~/.local/share/tamias/bin-alias` by default, `$TAMIAS_HOME/
+/// bin-alias` under `TAMIAS_HOME`), so it survives store entry churn.
+fn bin_alias_root(store_root: &Path) -> PathBuf {
+    store_root
+        .parent()
+        .map_or_else(|| store_root.join("bin-alias"), |p| p.join("bin-alias"))
+}
+
+/// `@scope/name` or `name` as a relative path — the alias's location
+/// under the alias root (scope nests one level, like the store).
+fn alias_rel(record: &StoreRecord) -> PathBuf {
+    match &record.scope {
+        Some(scope) => Path::new(&format!("@{scope}")).join(&record.name),
+        None => PathBuf::from(&record.name),
+    }
+}
+
+/// The per-name alias for an installed record.
+fn bin_alias(env: &Env, record: &StoreRecord) -> PathBuf {
+    bin_alias_root(&env.store_root).join(alias_rel(record))
+}
+
+/// Regular files directly under `<entry>/bin/` — non-recursive,
+/// dotfiles skipped, sorted. A missing `bin/` yields an empty vec (the
+/// caller turns that into the "no bin/ payload" error). `file_type`
+/// doesn't follow symlinks, so a linked file never qualifies.
+fn payload_bins(entry_dir: &Path) -> Result<Vec<std::ffi::OsString>, Error> {
+    let bin = entry_dir.join("bin");
+    let read = match std::fs::read_dir(&bin) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(Error::io(format!("read {}", bin.display()))(e)),
+    };
+    let mut out = Vec::new();
+    for item in read {
+        let item = item.map_err(Error::io(format!("read {}", bin.display())))?;
+        let name = item.file_name();
+        if name.to_string_lossy().starts_with('.') {
+            continue;
+        }
+        let is_file = item.file_type().map(|t| t.is_file()).unwrap_or(false);
+        if is_file {
+            out.push(name);
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Point `alias` at `entry_dir`, replacing a stale link — one symlink
+/// rewrite retargets every link the package owns. Unix only: on copy
+/// platforms the payload files are copied directly and the alias is
+/// bookkeeping for `--unlink`'s scan, so it's left absent. `force`
+/// also removes a non-symlink occupant.
+fn retarget_alias(alias: &Path, entry_dir: &Path, force: bool) -> Result<(), Error> {
+    #[cfg(unix)]
+    {
+        if let Some(parent) = alias.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(Error::io(format!("create {}", parent.display())))?;
+        }
+        if let Ok(meta) = std::fs::symlink_metadata(alias) {
+            if meta.file_type().is_symlink() {
+                let current = std::fs::read_link(alias).unwrap_or_default();
+                if current.as_path() == entry_dir {
+                    return Ok(());
+                }
+                std::fs::remove_file(alias)
+                    .map_err(Error::io(format!("replace {}", alias.display())))?;
+            } else if meta.is_dir() {
+                if !force {
+                    return Err(Error::Failed(format!(
+                        "{} is a directory — refusing to replace (use --force)",
+                        alias.display()
+                    )));
+                }
+                std::fs::remove_dir_all(alias)
+                    .map_err(Error::io(format!("remove {}", alias.display())))?;
+            } else if force {
+                std::fs::remove_file(alias)
+                    .map_err(Error::io(format!("remove {}", alias.display())))?;
+            } else {
+                return Err(Error::Failed(format!(
+                    "{} already exists — refusing to overwrite (use --force)",
+                    alias.display()
+                )));
+            }
+        }
+        std::os::unix::fs::symlink(entry_dir, alias).map_err(Error::io(format!(
+            "link {} → {}",
+            alias.display(),
+            entry_dir.display()
+        )))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (alias, entry_dir, force);
+        Ok(())
+    }
+}
+
+/// Best-effort alias retarget after an install — `tamias bin` links
+/// resolve through the per-name alias, so a fresh entry dir (upgrade,
+/// reinstall) must become the alias's target or links dangle. No-op
+/// when the package was never `bin`-linked; a failure warns rather
+/// than failing the install that triggered it.
+fn refresh_bin_alias(env: &Env, entry: &StoreEntry) {
+    let alias = bin_alias(env, &entry.record);
+    if std::fs::symlink_metadata(&alias).is_err() {
+        return;
+    }
+    if let Err(e) = retarget_alias(&alias, &entry.dir, false) {
+        eprintln!("tamias: warning — bin alias {}: {e}", alias.display());
+    }
+}
+
+/// Create the dest for payload file `src`: a symlink to `target` (the
+/// alias path) on unix, a copy elsewhere — Windows symlink creation
+/// needs privileges a package manager can't assume. An existing dest
+/// is a conflict unless it already resolves to `target` (idempotent
+/// re-link) or `force` is set; directories are never touched.
+fn place_bin(src: &Path, dest: &Path, target: &Path, force: bool) -> Result<BinStatus, Error> {
+    let meta = match std::fs::symlink_metadata(dest) {
+        Ok(m) => Some(m),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(Error::io(format!("stat {}", dest.display()))(e)),
+    };
+    let Some(meta) = meta else {
+        materialize(src, dest, target)?;
+        return Ok(BinStatus::Linked);
+    };
+    if meta.file_type().is_symlink() {
+        let cur =
+            std::fs::read_link(dest).map_err(Error::io(format!("read link {}", dest.display())))?;
+        if cur.as_path() == target {
+            return Ok(BinStatus::Already);
+        }
+        if !force {
+            return Err(bin_conflict(dest));
+        }
+        std::fs::remove_file(dest).map_err(Error::io(format!("remove {}", dest.display())))?;
+        materialize(src, dest, target)?;
+        return Ok(BinStatus::Linked);
+    }
+    if meta.is_dir() {
+        return Err(Error::Failed(format!(
+            "{} is a directory — `tamias bin` won't touch it",
+            dest.display()
+        )));
+    }
+    if !meta.is_file() {
+        return Err(Error::Failed(format!(
+            "{} is not a regular file",
+            dest.display()
+        )));
+    }
+    // A real file sits at the link path. On copy platforms our own
+    // earlier copy lands here — identical bytes mean already linked;
+    // anything else is a foreign file (unix stays strict: only our
+    // symlinks count as ours).
+    #[cfg(not(unix))]
+    if same_file(src, dest)? {
+        return Ok(BinStatus::Already);
+    }
+    if !force {
+        return Err(bin_conflict(dest));
+    }
+    // A real file blocks the link — clear it first (a copy platform's
+    // `fs::copy` would overwrite anyway; the remove keeps unix honest).
+    std::fs::remove_file(dest).map_err(Error::io(format!("remove {}", dest.display())))?;
+    materialize(src, dest, target)?;
+    Ok(BinStatus::Linked)
+}
+
+/// The "already exists" refusal — same wording for link paths and the
+/// alias so `--force` reads consistently.
+fn bin_conflict(dest: &Path) -> Error {
+    Error::Failed(format!(
+        "{} already exists — refusing to overwrite (use --force)",
+        dest.display()
+    ))
+}
+
+/// Write `dest` for payload file `src`: unix symlinks `dest → target`
+/// (the alias path, so entry-dir churn can't break it); elsewhere
+/// copies `src` — Windows symlink creation needs privileges.
+fn materialize(src: &Path, dest: &Path, target: &Path) -> Result<(), Error> {
+    #[cfg(unix)]
+    {
+        // The link hangs off the alias — `src` only matters for copies.
+        let _ = src;
+        std::os::unix::fs::symlink(target, dest).map_err(Error::io(format!(
+            "link {} → {}",
+            dest.display(),
+            target.display()
+        )))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = target;
+        std::fs::copy(src, dest).map_err(Error::io(format!(
+            "copy {} → {}",
+            src.display(),
+            dest.display()
+        )))?;
+        Ok(())
+    }
+}
+
+/// Byte-compare two files — the copy-platform "already linked" probe
+/// and `--unlink`'s ownership check for copied payloads.
+fn same_file(a: &Path, b: &Path) -> Result<bool, Error> {
+    match (std::fs::read(a), std::fs::read(b)) {
+        (Ok(x), Ok(y)) => Ok(x == y),
+        (Err(e), _) | (_, Err(e)) => Err(Error::io("read file for compare")(e)),
+    }
+}
+
+/// `bin <name>` — link every regular file in the package's `bin/`
+/// payload into the bin dir through the per-name alias.
+fn bin_link(env: &Env, entry: &StoreEntry, force: bool, json: bool) -> Result<(), Error> {
+    let bins = payload_bins(&entry.dir)?;
+    if bins.is_empty() {
+        return Err(Error::Failed(format!(
+            "{}: no bin/ payload — nothing to link",
+            entry.label()
+        )));
+    }
+    let alias = bin_alias(env, &entry.record);
+    retarget_alias(&alias, &entry.dir, force)?;
+    std::fs::create_dir_all(&env.bin_dir)
+        .map_err(Error::io(format!("create {}", env.bin_dir.display())))?;
+    let mode = if cfg!(unix) { "symlink" } else { "copy" };
+    let mut rows = Vec::new();
+    for file in &bins {
+        let src = entry.dir.join("bin").join(file);
+        let dest = env.bin_dir.join(file);
+        // Link through the alias, never the versioned entry dir — the
+        // alias retargets on upgrade and the link keeps resolving.
+        let target = alias.join("bin").join(file);
+        let status = place_bin(&src, &dest, &target, force)?;
+        let linked = status == BinStatus::Linked;
+        rows.push(serde_json::json!({
+            "name": file.to_string_lossy(),
+            "path": dest.display().to_string(),
+            "target": target.display().to_string(),
+            "status": if linked { "linked" } else { "already" },
+        }));
+        if !json {
+            println!(
+                "{} {} -> {}",
+                if linked { "linked" } else { "already linked" },
+                dest.display(),
+                target.display()
+            );
+        }
+    }
+    if json {
+        print_json(&serde_json::json!({
+            "package": entry.label(),
+            "mode": mode,
+            "bin_dir": env.bin_dir.display().to_string(),
+            "alias": alias.display().to_string(),
+            "bins": rows,
+        }))
+    } else {
+        Ok(())
+    }
+}
+
+/// What [`bin_unlink`] removed — reported by `bin --unlink`, ignored
+/// by the post-remove cleanup.
+struct UnlinkOutcome {
+    /// Bin-dir paths removed.
+    removed: Vec<String>,
+    /// The package's alias path.
+    alias: PathBuf,
+    /// Whether the alias itself was dropped.
+    alias_removed: bool,
+}
+
+/// `bin <name> --unlink` core — remove the bin-dir entries this
+/// package owns plus its alias. Candidates come from the payload's
+/// `bin/` (when the entry is still installed) and from scanning the
+/// bin dir for links into the package's alias — which also catches
+/// files a newer payload version dropped, and works after `tamias
+/// remove`. Copied files (Windows) are only removed when their bytes
+/// still match the payload, unless `force`.
+fn bin_unlink(
+    env: &Env,
+    name: &str,
+    entry: Option<&StoreEntry>,
+    force: bool,
+) -> Result<UnlinkOutcome, Error> {
+    let alias = match entry {
+        Some(e) => bin_alias(env, &e.record),
+        // Uninstalled — the arg is `@scope/name` or `name` verbatim.
+        None => bin_alias_root(&env.store_root).join(name),
+    };
+    let alias_bin = alias.join("bin");
+    let mut names = std::collections::BTreeSet::<std::ffi::OsString>::new();
+    if let Some(e) = entry {
+        for f in payload_bins(&e.dir)? {
+            names.insert(f);
+        }
+    }
+    // Links into this package's alias — covers payload files since
+    // removed and the entry-already-gone case.
+    if let Ok(read) = std::fs::read_dir(&env.bin_dir) {
+        for item in read.flatten() {
+            let Ok(ft) = item.file_type() else {
+                continue;
+            };
+            if !ft.is_symlink() {
+                continue;
+            }
+            let Ok(target) = std::fs::read_link(item.path()) else {
+                continue;
+            };
+            if target.starts_with(&alias_bin) {
+                if let Some(f) = target.file_name() {
+                    names.insert(f.to_os_string());
+                }
+            }
+        }
+    }
+    let alias_meta = std::fs::symlink_metadata(&alias).ok();
+    if entry.is_none() && alias_meta.is_none() && names.is_empty() {
+        return Err(Error::Failed(format!("package '{name}' is not installed")));
+    }
+    let mut removed = Vec::new();
+    for file in names {
+        let dest = env.bin_dir.join(&file);
+        let Ok(meta) = std::fs::symlink_metadata(&dest) else {
+            continue;
+        };
+        let ft = meta.file_type();
+        let owned = if ft.is_symlink() {
+            std::fs::read_link(&dest)
+                .map(|t| t.starts_with(&alias_bin))
+                .unwrap_or(false)
+        } else if meta.is_file() {
+            // A copy (Windows, or a hand copy) — ours only while the
+            // bytes still match the payload.
+            match entry {
+                Some(e) => {
+                    let src = e.dir.join("bin").join(&file);
+                    src.is_file() && same_file(&src, &dest).unwrap_or(false)
+                }
+                None => false,
+            }
+        } else {
+            false
+        };
+        if owned || (force && (ft.is_symlink() || meta.is_file())) {
+            std::fs::remove_file(&dest).map_err(Error::io(format!("remove {}", dest.display())))?;
+            removed.push(dest.display().to_string());
+        } else if ft.is_symlink() || meta.is_file() {
+            eprintln!("tamias: leaving {} — not a {name} link", dest.display());
+        }
+        // directories are never touched
+    }
+    let mut alias_removed = false;
+    if let Some(meta) = &alias_meta {
+        let is_link = meta.file_type().is_symlink();
+        if is_link || (force && meta.is_dir()) {
+            let res = if meta.is_dir() && !is_link {
+                std::fs::remove_dir_all(&alias)
+            } else {
+                std::fs::remove_file(&alias)
+            };
+            res.map_err(Error::io(format!("remove {}", alias.display())))?;
+            alias_removed = true;
+        } else if !is_link {
+            eprintln!(
+                "tamias: leaving alias {} — not a symlink (use --force)",
+                alias.display()
+            );
+        }
+    }
+    Ok(UnlinkOutcome {
+        removed,
+        alias,
+        alias_removed,
+    })
+}
+
+/// Best-effort `tamias bin` cleanup once `remove`/`uninstall` dropped
+/// the store entry — links through the package's alias would dangle
+/// otherwise. Silent on success (the remove verbs stay terse); a
+/// failure warns rather than failing the completed removal.
+fn bin_cleanup_after_remove(env: &Env, name: &str, entry: Option<&StoreEntry>) {
+    let Some(e) = entry else {
+        return;
+    };
+    if let Err(err) = bin_unlink(env, name, Some(e), false) {
+        eprintln!("tamias: warning — bin cleanup for {name}: {err}");
+    }
 }
 
 /// `service …` — the per-user service mechanism (systemd units on
@@ -2185,6 +2694,7 @@ mod tests {
             store_root: root.join("store"),
             cache_root: root.join("cache"),
             registry_root: root.join("registry"),
+            bin_dir: root.join("bin"),
         }
     }
 
@@ -2256,6 +2766,136 @@ mod tests {
         assert!(run_args(e.clone(), &["tamias", "install", "not-a-ref"]).is_err());
         assert!(run_args(e.clone(), &["tamias", "deploy", "ghost"]).is_err());
         assert!(run_args(e.clone(), &["tamias", "uninstall", "ghost"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "bin", "ghost"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "bin", "ghost", "--unlink"]).is_err());
+    }
+
+    /// A payload dir whose `bin/` holds `tool`, a dotfile, and a nested
+    /// dir — only `tool` is link-eligible.
+    fn bin_pkg(root: &std::path::Path, version: &str) -> std::path::PathBuf {
+        let dir = root.join(format!("pkg-{version}"));
+        std::fs::create_dir_all(dir.join("bin/nested")).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            format!("name: w\nversion: {version}\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("bin/tool"), format!("#!/bin/sh\necho {version}\n")).unwrap();
+        std::fs::write(dir.join("bin/.hidden"), "h").unwrap();
+        std::fs::write(dir.join("bin/nested/inner"), "i").unwrap();
+        dir
+    }
+
+    /// The alias path `tamias bin` keeps for `w` under test env `e`.
+    fn bin_alias_of(e: &Env) -> std::path::PathBuf {
+        bin_alias_root(&e.store_root).join("w")
+    }
+
+    #[test]
+    fn bin_links_unlinks_and_refuses_conflicts() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = bin_pkg(tmp.path(), "1.0.0");
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+
+        run_args(e.clone(), &["tamias", "bin", "w"]).unwrap();
+        run_args(e.clone(), &["tamias", "bin", "w", "--json"]).unwrap();
+        let link = e.bin_dir.join("tool");
+        // unix: a symlink through the alias; dotfiles + nested dirs skip
+        #[cfg(unix)]
+        {
+            let meta = std::fs::symlink_metadata(&link).unwrap();
+            assert!(meta.file_type().is_symlink());
+            let target = std::fs::read_link(&link).unwrap();
+            assert_eq!(
+                target,
+                bin_alias_of(&e).join("bin").join("tool"),
+                "link must hang off the stable alias"
+            );
+            // the alias itself points at the versioned entry dir
+            let alias_target = std::fs::read_link(bin_alias_of(&e)).unwrap();
+            assert!(alias_target.ends_with("w@1.0.0"), "{alias_target:?}");
+        }
+        #[cfg(not(unix))]
+        {
+            assert!(link.is_file());
+            assert_eq!(
+                std::fs::read_to_string(&link).unwrap(),
+                "#!/bin/sh\necho 1.0.0\n"
+            );
+        }
+        assert!(!e.bin_dir.join(".hidden").exists());
+        assert!(!e.bin_dir.join("nested").exists());
+
+        // idempotent re-link
+        run_args(e.clone(), &["tamias", "bin", "w"]).unwrap();
+
+        // a foreign file at the link path refuses; --force takes it
+        std::fs::remove_file(&link).unwrap();
+        std::fs::write(&link, "mine").unwrap();
+        let err = run_args(e.clone(), &["tamias", "bin", "w"]).unwrap_err();
+        assert!(err.to_string().contains("refusing to overwrite"), "{err}");
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "mine");
+        run_args(e.clone(), &["tamias", "bin", "w", "--force"]).unwrap();
+        #[cfg(unix)]
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+
+        // unlink removes the link + the alias
+        run_args(e.clone(), &["tamias", "bin", "w", "--unlink"]).unwrap();
+        assert!(!link.exists() && !link.is_symlink());
+        assert!(std::fs::symlink_metadata(bin_alias_of(&e)).is_err());
+        // and a foreign file survives unlink (not ours)
+        std::fs::write(&link, "mine").unwrap();
+        run_args(e.clone(), &["tamias", "bin", "w", "--unlink"]).unwrap();
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "mine");
+        std::fs::remove_file(&link).unwrap();
+
+        // a package without bin/ errors cleanly
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::write(plain.join("tamias.yaml"), "name: p\nversion: 1.0.0\n").unwrap();
+        run_args(e.clone(), &["tamias", "install", plain.to_str().unwrap()]).unwrap();
+        let err = run_args(e.clone(), &["tamias", "bin", "p"]).unwrap_err();
+        assert!(err.to_string().contains("p@1.0.0"), "{err}");
+        assert!(err.to_string().contains("no bin/ payload"), "{err}");
+
+        // `remove` drops the links + alias it created — no dangling
+        run_args(e.clone(), &["tamias", "bin", "w"]).unwrap();
+        run_args(e.clone(), &["tamias", "remove", "w"]).unwrap();
+        assert!(!link.exists() && !link.is_symlink());
+        assert!(std::fs::symlink_metadata(bin_alias_of(&e)).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bin_alias_retinits_on_upgrade_and_unlink_survives_ambiguity() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let v1 = bin_pkg(tmp.path(), "1.0.0");
+        run_args(e.clone(), &["tamias", "install", v1.to_str().unwrap()]).unwrap();
+        run_args(e.clone(), &["tamias", "bin", "w"]).unwrap();
+        let link = e.bin_dir.join("tool");
+        assert!(std::fs::read_to_string(&link).unwrap().contains("1.0.0"));
+
+        // upgrade → new versioned entry dir; the install itself
+        // retargets the alias (refresh_bin_alias), link keeps working
+        let v2 = bin_pkg(tmp.path(), "1.0.1");
+        run_args(e.clone(), &["tamias", "install", v2.to_str().unwrap()]).unwrap();
+        let alias_target = std::fs::read_link(bin_alias_of(&e)).unwrap();
+        assert!(alias_target.ends_with("w@1.0.1"), "{alias_target:?}");
+        assert!(std::fs::read_to_string(&link).unwrap().contains("1.0.1"));
+
+        // two installs share the name → find() is ambiguous, but
+        // --unlink still resolves the alias from the bare name and
+        // removes the links + alias
+        run_args(e.clone(), &["tamias", "bin", "w", "--unlink"]).unwrap();
+        assert!(!link.exists() && !link.is_symlink());
+        assert!(std::fs::symlink_metadata(bin_alias_of(&e)).is_err());
     }
 
     #[test]
@@ -2987,6 +3627,7 @@ mod tests {
             store_root: store.clone(),
             cache_root: tmp.path().join("cache"),
             registry_root: tmp.path().join("reg"),
+            bin_dir: tmp.path().join("bin"),
         };
         assert!(run_args(e.clone(), &["tamias", "list"]).is_err());
         assert!(run_args(e.clone(), &["tamias", "doctor"]).is_err());
@@ -3000,6 +3641,7 @@ mod tests {
             store_root: tmp.path().join("store2"),
             cache_root: ro.join("cache"),
             registry_root: tmp.path().join("reg2"),
+            bin_dir: tmp.path().join("bin"),
         };
         let pkgdir = pkg(tmp.path());
         assert!(run_args(e2.clone(), &["tamias", "install", pkgdir.to_str().unwrap()]).is_err());
@@ -3021,6 +3663,7 @@ mod tests {
             store_root: tmp.path().join("s4"),
             cache_root: cdir.clone(),
             registry_root: tmp.path().join("r4"),
+            bin_dir: tmp.path().join("bin"),
         };
         assert!(run_args(e4.clone(), &["tamias", "cache", "clean", "--all"]).is_err());
         assert!(run_args(e4.clone(), &["tamias", "cache", "clean", "--days", "1"]).is_err());
@@ -3044,6 +3687,7 @@ mod tests {
             store_root: sd,
             cache_root: cdir.clone(),
             registry_root: tmp.path().join("r"),
+            bin_dir: tmp.path().join("bin"),
         };
         assert!(run_args(e.clone(), &["tamias", "doctor"]).is_err());
         std::fs::set_permissions(&cdir, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -3431,6 +4075,7 @@ mod tests {
             "verify",
             "update",
             "pin",
+            "bin",
             "cache",
             "version",
             "manifest",
@@ -3847,6 +4492,7 @@ mod tests {
             store_root: store.clone(),
             cache_root: tmp.path().join("cache"),
             registry_root: tmp.path().join("reg"),
+            bin_dir: tmp.path().join("bin"),
         };
         assert!(run_args(e.clone(), &["tamias", "doctor"]).is_err());
         assert!(run_args(e.clone(), &["tamias", "doctor", "--json"]).is_err());
@@ -3859,6 +4505,7 @@ mod tests {
             store_root: file,
             cache_root: tmp.path().join("cache2"),
             registry_root: tmp.path().join("reg2"),
+            bin_dir: tmp.path().join("bin"),
         };
         assert!(run_args(e2, &["tamias", "doctor"]).is_err());
     }
