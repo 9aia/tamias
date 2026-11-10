@@ -1255,7 +1255,7 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
 
 #[derive(Subcommand)]
 enum ServiceCommand {
-    /// Write a per-user systemd unit (does not enable it).
+    /// Write a per-user service unit (does not enable it).
     Install {
         /// Unit base name.
         #[arg(long)]
@@ -1327,7 +1327,8 @@ fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
 }
 
 /// `service …` — the per-user service mechanism (systemd units on
-/// Unix, Task Scheduler tasks on Windows — [`tamias_provider::ServiceBackend`]).
+/// Linux/Unix, Task Scheduler tasks on Windows, launchd agents on
+/// macOS — [`tamias_provider::ServiceBackend`]).
 fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
     use tamias_deploy::ServiceSpec;
     let deploy = tamias_provider::ServiceBackend::new();
@@ -1673,9 +1674,9 @@ fn run_provider_service(
 }
 
 /// `logs <pkg|unit>` — the host backend's log view over a provider
-/// package's units (`journalctl` on systemd, `schtasks /query` on
-/// Windows), or a bare unit base name (`tamias service logs` with
-/// `--lines`/`--follow`).
+/// package's units (`journalctl` on systemd, `tail` over the agent's
+/// log files on macOS launchd, `schtasks /query` on Windows), or a
+/// bare unit base name (`tamias service logs` with `--lines`/`--follow`).
 fn logs(env: &Env, name: &str, lines: u32, follow: bool) -> Result<(), Error> {
     let deploy = tamias_provider::ServiceBackend::new();
     match Store::new(&env.store_root).find(name) {
