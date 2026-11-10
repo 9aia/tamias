@@ -15,32 +15,32 @@ api:
 - name: Config
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 317
+  line: 384
   module: tamias-config
 - name: ConfigFormat
   kind: trait
   file: crates/tamias-config/src/lib.rs
-  line: 373
+  line: 465
   module: tamias-config
 - name: DEFAULT_MAX_DOWNLOAD
   kind: const
   file: crates/tamias-config/src/lib.rs
-  line: 250
+  line: 317
   module: tamias-config
 - name: DEFAULT_MAX_UPLOAD
   kind: const
   file: crates/tamias-config/src/lib.rs
-  line: 247
+  line: 314
   module: tamias-config
 - name: EffectiveLimits
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 254
+  line: 321
   module: tamias-config
 - name: Limits
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 217
+  line: 243
   module: tamias-config
 - name: Location
   kind: type
@@ -50,143 +50,159 @@ api:
 - name: Publish
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 82
+  line: 108
   module: tamias-config
 - name: Registry
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 43
+  line: 55
   module: tamias-config
 - name: Repr
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 150
+  line: 176
   module: tamias-config
 - name: Search
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 91
+  line: 117
   module: tamias-config
 - name: Signing
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 105
+  line: 131
   module: tamias-config
 - name: Toy
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 441
+  line: 533
   module: tamias-config
 - name: de_bytes_opt
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 144
+  line: 170
   module: tamias-config
 - name: effective_kind
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 66
+  line: 78
   module: tamias-config
 - name: effective_limits
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 350
+  line: 417
   module: tamias-config
 - name: effective_limits_resolution_order
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 527
+  line: 619
   module: tamias-config
 - name: extensions
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 443
+  line: 535
   module: tamias-config
 - name: format_for
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 392
+  line: 484
   module: tamias-config
 - name: format_for_load_file_and_load_in
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 459
+  line: 551
   module: tamias-config
 - name: glob_match
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 264
+  line: 331
   module: tamias-config
 - name: glob_match_patterns
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 512
+  line: 604
   module: tamias-config
 - name: is_empty
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 241
+  line: 267
   module: tamias-config
 - name: is_false
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 137
+  line: 163
   module: tamias-config
 - name: load_file
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 408
+  line: 500
   module: tamias-config
 - name: load_in
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 420
+  line: 512
+  module: tamias-config
+- name: overlay
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 42
+  module: tamias-config
+- name: overlay
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 91
+  module: tamias-config
+- name: overlay
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 273
+  module: tamias-config
+- name: overlay
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 293
+  module: tamias-config
+- name: overlay
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 444
+  module: tamias-config
+- name: overlay_limits_packages_merge_per_key
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 770
+  module: tamias-config
+- name: overlay_upper_wins_where_set
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 707
   module: tamias-config
 - name: package_limits
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 300
+  line: 367
   module: tamias-config
 - name: parse
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 446
+  line: 538
   module: tamias-config
 - name: parse_bytes
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 179
+  line: 205
   module: tamias-config
 - name: parse_bytes_units
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 497
+  line: 589
   module: tamias-config
 - name: registry_kind_inference
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 598
+  line: 690
   module: tamias-config
-- name: render
-  kind: function
-  file: crates/tamias-config/src/lib.rs
-  line: 453
-  module: tamias-config
-- name: ser_bytes_opt
-  kind: function
-  file: crates/tamias-config/src/lib.rs
-  line: 162
-  module: tamias-config
-- name: tamias-config
-  kind: module
-  file: crates/tamias-config/Cargo.toml
-  line: 1
-  module: tamias-config
-- name: tests
-  kind: module
-  file: crates/tamias-config/src/lib.rs
-  line: 437
-  module: tamias-config
+api_omitted: 4
 deps:
 - serde
 - tamias-core
@@ -203,7 +219,7 @@ provenance:
   - crates/tamias-config/src/lib.rs
   hashes:
   - 632480163263ef27edab2d729003066436e1a9d5
-  - 215b28316d28d5bbd7a02cb590c3c6956f5e98f3
-  commit_sha: d6bae6ac4d86bafaf6bb174e84f0d253e3df19d3
-  generated_at: '1794348291'
+  - 5876b93e5c620cdb01bfca32c01c66767050076f
+  commit_sha: f3a8603bc55f5b1fc9ddfd094156dde6e5f049fe
+  generated_at: '1794353757'
   generator: kuda-template/0.1.2

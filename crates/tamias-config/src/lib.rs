@@ -37,6 +37,18 @@ pub struct Location {
     pub root: Option<String>,
 }
 
+impl Location {
+    /// Overlay `upper` — its set fields win, unset fields keep `self`.
+    pub fn overlay(&mut self, upper: &Self) {
+        if upper.kind.is_some() {
+            self.kind = upper.kind.clone();
+        }
+        if upper.root.is_some() {
+            self.root = upper.root.clone();
+        }
+    }
+}
+
 /// A named registry.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -73,6 +85,20 @@ impl Registry {
             }
             _ => "local".to_string(),
         }
+    }
+
+    /// Overlay `upper` — its set fields win, unset fields keep `self`.
+    pub fn overlay(&mut self, upper: &Self) {
+        if upper.kind.is_some() {
+            self.kind = upper.kind.clone();
+        }
+        if upper.url.is_some() {
+            self.url = upper.url.clone();
+        }
+        if upper.token_env.is_some() {
+            self.token_env = upper.token_env.clone();
+        }
+        self.limits.overlay(&upper.limits);
     }
 }
 
@@ -241,6 +267,47 @@ impl Limits {
     pub fn is_empty(&self) -> bool {
         self.max_upload.is_none() && self.max_download.is_none() && self.packages.is_empty()
     }
+
+    /// Overlay `upper` — its set fields win; `packages` merges per key
+    /// (an upper package rule overlays the lower's same-named rule).
+    pub fn overlay(&mut self, upper: &Self) {
+        if upper.max_upload.is_some() {
+            self.max_upload = upper.max_upload;
+        }
+        if upper.max_download.is_some() {
+            self.max_download = upper.max_download;
+        }
+        for (name, limits) in &upper.packages {
+            self.packages
+                .entry(name.clone())
+                .or_default()
+                .overlay(limits);
+        }
+    }
+}
+
+impl Signing {
+    /// Overlay `upper` — its set fields win. `required` is a plain
+    /// bool (serde can't distinguish unset from `false`), so it
+    /// merges as `|=`: a lower `true` stays required.
+    pub fn overlay(&mut self, upper: &Self) {
+        if upper.key.is_some() {
+            self.key = upper.key.clone();
+        }
+        if upper.key_env.is_some() {
+            self.key_env = upper.key_env.clone();
+        }
+        if upper.allowed_signers.is_some() {
+            self.allowed_signers = upper.allowed_signers.clone();
+        }
+        if upper.official_signers.is_some() {
+            self.official_signers = upper.official_signers.clone();
+        }
+        self.required |= upper.required;
+        if upper.namespace.is_some() {
+            self.namespace = upper.namespace.clone();
+        }
+    }
 }
 
 /// Built-in upload cap — today's hardcoded `MAX_PUT` (512 MiB).
@@ -366,6 +433,31 @@ impl Config {
             max_upload: pick(|l| l.max_upload).unwrap_or(DEFAULT_MAX_UPLOAD),
             max_download: pick(|l| l.max_download).unwrap_or(DEFAULT_MAX_DOWNLOAD),
         }
+    }
+
+    /// Overlay `upper` onto `self` — the layered-config merge: the
+    /// user-level config (`~/.config/tamias/`) is the base, a project
+    /// `tamias.*` file overlays it. Every set field in `upper` wins;
+    /// unset fields keep the lower value. `registries` merges per
+    /// name (same-named entries overlay field-wise). See
+    /// `tamias-registry-open`'s `load_config` for the discovery order.
+    pub fn overlay(&mut self, upper: &Self) {
+        self.store.overlay(&upper.store);
+        self.cache.overlay(&upper.cache);
+        for (name, registry) in &upper.registries {
+            self.registries
+                .entry(name.clone())
+                .or_default()
+                .overlay(registry);
+        }
+        if upper.publish.default.is_some() {
+            self.publish.default = upper.publish.default.clone();
+        }
+        if upper.search.default.is_some() {
+            self.search.default = upper.search.default.clone();
+        }
+        self.limits.overlay(&upper.limits);
+        self.signing.overlay(&upper.signing);
     }
 }
 
@@ -609,5 +701,96 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(explicit.effective_kind(), "cf");
+    }
+
+    #[test]
+    fn overlay_upper_wins_where_set() {
+        let mut lower = Config {
+            store: Location {
+                kind: Some("local".into()),
+                root: Some("/lower/store".into()),
+            },
+            registries: BTreeMap::from([(
+                "org".to_string(),
+                Registry {
+                    kind: Some("cf".into()),
+                    url: Some("https://reg.example".into()),
+                    token_env: Some("LOWER_TOKEN".into()),
+                    ..Default::default()
+                },
+            )]),
+            publish: Publish {
+                default: Some("org".into()),
+            },
+            limits: Limits {
+                max_upload: Some(1024),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let upper = Config {
+            registries: BTreeMap::from([(
+                "org".to_string(),
+                Registry {
+                    // only token_env set — kind/url keep the lower's
+                    token_env: Some("UPPER_TOKEN".into()),
+                    ..Default::default()
+                },
+            )]),
+            search: Search {
+                default: Some("mirror".into()),
+            },
+            limits: Limits {
+                max_download: Some(2048),
+                ..Default::default()
+            },
+            signing: Signing {
+                required: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        lower.overlay(&upper);
+        // untouched lower fields survive
+        assert_eq!(lower.store.root.as_deref(), Some("/lower/store"));
+        assert_eq!(lower.publish.default.as_deref(), Some("org"));
+        // merged registry: upper's token_env, lower's kind+url
+        let reg = &lower.registries["org"];
+        assert_eq!(reg.kind.as_deref(), Some("cf"));
+        assert_eq!(reg.url.as_deref(), Some("https://reg.example"));
+        assert_eq!(reg.token_env.as_deref(), Some("UPPER_TOKEN"));
+        // upper-only knobs land; lower's max_upload survives
+        assert_eq!(lower.search.default.as_deref(), Some("mirror"));
+        assert_eq!(lower.limits.max_upload, Some(1024));
+        assert_eq!(lower.limits.max_download, Some(2048));
+        assert!(lower.signing.required);
+    }
+
+    #[test]
+    fn overlay_limits_packages_merge_per_key() {
+        let mut lower = Limits {
+            packages: BTreeMap::from([(
+                "kuda-*".to_string(),
+                Limits {
+                    max_upload: Some(1),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        let upper = Limits {
+            packages: BTreeMap::from([(
+                "kuda-*".to_string(),
+                Limits {
+                    max_download: Some(2),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        lower.overlay(&upper);
+        let rule = &lower.packages["kuda-*"];
+        assert_eq!(rule.max_upload, Some(1));
+        assert_eq!(rule.max_download, Some(2));
     }
 }

@@ -10,22 +10,22 @@ api:
 - name: add_get_list_remove_round_trip
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 445
+  line: 509
   module: tamias-registry-open
 - name: add_registry
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 375
+  line: 436
   module: tamias-registry-open
 - name: add_validates_kind_and_url
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 477
+  line: 541
   module: tamias-registry-open
 - name: config_target
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 299
+  line: 336
   module: tamias-registry-open
 - name: effective_limits
   kind: function
@@ -35,7 +35,7 @@ api:
 - name: get_registry
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 428
+  line: 492
   module: tamias-registry-open
 - name: http_registry
   kind: function
@@ -45,12 +45,12 @@ api:
 - name: load_config
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 323
+  line: 367
   module: tamias-registry-open
 - name: load_config_defaults_and_file
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 538
+  line: 621
   module: tamias-registry-open
 - name: open_named_registry
   kind: function
@@ -65,7 +65,7 @@ api:
 - name: open_registry_resolves_name_then_ref
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 488
+  line: 552
   module: tamias-registry-open
 - name: publish
   kind: function
@@ -80,12 +80,12 @@ api:
 - name: registry_json
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 341
+  line: 402
   module: tamias-registry-open
 - name: registry_kind
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 355
+  line: 416
   module: tamias-registry-open
 - name: registry_target
   kind: function
@@ -95,12 +95,12 @@ api:
 - name: registry_target_order
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 517
+  line: 581
   module: tamias-registry-open
 - name: remove_registry
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 415
+  line: 476
   module: tamias-registry-open
 - name: search
   kind: function
@@ -115,12 +115,32 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-registry-open/src/lib.rs
-  line: 439
+  line: 503
+  module: tamias-registry-open
+- name: user_config
+  kind: function
+  file: crates/tamias-registry-open/src/lib.rs
+  line: 321
+  module: tamias-registry-open
+- name: user_config_dir
+  kind: function
+  file: crates/tamias-registry-open/src/lib.rs
+  line: 299
+  module: tamias-registry-open
+- name: user_config_in
+  kind: function
+  file: crates/tamias-registry-open/src/lib.rs
+  line: 311
+  module: tamias-registry-open
+- name: user_config_in_finds_tamias_files
+  kind: function
+  file: crates/tamias-registry-open/src/lib.rs
+  line: 602
   module: tamias-registry-open
 - name: write_config
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 329
+  line: 390
   module: tamias-registry-open
 deps:
 - serde_json
@@ -150,7 +170,7 @@ provenance:
   - crates/tamias-registry-open/src/lib.rs
   hashes:
   - 2a1c32c88ad81cf787a4fc0e85ee29ceb850d396
-  - 9ea53da8080412779e1fdb4ac4f170b4b1415d06
-  commit_sha: d6bae6ac4d86bafaf6bb174e84f0d253e3df19d3
-  generated_at: '1794348291'
+  - 068a70a64f067c69497a9ec1591735d5c79cfa79
+  commit_sha: f3a8603bc55f5b1fc9ddfd094156dde6e5f049fe
+  generated_at: '1794353757'
   generator: kuda-template/0.1.2

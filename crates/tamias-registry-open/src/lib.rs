@@ -293,9 +293,46 @@ pub fn publish_plan(
     })
 }
 
+/// The user-level config dir — `$XDG_CONFIG_HOME/tamias`, falling back
+/// to `~/.config/tamias` (HOME, then USERPROFILE). `None` when no home
+/// can be determined.
+fn user_config_dir() -> Option<PathBuf> {
+    if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+        return Some(PathBuf::from(xdg).join("tamias"));
+    }
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(|home| PathBuf::from(home).join(".config").join("tamias"))
+}
+
+/// The user-level config file under an explicit dir — first `tamias.*`
+/// in `dir`, same [`tamias_config::CONFIG_NAMES`] order as project
+/// discovery. Split from [`user_config`] so tests don't touch env.
+fn user_config_in(
+    dir: &Path,
+    formats: &[&dyn ConfigFormat],
+) -> Result<Option<(PathBuf, Config)>, Error> {
+    tamias_config::load_in(dir, formats)
+}
+
+/// The user-level config file — first `tamias.*` under
+/// [`user_config_dir`], same [`tamias_config::CONFIG_NAMES`] order as
+/// project discovery.
+fn user_config(formats: &[&dyn ConfigFormat]) -> Result<Option<(PathBuf, Config)>, Error> {
+    let Some(dir) = user_config_dir() else {
+        return Ok(None);
+    };
+    user_config_in(&dir, formats)
+}
+
 /// The config file registry management verbs read/write — `file`,
 /// then `TAMIAS_CONFIG`, then `./tamias.{yml,yaml,toml}` discovery. No
-/// file anywhere → `./tamias.yml` + defaults (created on write).
+/// file anywhere → `./tamias.yml` + defaults (created on write). The
+/// returned [`Config`] is *that file's own* — never the merged read
+/// view — so writes can't flatten a lower layer's entries into the
+/// upper file, and a bare `registry add` in an empty dir still creates
+/// a project `tamias.yml` rather than silently editing the global
+/// config (pass `--file ~/.config/tamias/tamias.toml` for that).
 pub fn config_target(file: Option<&Path>) -> Result<(PathBuf, Config), Error> {
     let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
     let explicit = file
@@ -316,12 +353,36 @@ pub fn config_target(file: Option<&Path>) -> Result<(PathBuf, Config), Error> {
 }
 
 /// The effective config for read-side resolution (`search`/`publish`
-/// routing, `install`'s download cap): `file` → `TAMIAS_CONFIG` → cwd
-/// discovery → defaults when no file exists. Unlike the CLI's
-/// warn-and-ignore reader this propagates parse errors — callers that
-/// want CLI semantics catch and warn.
+/// routing, `install`'s download cap): **layered** —
+///
+/// - `file`/`TAMIAS_CONFIG` → that file alone (explicit means
+///   explicit; no layering);
+/// - otherwise the user-level config (`~/.config/tamias/tamias.*`) is
+///   the base and a cwd `tamias.*` file overlays it per-field
+///   ([`Config::overlay`]) — project wins, global fills the gaps;
+/// - neither → defaults.
+///
+/// Unlike the CLI's warn-and-ignore reader this propagates parse
+/// errors — callers that want CLI semantics catch and warn.
 pub fn load_config(file: Option<&Path>) -> Result<Config, Error> {
-    Ok(config_target(file)?.1)
+    let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
+    let explicit = file
+        .map(Path::to_path_buf)
+        .or_else(|| std::env::var_os(CONFIG_ENV).map(PathBuf::from));
+    if let Some(path) = explicit {
+        return Ok(if path.is_file() {
+            tamias_config::load_file(&path, &formats)?
+        } else {
+            Config::default()
+        });
+    }
+    let mut merged = user_config(&formats)?
+        .map(|(_, config)| config)
+        .unwrap_or_default();
+    if let Some((_, project)) = tamias_config::load_in(Path::new("."), &formats)? {
+        merged.overlay(&project);
+    }
+    Ok(merged)
 }
 
 /// Render `config` back to `path`'s format and write it — the only
@@ -421,12 +482,15 @@ pub fn remove_registry(file: Option<&Path>, name: &str) -> Result<PathBuf, Error
     Ok(path)
 }
 
-/// `registry get` — one named registry's config entry.
+/// `registry get` — one named registry's config entry, resolved
+/// against the *effective* (layered) config — a registry declared in
+/// the user-level file answers even inside a project that doesn't
+/// redeclare it.
 ///
 /// # Errors
 /// Fails when `name` isn't configured or the config can't be read.
 pub fn get_registry(file: Option<&Path>, name: &str) -> Result<ConfigRegistry, Error> {
-    let (_path, config) = config_target(file)?;
+    let config = load_config(file)?;
     config
         .registries
         .get(name)
@@ -532,6 +596,25 @@ mod tests {
             );
             assert_eq!(registry_target(None, &[None]), None);
         }
+    }
+
+    #[test]
+    fn user_config_in_finds_tamias_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
+        assert!(user_config_in(tmp.path(), &formats).unwrap().is_none());
+        // TOML is claimed too — the user file may be either standard
+        std::fs::write(
+            tmp.path().join("tamias.toml"),
+            "[registries.org]\nkind = \"cf\"\nurl = \"https://reg.example\"\n",
+        )
+        .unwrap();
+        let (path, config) = user_config_in(tmp.path(), &formats).unwrap().unwrap();
+        assert_eq!(path, tmp.path().join("tamias.toml"));
+        assert_eq!(
+            config.registries["org"].url.as_deref(),
+            Some("https://reg.example")
+        );
     }
 
     #[test]

@@ -946,9 +946,11 @@ fn registry_get(file: Option<&Path>, name: &str, json: bool) -> Result<(), Error
     Ok(())
 }
 
-/// `registry list` — every named registry, text table or `--json`.
+/// `registry list` — every named registry in the *effective* (layered)
+/// config, text table or `--json`. `add`/`remove` stay file-scoped —
+/// this is the read view.
 fn registry_list(file: Option<&Path>, json: bool) -> Result<(), Error> {
-    let (_path, config) = tamias_registry_open::config_target(file)?;
+    let config = tamias_registry_open::load_config(file)?;
     if json {
         let items: Vec<serde_json::Value> = config
             .registries
@@ -2907,6 +2909,8 @@ mod tests {
         _lock: std::sync::MutexGuard<'static, ()>,
         env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
         cwd: std::path::PathBuf,
+        // Keeps the isolated XDG dir alive for the guard's lifetime.
+        _xdg: tempfile::TempDir,
     }
 
     impl ProcGuard {
@@ -2914,10 +2918,16 @@ mod tests {
             let lock = PROC.lock().unwrap_or_else(|e| e.into_inner());
             let env = std::env::vars_os().collect();
             let cwd = std::env::current_dir().unwrap();
+            // Isolate the user-level config layer (`~/.config/tamias/`)
+            // — tests must not read or write the operator's real global
+            // config. Restored by `Drop` like every other env var.
+            let xdg = tempfile::tempdir().unwrap();
+            std::env::set_var("XDG_CONFIG_HOME", xdg.path());
             Self {
                 _lock: lock,
                 env,
                 cwd,
+                _xdg: xdg,
             }
         }
     }
