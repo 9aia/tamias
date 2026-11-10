@@ -12,7 +12,7 @@ manifest, a different document).
 ## Add and lock
 
 ```sh
-tamias add git:9aia/peregrin//libraries/ci-gate#main
+tamias add git:9aia/bupha//libraries/ci-gate#main
 tamias add ./local-bundle --allow-drivers   # if it ships drivers/
 ```
 
@@ -35,7 +35,7 @@ tamias verify ci-gate --json
 ```sh
 tamias update ci-gate     # re-resolve + reinstall from the recorded ref
 tamias update --all       # every installed package
-tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#main~1
+tamias pin ci-gate git:9aia/bupha//libraries/ci-gate#main~1
 ```
 
 `update` and `pin` keep `tamias.lock` honest: if a lockfile exists in

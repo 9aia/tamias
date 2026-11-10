@@ -16,7 +16,7 @@ cargo xtask install
 ## Install a package
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias list
 tamias info ci-gate
 tamias verify ci-gate        # recompute the payload digest
@@ -114,7 +114,7 @@ tamias verify hello   # → digest mismatch
 Reinstall to restore, then try a git ref:
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias info ci-gate    # provenance: source ref, resolved sha, digest
 ```
 
@@ -137,7 +137,7 @@ Point a ref at a repo, an in-repo subdir, and a rev.
 ## The ref
 
 ```
-git:9aia/peregrin//libraries/ci-gate#main
+git:9aia/bupha//libraries/ci-gate#main
 │   │           │  │               │
 │   │           │  │               └─ #ref — branch, tag, or sha
 │   │           │  └─ in-repo path (after `//`)
@@ -154,7 +154,7 @@ git:9aia/peregrin//libraries/ci-gate#main
 ## Install
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias info ci-gate        # shows source ref + resolved sha
 ```
 
@@ -167,7 +167,7 @@ If the package ships its own `drivers/`, add `--allow-drivers` (or
 project's `tamias.yaml` + resolved entry in `tamias.lock`:
 
 ```sh
-tamias add git:9aia/peregrin//libraries/ci-gate#main
+tamias add git:9aia/bupha//libraries/ci-gate#main
 ```
 
 See [Manage project dependencies](/how-to/manage-deps) for the full
@@ -187,7 +187,7 @@ pins the package.
 ## Repoint the ref
 
 ```sh
-tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#main~1
+tamias pin ci-gate git:9aia/bupha//libraries/ci-gate#main~1
 ```
 
 `pin` rewrites the recorded ref; the payload is untouched until the next
@@ -221,7 +221,7 @@ manifest, a different document).
 ## Add and lock
 
 ```sh
-tamias add git:9aia/peregrin//libraries/ci-gate#main
+tamias add git:9aia/bupha//libraries/ci-gate#main
 tamias add ./local-bundle --allow-drivers   # if it ships drivers/
 ```
 
@@ -244,7 +244,7 @@ tamias verify ci-gate --json
 ```sh
 tamias update ci-gate     # re-resolve + reinstall from the recorded ref
 tamias update --all       # every installed package
-tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#main~1
+tamias pin ci-gate git:9aia/bupha//libraries/ci-gate#main~1
 ```
 
 `update` and `pin` keep `tamias.lock` honest: if a lockfile exists in
@@ -560,7 +560,7 @@ declarer's removal removes the unit.
 ## Deploy an installed package
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias deploy ci-gate                       # driver deploy + render provider.services units
 tamias deploy ci-gate --config ./node.yaml   # operator params ride a config file
 ```
@@ -877,7 +877,7 @@ sources; the impl is picked by shape.
 
 ```
 ./dir                                         local (dev loop)
-git:9aia/peregrin//libraries/ci-gate#v0.2.0   git + in-repo subdir + ref
+git:9aia/bupha//libraries/ci-gate#main   git + in-repo subdir + ref
 https://…/ci-gate-0.2.0.tgz#sha256:<hex>        tarball (+ digest pin)
 cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry
 ```
@@ -1476,7 +1476,7 @@ Tamias owns **content distribution**: refs, transport, the install store
 | **mimus** | critic | `mimus-rules` packs |
 | **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
 | **sturn** | coordination | claim the store lock during concurrent installs |
-| **bupha / ci-gate** | CI gate | bupha is retired — the gate is the peregrin `ci-gate` campaign; the first published bundle |
+| **bupha / ci-gate** | CI gate | bupha is the CI repo — `type: bupha` bundles via `tamias-driver-bupha`; the org gate is mid-migration back from the peregrin `ci-gate` campaign (PL-013) |
 | **sepia** | sessions | — |
 | **cicada** | scheduling | `tamias update --all` + registry reindex |
 

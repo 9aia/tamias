@@ -8,7 +8,7 @@ Point a ref at a repo, an in-repo subdir, and a rev.
 ## The ref
 
 ```
-git:9aia/peregrin//libraries/ci-gate#main
+git:9aia/bupha//libraries/ci-gate#main
 │   │           │  │               │
 │   │           │  │               └─ #ref — branch, tag, or sha
 │   │           │  └─ in-repo path (after `//`)
@@ -25,7 +25,7 @@ git:9aia/peregrin//libraries/ci-gate#main
 ## Install
 
 ```sh
-tamias install git:9aia/peregrin//libraries/ci-gate#main
+tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias info ci-gate        # shows source ref + resolved sha
 ```
 
@@ -38,7 +38,7 @@ If the package ships its own `drivers/`, add `--allow-drivers` (or
 project's `tamias.yaml` + resolved entry in `tamias.lock`:
 
 ```sh
-tamias add git:9aia/peregrin//libraries/ci-gate#main
+tamias add git:9aia/bupha//libraries/ci-gate#main
 ```
 
 See [Manage project dependencies](/how-to/manage-deps) for the full
@@ -58,7 +58,7 @@ pins the package.
 ## Repoint the ref
 
 ```sh
-tamias pin ci-gate git:9aia/peregrin//libraries/ci-gate#main~1
+tamias pin ci-gate git:9aia/bupha//libraries/ci-gate#main~1
 ```
 
 `pin` rewrites the recorded ref; the payload is untouched until the next
