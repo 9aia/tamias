@@ -8,3 +8,4 @@
 - T-015 Wire or remove dead machinery: Manifest.deps/tamias.lock resolution, include:/overlay(), tamias-config (parsed never applied), orphan tamias-shell, stub tamias-testkit/store-cf/cache-cf · pri:low · created:2026-11-08
 - T-012 CI gate: run tamias checks via bupha/peregrin, not GitHub Actions · created:2026-11-08
 - T-019 tamias bin — link a package's bin/ payload into ~/.local/bin (ADR-0003) · created:2026-11-10
+- T-020 tamias self-upgrade — staged atomic rename of own exe from published pinned ref (ADR-0003) · created:2026-11-10
