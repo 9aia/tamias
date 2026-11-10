@@ -38,6 +38,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-deploy-local` | adapter | local deploy impl — manage a per-user service unit (systemd/launchd) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-&lt;type&gt; (no product knowledge) |
 | `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
+| `tamias-install` | adapter | The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit |
 | `tamias-publish` | adapter | author side — pack + push |
 | `tamias-registry-cf` | adapter | Cloudflare registry impl — a Worker + R2 over HTTP |
 | `tamias-registry-local` | adapter | dir registry impl — a folder index, servable over HTTP |

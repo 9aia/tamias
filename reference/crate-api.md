@@ -18,6 +18,7 @@ documented at source (doc comments).
 - [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
 - [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
 - [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
+- [tamias-install](/tamias/api/tamias_install/index.html) — adapter
 - [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
 - [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
 - [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter

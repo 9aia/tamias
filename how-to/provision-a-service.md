@@ -4,6 +4,44 @@
 runnable artifact), **deploy** (activation), and the **service unit** are
 the driver's job — tamias shells the driver and never learns its schema.
 
+## Declare the provider in the manifest
+
+A package can carry a declarative `provider:` block in `tamias.yaml` —
+the spec a deploy driver materializes (service units, ingress/forge
+hooks, a health probe). tamias validates it (`tamias schema` emits the
+JSON Schema) but never interprets it; the driver's `deploy` verb turns
+it into host resources.
+
+```yaml
+name: ci-gate
+version: 1.0.0
+type: peregrin-bundle
+provider:
+  name: ci-gate                  # defaults to the package name
+  services:
+    - name: ci-gate              # unit name ([A-Za-z0-9_.@-])
+      exec: "peregrin campaign serve /srv/ci"   # argv string, quoted by the driver
+      env_file: ~/.config/peregrin/env         # EnvironmentFile=
+      env: {PORT: "29173"}                     # inline env — secrets stay in env_file/keyring
+      workdir: "~"                             # quote a bare ~ (YAML null otherwise)
+      restart: on-failure                     # Restart=, default on-failure
+  ingress:
+    - public_url: https://ci.example.com
+      listen: 127.0.0.1:29173
+      path: /hook
+      hooks:                   # declarative forge hooks for driver deploy
+        - forge: github
+          repo: 9aia/peregrin
+          events: [push]
+  verbs: [run, logs, health]   # advisory CLI hints
+  health: {cmd: "curl -sf localhost:29173/health"}
+```
+
+Every field is optional; no `provider:` block means nothing to deploy —
+today's behavior. `Manifest::validate` rejects malformed specs (a
+service without a name or `exec`, duplicate unit names, line breaks in
+single-line fields, hooks missing `forge`/`repo`).
+
 ## Deploy an installed package
 
 ```sh
