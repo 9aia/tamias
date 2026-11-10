@@ -92,7 +92,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `tamias-store` + `-local,-cf` | install store port + impls |
 | `tamias-cache` + `-local,-cf` | content-addressed fetch cache |
 | `tamias-driver` | discoverable content drivers (`tamias-driver-<type>`, JSON over stdio) |
-| `tamias-deploy` + `-local,-cf` | the service / deploy port + impls |
+| `tamias-deploy` + `-systemd,-cf` | the service / deploy port + impls |
 | `tamias-registry` + `-local,-cf` | index + publish port + impls |
 | `tamias-registry-open` | shared registry-source layer — name-or-ref resolution + named-source config CRUD (CLI + `serve`) |
 | `tamias-publish` | author-side orchestration |

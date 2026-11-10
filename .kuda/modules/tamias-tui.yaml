@@ -210,7 +210,7 @@ deps:
 - tamias-cache-local
 - tamias-config
 - tamias-core
-- tamias-deploy-local
+- tamias-deploy-systemd
 - tamias-driver
 - tamias-install
 - tamias-provider

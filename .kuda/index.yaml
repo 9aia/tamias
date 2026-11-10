@@ -14,7 +14,7 @@ modules:
 - tamias-core
 - tamias-deploy
 - tamias-deploy-cf
-- tamias-deploy-local
+- tamias-deploy-systemd
 - tamias-driver
 - tamias-driver-tamias
 - tamias-fuzz
@@ -59,7 +59,7 @@ provenance:
   - crates/tamias-core/Cargo.toml
   - crates/tamias-deploy/Cargo.toml
   - crates/tamias-deploy-cf/Cargo.toml
-  - crates/tamias-deploy-local/Cargo.toml
+  - crates/tamias-deploy-systemd/Cargo.toml
   - crates/tamias-driver/Cargo.toml
   - crates/tamias-driver-tamias/Cargo.toml
   - crates/tamias-install/Cargo.toml

@@ -2581,7 +2581,7 @@ dependencies = [
  "tamias-core",
  "tamias-deploy",
  "tamias-deploy-cf",
- "tamias-deploy-local",
+ "tamias-deploy-systemd",
  "tamias-driver",
  "tamias-install",
  "tamias-provider",
@@ -2686,7 +2686,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tamias-deploy-local"
+name = "tamias-deploy-systemd"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
@@ -2728,7 +2728,7 @@ name = "tamias-provider"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
- "tamias-deploy-local",
+ "tamias-deploy-systemd",
  "tamias-driver",
  "tamias-store-local",
  "tempfile",
@@ -2931,7 +2931,7 @@ dependencies = [
  "tamias-cache-local",
  "tamias-config",
  "tamias-core",
- "tamias-deploy-local",
+ "tamias-deploy-systemd",
  "tamias-driver",
  "tamias-install",
  "tamias-provider",

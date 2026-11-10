@@ -139,12 +139,12 @@ api:
   module: tamias-provider
 deps:
 - tamias-core
-- tamias-deploy-local
+- tamias-deploy-systemd
 - tamias-driver
 - tamias-store-local
 - tempfile
 - tamias-core
-- tamias-deploy-local
+- tamias-deploy-systemd
 - tamias-store-local
 notes: ''
 verify:

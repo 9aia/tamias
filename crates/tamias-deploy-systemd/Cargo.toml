@@ -1,6 +1,6 @@
 [package]
-name = "tamias-deploy-local"
-description = "local deploy impl — manage a per-user service unit (systemd/launchd)"
+name = "tamias-deploy-systemd"
+description = "systemd deploy impl — manage a per-user service unit (Linux)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

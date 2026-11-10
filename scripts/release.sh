@@ -21,7 +21,7 @@ changed="$(git diff --name-only "${last}..HEAD")"
 
 # Publish order — dependencies first (dir names; the cli dir is
 # tamias-cli but its package is `tamias`).
-order="tamias-core tamias-deploy tamias-deploy-cf tamias-deploy-local \
+order="tamias-core tamias-deploy tamias-deploy-cf tamias-deploy-systemd \
        tamias-driver tamias-publish tamias-registry tamias-registry-local \
        tamias-shell tamias-source tamias-source-fs tamias-source-git \
        tamias-source-http tamias-store tamias-store-cf tamias-store-local \
