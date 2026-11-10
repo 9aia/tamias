@@ -216,8 +216,8 @@ provenance:
   - crates/tamias-deploy-systemd/Cargo.toml
   - crates/tamias-deploy-systemd/src/lib.rs
   hashes:
-  - dbaf50440fe4217f50e69cb22cfff2951f69d2f0
-  - 01d3cd645ab30d2ed8f6e76b6c1b12b6dd6b61c7
-  commit_sha: 24214a8628a32f7fe3c1175a78872d987476380e
-  generated_at: '1794329275'
+  - 4f3fd9d3928ecfe149f2c060b234ae16f43fc966
+  - ee5d9ca21faa294de38663c61615f61200fcabb0
+  commit_sha: 326bebe44135c2e5e5b7bdd5e7c0a3d4bd1ef945
+  generated_at: '1794331999'
   generator: kuda-template/0.1.2

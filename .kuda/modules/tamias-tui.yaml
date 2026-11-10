@@ -15,7 +15,7 @@ api:
 - name: Base
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 625
+  line: 636
   module: tamias-tui
 - name: CACHE_MAX_AGE
   kind: const
@@ -65,7 +65,7 @@ api:
 - name: LOG_LINES
   kind: const
   file: crates/tamias-tui/src/ops.rs
-  line: 918
+  line: 975
   module: tamias-tui
 - name: MUTED
   kind: const
@@ -85,7 +85,7 @@ api:
 - name: Model
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 418
+  line: 422
   module: tamias-tui
 - name: Msg
   kind: type
@@ -95,7 +95,7 @@ api:
 - name: Outcome
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 283
+  line: 294
   module: tamias-tui
 - name: Pane
   kind: type
@@ -145,7 +145,7 @@ api:
 - name: add_dep
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 759
+  line: 770
   module: tamias-tui
 - name: app
   kind: module
@@ -155,17 +155,17 @@ api:
 - name: arm_watch
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 704
+  line: 708
   module: tamias-tui
 - name: author_verb
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1415
+  line: 1427
   module: tamias-tui
 - name: cache_clean
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 468
+  line: 479
   module: tamias-tui
 - name: chrome
   kind: function
@@ -185,24 +185,24 @@ api:
 - name: command_parsing
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1913
+  line: 1935
   module: tamias-tui
 - name: confirm_job
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1069
+  line: 1073
   module: tamias-tui
 - name: ctx
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 1080
+  line: 1138
   module: tamias-tui
 - name: ctx_from_env_resolves_roots
   kind: function
   file: crates/tamias-tui/src/lib.rs
   line: 182
   module: tamias-tui
-api_omitted: 137
+api_omitted: 138
 deps:
 - crossterm
 - notify
@@ -250,13 +250,13 @@ provenance:
   - crates/tamias-tui/src/render.rs
   - crates/tamias-tui/tests/pty.rs
   hashes:
-  - 10503c98e46004ca23b6045843e08b1c86c9bc4c
-  - 33e51d0e901080cd688d4dd812a4168ae6d82fff
+  - bf19ff56b0a1945c62a3fc50085bdbe60737ed9a
+  - 304604bc477d6612b54d73556e9c4ac0e17ee672
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - a1a1a710963773296d6aace95ab4effd82bd0cae
-  - 288e4e94bd777386b56883fdabda96b8e6c28f53
+  - e94473ea35e426d9a9aaf4b0f9745c71f78c4187
+  - 4e043558892ad0052dddbf118940818ad3859ddf
   - 0fb68a4ee8432d1c4cd26ab7c06e8d905a383f24
-  commit_sha: 24214a8628a32f7fe3c1175a78872d987476380e
-  generated_at: '1794329275'
+  commit_sha: 326bebe44135c2e5e5b7bdd5e7c0a3d4bd1ef945
+  generated_at: '1794331999'
   generator: kuda-template/0.1.2
