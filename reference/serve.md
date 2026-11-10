@@ -18,6 +18,7 @@ service exits when stdin closes.
 | op | fields | result |
 | --- | --- | --- |
 | `install` | `ref`, `allow_drivers?` | `{label, resolved, digest}` |
+| `plan` | `ref`, `allow_drivers?` | the `tamias install --plan` report — manifest, cache hit, payload digest, classified `include:`s, bundled drivers + consent need, kind driver, provider services, `trust`/`signer`/`signature_status`, `problems`. Dry-run: nothing is committed or dispatched |
 | `sync` | `locked?`, `allow_drivers?`, `dir?` | `{deps: [{dep, status, detail}], failed}` — reconciles the project manifest's `deps:` against the store + `tamias.lock` (`dir` defaults to the server's cwd) |
 | `list` | — | `[{label, source_ref, digest}]` |
 | `info` | `name` | `{label, resolved, digest, size}` |
