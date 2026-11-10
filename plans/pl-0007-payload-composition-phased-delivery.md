@@ -1,7 +1,7 @@
 +++
 id = "PL-007"
 title = "payload composition — phased delivery"
-status = "in-progress"
+status = "done"
 created = "2026-11-10"
 owner = "devin"
 priority = "high"
