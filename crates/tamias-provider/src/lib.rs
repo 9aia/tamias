@@ -3,7 +3,8 @@
 //! verbs) and `tamias ui` (the Services pane). Everything here used to
 //! live private in `tamias-cli`: resolving an installed package's
 //! `provider:` block into unit/task names, host-backend state probes
-//! (systemd `systemctl` / Windows `schtasks` via [`ServiceBackend`]),
+//! (systemd `systemctl` / Windows `schtasks` / macOS `launchctl` via
+//! [`ServiceBackend`]),
 //! deploy/uninstall teardown (driver verb + declarative units +
 //! shared-unit survivor re-render), the foreground `run` exec spec
 //! (env_file → env → workdir, the same order the unit renders), and
@@ -19,6 +20,7 @@ use std::time::Duration;
 
 use tamias_core::{output_with_timeout, Error, Manifest, ProviderIngress, StoreEntry};
 use tamias_deploy::{expand_home, split_exec, ServiceSpec};
+use tamias_deploy_launchd::LaunchdDeploy;
 use tamias_deploy_systemd::{journalctl_args, LocalDeploy};
 use tamias_deploy_windows::WindowsDeploy;
 use tamias_store_local::Store;
@@ -115,31 +117,37 @@ pub enum UnitAction {
 }
 
 /// The per-user service backend for this host — systemd `--user`
-/// units on Unix, Task Scheduler per-user tasks on Windows. Both
-/// render the same [`ServiceSpec`] from the `tamias-deploy` port;
-/// [`ServiceBackend::new`] picks by `cfg!(windows)` once, so callers
-/// never branch on platform themselves.
+/// units on Linux/Unix, Task Scheduler per-user tasks on Windows,
+/// launchd `gui/<uid>` agents on macOS. All render the same
+/// [`ServiceSpec`] from the `tamias-deploy` port; [`ServiceBackend::new`]
+/// picks by `cfg!` once, so callers never branch on platform
+/// themselves.
 pub enum ServiceBackend {
     /// systemd user units — [`LocalDeploy`].
     Systemd(LocalDeploy),
     /// Task Scheduler tasks — [`WindowsDeploy`].
     Tasks(WindowsDeploy),
+    /// launchd LaunchAgents — [`LaunchdDeploy`].
+    Launchd(LaunchdDeploy),
 }
 
 impl ServiceBackend {
-    /// The backend for this host — Task Scheduler on Windows, systemd
-    /// everywhere else.
+    /// The backend for this host — Task Scheduler on Windows, launchd
+    /// on macOS, systemd everywhere else.
     #[must_use]
     pub fn new() -> Self {
         if cfg!(windows) {
             Self::Tasks(WindowsDeploy::new())
+        } else if cfg!(target_os = "macos") {
+            Self::Launchd(LaunchdDeploy::new())
         } else {
             Self::Systemd(LocalDeploy::new())
         }
     }
 
     /// Write + register `spec` — returns the rendered artifact path
-    /// (unit file on systemd, task XML on Windows).
+    /// (unit file on systemd, task XML on Windows, agent plist on
+    /// macOS).
     ///
     /// # Errors
     /// Propagates the backend's install failure.
@@ -147,6 +155,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.install(spec),
             Self::Tasks(d) => d.install(spec),
+            Self::Launchd(d) => d.install(spec),
         }
     }
 
@@ -160,6 +169,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.daemon_reload(),
             Self::Tasks(d) => d.daemon_reload(),
+            Self::Launchd(d) => d.daemon_reload(),
         }
     }
 
@@ -173,6 +183,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.enable(name),
             Self::Tasks(d) => d.enable(name),
+            Self::Launchd(d) => d.enable(name),
         }
     }
 
@@ -186,6 +197,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.disable(name),
             Self::Tasks(d) => d.disable(name),
+            Self::Launchd(d) => d.disable(name),
         }
     }
 
@@ -198,6 +210,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.start(name),
             Self::Tasks(d) => d.start(name),
+            Self::Launchd(d) => d.start(name),
         }
     }
 
@@ -210,6 +223,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.stop(name),
             Self::Tasks(d) => d.stop(name),
+            Self::Launchd(d) => d.stop(name),
         }
     }
 
@@ -222,6 +236,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.restart(name),
             Self::Tasks(d) => d.restart(name),
+            Self::Launchd(d) => d.restart(name),
         }
     }
 
@@ -234,13 +249,15 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.status(name),
             Self::Tasks(d) => d.status(name),
+            Self::Launchd(d) => d.status(name),
         }
     }
 
     /// Journal/log tail over one or more services — `journalctl` on
-    /// systemd; best-effort `schtasks /query` snapshots on Windows
-    /// (Task Scheduler keeps no per-task log; `lines`/`follow` are
-    /// ignored there).
+    /// systemd; `tail` over the agent's stdout/stderr log files on
+    /// macOS launchd; best-effort `schtasks /query` snapshots on
+    /// Windows (Task Scheduler keeps no per-task log; `lines`/`follow`
+    /// are ignored there).
     ///
     /// # Errors
     /// [`Error::Failed`] on an empty/invalid name list; propagates the
@@ -249,11 +266,13 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.logs_with(names, lines, follow),
             Self::Tasks(d) => d.logs_with(names, lines, follow),
+            Self::Launchd(d) => d.logs_with(names, lines, follow),
         }
     }
 
     /// The `(program, argv)` a streaming surface spawns to tail logs —
-    /// `journalctl` on systemd; on Windows a `schtasks /query` snapshot
+    /// `journalctl` on systemd; `tail -f` over the agent's log files on
+    /// macOS launchd; on Windows a `schtasks /query` snapshot
     /// (`cmd /c`-chained for several tasks; `follow`/`lines` have no
     /// meaning — there is no log stream to follow).
     ///
@@ -268,6 +287,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(_) => Ok(("journalctl".into(), journalctl_args(names, lines, follow)?)),
             Self::Tasks(_) => windows_log_stream(names),
+            Self::Launchd(d) => Ok(("tail".into(), d.tail_args(names, lines, follow)?)),
         }
     }
 
@@ -281,6 +301,7 @@ impl ServiceBackend {
         match self {
             Self::Systemd(d) => d.uninstall(name),
             Self::Tasks(d) => d.uninstall(name),
+            Self::Launchd(d) => d.uninstall(name),
         }
     }
 }
@@ -319,6 +340,7 @@ fn windows_log_stream(names: &[String]) -> Result<(String, Vec<String>), Error> 
 /// Best-effort `schtasks /query /tn <unit> /fo csv /nh` — bounded at
 /// 3s; the CSV status field (`Ready`/`Running`/…) is the state,
 /// stderr text the fallback when the task can't be queried.
+#[cfg(windows)]
 fn windows_unit_state(unit: &str) -> Option<String> {
     let args = tamias_deploy_windows::query_csv_args(unit).ok()?;
     let mut cmd = std::process::Command::new("schtasks");
@@ -392,17 +414,27 @@ fn service_spec(
 }
 
 /// Best-effort host-backend state probe — `systemctl --user
-/// is-enabled <unit>` on Unix, `schtasks /query` on Windows; bounded
-/// at 3s, `None` when the backend can't answer (no user bus, missing
-/// `schtasks`, timeout).
-/// `is-enabled`/`/query` exit non-zero for disabled/missing tasks, so
-/// the state is read from stdout (stderr as fallback), not the exit
-/// status.
+/// is-enabled <unit>` on Linux/Unix, `schtasks /query` on Windows,
+/// `launchctl print gui/<uid>/<label>` on macOS; bounded at 3s, `None`
+/// when the backend can't answer (no user bus, missing `schtasks`/
+/// `launchctl`, timeout). Exit statuses don't map cleanly to "enabled"
+/// on any backend, so the state is read from stdout (stderr as
+/// fallback), not the exit status.
 #[must_use]
 pub fn unit_state(unit: &str) -> Option<String> {
-    if cfg!(windows) {
-        return windows_unit_state(unit);
-    }
+    #[cfg(windows)]
+    return windows_unit_state(unit);
+    #[cfg(target_os = "macos")]
+    return launchd_unit_state(unit);
+    #[cfg(not(any(windows, target_os = "macos")))]
+    return systemd_unit_state(unit);
+}
+
+/// `systemctl --user is-enabled <unit>` probe — `is-enabled` exits
+/// non-zero for disabled/missing units, so the state is read from
+/// stdout (stderr as fallback), not the exit status.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn systemd_unit_state(unit: &str) -> Option<String> {
     let mut cmd = std::process::Command::new("systemctl");
     cmd.args(["--user", "is-enabled", unit]);
     let out = output_with_timeout(&mut cmd, Duration::from_secs(3)).ok()?;
@@ -412,6 +444,27 @@ pub fn unit_state(unit: &str) -> Option<String> {
         return (!err.is_empty()).then_some(err);
     }
     Some(state)
+}
+
+/// `launchctl print gui/<uid>/<label>` probe — `print` exits non-zero
+/// when the label isn't loaded; on success the dump's `state = …`
+/// line (running/stopped/not running) is the state, stderr text the
+/// fallback.
+#[cfg(target_os = "macos")]
+fn launchd_unit_state(unit: &str) -> Option<String> {
+    let target = tamias_deploy_launchd::service_target(unit).ok()?;
+    let mut cmd = std::process::Command::new("launchctl");
+    cmd.arg("print").arg(&target);
+    let out = output_with_timeout(&mut cmd, Duration::from_secs(3)).ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    if let Some(state) = text.lines().find_map(|l| l.trim().strip_prefix("state = ")) {
+        return Some(state.trim().to_string());
+    }
+    if out.status.success() {
+        return Some("loaded".into());
+    }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    (!err.is_empty()).then_some(err)
 }
 
 /// Every installed package's provider view, in store order —

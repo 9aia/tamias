@@ -2685,6 +2685,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tamias-deploy-launchd"
+version = "0.1.0"
+dependencies = [
+ "tamias-core",
+ "tamias-deploy",
+ "tempfile",
+]
+
+[[package]]
 name = "tamias-deploy-systemd"
 version = "0.1.0"
 dependencies = [
@@ -2738,6 +2747,7 @@ version = "0.1.0"
 dependencies = [
  "tamias-core",
  "tamias-deploy",
+ "tamias-deploy-launchd",
  "tamias-deploy-systemd",
  "tamias-deploy-windows",
  "tamias-driver",

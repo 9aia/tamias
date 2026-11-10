@@ -1,7 +1,7 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-deploy — the deploy port: provision a remote registry, plus
 //! the shared per-user *service spec* every local backend renders
-//! (systemd units, Task Scheduler tasks, …).
+//! (systemd units, Task Scheduler tasks, launchd agents, …).
 
 use std::path::Path;
 
@@ -19,7 +19,8 @@ pub trait Deploy {
 
 /// What to deploy as a per-user service — the platform-neutral spec
 /// every local backend (`tamias-deploy-systemd`, `tamias-deploy-windows`,
-/// …) renders into its own unit/task format. A package's
+/// `tamias-deploy-launchd`, …) renders into its own unit/task/plist
+/// format. A package's
 /// `provider.services[]` manifest block supplies the domain data; each
 /// backend decides what it can honor (see its crate docs for the
 /// per-field mapping and honest gaps).

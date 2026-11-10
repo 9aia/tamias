@@ -13,6 +13,7 @@ members = [
     "crates/tamias-deploy",
     "crates/tamias-deploy-systemd",
     "crates/tamias-deploy-windows",
+    "crates/tamias-deploy-launchd",
     "crates/tamias-deploy-cf",
     "crates/tamias-publish",
     "crates/tamias-provider",
@@ -73,6 +74,7 @@ tamias-core = { path = "crates/tamias-core", version = "0.1.0" }
 tamias-deploy = { path = "crates/tamias-deploy", version = "0.1.0" }
 tamias-deploy-systemd = { path = "crates/tamias-deploy-systemd", version = "0.1.0" }
 tamias-deploy-windows = { path = "crates/tamias-deploy-windows", version = "0.1.0" }
+tamias-deploy-launchd = { path = "crates/tamias-deploy-launchd", version = "0.1.0" }
 tamias-deploy-cf = { path = "crates/tamias-deploy-cf", version = "0.1.0" }
 tamias-publish = { path = "crates/tamias-publish", version = "0.1.0" }
 tamias-provider = { path = "crates/tamias-provider", version = "0.1.0" }
