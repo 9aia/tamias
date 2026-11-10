@@ -274,8 +274,47 @@ mod tests {
 
     use super::*;
 
-    /// Serializes tests that mutate `TAMIAS_HOME`/`TAMIAS_ALLOW_DRIVERS`.
+    /// Serializes tests that mutate process env (`TAMIAS_HOME`,
+    /// `TAMIAS_ALLOW_DRIVERS`). `cargo test` runs tests on threads in
+    /// one process, so mutations must be serialized *and* restored
+    /// even on panic.
     static DRVENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// RAII guard for [`DRVENV`]: restores the process environment and
+    /// working directory on drop — panic-safe. Poison is ignored: an
+    /// unwinding sibling already restored everything via its `Drop`.
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+        cwd: std::path::PathBuf,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let lock = DRVENV.lock().unwrap_or_else(|e| e.into_inner());
+            let env = std::env::vars_os().collect();
+            let cwd = std::env::current_dir().unwrap();
+            Self {
+                _lock: lock,
+                env,
+                cwd,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, _) in std::env::vars_os() {
+                if !self.env.iter().any(|(sk, _)| *sk == k) {
+                    std::env::remove_var(&k);
+                }
+            }
+            for (k, v) in &self.env {
+                std::env::set_var(k, v);
+            }
+            let _ = std::env::set_current_dir(&self.cwd);
+        }
+    }
 
     fn env() -> (tempfile::TempDir, Env) {
         let dir = tempfile::tempdir().unwrap();
@@ -322,7 +361,7 @@ mod tests {
 
     #[test]
     fn consent_gate_and_surface_hints() {
-        let _g = DRVENV.lock().unwrap();
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
         std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
@@ -360,7 +399,7 @@ mod tests {
 
     #[test]
     fn unknown_kind_fails_without_entry() {
-        let _g = DRVENV.lock().unwrap();
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
         std::env::remove_var("TAMIAS_ALLOW_DRIVERS");

@@ -259,6 +259,47 @@ mod tests {
 
     use super::*;
 
+    /// Serializes tests that mutate process env — `cargo test` runs
+    /// tests on threads in one process, so mutations must be
+    /// serialized *and* restored even on panic.
+    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// RAII guard for [`ENV`]: restores the process environment and
+    /// working directory on drop — panic-safe. Poison is ignored: an
+    /// unwinding sibling already restored everything via its `Drop`.
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+        cwd: std::path::PathBuf,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let lock = ENV.lock().unwrap_or_else(|e| e.into_inner());
+            let env = std::env::vars_os().collect();
+            let cwd = std::env::current_dir().unwrap();
+            Self {
+                _lock: lock,
+                env,
+                cwd,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, _) in std::env::vars_os() {
+                if !self.env.iter().any(|(sk, _)| *sk == k) {
+                    std::env::remove_var(&k);
+                }
+            }
+            for (k, v) in &self.env {
+                std::env::set_var(k, v);
+            }
+            let _ = std::env::set_current_dir(&self.cwd);
+        }
+    }
+
     #[test]
     fn entries_without_server_errors_and_env_token() {
         // A dead registry is a transport failure, not an empty index.
@@ -415,6 +456,7 @@ mod tests {
 
     #[test]
     fn from_env_token_header_is_sent() {
+        let _g = EnvGuard::new();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let h = std::thread::spawn(move || {

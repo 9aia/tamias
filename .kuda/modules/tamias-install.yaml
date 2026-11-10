@@ -5,12 +5,17 @@ api:
 - name: DRVENV
   kind: const
   file: crates/tamias-install/src/lib.rs
-  line: 278
+  line: 281
   module: tamias-install
 - name: Env
   kind: type
   file: crates/tamias-install/src/lib.rs
   line: 39
+  module: tamias-install
+- name: EnvGuard
+  kind: type
+  file: crates/tamias-install/src/lib.rs
+  line: 286
   module: tamias-install
 - name: Progress
   kind: type
@@ -25,12 +30,12 @@ api:
 - name: bad_ref_and_missing_manifest_fail
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 389
+  line: 428
   module: tamias-install
 - name: consent_gate_and_surface_hints
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 324
+  line: 363
   module: tamias-install
 - name: consent_refusal
   kind: function
@@ -42,10 +47,15 @@ api:
   file: crates/tamias-install/src/lib.rs
   line: 78
   module: tamias-install
+- name: drop
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 306
+  module: tamias-install
 - name: env
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 280
+  line: 319
   module: tamias-install
 - name: fetch_or_cached
   kind: function
@@ -60,7 +70,7 @@ api:
 - name: install_reports_progress_and_commits
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 303
+  line: 342
   module: tamias-install
 - name: install_with_progress
   kind: function
@@ -72,10 +82,15 @@ api:
   file: crates/tamias-install/src/lib.rs
   line: 92
   module: tamias-install
+- name: new
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 293
+  module: tamias-install
 - name: pkg
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 290
+  line: 329
   module: tamias-install
 - name: refs
   kind: function
@@ -100,7 +115,7 @@ api:
 - name: unknown_kind_fails_without_entry
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 362
+  line: 401
   module: tamias-install
 deps:
 - tamias-cache-local
@@ -132,7 +147,7 @@ provenance:
   - crates/tamias-install/src/lib.rs
   hashes:
   - d9d65c8f2cae1cfa4ac61a5f7a72aef6a52f9be7
-  - a345cfc87fe155ed4afe606a5272d0df75c59d7a
-  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
-  generated_at: '1794323780'
+  - 2f2b54b297c81f3f4e51f4c067bd045f35806c86
+  commit_sha: 2357f7f1fb1759b84d1f277189fbaad0fdfa1d9c
+  generated_at: '1794326198'
   generator: kuda-template/0.1.2

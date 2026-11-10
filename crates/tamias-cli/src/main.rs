@@ -1743,12 +1743,51 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
-    /// Serializes tests that mutate the process working directory.
-    static CWD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    /// Serializes tests that mutate `TAMIAS_HOME`/`TAMIAS_ALLOW_DRIVERS`.
-    static DRVENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    /// Serializes tests that prepend fake binaries to `PATH`.
-    static PATHL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Serializes tests that touch process-global state — env vars, the
+    /// working directory, and `PATH`-resolved spawns. `cargo test` runs
+    /// this binary's tests on threads in a single process (nextest
+    /// already isolates per-test), so every test that mutates *or
+    /// observes that state holds one [`ProcGuard`] for its whole body.
+    static PROC: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// RAII guard for [`PROC`]: snapshots the process environment and
+    /// working directory on acquisition and restores both on drop, so
+    /// a panicking assert can't leak `TAMIAS_*`/`PATH`/cwd mutations
+    /// into sibling tests. Mutex poisoning is ignored — an unwinding
+    /// sibling already restored everything via its own `Drop`.
+    struct ProcGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+        cwd: std::path::PathBuf,
+    }
+
+    impl ProcGuard {
+        fn new() -> Self {
+            let lock = PROC.lock().unwrap_or_else(|e| e.into_inner());
+            let env = std::env::vars_os().collect();
+            let cwd = std::env::current_dir().unwrap();
+            Self {
+                _lock: lock,
+                env,
+                cwd,
+            }
+        }
+    }
+
+    impl Drop for ProcGuard {
+        fn drop(&mut self) {
+            // Drop vars added since the snapshot, then restore the rest.
+            for (k, _) in std::env::vars_os() {
+                if !self.env.iter().any(|(sk, _)| *sk == k) {
+                    std::env::remove_var(&k);
+                }
+            }
+            for (k, v) in &self.env {
+                std::env::set_var(k, v);
+            }
+            let _ = std::env::set_current_dir(&self.cwd);
+        }
+    }
 
     fn env(root: &std::path::Path) -> Env {
         Env {
@@ -1772,6 +1811,7 @@ mod tests {
 
     #[test]
     fn verbs_happy_paths() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
@@ -1816,6 +1856,7 @@ mod tests {
 
     #[test]
     fn verbs_error_paths() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         assert!(run_args(e.clone(), &["tamias", "info", "ghost"]).is_err());
@@ -1828,7 +1869,7 @@ mod tests {
 
     #[test]
     fn install_unknown_kind_fails_without_entry() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
@@ -1858,7 +1899,7 @@ mod tests {
 
     #[test]
     fn uninstall_driver_failure_keeps_entry() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
@@ -1896,7 +1937,7 @@ mod tests {
 
     #[test]
     fn driver_exec_dispatches_verb_and_args() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
@@ -1979,7 +2020,7 @@ mod tests {
 
     #[test]
     fn driver_config_schema_dispatches_and_surfaces_unsupported() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
@@ -2046,6 +2087,7 @@ mod tests {
 
     #[test]
     fn install_rejects_empty_name() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = tmp.path().join("pkg");
@@ -2058,6 +2100,7 @@ mod tests {
 
     #[test]
     fn more_verbs() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
@@ -2078,10 +2121,10 @@ mod tests {
 
     #[test]
     fn add_records_manifest_and_lock() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
-        let _g = CWD.lock().unwrap();
         let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
         let result = run_args(e.clone(), &["tamias", "add", dir.to_str().unwrap()]);
@@ -2093,6 +2136,7 @@ mod tests {
 
     #[test]
     fn install_from_git_and_http() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         // git: file:// repo → covers the Git resolve (ls-remote) + fetch (clone) arms.
@@ -2147,6 +2191,7 @@ mod tests {
 
     #[test]
     fn corrupt_cache_entry_never_installs() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         // git ref → prefetch identity → the `hit()` path
@@ -2198,6 +2243,7 @@ mod tests {
 
     #[test]
     fn corrupt_cache_entry_replaced_on_refetch() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         // fs refs carry no prefetch identity — every install re-fetches
@@ -2219,6 +2265,7 @@ mod tests {
 
     #[test]
     fn blocking_arms_execute() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = tmp.path().to_path_buf();
@@ -2247,6 +2294,7 @@ mod tests {
 
     #[test]
     fn service_arms() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         // These reach the real systemctl runner (may error in a sandbox) —
@@ -2260,6 +2308,7 @@ mod tests {
 
     #[test]
     fn run_main_exit_codes() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let ok = Cli::try_parse_from(["tamias", "version"]).unwrap();
@@ -2270,7 +2319,7 @@ mod tests {
 
     #[test]
     fn env_root_fallbacks() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         for key in [
             "TAMIAS_HOME",
             "TAMIAS_CACHE",
@@ -2301,6 +2350,7 @@ mod tests {
 
     #[test]
     fn cache_hit_fetch_error_and_scoped_info() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = tmp.path().join("pkg");
@@ -2344,7 +2394,7 @@ mod tests {
 
     #[test]
     fn service_install_and_doctor_with_driver() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("cfg"));
@@ -2376,7 +2426,7 @@ mod tests {
 
     #[test]
     fn deploy_renders_provider_services_and_uninstall_removes() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("cfg"));
@@ -2407,7 +2457,7 @@ mod tests {
 
     #[test]
     fn deploy_provider_name_scopes_unit_name() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("cfg"));
@@ -2447,7 +2497,7 @@ mod tests {
 
     #[test]
     fn uninstall_keeps_unit_still_declared_by_a_survivor() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("cfg"));
@@ -2495,12 +2545,11 @@ mod tests {
 
     #[test]
     fn add_with_existing_manifest_and_service_verbs() {
-        let _p = PATHL.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
         {
-            let _g = CWD.lock().unwrap();
             let prev = std::env::current_dir().unwrap();
             std::env::set_current_dir(tmp.path()).unwrap();
             std::fs::write(
@@ -2537,6 +2586,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn error_arms_unreadable_and_unwritable() {
+        let _pg = ProcGuard::new();
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let store = tmp.path().join("store");
@@ -2589,6 +2639,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn doctor_and_add_save_errors() {
+        let _pg = ProcGuard::new();
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let dir = pkg(tmp.path());
@@ -2610,7 +2661,6 @@ mod tests {
         std::fs::create_dir_all(&ro).unwrap();
         std::fs::set_permissions(&ro, std::fs::Permissions::from_mode(0o555)).unwrap();
         {
-            let _g = CWD.lock().unwrap();
             let prev = std::env::current_dir().unwrap();
             std::env::set_current_dir(&ro).unwrap();
             let r = run_args(e.clone(), &["tamias", "add", dir.to_str().unwrap()]);
@@ -2622,6 +2672,7 @@ mod tests {
 
     #[test]
     fn more_error_arms() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
@@ -2660,7 +2711,6 @@ mod tests {
         .is_err());
         // add: pre-existing bad manifest, then a bad lock
         {
-            let _g = CWD.lock().unwrap();
             let prev = std::env::current_dir().unwrap();
             std::env::set_current_dir(tmp.path()).unwrap();
             std::fs::write(tmp.path().join("tamias.yaml"), "name: \"-x\"\n").unwrap();
@@ -2669,7 +2719,6 @@ mod tests {
             assert!(r.is_err());
         }
         {
-            let _g = CWD.lock().unwrap();
             let prev = std::env::current_dir().unwrap();
             std::env::set_current_dir(tmp.path()).unwrap();
             std::fs::write(tmp.path().join("tamias.yaml"), "name: proj\n").unwrap();
@@ -2683,8 +2732,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn service_status_logs_uninstall() {
+        let _pg = ProcGuard::new();
         use std::os::unix::fs::PermissionsExt;
-        let _p = PATHL.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bin = tmp.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
@@ -2708,9 +2757,9 @@ mod tests {
 
     #[test]
     fn update_pin_schema_and_cli_docs() {
-        // update/pin consult the cwd `tamias.lock` — hold the cwd lock so
-        // a sibling test's set_current_dir can't swap in a foreign lock.
-        let _g = CWD.lock().unwrap();
+        let _pg = ProcGuard::new();
+        // update/pin consult the cwd `tamias.lock` — ProcGuard serializes
+        // cwd mutations so a sibling can't swap in a foreign lock.
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
@@ -2766,6 +2815,7 @@ mod tests {
 
     #[test]
     fn config_verb() {
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         // YAML (the standard) via --file, text + json
@@ -2813,7 +2863,6 @@ mod tests {
         .is_err());
         // discovery: a dir with a config (Some) and an empty dir (None → default)
         {
-            let _g = CWD.lock().unwrap();
             let prev = std::env::current_dir().unwrap();
             std::env::set_current_dir(tmp.path()).unwrap();
             run_args(e.clone(), &["tamias", "config"]).unwrap();
@@ -2828,7 +2877,7 @@ mod tests {
 
     #[test]
     fn install_gates_bundled_drivers() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
         std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
@@ -2856,7 +2905,6 @@ mod tests {
         run_args(e.clone(), &["tamias", "install", r, "--allow-drivers"]).unwrap();
         // a drivers-shipping package also gates `add`
         {
-            let _c = CWD.lock().unwrap();
             let prev = std::env::current_dir().unwrap();
             std::env::set_current_dir(tmp.path()).unwrap();
             let res = run_args(e.clone(), &["tamias", "add", r]);
@@ -2871,7 +2919,7 @@ mod tests {
 
     #[test]
     fn install_registers_platform_driver_bins() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
         std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
@@ -2909,7 +2957,7 @@ mod tests {
 
     #[test]
     fn install_platform_bins_missing_platform_fails() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
         let e = env(tmp.path());
@@ -2938,6 +2986,7 @@ mod tests {
 
     #[test]
     fn install_from_cf_registry() {
+        let _pg = ProcGuard::new();
         use tamias_registry_local::{serve_http, LocalRegistry};
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
@@ -3020,7 +3069,7 @@ mod tests {
 
     #[test]
     fn sync_lock_only_refreshes_pinned_entries() {
-        let _g = CWD.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(tmp.path()).unwrap();
@@ -3078,7 +3127,7 @@ mod tests {
 
     #[test]
     fn update_and_pin_sync_tamias_lock() {
-        let _g = CWD.lock().unwrap();
+        let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
@@ -3118,8 +3167,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn drivers_provider_run_logs() {
+        let _pg = ProcGuard::new();
         use std::os::unix::fs::PermissionsExt;
-        let _g = DRVENV.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
@@ -3183,7 +3232,6 @@ mod tests {
         assert!(run_args(e.clone(), &["tamias", "run", "ghost"]).is_err());
 
         // logs — fake journalctl records argv; package → all provider units
-        let _p = PATHL.lock().unwrap();
         let bin = tmp.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let jlog = tmp.path().join("journal.log");
@@ -3223,13 +3271,11 @@ mod tests {
 
     #[test]
     fn config_locations_resolve_store_and_cache() {
+        let _pg = ProcGuard::new();
         // tamias-config is wired for store/cache roots: a project
         // `tamias.yml` `store.root`/`cache.root` become the Env roots
         // when the env vars are unset; `kind: cf` is reserved → ignored.
-        // Lock order matters: DRVENV before CWD — sibling tests take
-        // DRVENV→PATHL→CWD, so acquiring out of order deadlocks.
-        let _g2 = DRVENV.lock().unwrap();
-        let _g = CWD.lock().unwrap();
+        // ProcGuard holds the single process-state lock — no ordering.
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("proj");
         std::fs::create_dir_all(&proj).unwrap();
@@ -3315,6 +3361,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn doctor_fails_on_unwritable_roots() {
+        let _pg = ProcGuard::new();
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         // read+execute but not write → entries() works, the writable
@@ -3344,7 +3391,7 @@ mod tests {
 
     #[test]
     fn registry_management_verbs() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         // ambient env must not redirect discovery/`--file` resolution
         let saved_cfg = std::env::var_os(CONFIG_ENV);
         let saved_reg = std::env::var_os("TAMIAS_REGISTRY");
@@ -3459,7 +3506,6 @@ mod tests {
         let proj = tmp.path().join("proj");
         std::fs::create_dir_all(&proj).unwrap();
         {
-            let _g = CWD.lock().unwrap();
             let prev = std::env::current_dir().unwrap();
             std::env::set_current_dir(&proj).unwrap();
             let r = run_args(
@@ -3512,8 +3558,7 @@ mod tests {
 
     #[test]
     fn publish_search_route_through_named_registries() {
-        let _g = DRVENV.lock().unwrap();
-        let _c = CWD.lock().unwrap();
+        let _pg = ProcGuard::new();
         let saved_cfg = std::env::var_os(CONFIG_ENV);
         let saved_reg = std::env::var_os("TAMIAS_REGISTRY");
         std::env::remove_var("TAMIAS_REGISTRY");
@@ -3577,8 +3622,7 @@ mod tests {
 
     #[test]
     fn registry_env_wins_over_config_default() {
-        let _g = DRVENV.lock().unwrap();
-        let _c = CWD.lock().unwrap();
+        let _pg = ProcGuard::new();
         let saved_cfg = std::env::var_os(CONFIG_ENV);
         std::env::remove_var(CONFIG_ENV);
         let tmp = tempfile::tempdir().unwrap();
@@ -3618,7 +3662,7 @@ mod tests {
 
     #[test]
     fn registry_target_resolution_order() {
-        let _g = DRVENV.lock().unwrap();
+        let _pg = ProcGuard::new();
         let saved = std::env::var_os("TAMIAS_REGISTRY");
         std::env::set_var("TAMIAS_REGISTRY", "envreg");
         // flag > env > config defaults (first set wins)
@@ -3670,8 +3714,7 @@ mod tests {
 
     #[test]
     fn publish_enforces_configured_upload_limits() {
-        let _g = DRVENV.lock().unwrap();
-        let _c = CWD.lock().unwrap();
+        let _pg = ProcGuard::new();
         let saved_cfg = std::env::var_os(CONFIG_ENV);
         let saved_reg = std::env::var_os("TAMIAS_REGISTRY");
         std::env::remove_var(CONFIG_ENV);
@@ -3748,8 +3791,7 @@ mod tests {
 
     #[test]
     fn deploy_registry_bakes_configured_upload_limit() {
-        let _g = DRVENV.lock().unwrap();
-        let _c = CWD.lock().unwrap();
+        let _pg = ProcGuard::new();
         let saved_cfg = std::env::var_os(CONFIG_ENV);
         std::env::remove_var(CONFIG_ENV);
         let tmp = tempfile::tempdir().unwrap();

@@ -2,6 +2,16 @@ name: tamias-source
 path: crates/tamias-source/Cargo.toml
 purpose: source port — turn a ref into bytes
 api:
+- name: ENV
+  kind: const
+  file: crates/tamias-source/src/lib.rs
+  line: 212
+  module: tamias-source
+- name: EnvGuard
+  kind: type
+  file: crates/tamias-source/src/lib.rs
+  line: 217
+  module: tamias-source
 - name: Fetched
   kind: type
   file: crates/tamias-source/src/lib.rs
@@ -45,32 +55,37 @@ api:
 - name: ToyKind
   kind: type
   file: crates/tamias-source/src/lib.rs
-  line: 210
+  line: 251
   module: tamias-source
 - name: ToyPlan
   kind: type
   file: crates/tamias-source/src/lib.rs
-  line: 220
+  line: 261
   module: tamias-source
 - name: ToySource
   kind: type
   file: crates/tamias-source/src/lib.rs
-  line: 227
+  line: 268
   module: tamias-source
 - name: accepts
   kind: function
   file: crates/tamias-source/src/lib.rs
-  line: 229
+  line: 270
   module: tamias-source
 - name: claims
   kind: function
   file: crates/tamias-source/src/lib.rs
-  line: 212
+  line: 253
   module: tamias-source
 - name: downcast_ref
   kind: function
   file: crates/tamias-source/src/lib.rs
   line: 84
+  module: tamias-source
+- name: drop
+  kind: function
+  file: crates/tamias-source/src/lib.rs
+  line: 237
   module: tamias-source
 - name: expand_path
   kind: function
@@ -80,7 +95,7 @@ api:
 - name: expand_path_arms
   kind: function
   file: crates/tamias-source/src/lib.rs
-  line: 273
+  line: 314
   module: tamias-source
 - name: fetch
   kind: function
@@ -90,7 +105,7 @@ api:
 - name: fetch
   kind: function
   file: crates/tamias-source/src/lib.rs
-  line: 238
+  line: 279
   module: tamias-source
 - name: home_dir
   kind: function
@@ -112,6 +127,11 @@ api:
   file: crates/tamias-source/src/lib.rs
   line: 144
   module: tamias-source
+- name: new
+  kind: function
+  file: crates/tamias-source/src/lib.rs
+  line: 224
+  module: tamias-source
 - name: parse
   kind: function
   file: crates/tamias-source/src/lib.rs
@@ -120,7 +140,7 @@ api:
 - name: parse
   kind: function
   file: crates/tamias-source/src/lib.rs
-  line: 215
+  line: 256
   module: tamias-source
 - name: plan
   kind: function
@@ -130,7 +150,7 @@ api:
 - name: plan
   kind: function
   file: crates/tamias-source/src/lib.rs
-  line: 232
+  line: 273
   module: tamias-source
 - name: prefetch_identity
   kind: function
@@ -145,12 +165,12 @@ api:
 - name: prefetch_identity
   kind: function
   file: crates/tamias-source/src/lib.rs
-  line: 222
+  line: 263
   module: tamias-source
 - name: refs_and_sources_registries
   kind: function
   file: crates/tamias-source/src/lib.rs
-  line: 250
+  line: 291
   module: tamias-source
 - name: tamias-source
   kind: module
@@ -186,7 +206,7 @@ provenance:
   - crates/tamias-source/src/lib.rs
   hashes:
   - 5642cf8eac81db3c8aef874126c2638e546113ef
-  - b9e3c1ce3312e9bf093a491236793547d938d133
-  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
-  generated_at: '1794323780'
+  - ffa4076f7611d94a355f365fadf72d32ea86b351
+  commit_sha: 2357f7f1fb1759b84d1f277189fbaad0fdfa1d9c
+  generated_at: '1794326198'
   generator: kuda-template/0.1.2

@@ -20,7 +20,12 @@ api:
 - name: ENV
   kind: const
   file: crates/tamias-driver/src/lib.rs
-  line: 501
+  line: 505
+  module: tamias-driver
+- name: EnvGuard
+  kind: type
+  file: crates/tamias-driver/src/lib.rs
+  line: 510
   module: tamias-driver
 - name: bundled_drivers
   kind: function
@@ -30,7 +35,7 @@ api:
 - name: bundled_drivers_detects_and_consent
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 539
+  line: 579
   module: tamias-driver
 - name: capabilities
   kind: function
@@ -40,7 +45,7 @@ api:
 - name: capability_and_error_paths
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 626
+  line: 666
   module: tamias-driver
 - name: config_schema
   kind: function
@@ -50,7 +55,7 @@ api:
 - name: config_schema_fetch_and_unsupported
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 598
+  line: 638
   module: tamias-driver
 - name: discovered_drivers
   kind: function
@@ -65,7 +70,7 @@ api:
 - name: dispatch_none_and_driver
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 504
+  line: 544
   module: tamias-driver
 - name: dispatch_with_args
   kind: function
@@ -75,12 +80,12 @@ api:
 - name: dispatch_with_args_passes_argv_and_captures_output
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 704
+  line: 744
   module: tamias-driver
 - name: dispatch_with_config_and_non_file_entry
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 826
+  line: 866
   module: tamias-driver
 - name: dispatch_with_timeout
   kind: function
@@ -102,6 +107,11 @@ api:
   file: crates/tamias-driver/src/lib.rs
   line: 101
   module: tamias-driver
+- name: drop
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 530
+  module: tamias-driver
 - name: find_driver
   kind: function
   file: crates/tamias-driver/src/lib.rs
@@ -110,22 +120,22 @@ api:
 - name: find_via_path
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 660
+  line: 700
   module: tamias-driver
 - name: home_defaults
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 560
+  line: 600
   module: tamias-driver
 - name: home_fallback_is_dot_tamias
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 568
+  line: 608
   module: tamias-driver
 - name: hung_driver_is_killed
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 678
+  line: 718
   module: tamias-driver
 - name: lookup
   kind: function
@@ -137,6 +147,11 @@ api:
   file: crates/tamias-driver/build.rs
   line: 1
   module: tamias-driver
+- name: new
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 517
+  module: tamias-driver
 - name: platform_bin_names
   kind: function
   file: crates/tamias-driver/src/lib.rs
@@ -145,17 +160,17 @@ api:
 - name: platform_bins_empty_and_nested_dirs_ignored
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 806
+  line: 846
   module: tamias-driver
 - name: platform_bins_missing_platform_errors
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 785
+  line: 825
   module: tamias-driver
 - name: platform_bins_select_current_triple
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 742
+  line: 782
   module: tamias-driver
 - name: register_bundled_drivers
   kind: function
@@ -165,7 +180,7 @@ api:
 - name: register_bundled_drivers_copies
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 524
+  line: 564
   module: tamias-driver
 - name: register_platform_bins
   kind: function
@@ -187,21 +202,7 @@ api:
   file: crates/tamias-driver/src/lib.rs
   line: 91
   module: tamias-driver
-- name: target_triple
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 78
-  module: tamias-driver
-- name: tests
-  kind: module
-  file: crates/tamias-driver/src/lib.rs
-  line: 496
-  module: tamias-driver
-- name: write_driver
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 585
-  module: tamias-driver
+api_omitted: 3
 deps:
 - serde_json
 - tamias-core
@@ -220,7 +221,7 @@ provenance:
   hashes:
   - d6affaac6d38ba853246c8395a498bcbf7928cbd
   - 2aa4b3045d9f4e8df24b0cce5d2e7a98338f26f5
-  - d927a57dc48e6d4b64a971b7dbde7bb8de99614a
-  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
-  generated_at: '1794323780'
+  - 089e6df86c1cc6b6e13bff7ee48d17da36e97e7a
+  commit_sha: 2357f7f1fb1759b84d1f277189fbaad0fdfa1d9c
+  generated_at: '1794326198'
   generator: kuda-template/0.1.2

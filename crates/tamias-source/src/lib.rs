@@ -206,6 +206,47 @@ fn home_dir() -> PathBuf {
 mod tests {
     use super::*;
 
+    /// Serializes tests that mutate process env/cwd — `cargo test`
+    /// runs tests on threads in one process, so mutations must be
+    /// serialized *and* restored even on panic.
+    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// RAII guard for [`ENV`]: restores the process environment and
+    /// working directory on drop — panic-safe. Poison is ignored: an
+    /// unwinding sibling already restored everything via its `Drop`.
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+        cwd: std::path::PathBuf,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let lock = ENV.lock().unwrap_or_else(|e| e.into_inner());
+            let env = std::env::vars_os().collect();
+            let cwd = std::env::current_dir().unwrap();
+            Self {
+                _lock: lock,
+                env,
+                cwd,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, _) in std::env::vars_os() {
+                if !self.env.iter().any(|(sk, _)| *sk == k) {
+                    std::env::remove_var(&k);
+                }
+            }
+            for (k, v) in &self.env {
+                std::env::set_var(k, v);
+            }
+            let _ = std::env::set_current_dir(&self.cwd);
+        }
+    }
+
     /// A toy kind claiming `toy:`, parsing the tail into a `String` spec.
     struct ToyKind;
     impl RefKind for ToyKind {
@@ -271,6 +312,7 @@ mod tests {
 
     #[test]
     fn expand_path_arms() {
+        let _g = EnvGuard::new();
         std::env::set_var("HOME", "/home/z");
         assert_eq!(expand_path(Path::new("~/a")), PathBuf::from("/home/z/a"));
         assert_eq!(expand_path(Path::new("~")), PathBuf::from("/home/z"));

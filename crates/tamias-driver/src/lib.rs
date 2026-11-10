@@ -498,11 +498,51 @@ mod tests {
 
     use super::*;
 
+    /// Serializes tests that mutate process env (`TAMIAS_HOME`,
+    /// `TAMIAS_ALLOW_DRIVERS`, `PATH`). `cargo test` runs tests on
+    /// threads in one process, so mutations must be serialized *and*
+    /// restored even on panic.
     static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// RAII guard for [`ENV`]: restores the process environment and
+    /// working directory on drop — panic-safe. Poison is ignored: an
+    /// unwinding sibling already restored everything via its `Drop`.
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+        cwd: std::path::PathBuf,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let lock = ENV.lock().unwrap_or_else(|e| e.into_inner());
+            let env = std::env::vars_os().collect();
+            let cwd = std::env::current_dir().unwrap();
+            Self {
+                _lock: lock,
+                env,
+                cwd,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, _) in std::env::vars_os() {
+                if !self.env.iter().any(|(sk, _)| *sk == k) {
+                    std::env::remove_var(&k);
+                }
+            }
+            for (k, v) in &self.env {
+                std::env::set_var(k, v);
+            }
+            let _ = std::env::set_current_dir(&self.cwd);
+        }
+    }
 
     #[test]
     fn dispatch_none_and_driver() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let dir = tempfile::tempdir().unwrap();
         assert!(!dispatch("no-such-type", "install", dir.path(), "n", None).unwrap());
         std::env::set_var("TAMIAS_HOME", dir.path());
@@ -522,7 +562,7 @@ mod tests {
 
     #[test]
     fn register_bundled_drivers_copies() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         let payload = tmp.path().join("payload");
@@ -537,7 +577,7 @@ mod tests {
 
     #[test]
     fn bundled_drivers_detects_and_consent() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let payload = tmp.path().join("payload");
         std::fs::create_dir_all(payload.join("drivers")).unwrap();
@@ -558,7 +598,7 @@ mod tests {
 
     #[test]
     fn home_defaults() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         std::env::remove_var("TAMIAS_HOME");
         let _ = tamias_home();
         assert!(drivers_dir().ends_with("drivers"));
@@ -566,7 +606,7 @@ mod tests {
 
     #[test]
     fn home_fallback_is_dot_tamias() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         // The no-env fallback must match the CLI's `./.tamias/*` roots —
         // `./tamias` would collide with a source checkout/package dir.
         let saved = ["TAMIAS_HOME", "XDG_DATA_HOME", "HOME"].map(|k| (k, std::env::var_os(k)));
@@ -596,7 +636,7 @@ mod tests {
 
     #[test]
     fn config_schema_fetch_and_unsupported() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         let dd = drivers_dir();
@@ -624,7 +664,7 @@ mod tests {
 
     #[test]
     fn capability_and_error_paths() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         let dd = drivers_dir();
@@ -658,7 +698,7 @@ mod tests {
 
     #[test]
     fn find_via_path() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         let bin = tmp.path().join("bin");
@@ -676,7 +716,7 @@ mod tests {
 
     #[test]
     fn hung_driver_is_killed() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         write_driver(
@@ -702,7 +742,7 @@ mod tests {
 
     #[test]
     fn dispatch_with_args_passes_argv_and_captures_output() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         // Echo the trailing args + the standard flags so the test can
@@ -740,7 +780,7 @@ mod tests {
 
     #[test]
     fn platform_bins_select_current_triple() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         let payload = tmp.path().join("payload");
@@ -783,7 +823,7 @@ mod tests {
 
     #[test]
     fn platform_bins_missing_platform_errors() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         let payload = tmp.path().join("payload");
@@ -804,7 +844,7 @@ mod tests {
 
     #[test]
     fn platform_bins_empty_and_nested_dirs_ignored() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         let payload = tmp.path().join("payload");
@@ -824,7 +864,7 @@ mod tests {
 
     #[test]
     fn dispatch_with_config_and_non_file_entry() {
-        let _guard = ENV.lock().unwrap();
+        let _guard = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
         let dd = drivers_dir();

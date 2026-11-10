@@ -12,11 +12,6 @@ api:
   file: crates/tamias-cli/src/main.rs
   line: 25
   module: tamias
-- name: CWD
-  kind: const
-  file: crates/tamias-cli/src/main.rs
-  line: 1747
-  module: tamias
 - name: CacheCommand
   kind: type
   file: crates/tamias-cli/src/main.rs
@@ -32,11 +27,6 @@ api:
   file: crates/tamias-cli/src/main.rs
   line: 39
   module: tamias
-- name: DRVENV
-  kind: const
-  file: crates/tamias-cli/src/main.rs
-  line: 1749
-  module: tamias
 - name: DriverCommand
   kind: type
   file: crates/tamias-cli/src/main.rs
@@ -47,10 +37,15 @@ api:
   file: crates/tamias-cli/src/main.rs
   line: 413
   module: tamias
-- name: PATHL
+- name: PROC
   kind: const
   file: crates/tamias-cli/src/main.rs
   line: 1751
+  module: tamias
+- name: ProcGuard
+  kind: type
+  file: crates/tamias-cli/src/main.rs
+  line: 1758
   module: tamias
 - name: ProviderCommand
   kind: type
@@ -75,12 +70,12 @@ api:
 - name: add_records_manifest_and_lock
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2080
+  line: 2123
   module: tamias
 - name: add_with_existing_manifest_and_service_verbs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2497
+  line: 2547
   module: tamias
 - name: add_writes_manifest_and_lock
   kind: function
@@ -100,17 +95,17 @@ api:
 - name: blocking_arms_execute
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2221
+  line: 2267
   module: tamias
 - name: cache_clean_all_conflicts_with_days
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3015
+  line: 3064
   module: tamias
 - name: cache_hit_fetch_error_and_scoped_info
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2303
+  line: 2352
   module: tamias
 - name: cache_root
   kind: function
@@ -135,22 +130,22 @@ api:
 - name: config_locations_resolve_store_and_cache
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3225
+  line: 3273
   module: tamias
 - name: config_verb
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2768
+  line: 2817
   module: tamias
 - name: corrupt_cache_entry_never_installs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2149
+  line: 2193
   module: tamias
 - name: corrupt_cache_entry_replaced_on_refetch
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2200
+  line: 2245
   module: tamias
 - name: deploy_and_uninstall_use_the_driver
   kind: function
@@ -165,17 +160,17 @@ api:
 - name: deploy_provider_name_scopes_unit_name
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2409
+  line: 2459
   module: tamias
 - name: deploy_registry_bakes_configured_upload_limit
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3750
+  line: 3793
   module: tamias
 - name: deploy_renders_provider_services_and_uninstall_removes
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2378
+  line: 2428
   module: tamias
 - name: doctor
   kind: function
@@ -185,12 +180,12 @@ api:
 - name: doctor_and_add_save_errors
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2591
+  line: 2641
   module: tamias
 - name: doctor_fails_on_unwritable_roots
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3317
+  line: 3363
   module: tamias
 - name: doctor_registry
   kind: function
@@ -202,7 +197,12 @@ api:
   file: crates/tamias-cli/src/main.rs
   line: 1338
   module: tamias
-api_omitted: 92
+- name: driver_config_schema_dispatches_and_surfaces_unsupported
+  kind: function
+  file: crates/tamias-cli/src/main.rs
+  line: 2022
+  module: tamias
+api_omitted: 93
 deps:
 - clap
 - clap_complete
@@ -303,8 +303,8 @@ provenance:
   - 51b6a07dd57174197a937034b7eecebd5768ff8a
   - c30eb93fb6ef98ef41ac64cbe1277d5cb2847545
   - 54718e509b67773051f25e15cb742835611a7a30
-  - 9d977bc330d8eda5b021c8826765a34fc909726e
+  - d32863df010cedb385c32dcc0ddc7fa5ab80ee5a
   - f13e6c2b3a89ad84759a0315dda7f22274045c7c
-  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
-  generated_at: '1794323780'
+  commit_sha: 2357f7f1fb1759b84d1f277189fbaad0fdfa1d9c
+  generated_at: '1794326198'
   generator: kuda-template/0.1.2
