@@ -52,4 +52,8 @@ arbitrary code, it requires `--allow-drivers` /
 driver needed. Any other type **fails to install** without a
 discoverable driver — fail closed, never silent.
 
+`tamias drivers` lists every discovered driver (PATH +
+`<tamias-home>/drivers/`) with its `capabilities` answer — types,
+verbs, location — the same scan `doctor` summarizes.
+
 See [Write a driver](/how-to/write-a-driver) for the authoring side.

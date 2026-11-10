@@ -27,8 +27,8 @@
 
 | field | type | required | notes |
 |---|---|---|---|
-| `store` | `Location` | optional | Install store location. |
-| `cache` | `Location` | optional | Fetch-cache location. |
+| `store` | `Location` | optional | Install store location — `root` applies when `kind` is `local`/unset and `TAMIAS_HOME`/XDG env is unset (env wins). |
+| `cache` | `Location` | optional | Fetch-cache location — same resolution rule as `store`. |
 | `registries` | `BTreeMap<String, Registry>` | optional | Named registries. |
 | `publish` | `Publish` | optional | Publish routing. |
 

@@ -107,6 +107,51 @@ teardown, removes the declarative units (best-effort per unit), then
 drops the store entry; with no driver it warns that provider-side
 resources may remain.
 
+## Inspect providers
+
+```sh
+tamias provider list          # installed packages' provider: blocks
+                              # (services + unit state, ingress, verbs)
+tamias provider list --all    # include packages without a provider:
+tamias provider list --json   # machine-readable
+```
+
+Each service row shows its rendered unit name (`<provider>-<service>.service`)
+and a best-effort `systemctl --user is-enabled` state (`-` when systemd
+can't answer). Ingress rows carry the `public_url` (+ `listen`/`path`).
+
+## Run a service without systemd
+
+`tamias run` execs a provider service's `exec` argv **in the foreground** —
+the same argv/env the rendered unit would get, minus systemd:
+
+```sh
+tamias run ci-gate            # sole service → runs it
+tamias run ci-gate web        # pick one of several
+tamias run ci-gate web -- --port 29174   # extra argv after `--`
+```
+
+The child gets a scrubbed environment (parent credentials never leak —
+see [Security model](/explanation/security)): the service's `env` plus
+its `env_file` parsed as `K=V` lines (inline `env` wins, matching
+systemd's `EnvironmentFile` → `Environment=` order). `workdir` (`~`
+expands) is the cwd, else the payload dir. A non-zero exit fails the
+command. This is the dev/no-systemd counterpart of `service enable` —
+`provider.health.cmd` probes and richer verbs are still on the roadmap.
+
+## Follow a service's logs
+
+```sh
+tamias logs ci-gate            # journalctl over ALL the package's units
+tamias logs ci-gate --lines 50 -f
+tamias logs ci-gate-ci-gate    # or a bare unit name
+tamias service logs ci-gate-ci-gate   # unit-level, same journalctl
+```
+
+A package name resolves to every `provider.services[]` unit in one
+journal stream; anything that isn't an installed package is treated as
+a unit base name.
+
 ## Manage an ad-hoc service unit
 
 The per-user **systemd** mechanism also works without a package:

@@ -76,7 +76,9 @@ driver for the package's type and warn when none exists.
 ## Check
 
 ```sh
-tamias doctor --json    # lists discovered drivers
+tamias drivers          # every discovered driver + its capabilities
+tamias drivers --json   # same, machine-readable
+tamias doctor --json    # lists discovered drivers among the health checks
 ```
 
 ## See also
