@@ -1,7 +1,7 @@
 +++
 id = "I-003"
 title = "security audit 2026-11: hardening batch (kind charset, untar caps, include pins, http registries)"
-status = "open"
+status = "done"
 created = "2026-11-10"
 owner = "devin"
 priority = "medium"
