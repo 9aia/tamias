@@ -8,6 +8,8 @@ sources; the impl is picked by shape.
 git:9aia/bupha//libraries/ci-gate#main   git + in-repo subdir + ref
 https://…/ci-gate-0.2.0.tgz#sha256:<hex>        tarball (+ digest pin)
 cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry
+9aia:<name>@<ver>                              named registry (config)
+9aia:@scope/<name>@<ver>                        named registry, scoped
 ```
 
 ## Git
@@ -57,6 +59,41 @@ payload against the index's recorded `dir_digest`** — a mismatched
 payload fails the install. Note the digest covers the payload *dir*, not
 the tarball bytes, so it can't be checked at transport (see
 [Security model](/explanation/security)).
+
+## Named registry
+
+```
+<label>:<name>@<version>
+<label>:@scope/<name>@<version>
+```
+
+`<label>` resolves against the *effective* config's `registries` map —
+the user-level `~/.config/tamias/tamias.*` base overlaid by the cwd
+`tamias.*` (same layering as `publish`/`search`). An entry's `id`
+(uuid or slug-safe string, `registry add --id`) matches **before** the
+map key, so refs can pin a stable id across renames. Only `http`/`cf`
+kind registries are installable — a `local` (unserved dir) registry
+errors with a pointer at `tamias registry serve`. An unknown label is
+a hard error (`unknown registry '<label>'`), never a silent path
+fallback.
+
+```
+tamias install 9aia:cicada-demo@0.1.0
+tamias install 018f3c2e-…:@acme/scoped@2.0.0
+```
+
+`@<version>` is required — there is no "latest" resolution. Fetching
+goes through the same path as `cf:` (index lookup → payload-digest +
+signature verification → tarball fetch), and the store record keeps
+the verbatim `<label>:…` ref as provenance. Bearer auth uses the
+registry's `token_env` (env var *name*, falling back to
+`TAMIAS_REGISTRY_TOKEN`). A `<label>:` that matches a reserved kind
+prefix (`git:`, `cf:`, `http(s):`, `ssh:`, `fs:`, `file:`) is never a
+registry ref, and single-letter labels are excluded so Windows drive
+letters (`C:\…`) can't false-positive.
+
+The same refs work in a project manifest's `deps:` — `tamias sync`
+reconciles them like any other ref.
 
 ## Local
 
