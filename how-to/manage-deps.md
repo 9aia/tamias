@@ -43,6 +43,43 @@ left alone (`add` is what creates it).
 `update` re-runs the install path, so a package that ships `drivers/`
 needs `--allow-drivers` (or `TAMIAS_ALLOW_DRIVERS=1`) again.
 
+## Sync a fresh checkout
+
+`deps:` + `tamias.lock` are a write-only ledger until you reconcile
+them — **`tamias sync`** installs the project's whole dep set, the
+missing half of the dependency story:
+
+```sh
+tamias sync          # install what's missing or drifted
+tamias sync --json   # per-dep outcomes as JSON
+tamias sync --locked # strict: refuse to move anything the lock pins
+```
+
+For each `deps:` ref, sync checks the store entry against the lock
+entry (`source_ref`/`resolved`/`digest`):
+
+- **current** — the store record matches the lock; nothing is fetched.
+- **installed / reinstalled** — the dep was missing or drifted, so the
+  shared install pipeline runs and `tamias.lock` is refreshed (moving
+  refs like `#branch` re-resolve, same as `add`).
+- **failed** — the dep's install errored; sync keeps going and exits
+  non-zero at the end.
+
+Sync **never removes** store entries — the store is global, not
+project-scoped, so extraneous packages are `tamias remove`'s job. A
+dep that ships `drivers/` needs `--allow-drivers` (or
+`TAMIAS_ALLOW_DRIVERS=1`) like `install`/`add`.
+
+`--locked` is the reproducible-install mode: every dep must already be
+`current` per `tamias.lock` + the store. Drift, a missing store entry,
+or a dep with no lock entry fails that dep instead of installing or
+moving it — the lockfile must already describe the world.
+
+The same reconcile is available to embedders as the `sync` op of
+`tamias serve` (`{"op":"sync","locked":…,"allow_drivers":…,"dir":…}` —
+`dir` defaults to the server's cwd) and in the TUI's Manifest pane
+(`s` or `:sync`, behind a confirm).
+
 ## Remove
 
 ```sh

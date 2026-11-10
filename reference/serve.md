@@ -18,6 +18,7 @@ service exits when stdin closes.
 | op | fields | result |
 | --- | --- | --- |
 | `install` | `ref`, `allow_drivers?` | `{label, resolved, digest}` |
+| `sync` | `locked?`, `allow_drivers?`, `dir?` | `{deps: [{dep, status, detail}], failed}` — reconciles the project manifest's `deps:` against the store + `tamias.lock` (`dir` defaults to the server's cwd) |
 | `list` | — | `[{label, source_ref, digest}]` |
 | `info` | `name` | `{label, resolved, digest, size}` |
 | `verify` | `name` | `{name, ok}` |

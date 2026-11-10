@@ -8,6 +8,7 @@ Usage: tamias [COMMAND]
 Commands:
   install          Fetch → store a package from a ref
   add              Install a ref and record it in `tamias.yaml` + `tamias.lock`
+  sync             Reconcile the cwd project's `deps:` (tamias.yaml + tamias.lock) against the store — install what's missing or drifted
   remove           Drop a store entry (cache untouched)
   list             List installed packages
   info             Show one package's manifest + provenance
