@@ -54,9 +54,11 @@ Panes/tabs:
 - **Services** — provider lifecycle: installed packages' `provider:`
   blocks, unit state, `run` exec (PTY pane or scrollback tail), `logs`
   follow view, `deploy`/`uninstall` with confirms.
-- **Manifest** — `tamias.yml` `deps:` as an editable form: add/remove/set
-  ref rows; writes go through the same manifest+lock path as `tamias
-  add`, never hand-edited YAML drift.
+- **Manifest** — the project manifest (`tamias.yaml`, the file
+  `tamias add` writes; config discovery accepts `yml`/`yaml`/`toml`)
+  `deps:` as an editable form: add/remove/set-ref rows; writes go
+  through the same manifest+lock path as `tamias add`, never
+  hand-edited drift.
 - **Author** — `bundle pack <dir>` and `publish <dir> --registry <ref>`
   flows with dir/registry prompts and the shared progress pane.
 - **Actions** — verbs bound to keys + `:` palette:

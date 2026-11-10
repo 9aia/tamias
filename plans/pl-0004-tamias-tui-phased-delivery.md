@@ -70,10 +70,11 @@ verb `tamias ui`, `tui` feature default-on, shared ops in widened
 - [ ] `deploy`/`uninstall` with confirms; extend tamias-serve ops as
       needed (or call tamias-deploy-local/-cf directly — pick at impl).
 
-## Phase 5 — manifest editor (`tamias.yml` deps form)
+## Phase 5 — manifest editor (`tamias.yaml` deps form — the file `tamias add` writes)
 
 - [ ] Editable deps rows: add/remove/set-ref; commits through the same
-      manifest+lock write path as `tamias add`.
+      manifest+lock write path as `tamias add` (which writes
+      `tamias.yaml` — match that, don't invent a second filename).
 - [ ] Read-only render of the rest of the manifest (no free-form YAML
       editing).
 

@@ -43,9 +43,14 @@ TUI (P-001/PL-004) registry pane and publish flow:
   search` gains the same routing (new `search.default`, falling back to
   `publish.default`, then the local default root). `token_env` stores
   the env var *name* only — values never touch config or disk.
-- **Kinds**: `local` (dir, optionally HTTP-served), `http` (base URL),
-  `cf` (worker endpoint). Self-hosting = `local` + `tamias registry
-  serve`, or any http endpoint you run.
+- **Kinds**: today `Registry.kind` documents `local` (default) | `cf`,
+  and transport is inferred — dir → `LocalRegistry`, http(s) URL →
+  `HttpRegistry` (the `tamias-registry-cf` client, which serves *any*
+  http endpoint incl. the worker). This proposal makes the kind set
+  explicit: `local` | `http` | `cf`, with url-scheme inference kept as
+  fallback so existing configs keep working. `cf` = worker-managed
+  registry (R2 + bearer token); `http` = any self-hosted endpoint.
+  Self-hosting = `local` + `tamias registry serve`, or `http`/`cf`.
 - **Surfaces**: CLI verbs now; `tamias-serve` ops
   (`registry.list/add/remove`, name-aware `search`/`publish`) so the TUI
   registry pane (PL-004 Phase 3) and author pane (Phase 6) consume them
