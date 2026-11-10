@@ -249,7 +249,6 @@ enum Command {
     },
     /// Interactive package-manager TUI (ratatui) — installed entries,
     /// registry search, provider lifecycle, manifest deps, authoring.
-    /// Phase 1 is read-only: the Installed pane + `/` filter.
     #[cfg(feature = "tui")]
     Ui,
 }
