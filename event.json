@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-win","actor":"luis","ts":1794331025,"op":{"op":"claim","glob":"crates/tamias-tui/**","ttl_secs":3600}}
+{"id":"","ws":"devin-win","actor":"luis","ts":1794331026,"op":{"op":"claim","glob":"Cargo.toml","ttl_secs":3600}}
