@@ -1,7 +1,7 @@
 +++
 id = "P-003"
 title = "tamias sync — install a project's dep set from tamias.yaml + tamias.lock"
-status = "open"
+status = "claimed"
 created = "2026-11-10"
 owner = "devin"
 priority = "medium"
