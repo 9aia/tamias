@@ -21,11 +21,15 @@ documented at source (doc comments).
 * [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
 * [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
 * [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
+* [tamias-install](/tamias/api/tamias_install/index.html) — adapter
+* [tamias-provider](/tamias/api/tamias_provider/index.html) — adapter
 * [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
 * [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
 * [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter
+* [tamias-registry-open](/tamias/api/tamias_registry_open/index.html) — adapter
 * [tamias-serve](/tamias/api/tamias_serve/index.html) — adapter
 * [tamias-shell](/tamias/api/tamias_shell/index.html) — adapter
+* [tamias-sign](/tamias/api/tamias_sign/index.html) — adapter
 * [tamias-source-cf](/tamias/api/tamias_source_cf/index.html) — adapter
 * [tamias-source-fs](/tamias/api/tamias_source_fs/index.html) — adapter
 * [tamias-source-git](/tamias/api/tamias_source_git/index.html) — adapter
@@ -34,4 +38,5 @@ documented at source (doc comments).
 * [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
 * [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
 * [tamias-testkit](/tamias/api/tamias_testkit/index.html) — adapter
+* [tamias-tui](/tamias/api/tamias_tui/index.html) — adapter
 * [tamias](/tamias/api/tamias/index.html) — binary

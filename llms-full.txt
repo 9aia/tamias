@@ -279,6 +279,75 @@ entries. `tamias cache clean` maintains it separately (`--days <n>`, or
 ---
 
 ---
+url: /tamias/how-to/use-the-tui.md
+---
+# How to use the TUI
+
+`tamias ui` opens an interactive console — the same operations as the
+CLI verbs, without memorizing flags. It needs the `tui` cargo feature
+(on by default; `cargo install tamias --no-default-features` builds the
+lean binary without it).
+
+```sh
+tamias ui
+```
+
+## Panes
+
+`Tab` / `1`–`5` switch between five panes:
+
+* **Installed** — every store entry: name, type, source ref, resolved
+  sha, digest, size. `Enter` opens a detail view (manifest, provenance,
+  provider services); `Esc`/`←` goes back.
+* **Registry** — search-as-you-type against a registry (debounced;
+  `Enter` fires immediately). `/` edits the query, `i` installs the
+  selected result. `:registry <name>` picks the target — a configured
+  registry name or a raw dir/http ref; bare `:registry` resets to the
+  default routing.
+* **Services** — installed packages' `provider:` services with unit
+  state. `s`/`S` start/stop, `r` restart, `e`/`E` enable/disable,
+  `d` deploy, `x` uninstall (all confirmed). `t`/`T` tail/follow the
+  journal, `n` runs the service in the foreground — `x` kills a live
+  stream.
+* **Manifest** — the project manifest's `deps:` as an editable table:
+  `a` add a ref, `d`/`x` remove, `e` edit (installs the new ref, then
+  swaps — a failed install leaves the manifest untouched). Writes go
+  through the same manifest+lock path as `tamias add`.
+* **Author** — `p` packs a payload dir (`bundle pack`), `P` publishes
+  (dir + registry prompts, confirmed); `r` lists configured registries.
+
+## Keys
+
+Vim-style, same conventions as `myco ui`:
+
+| Key | Action |
+| --- | --- |
+| `j`/`k`, arrows | move |
+| `/` | filter (Installed) / query (Registry) |
+| `i` | install-by-ref prompt (Installed) / install result (Registry) |
+| `v` `u` `U` `p` `r` `c` `C` `d` | verify · update · update-all · pin · remove · cache clean (>30d) · cache clean all · doctor |
+| `:` | command line — `:install <ref>`, `:remove <name>`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:deploy`, `:manifest`, `:registries`, `:reload`, `:q` |
+| `?` | help overlay |
+| `R` | reload |
+| `q` / `Ctrl-C` | quit (kills any live service stream) |
+
+Mutating verbs ask `y`/`n` first (default `n`). Installs that ship
+bundled `drivers/` raise the consent prompt — answering `y` is the
+equivalent of `--allow-drivers`; there is no env-var shortcut in the
+TUI.
+
+## Notes
+
+* Long ops (install, publish, verify) run on a worker thread; phases
+  stream into the log strip with a spinner in the status bar.
+* The TUI watches the store root and reloads when it changes on disk —
+  installs from other terminals show up without `R`.
+* Everything the TUI does is also available as CLI verbs or
+  `tamias serve` ops — the TUI is a front-end, not a second engine.
+
+---
+
+---
 url: /tamias/how-to/publish-to-a-registry.md
 ---
 # How to publish to a registry
@@ -354,36 +423,210 @@ url: /tamias/how-to/provision-a-service.md
 ---
 # How to provision and service-manage a package
 
-`install` puts a payload in the store. **Provisioning** (materializing a
-runnable artifact), **deploy** (activation), and the **service unit** are
-the driver's job — tamias shells the driver and never learns its schema.
+`install` puts a payload in the store. **Deploy** has two halves:
+
+* the package's **kind driver** (`tamias-driver-<type> deploy`) —
+  kind-specific setup/teardown tamias never interprets;
+* the manifest's declarative **`provider:` block** — tamias-native
+  service/runtime spec that `tamias deploy` materializes itself.
+
+`provider.services[]` renders one **systemd user unit** per entry — no
+driver needed, for any content type (including `files`). launchd is
+documented but not yet implemented: the local deploy adapter is
+systemd-only today.
+
+## Declare the provider in the manifest
+
+```yaml
+name: ci-gate
+version: 1.0.0
+type: peregrin-bundle
+provider:
+  name: ci-gate                  # unit-name prefix; defaults to the package name
+  services:
+    - name: ci-gate              # unit suffix → unit <provider>-<service>.service
+      exec: "peregrin campaign serve /srv/ci --port '2917 3'"  # argv string
+      env_file: "~/.config/peregrin/env"   # EnvironmentFile=- (optional)
+      env: {PORT: "29173"}                 # inline env — secrets stay in env_file/keyring
+      workdir: "~"                         # quote a bare ~ (YAML null otherwise)
+      restart: on-failure                 # Restart=, default on-failure
+  ingress:
+    - public_url: https://ci.example.com
+      listen: 127.0.0.1:29173
+      path: /hook
+      hooks:                   # declarative forge hooks — driver deploy consumes these
+        - forge: github
+          repo: 9aia/peregrin
+          events: [push]
+  verbs: [run, logs, health]   # advisory CLI hints
+  health: {cmd: "curl -sf localhost:29173/health"}
+```
+
+Every field is optional; no `provider:` block means nothing to deploy —
+today's behavior. `Manifest::validate` rejects malformed specs (a
+service without a name or `exec`, duplicate service names, line breaks
+in single-line fields, hooks missing `forge`/`repo`).
+
+### What `exec` means
+
+`exec` is a **command line split into argv** — not a shell command.
+`tamias` splits it with a small POSIX-ish subset: whitespace separates
+arguments, `'…'` is literal, `"…"` allows `\"`/`\\`, and `\c` escapes any
+character outside quotes. `$VAR`, globs, pipes, and `#` comments are
+*not* expanded — the string is data. Each argv element is then quoted
+for `ExecStart=` (systemd double-quote rules), so an argument with
+spaces survives intact:
+
+```yaml
+exec: "/usr/bin/gate serve --name 'two words' --flag=\"a b\""
+# → ExecStart=/usr/bin/gate serve --name "two words" --flag="a b"
+```
+
+An unterminated quote or an empty argv fails the deploy.
+
+### Unit rendering
+
+Each `provider.services[]` entry becomes `<provider.name-or-package>-<service>.service`
+under `~/.config/systemd/user` (`$XDG_CONFIG_HOME/systemd/user`):
+
+* `After=`/`Wants=network-online.target`;
+* `Type=simple`, `Restart=` (default `on-failure`), `RestartSec=5`;
+* `EnvironmentFile=-<env_file>` — the `-` makes a missing file
+  non-fatal;
+* `Environment=K=V` per `env` entry, `WorkingDirectory=` per `workdir`;
+* `~`/`~/…` in `workdir` and `env_file` expands to `$HOME` at render
+  time — **quote it in YAML** (`workdir: "~"`); a bare `~` parses as
+  null.
+
+Unit names are deterministic: `provider.name` wins, else the package
+name (scope-qualified — `@ci/gate` → `ci-gate-…`). Two packages claiming
+the same unit name resolve last-deploy-wins.
+
+A shared unit name is a feature, not just a collision: packages that
+declare the same `provider.name` + service name render **one** unit —
+the canonical shape is several content bundles joining a single host
+process (e.g. `peregrin-bundle`s whose `campaign` service runs
+`campaign serve <dir>` over a directory of generated configs — one
+bundle's deploy drops its config there, the host serves them all).
+Keep `exec` (and `env_file`/`workdir`) identical across declarers —
+last deploy wins the unit file. `uninstall` re-renders a still-shared
+unit from a surviving declarer instead of dropping it; only the last
+declarer's removal removes the unit.
 
 ## Deploy an installed package
 
 ```sh
 tamias install git:9aia/peregrin//libraries/ci-gate#main
-tamias deploy ci-gate                       # runs the driver's deploy step
+tamias deploy ci-gate                       # driver deploy + render provider.services units
 tamias deploy ci-gate --config ./node.yaml   # operator params ride a config file
+```
+
+`deploy` runs the kind driver's `deploy` verb *and* writes every
+`provider.services[]` unit (then `systemctl --user daemon-reload`,
+best-effort). Units are **not enabled** — activation stays explicit:
+
+```sh
+tamias service enable ci-gate-ci-gate
+tamias service status ci-gate-ci-gate
+tamias service logs   ci-gate-ci-gate
 ```
 
 A package that ships its own `drivers/` needs `--allow-drivers` at
 install time (or `TAMIAS_ALLOW_DRIVERS=1`) — the consent gate is
 described in [Security model](/explanation/security).
 
-If the package's type has no driver, `deploy` reports
+If neither a driver nor `provider.services[]` applies, `deploy` reports
 `nothing to deploy (type …)` and succeeds. `uninstall` runs the driver's
-teardown first; with no driver it warns that provider-side resources may
-remain, then drops the store entry.
+teardown, removes the declarative units (best-effort per unit — a unit
+another installed provider still declares is re-rendered from the
+survivor instead), then drops the store entry; with no driver it warns
+that provider-side resources may remain. When the manifest declares `ingress[].hooks[]`,
+`deploy` prints a hint pointing at `tamias driver exec <pkg> hooks
+register --dry-run` — hook registration stays explicit (the
+`public_url` fronts a tunnel the operator confirms first).
 
-## Manage the service unit
+## Run provider verbs through the driver
 
-The per-user **systemd** mechanism:
+The lifecycle verbs (`install`/`deploy`/`uninstall`) aren't the whole
+surface — a driver may declare extra ops verbs in `capabilities.verbs`
+(`hooks`, `health`, `status`, …). `tamias driver exec` is the generic
+passthrough:
+
+```sh
+tamias drivers --json                        # each driver's declared verbs
+tamias driver exec ci-gate hooks register --dry-run
+tamias driver exec ci-gate hooks register    # real run — forge API + secrets
+tamias driver exec ci-gate hooks unregister
+tamias driver exec ci-gate health            # JSON status probe
+tamias driver exec ci-gate status            # per-unit is-active/is-enabled
+tamias driver exec ci-gate logs --lines 50
+```
+
+The verb plus everything after it passes through verbatim after the
+standard `--dir`/`--name` flags (add `--config <file>` before the verb's
+args to forward a node config). The driver's stdout/stderr stream back.
+`tamias run` stays the *local* service-exec surface — provider-specific
+ops that need the driver's context (manifest secrets, forge API, unit
+state) go through `driver exec` instead. `tamias deploy` never
+auto-registers ingress hooks: `public_url` fronts a tunnel the operator
+confirms, so registration is always an explicit, reviewable step.
+
+## Inspect providers
+
+```sh
+tamias provider list          # installed packages' provider: blocks
+                              # (services + unit state, ingress, verbs)
+tamias provider list --all    # include packages without a provider:
+tamias provider list --json   # machine-readable
+```
+
+Each service row shows its rendered unit name (`<provider>-<service>.service`)
+and a best-effort `systemctl --user is-enabled` state (`-` when systemd
+can't answer). Ingress rows carry the `public_url` (+ `listen`/`path`).
+
+## Run a service without systemd
+
+`tamias run` execs a provider service's `exec` argv **in the foreground** —
+the same argv/env the rendered unit would get, minus systemd:
+
+```sh
+tamias run ci-gate            # sole service → runs it
+tamias run ci-gate web        # pick one of several
+tamias run ci-gate web -- --port 29174   # extra argv after `--`
+```
+
+The child gets a scrubbed environment (parent credentials never leak —
+see [Security model](/explanation/security)): the service's `env` plus
+its `env_file` parsed as `K=V` lines (inline `env` wins, matching
+systemd's `EnvironmentFile` → `Environment=` order). `workdir` (`~`
+expands) is the cwd, else the payload dir. A non-zero exit fails the
+command. This is the dev/no-systemd counterpart of `service enable` —
+`provider.health.cmd` probes and richer verbs are still on the roadmap.
+
+## Follow a service's logs
+
+```sh
+tamias logs ci-gate            # journalctl over ALL the package's units
+tamias logs ci-gate --lines 50 -f
+tamias logs ci-gate-ci-gate    # or a bare unit name
+tamias service logs ci-gate-ci-gate   # unit-level, same journalctl
+```
+
+A package name resolves to every `provider.services[]` unit in one
+journal stream; anything that isn't an installed package is treated as
+a unit base name.
+
+## Manage an ad-hoc service unit
+
+The per-user **systemd** mechanism also works without a package:
 
 ```sh
 tamias service install --unit ci-gate \
-  --exec "/usr/local/bin/ci-gate run" \
+  --exec "/usr/local/bin/ci-gate run --flag 'a b'" \
+  --env-file ~/.config/ci-gate/env \
   --description "ci-gate" \
   --env HOME=/home/me \
+  --restart on-failure \
   --workdir /srv/ci-gate
 tamias service enable  ci-gate
 tamias service status  ci-gate
@@ -398,7 +641,7 @@ disables + removes the unit file.
 ## Tear down
 
 ```sh
-tamias uninstall ci-gate    # driver teardown + drop the store entry
+tamias uninstall ci-gate    # driver teardown + unit removal + drop the store entry
 ```
 
 ## See also
@@ -429,7 +672,30 @@ tamias-driver-<type> <verb> --dir <dir> --name <name> [--config <file>]
 | `install` | materialize the payload at `--dir` |
 | `deploy` | activate (unit, hooks) |
 | `uninstall` | tear down |
-| `capabilities` | print `{"types":[…]}` on stdout — the types this binary handles |
+| `capabilities` | print `{"types":[…],"verbs":[…]}` on stdout — the types + verbs this binary handles |
+
+## Ops verbs beyond the lifecycle three
+
+`install`/`deploy`/`uninstall` are the only verbs tamias dispatches on
+its own. A driver may declare **provider ops verbs** — `health`,
+`status`, `hooks register`, anything the product needs — by listing them
+in `capabilities.verbs`; the operator reaches them through the generic
+passthrough:
+
+```sh
+tamias driver exec <pkg> <verb> [args…]
+# → tamias-driver-<type> <verb> --dir <dir> --name <name> [--config <f>] [args…]
+```
+
+Everything after `<verb>` lands verbatim as trailing argv, so verbs can
+take their own flags (`--dry-run`, `--api-base`, …). The driver's
+stdout/stderr stream back — status/probe verbs should print JSON or
+report lines. `tamias drivers --json` shows each driver's declared
+verbs; `tamias driver exec` warns (but still dispatches) when the verb
+isn't declared — the driver stays the authority. Provider verbs that
+answer with data are the right place for forge-hook registration,
+health probes, and unit status; `tamias run` remains local service exec
+only.
 
 `--config` is an optional path to a node/config file carrying operator
 params (`tamias deploy --config`). Exit zero on success; a non-zero
@@ -489,7 +755,9 @@ driver for the package's type and warn when none exists.
 ## Check
 
 ```sh
-tamias doctor --json    # lists discovered drivers
+tamias drivers          # every discovered driver + its capabilities
+tamias drivers --json   # same, machine-readable
+tamias doctor --json    # lists discovered drivers among the health checks
 ```
 
 ## See also
@@ -530,11 +798,17 @@ Commands:
   publish          Publish a package dir to a registry
   search           Search a registry's index
   bundle           Author-side packing
-  registry         Registry operations
+  registry         Registry operations — named sources in the config file
   deploy-registry  Deploy the registry Worker (Cloudflare)
   deploy           Deploy an installed package's service/runtime (via its provider)
   uninstall        Uninstall — provider teardown + drop the store entry
   service          Manage a per-user service unit (systemd)
+  drivers          List discovered content drivers (`tamias-driver-<type>` on PATH + `<tamias-home>/drivers/`)
+  driver           Provider-verb dispatch — run a driver verb beyond the lifecycle three (`install`/`deploy`/`uninstall`)
+  provider         Provider packages — the declarative `provider:` runtime spec
+  run              Run an installed provider service's exec in the foreground — the unit's argv + env, without systemd. `tamias run <pkg> [service] [-- extra-args]`
+  logs             Follow a package's provider units' journals — `tamias logs <pkg|unit>`. A package name resolves to all its provider units; anything else is treated as a unit base name
+  ui               Interactive package-manager TUI (ratatui) — installed entries, registry search, provider lifecycle, manifest deps, authoring
   help             Print this message or the help of the given subcommand(s)
 
 Options:
@@ -633,9 +907,10 @@ url: /tamias/reference/config.md
 
 | field | type | required | notes |
 |---|---|---|---|
-| `kind` | `string` | optional | `local` (default) or `cf`. |
+| `kind` | `string` | optional | Explicit kind — `local` | `http` | `cf`. Unset → inferred from `url` (http(s) → `http`, anything else → `local`), so configs written before kinds were explicit keep working. |
 | `url` | `string` | optional | Base URL (http) or root dir. |
 | `token_env` | `string` | optional | Env var **name** holding the bearer token — never the token. |
+| `limits` | `Limits` | optional | Per-registry limit overrides (values + package rules). |
 
 ## `[publish]` — publish routing
 
@@ -647,10 +922,13 @@ url: /tamias/reference/config.md
 
 | field | type | required | notes |
 |---|---|---|---|
-| `store` | `Location` | optional | Install store location. |
-| `cache` | `Location` | optional | Fetch-cache location. |
-| `registries` | `BTreeMap<String, Registry>` | optional | Named registries. |
+| `store` | `Location` | optional | Install store location — `root` applies when `kind` is `local`/unset and `TAMIAS_HOME`/XDG env is unset (env wins). |
+| `cache` | `Location` | optional | Fetch-cache location — same resolution rule as `store`. |
+| `registries` | `BTreeMap<String, Registry>` | optional | Named registries — `publish`/`search --registry &lt;name&gt;` and the `publish.default`/`search.default` routing resolve through these. |
 | `publish` | `Publish` | optional | Publish routing. |
+| `search` | `Search` | optional | Search routing. |
+| `limits` | `Limits` | optional | Global byte limits + per-package overrides. |
+| `signing` | `Signing` | optional | Package signing policy — `publish --sign` key resolution and install/verify `allowed_signers` enforcement (`tamias-sign`). |
 
 ## format trait (parse/render)
 
@@ -768,8 +1046,22 @@ service exits when stdin closes.
 | `info` | `name` | `{label, resolved, digest, size}` |
 | `verify` | `name` | `{name, ok}` |
 | `remove` | `name` | `{name}` — runs driver teardown first, like `tamias uninstall` |
+| `search` | `query`, `registry?` | `{results: [{label, name, scope, version, kind, digest, file}]}` |
+| `publish` | `dir`, `registry?` | `{label, name, scope, version, kind, digest, file}` |
+| `registry.list` | — | `{registries: [{name, kind, effective_kind, url, token_env, limits}]}` |
+| `registry.get` | `name` | one registry object (same shape as `registry.list` items) |
+| `registry.add` | `name`, `kind`, `url`, `token_env?` | `{name, config}` — writes the config file |
+| `registry.remove` | `name` | `{name, config}` |
 
 `name` accepts `@scope/name` or bare `name`, same as the CLI.
+
+`search`/`publish` take `registry` as a **name or raw ref** — identical
+resolution to `--registry` on the CLI verbs: config `registries` name →
+raw dir/http ref → routing defaults (`search.default` →
+`publish.default`) → `TAMIAS_REGISTRY` env → the local default root.
+`registry.add`/`remove` write `tamias.{yml,yaml,toml}` through the same
+path as `tamias registry add|remove`; `token_env` is an env var *name*,
+never a token value.
 
 ## Driver consent
 
@@ -781,8 +1073,10 @@ without it.
 ## Environment
 
 The service honors the same roots as the CLI: `TAMIAS_HOME` (store +
-`drivers/`), `TAMIAS_CACHE`, `TAMIAS_REGISTRY`, and the telemetry vars
-(`TAMIAS_OTEL_*`).
+`drivers/`), `TAMIAS_CACHE`, `TAMIAS_REGISTRY`, `TAMIAS_CONFIG` (the
+config file `registry.*` ops read/write and `search`/`publish` resolve
+against — re-read per request, so writes are visible in-session), and
+the telemetry vars (`TAMIAS_OTEL_*`).
 
 ## Example
 
@@ -824,11 +1118,15 @@ documented at source (doc comments).
 * [tamias-deploy-local](/tamias/api/tamias_deploy_local/index.html) — adapter
 * [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
 * [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
+* [tamias-install](/tamias/api/tamias_install/index.html) — adapter
+* [tamias-provider](/tamias/api/tamias_provider/index.html) — adapter
 * [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
 * [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
 * [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter
+* [tamias-registry-open](/tamias/api/tamias_registry_open/index.html) — adapter
 * [tamias-serve](/tamias/api/tamias_serve/index.html) — adapter
 * [tamias-shell](/tamias/api/tamias_shell/index.html) — adapter
+* [tamias-sign](/tamias/api/tamias_sign/index.html) — adapter
 * [tamias-source-cf](/tamias/api/tamias_source_cf/index.html) — adapter
 * [tamias-source-fs](/tamias/api/tamias_source_fs/index.html) — adapter
 * [tamias-source-git](/tamias/api/tamias_source_git/index.html) — adapter
@@ -837,6 +1135,7 @@ documented at source (doc comments).
 * [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
 * [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
 * [tamias-testkit](/tamias/api/tamias_testkit/index.html) — adapter
+* [tamias-tui](/tamias/api/tamias_tui/index.html) — adapter
 * [tamias](/tamias/api/tamias/index.html) — binary
 
 ---
@@ -883,11 +1182,15 @@ distribution; every content *meaning* is an adapter.
 | `tamias-deploy-local` | adapter | local deploy impl — manage a per-user service unit (systemd/launchd) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-\<type> (no product knowledge) |
 | `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
+| `tamias-install` | adapter | The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit |
+| `tamias-provider` | adapter | provider lifecycle — installed `provider:` blocks → units, deploy/uninstall, run exec specs, journal argv |
 | `tamias-publish` | adapter | author side — pack + push |
 | `tamias-registry-cf` | adapter | Cloudflare registry impl — a Worker + R2 over HTTP |
 | `tamias-registry-local` | adapter | dir registry impl — a folder index, servable over HTTP |
+| `tamias-registry-open` | adapter | shared registry-source layer — name-or-ref resolution + named-source config CRUD |
 | `tamias-serve` | adapter | ndjson JSON-RPC over stdio — the embedding surface |
 | `tamias-shell` | adapter | Run a command in a working directory via bash -c — the generic shell-out helper |
+| `tamias-sign` | adapter | Package signing — ssh-keygen -Y sign/verify (namespace tamias-package) over the provenance anchors |
 | `tamias-source-cf` | adapter | Cloudflare registry source impl — the `cf:` ref arm |
 | `tamias-source-fs` | adapter | fs source impl — local dirs and tarballs |
 | `tamias-source-git` | adapter | git source impl — clone URL //subdir #rev |
@@ -896,13 +1199,17 @@ distribution; every content *meaning* is an adapter.
 | `tamias-store-local` | adapter | local store impl — a directory |
 | `tamias-telemetry` | adapter | Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation |
 | `tamias-testkit` | adapter | Fixtures + adapter conformance for every port |
+| `tamias-tui` | adapter | tamias — interactive package-manager TUI (ratatui); the `tamias ui` surface |
 | `tamias` | binary | tamias — package & content manager: fetch, store, cache, dispense |
 
 ## The install path
 
 ```
-ref ─► resolve ─► (cache hit?) ─► fetch ─► overlay (include:) ─► driver install ─► store
+ref ─► resolve ─► (cache hit?) ─► fetch ─► driver install ─► store
 ```
+
+`overlay (include:)` is parsed and surfaced but not yet applied on the
+install path — payload composition is reserved machinery.
 
 `resolve` pins git refs to a commit sha up front, so the content-
 addressed cache can be hit *before* fetching. The fetch→unpack split is
@@ -925,10 +1232,13 @@ including the `--allow-drivers` consent gate on payload-shipped drivers.
 
 ## The embedding surface
 
-`tamias serve` (the `tamias-serve` crate) runs the same install/list/
-info/verify/remove verbs as an **ndjson JSON-RPC service over stdio** —
-for agents and daemons that want a persistent handle instead of
-one-shot CLI calls. The protocol is specified in
+`tamias serve` (the `tamias-serve` crate) runs the same
+install/list/info/verify/remove verbs plus the registry surface —
+`search`, `publish`, and `registry.list|get|add|remove` — as an
+**ndjson JSON-RPC service over stdio** for agents and daemons that want
+a persistent handle instead of one-shot CLI calls. Registry name-or-ref
+resolution and config writes go through `tamias-registry-open`, the same
+code the CLI verbs use. The protocol is specified in
 [serve reference](/reference/serve).
 
 ## Observability
@@ -1001,6 +1311,10 @@ arbitrary code, it requires `--allow-drivers` /
 `files` is the built-in type: the store entry is the whole story, no
 driver needed. Any other type **fails to install** without a
 discoverable driver — fail closed, never silent.
+
+`tamias drivers` lists every discovered driver (PATH +
+`<tamias-home>/drivers/`) with its `capabilities` answer — types,
+verbs, location — the same scan `doctor` summarizes.
 
 See [Write a driver](/how-to/write-a-driver) for the authoring side.
 
@@ -1109,7 +1423,7 @@ Tamias owns **content distribution**: refs, transport, the install store
 | **mimus** | critic | `mimus-rules` packs |
 | **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
 | **sturn** | coordination | claim the store lock during concurrent installs |
-| **bupha / ci-gate** | CI gate | the first published bundle |
+| **bupha / ci-gate** | CI gate | bupha is retired — the gate is the peregrin `ci-gate` campaign; the first published bundle |
 | **sepia** | sessions | — |
 | **cicada** | scheduling | `tamias update --all` + registry reindex |
 

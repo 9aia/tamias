@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["FetchCache"]};
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_MAX_AGE"],"struct":["FetchCache"]};

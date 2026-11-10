@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["default_view_for","kinds_for"],"struct":["ConfigLoader"]};

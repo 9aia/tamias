@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ALLOWED_SIGNERS_ENV","DEFAULT_NAMESPACE","SIGNING_KEY_ENV"],"enum":["SignatureStatus"],"fn":["enforce_signature","expand_tilde","record_signature_status","record_signing_bytes","resolve_signing_key","sign","sign_package","signature_status","signing_bytes","verify"],"struct":["SigningPolicy"]};

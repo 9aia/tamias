@@ -40,11 +40,15 @@ distribution; every content *meaning* is an adapter.
 | `tamias-deploy-local` | adapter | local deploy impl — manage a per-user service unit (systemd/launchd) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-\<type> (no product knowledge) |
 | `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
+| `tamias-install` | adapter | The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit |
+| `tamias-provider` | adapter | provider lifecycle — installed `provider:` blocks → units, deploy/uninstall, run exec specs, journal argv |
 | `tamias-publish` | adapter | author side — pack + push |
 | `tamias-registry-cf` | adapter | Cloudflare registry impl — a Worker + R2 over HTTP |
 | `tamias-registry-local` | adapter | dir registry impl — a folder index, servable over HTTP |
+| `tamias-registry-open` | adapter | shared registry-source layer — name-or-ref resolution + named-source config CRUD |
 | `tamias-serve` | adapter | ndjson JSON-RPC over stdio — the embedding surface |
 | `tamias-shell` | adapter | Run a command in a working directory via bash -c — the generic shell-out helper |
+| `tamias-sign` | adapter | Package signing — ssh-keygen -Y sign/verify (namespace tamias-package) over the provenance anchors |
 | `tamias-source-cf` | adapter | Cloudflare registry source impl — the `cf:` ref arm |
 | `tamias-source-fs` | adapter | fs source impl — local dirs and tarballs |
 | `tamias-source-git` | adapter | git source impl — clone URL //subdir #rev |
@@ -53,13 +57,17 @@ distribution; every content *meaning* is an adapter.
 | `tamias-store-local` | adapter | local store impl — a directory |
 | `tamias-telemetry` | adapter | Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation |
 | `tamias-testkit` | adapter | Fixtures + adapter conformance for every port |
+| `tamias-tui` | adapter | tamias — interactive package-manager TUI (ratatui); the `tamias ui` surface |
 | `tamias` | binary | tamias — package & content manager: fetch, store, cache, dispense |
 
 ## The install path
 
 ```
-ref ─► resolve ─► (cache hit?) ─► fetch ─► overlay (include:) ─► driver install ─► store
+ref ─► resolve ─► (cache hit?) ─► fetch ─► driver install ─► store
 ```
+
+`overlay (include:)` is parsed and surfaced but not yet applied on the
+install path — payload composition is reserved machinery.
 
 `resolve` pins git refs to a commit sha up front, so the content-
 addressed cache can be hit *before* fetching. The fetch→unpack split is
@@ -82,10 +90,13 @@ including the `--allow-drivers` consent gate on payload-shipped drivers.
 
 ## The embedding surface
 
-`tamias serve` (the `tamias-serve` crate) runs the same install/list/
-info/verify/remove verbs as an **ndjson JSON-RPC service over stdio** —
-for agents and daemons that want a persistent handle instead of
-one-shot CLI calls. The protocol is specified in
+`tamias serve` (the `tamias-serve` crate) runs the same
+install/list/info/verify/remove verbs plus the registry surface —
+`search`, `publish`, and `registry.list|get|add|remove` — as an
+**ndjson JSON-RPC service over stdio** for agents and daemons that want
+a persistent handle instead of one-shot CLI calls. Registry name-or-ref
+resolution and config writes go through `tamias-registry-open`, the same
+code the CLI verbs use. The protocol is specified in
 [serve reference](/reference/serve).
 
 ## Observability

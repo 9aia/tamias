@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["CONFIG_ENV","CONFIG_NAMES"],"fn":["format_for","load_file","load_in"],"struct":["Config","Location","Publish","Registry"],"trait":["ConfigFormat"]};
+window.SIDEBAR_ITEMS = {"constant":["CONFIG_ENV","CONFIG_NAMES","DEFAULT_MAX_DOWNLOAD","DEFAULT_MAX_UPLOAD"],"fn":["format_for","load_file","load_in","parse_bytes"],"struct":["Config","EffectiveLimits","Limits","Location","Publish","Registry","Search","Signing"],"trait":["ConfigFormat"]};

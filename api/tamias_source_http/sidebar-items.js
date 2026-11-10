@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["HttpPlan","HttpRefKind","HttpSource","HttpSpec"]};
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_MAX_DOWNLOAD"],"struct":["HttpPlan","HttpRefKind","HttpSource","HttpSpec"]};

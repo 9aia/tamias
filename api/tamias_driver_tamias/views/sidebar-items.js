@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["binding","bound","cache_payload","col","driver_claims","fmt_ts","graph","graph_payload","kind_of","known_query","kv","manifest","md","package_detail","packages_rows","param","query_data","short_digest","spec","specs","summary","table","titled","types_rows","verify_rows","view_result"]};

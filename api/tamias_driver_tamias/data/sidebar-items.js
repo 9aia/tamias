@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["cache_stats","env_cache_root","env_registry_root","env_store_root","flag","load","param_path","registry_entries","roots","scan_dir","scan_drivers","scan_store","store_entries"],"struct":["Roots","Snapshot"]};

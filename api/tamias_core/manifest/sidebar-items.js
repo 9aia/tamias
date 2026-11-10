@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["MANIFEST_NAMES"],"fn":["is_valid_name","is_valid_version"],"struct":["Manifest"]};
+window.SIDEBAR_ITEMS = {"constant":["MANIFEST_NAMES"],"fn":["is_valid_name","is_valid_version"],"struct":["Manifest","Provider","ProviderHealth","ProviderHook","ProviderIngress","ProviderService"]};
