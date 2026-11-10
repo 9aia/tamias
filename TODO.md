@@ -6,4 +6,4 @@
 - [ ] T-015 Wire or remove dead machinery: Manifest.deps/tamias.lock resolution, include:/overlay(), tamias-config (parsed never applied), orphan tamias-shell, stub tamias-testkit/store-cf/cache-cf · pri:low · created:2026-11-08
 - [ ] T-016 Fix flaky env-mutating CLI unit tests (cwd/PATH/env races; need process isolation or mutex coverage) · pri:low · created:2026-11-08
 - [ ] T-017 Streaming dir\_digest follow-up if hit-path cost matters (already chunked per-file; dir-level framing unchanged) · pri:low · created:2026-11-08
-- [ ] T-011 kuda cards drifted repo-wide (18 modules, incl. deleted seed crates); run kuda sync separately — tamias-driver-tamias landed without card regen · status:claimed · created:2026-11-08
+- [ ] T-011 kuda cards drifted repo-wide (18 modules, incl. deleted seed crates); run kuda sync separately — tamias-driver-tamias landed without card regen · status:in-progress · created:2026-11-08
