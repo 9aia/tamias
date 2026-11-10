@@ -1,1 +1,1 @@
-{"id":"","ws":"t8-3-cli-surface","actor":"luis","ts":1794276869,"op":{"op":"claim","glob":"crates/tamias-config/**","ttl_secs":3600}}
+{"id":"","ws":"t8-3-cli-surface","actor":"luis","ts":1794277783,"op":{"op":"presence","status":"left"}}
