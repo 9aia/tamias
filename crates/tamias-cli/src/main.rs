@@ -733,7 +733,13 @@ enum ServiceCommand {
         /// `K=V` environment — repeatable.
         #[arg(long = "env")]
         envs: Vec<String>,
-        /// Working directory.
+        /// `EnvironmentFile=` path (`~` expands; rendered optional `-`).
+        #[arg(long)]
+        env_file: Option<String>,
+        /// `Restart=` policy (default `on-failure`).
+        #[arg(long)]
+        restart: Option<String>,
+        /// Working directory (`~` expands to `$HOME`).
         #[arg(long)]
         workdir: Option<String>,
     },
@@ -749,13 +755,95 @@ enum ServiceCommand {
     Uninstall { unit: String },
 }
 
-/// `deploy <name>` — run the installed package's provider deploy step.
+/// The provider block of an installed package's manifest — `None` when
+/// the payload carries no manifest or no `provider:` (a plain package
+/// has nothing declarative to deploy).
+fn provider_of(entry: &StoreEntry) -> Result<Option<Manifest>, Error> {
+    if Manifest::path_in(&entry.dir).is_none() {
+        return Ok(None);
+    }
+    let manifest = entry.manifest()?;
+    Ok(manifest.provider.is_some().then_some(manifest))
+}
+
+/// The unit base name a provider service renders to —
+/// `<provider-or-package>-<service>`. `provider.name` wins; otherwise
+/// the package name (scope-qualified when scoped, so `@s/foo` and `foo`
+/// don't collide). Deterministic: two packages claiming the same unit
+/// name resolve last-deploy-wins on the unit file.
+fn provider_unit_name(manifest: &Manifest, service: &str) -> String {
+    let base = manifest
+        .provider
+        .as_ref()
+        .and_then(|p| p.name.clone())
+        .unwrap_or_else(|| match &manifest.scope {
+            Some(scope) => format!("{scope}-{}", manifest.name),
+            None => manifest.name.clone(),
+        });
+    format!("{base}-{service}")
+}
+
+/// Render a provider service as a [`ServiceSpec`] — exec string → argv
+/// via [`tamias_deploy_local::split_exec`], `~` expansion deferred to
+/// the renderer.
+fn provider_service_spec(
+    entry: &StoreEntry,
+    manifest: &Manifest,
+    service: &tamias_core::ProviderService,
+) -> Result<tamias_deploy_local::ServiceSpec, Error> {
+    Ok(tamias_deploy_local::ServiceSpec {
+        name: provider_unit_name(manifest, &service.name),
+        description: format!("{} — {}", entry.label(), service.name),
+        exec: tamias_deploy_local::split_exec(&service.exec)?,
+        env: service
+            .env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+        env_file: service.env_file.clone(),
+        restart: service.restart.clone(),
+        restart_sec: None,
+        workdir: service.workdir.clone(),
+        after: vec![],
+    })
+}
+
+/// `deploy <name>` — run the installed package's provider deploy step:
+/// the kind driver's `deploy` verb (kind-specific setup/teardown) *and*,
+/// independently, every `provider.services[]` entry rendered as a
+/// per-user systemd unit. Units are written + daemon-reloaded but not
+/// enabled — `tamias service enable <unit>` is the operator's step.
 fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Error> {
     let entry = Store::new(&env.store_root).find(name)?;
     let kind = entry.record.kind.as_deref().unwrap_or("files");
-    if tamias_driver::dispatch(kind, "deploy", &entry.dir, &entry.record.name, config)? {
+    let driver_ran =
+        tamias_driver::dispatch(kind, "deploy", &entry.dir, &entry.record.name, config)?;
+    if driver_ran {
         println!("deployed {}", entry.label());
-    } else {
+    }
+    let mut deployed = false;
+    if let Some(manifest) = provider_of(&entry)? {
+        let deploy = tamias_deploy_local::LocalDeploy::new();
+        if let Some(provider) = &manifest.provider {
+            for service in &provider.services {
+                let spec = provider_service_spec(&entry, &manifest, service)?;
+                let path = deploy.install(&spec)?;
+                deployed = true;
+                println!(
+                    "unit {} → {} (enable: tamias service enable {})",
+                    spec.name,
+                    path.display(),
+                    spec.name
+                );
+            }
+        }
+        if deployed {
+            // Best-effort: a missing user bus must not fail the deploy —
+            // the unit files are already on disk.
+            let _ = deploy.daemon_reload();
+        }
+    }
+    if !driver_ran && !deployed {
         println!("{}: nothing to deploy (type {kind})", entry.label());
     }
     Ok(())
@@ -774,6 +862,20 @@ fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
     {
         eprintln!("tamias: warning — no driver for type '{kind}'; provider resources may remain");
     }
+    // Declarative provider services are tamias-native — remove their
+    // units too. Best-effort per unit: a unit that can't be removed
+    // warns but doesn't block dropping the store entry.
+    if let Some(manifest) = provider_of(&entry)? {
+        let deploy = tamias_deploy_local::LocalDeploy::new();
+        if let Some(provider) = &manifest.provider {
+            for service in &provider.services {
+                let unit = provider_unit_name(&manifest, &service.name);
+                if let Err(e) = deploy.uninstall(&unit) {
+                    eprintln!("tamias: warning — could not remove unit {unit}: {e}");
+                }
+            }
+        }
+    }
     let record = store.remove(name)?;
     println!("uninstalled {}@{}", record.name, record.resolved);
     Ok(())
@@ -789,6 +891,8 @@ fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
             exec,
             description,
             envs,
+            env_file,
+            restart,
             workdir,
         } => {
             let env = envs
@@ -806,9 +910,13 @@ fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
             let spec = ServiceSpec {
                 name: unit.clone(),
                 description,
-                exec,
+                exec: tamias_deploy_local::split_exec(&exec)?,
                 env,
+                env_file,
+                restart,
+                restart_sec: None,
                 workdir,
+                after: vec![],
             };
             let path = deploy.install(&spec)?;
             println!(
@@ -1469,6 +1577,61 @@ mod tests {
         std::fs::write(dd.join("tamias-driver-x"), "#!/bin/sh\n").unwrap();
         run_args(e.clone(), &["tamias", "doctor"]).unwrap();
         std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn deploy_renders_provider_services_and_uninstall_removes() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("cfg"));
+        let dir = tmp.path().join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            "name: gate\nversion: 1.0.0\nprovider:\n  services:\n    - name: web\n      exec: \"/usr/bin/gate serve --port \\\"2917 3\\\"\"\n      env_file: \"~/.config/gate/env\"\n      env: {PORT: \"29173\"}\n      workdir: \"~/srv/gate\"\n      restart: always\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        run_args(e.clone(), &["tamias", "deploy", "gate"]).unwrap();
+        let unit = tmp.path().join("cfg/systemd/user/gate-web.service");
+        let text = std::fs::read_to_string(&unit).unwrap();
+        assert!(text.contains("ExecStart=/usr/bin/gate serve --port \"2917 3\""));
+        assert!(text.contains("EnvironmentFile=-"));
+        assert!(text.contains(".config/gate/env"));
+        assert!(text.contains("Environment=PORT=29173"));
+        assert!(text.contains("/srv/gate"));
+        assert!(text.contains("Restart=always"));
+        assert!(text.contains("After=network-online.target"));
+        // uninstall drops the declarative unit too
+        run_args(e.clone(), &["tamias", "uninstall", "gate"]).unwrap();
+        assert!(!unit.exists());
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
+    fn deploy_provider_name_scopes_unit_name() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("cfg"));
+        let dir = tmp.path().join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            "name: gate\nscope: ci\nversion: 1.0.0\nprovider:\n  name: gateprov\n  services:\n    - name: api\n      exec: /bin/true\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        run_args(e.clone(), &["tamias", "deploy", "gate"]).unwrap();
+        // provider.name wins over the scope-qualified package name
+        assert!(tmp
+            .path()
+            .join("cfg/systemd/user/gateprov-api.service")
+            .is_file());
+        std::env::remove_var("XDG_CONFIG_HOME");
     }
 
     #[test]
