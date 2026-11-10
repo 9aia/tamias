@@ -513,6 +513,76 @@ fn run_execs_provider_service_foreground() {
 }
 
 #[test]
+fn driver_exec_runs_provider_verbs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let bin = tmp.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    // A driver that echoes its argv — capabilities declares the ops
+    // verbs `driver exec` will dispatch.
+    let driver = bin.join("tamias-driver-fx");
+    std::fs::write(
+        &driver,
+        "#!/bin/sh\nif [ \"$1\" = capabilities ]; then echo '{\"types\":[\"fx\"],\"verbs\":[\"health\",\"hooks\"]}'; exit 0; fi\nprintf '%s\\n' \"$@\"\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path_env = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let run = |args: &[&str]| {
+        Command::new(tamias_bin())
+            .args(args)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("PATH", &path_env)
+            .output()
+            .unwrap()
+    };
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: ops-pkg\nversion: 1.0.0\ntype: fx\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    assert!(run(&["install", pkg.to_str().unwrap()]).status.success());
+    // verb + trailing args pass through; driver stdout streams back
+    let o = run(&[
+        "driver",
+        "exec",
+        "ops-pkg",
+        "hooks",
+        "register",
+        "--dry-run",
+    ]);
+    assert!(o.status.success(), "driver exec: {}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("hooks"), "{out}");
+    assert!(out.contains("--dir"), "{out}");
+    assert!(out.contains("register"), "{out}");
+    assert!(out.contains("--dry-run"), "{out}");
+    // undeclared verb warns on stderr but still dispatches
+    let o = run(&["driver", "exec", "ops-pkg", "bogus"]);
+    assert!(o.status.success(), "driver exec bogus: {}", stderr(&o));
+    assert!(
+        stderr(&o).contains("does not declare verb"),
+        "{}",
+        stderr(&o)
+    );
+    // unknown package → error
+    assert!(!run(&["driver", "exec", "ghost", "health"]).status.success());
+}
+
+#[test]
 fn bare_tamias_prints_help() {
     let o = Command::new(tamias_bin()).output().unwrap();
     assert!(o.status.success(), "bare tamias: {}", stderr(&o));
@@ -565,6 +635,7 @@ fn manifest_lists_every_verb() {
         "uninstall",
         "service",
         "drivers",
+        "driver",
         "provider",
         "run",
         "logs",

@@ -11,8 +11,11 @@
 //! tamias-driver-<type> <verb> --dir <dir> --name <name> [--config <file>]
 //! ```
 //!
-//! `verb ∈ {install, deploy, uninstall}`; a driver may also answer
-//! `capabilities`. Installing a product drops its driver into
+//! `verb ∈ {install, deploy, uninstall}` for the lifecycle dispatch;
+//! drivers may declare further provider verbs (`health`, `hooks`, …)
+//! in `capabilities.verbs`, reached through [`dispatch_with_args`] —
+//! `tamias driver exec`. A driver may also answer `capabilities`.
+//! Installing a product drops its driver into
 //! `<tamias-home>/drivers/` (from the payload's `drivers/` dir), so tamias
 //! finds it. The engine never links a product crate.
 //!
@@ -35,6 +38,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tamias_core::{output_with_timeout, Error};
+
+/// `(stdout, stderr)` captured from a dispatched driver verb —
+/// [`dispatch_with_args`] returns it for the caller to render.
+pub type DriverOutput = (Vec<u8>, Vec<u8>);
 
 /// A driver verb (`install`/`deploy`/`uninstall`) can legitimately take a
 /// while — a hung one must not wedge the install or the single-threaded
@@ -187,27 +194,52 @@ pub fn dispatch(
     name: &str,
     config: Option<&Path>,
 ) -> Result<bool, Error> {
-    dispatch_with_timeout(kind, verb, dir, name, config, DISPATCH_TIMEOUT)
+    dispatch_with_timeout(kind, verb, dir, name, config, &[], DISPATCH_TIMEOUT)
+        .map(|ran| ran.is_some())
+}
+
+/// [`dispatch`] plus arbitrary trailing argv — the `tamias driver exec`
+/// passthrough for provider verbs beyond the lifecycle three
+/// (`hooks register`, `health`, …). `args` land after the standard
+/// `--dir`/`--name`/`--config` flags. On success the driver's captured
+/// stdout/stderr come back for the caller to render — provider verbs
+/// answer with status JSON the operator needs to see. `Ok(None)` = no
+/// driver found (same `false` as [`dispatch`]).
+///
+/// # Errors
+/// Fails when a driver is found but exits non-zero.
+pub fn dispatch_with_args(
+    kind: &str,
+    verb: &str,
+    dir: &Path,
+    name: &str,
+    config: Option<&Path>,
+    args: &[String],
+) -> Result<Option<DriverOutput>, Error> {
+    dispatch_with_timeout(kind, verb, dir, name, config, args, DISPATCH_TIMEOUT)
 }
 
 /// [`dispatch`] with an explicit bound — tests shrink it; production
-/// callers get [`DISPATCH_TIMEOUT`].
+/// callers get [`DISPATCH_TIMEOUT`]. `args` is the trailing argv
+/// [`dispatch_with_args`] appends.
 fn dispatch_with_timeout(
     kind: &str,
     verb: &str,
     dir: &Path,
     name: &str,
     config: Option<&Path>,
+    args: &[String],
     timeout: Duration,
-) -> Result<bool, Error> {
+) -> Result<Option<DriverOutput>, Error> {
     let Some(driver) = find_driver(kind) else {
-        return Ok(false);
+        return Ok(None);
     };
     let mut cmd = std::process::Command::new(&driver);
     cmd.arg(verb).arg("--dir").arg(dir).arg("--name").arg(name);
     if let Some(config) = config {
         cmd.arg("--config").arg(config);
     }
+    cmd.args(args);
     let out = output_with_timeout(&mut cmd, timeout)
         .map_err(|e| Error::Failed(format!("run driver {}: {e}", driver.display())))?;
     if !out.status.success() {
@@ -217,7 +249,7 @@ fn dispatch_with_timeout(
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    Ok(true)
+    Ok(Some((out.stdout, out.stderr)))
 }
 
 /// Consent for registering + running payload-shipped drivers: the caller's
@@ -583,11 +615,50 @@ mod tests {
             tmp.path(),
             "n",
             None,
+            &[],
             Duration::from_millis(300),
         )
         .unwrap_err();
         assert!(err.to_string().contains("timed out"), "{err}");
         assert!(start.elapsed() < Duration::from_secs(10));
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn dispatch_with_args_passes_argv_and_captures_output() {
+        let _guard = ENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        // Echo the trailing args + the standard flags so the test can
+        // assert both landed, in order.
+        write_driver(
+            &drivers_dir(),
+            "tamias-driver-ops",
+            "#!/bin/sh\nprintf '%s\\n' \"$@\"\n",
+        );
+        let out = dispatch_with_args(
+            "ops",
+            "hooks",
+            tmp.path(),
+            "pkg",
+            None,
+            &["register".into(), "--dry-run".into()],
+        )
+        .unwrap()
+        .unwrap();
+        let stdout = String::from_utf8(out.0).unwrap();
+        let lines: Vec<&str> = stdout.lines().collect();
+        assert_eq!(lines[0], "hooks");
+        assert!(lines.contains(&"--dir"));
+        assert!(lines.contains(&"--name"));
+        assert!(lines.contains(&"register"));
+        assert!(lines.contains(&"--dry-run"));
+        // no driver → None, not an error
+        assert!(
+            dispatch_with_args("nope", "health", tmp.path(), "n", None, &[])
+                .unwrap()
+                .is_none()
+        );
         std::env::remove_var("TAMIAS_HOME");
     }
 

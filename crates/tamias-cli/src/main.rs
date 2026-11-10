@@ -208,6 +208,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Provider-verb dispatch — run a driver verb beyond the lifecycle
+    /// three (`install`/`deploy`/`uninstall`).
+    Driver {
+        #[command(subcommand)]
+        cmd: DriverCommand,
+    },
     /// Provider packages — the declarative `provider:` runtime spec.
     Provider {
         #[command(subcommand)]
@@ -237,6 +243,30 @@ enum Command {
         /// Follow the journal (`journalctl -f`).
         #[arg(long, short)]
         follow: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum DriverCommand {
+    /// Dispatch a provider verb to an installed package's kind driver —
+    /// `tamias driver exec <pkg> <verb> [args…]`. The verb and any args
+    /// pass through verbatim after the standard `--dir`/`--name`
+    /// flags; the driver's stdout/stderr stream back. `tamias drivers`
+    /// lists each driver's declared verbs; `tamias run` stays the
+    /// local service-exec surface — provider-specific ops (hook
+    /// registration, health probes, unit status) live here.
+    Exec {
+        /// `@scope/name` or `name` — the installed package.
+        name: String,
+        /// The driver verb (`hooks`, `health`, `status`, …).
+        verb: String,
+        /// Node/config file passed through as the driver's `--config`.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Everything after the verb — driver flags/sub-verbs
+        /// (`register --dry-run`).
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 }
 
@@ -749,6 +779,15 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
         Some(Command::Drivers { json }) => {
             drivers_list(json)?;
         }
+        Some(Command::Driver { cmd }) => {
+            let DriverCommand::Exec {
+                name,
+                verb,
+                config,
+                args,
+            } = cmd;
+            driver_exec(&env, &name, &verb, config.as_deref(), &args)?;
+        }
         Some(Command::Provider { cmd }) => {
             let ProviderCommand::List { all, json } = cmd;
             provider_list(&env, all, json)?;
@@ -958,6 +997,22 @@ fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Er
             // the unit files are already on disk.
             let _ = deploy.daemon_reload();
         }
+        // Ingress hooks stay manual for v1: `public_url` fronts a tunnel
+        // the operator confirms first — auto-registering forge hooks at
+        // deploy time would point repos at whatever URL happens to be
+        // declared. Point at the explicit verb instead.
+        let hooks: usize = manifest
+            .provider
+            .as_ref()
+            .map(|p| p.ingress.iter().map(|i| i.hooks.len()).sum())
+            .unwrap_or(0);
+        if hooks > 0 {
+            eprintln!(
+                "tamias: {} ingress hook(s) declared — review with `tamias driver exec {} hooks register --dry-run`, then drop --dry-run to register",
+                hooks,
+                entry.label()
+            );
+        }
     }
     if !driver_ran && !deployed {
         println!("{}: nothing to deploy (type {kind})", entry.label());
@@ -1057,6 +1112,57 @@ fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
         ServiceCommand::Uninstall { unit } => {
             deploy.uninstall(&unit)?;
             println!("removed unit {unit}");
+        }
+    }
+    Ok(())
+}
+
+/// `driver exec <pkg> <verb> [args…]` — the provider-verb passthrough:
+/// resolves the installed package's store entry (dir + name + kind),
+/// dispatches `<verb>` to its kind driver with `args` trailing the
+/// standard flags, and renders the driver's captured output. Warns when
+/// the driver's declared `capabilities.verbs` doesn't list the verb —
+/// advisory only, the driver stays the authority.
+fn driver_exec(
+    env: &Env,
+    name: &str,
+    verb: &str,
+    config: Option<&Path>,
+    args: &[String],
+) -> Result<(), Error> {
+    let entry = Store::new(&env.store_root).find(name)?;
+    let kind = entry.record.kind.as_deref().unwrap_or("files");
+    if let Some(driver) = tamias_driver::find_driver(kind) {
+        if let Ok(caps) = tamias_driver::capabilities(&driver) {
+            let verbs = caps.get("verbs").and_then(|v| v.as_array());
+            let declared =
+                verbs.is_some_and(|a| !a.is_empty() && a.iter().any(|v| v.as_str() == Some(verb)));
+            if verbs.is_some_and(|a| !a.is_empty()) && !declared {
+                eprintln!(
+                    "tamias: warning — '{}' does not declare verb '{verb}' in capabilities (driver decides)",
+                    driver.display()
+                );
+            }
+        }
+    }
+    match tamias_driver::dispatch_with_args(
+        kind,
+        verb,
+        &entry.dir,
+        &entry.record.name,
+        config,
+        args,
+    )? {
+        Some((stdout, stderr)) => {
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(&stdout);
+            let _ = std::io::stderr().write_all(&stderr);
+        }
+        None => {
+            if kind != "files" {
+                eprintln!("tamias: warning — no driver for type '{kind}'");
+            }
+            println!("{}: no driver for type {kind} — nothing ran", entry.label());
         }
     }
     Ok(())
@@ -1735,6 +1841,89 @@ mod tests {
         run_args(e.clone(), &["tamias", "uninstall", "fl"]).unwrap();
         assert!(Store::new(&e.store_root).find("fl").is_err());
         std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn driver_exec_dispatches_verb_and_args() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        let dd = tmp.path().join("th/drivers");
+        std::fs::create_dir_all(&dd).unwrap();
+        let driver = dd.join("tamias-driver-opsx");
+        std::fs::write(
+            &driver,
+            "#!/bin/sh\nif [ \"$1\" = capabilities ]; then\n  echo '{\"types\":[\"opsx\"],\"verbs\":[\"health\",\"hooks\"]}'\n  exit 0\nfi\necho \"$@\" >> \"$TAMIAS_HOME/seen\"\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let dir = tmp.path().join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            "name: op\nversion: 1.0.0\ntype: opsx\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        // trailing args land after the standard flags, verbatim
+        run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "driver",
+                "exec",
+                "op",
+                "hooks",
+                "register",
+                "--dry-run",
+            ],
+        )
+        .unwrap();
+        let seen = std::fs::read_to_string(tmp.path().join("th/seen")).unwrap();
+        assert!(seen.contains("hooks"), "{seen}");
+        assert!(seen.contains("--dir"), "{seen}");
+        assert!(seen.contains("--name"), "{seen}");
+        assert!(seen.contains("register"), "{seen}");
+        assert!(seen.contains("--dry-run"), "{seen}");
+        // unknown package → error; undeclared verb warns but still runs
+        assert!(run_args(e.clone(), &["tamias", "driver", "exec", "ghost", "health"]).is_err());
+        run_args(e.clone(), &["tamias", "driver", "exec", "op", "bogus"]).unwrap();
+        let seen = std::fs::read_to_string(tmp.path().join("th/seen")).unwrap();
+        assert!(seen.contains("bogus"), "{seen}");
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn driver_exec_parses_trailing_args() {
+        let cli = Cli::try_parse_from([
+            "tamias",
+            "driver",
+            "exec",
+            "pkg",
+            "hooks",
+            "register",
+            "--dry-run",
+            "--api-base",
+            "http://x",
+        ])
+        .unwrap();
+        let Some(Command::Driver {
+            cmd: DriverCommand::Exec {
+                name, verb, args, ..
+            },
+        }) = cli.command
+        else {
+            panic!("expected driver exec");
+        };
+        assert_eq!(name, "pkg");
+        assert_eq!(verb, "hooks");
+        assert_eq!(args, ["register", "--dry-run", "--api-base", "http://x"]);
     }
 
     #[test]
@@ -2631,6 +2820,7 @@ mod tests {
                 "uninstall",
                 "service",
                 "drivers",
+                "driver",
                 "provider",
                 "run",
                 "logs",
