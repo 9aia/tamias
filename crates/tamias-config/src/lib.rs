@@ -20,6 +20,12 @@ pub const CONFIG_NAMES: [&str; 3] = ["tamias.yml", "tamias.yaml", "tamias.toml"]
 pub const CONFIG_ENV: &str = "TAMIAS_CONFIG";
 
 /// A store/cache location.
+///
+/// `store.root`/`cache.root` resolve to the on-disk roots the CLI's
+/// `Env` uses — but only when `kind` is unset or `local`, and only when
+/// the corresponding `TAMIAS_*`/XDG env var is unset (env wins). Any
+/// other `kind` (`cf`, …) is reserved: the CLI warns and falls back to
+/// the env/default roots rather than half-applying it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Location {
@@ -55,13 +61,17 @@ pub struct Publish {
     pub default: Option<String>,
 }
 
-/// The tamias config.
+/// The tamias config — discovered as `./tamias.{yml,yaml,toml}` (or
+/// `TAMIAS_CONFIG`/`--file`). `store`/`cache` roots feed the CLI's
+/// `Env` (env vars win); `registries`/`publish` inform `doctor` and
+/// are reserved for routing `publish`/`search` defaults.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// Install store location.
+    /// Install store location — `root` applies when `kind` is `local`/unset
+    /// and `TAMIAS_HOME`/XDG env is unset (env wins).
     pub store: Location,
-    /// Fetch-cache location.
+    /// Fetch-cache location — same resolution rule as `store`.
     pub cache: Location,
     /// Named registries.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]

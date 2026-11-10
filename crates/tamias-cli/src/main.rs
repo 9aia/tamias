@@ -1,6 +1,10 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias — the CLI. P2b: the distribution verbs over the source port, the
-//! content-addressed cache, and the local store.
+//! content-addressed cache, and the local store. PL-008 added the
+//! operator surface for the provider model: `drivers` (discovery +
+//! capabilities), `provider list` (installed `provider:` blocks),
+//! `run`/`logs` (foreground exec + journal over provider services), and
+//! `service`/`deploy`/`uninstall` for the systemd units they render.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -197,6 +201,57 @@ enum Command {
         #[command(subcommand)]
         cmd: ServiceCommand,
     },
+    /// List discovered content drivers (`tamias-driver-<type>` on PATH +
+    /// `<tamias-home>/drivers/`).
+    Drivers {
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Provider packages — the declarative `provider:` runtime spec.
+    Provider {
+        #[command(subcommand)]
+        cmd: ProviderCommand,
+    },
+    /// Run an installed provider service's exec in the foreground —
+    /// the unit's argv + env, without systemd. `tamias run <pkg>
+    /// [service] [-- extra-args]`.
+    Run {
+        /// `@scope/name` or `name` — the package must declare `provider:`.
+        name: String,
+        /// Service name — required when the provider declares several.
+        service: Option<String>,
+        /// Extra argv appended to the service exec (after `--`).
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
+    /// Follow a package's provider units' journals — `tamias logs
+    /// <pkg|unit>`. A package name resolves to all its provider units;
+    /// anything else is treated as a unit base name.
+    Logs {
+        /// Package name or unit base name.
+        name: String,
+        /// Journal lines to show.
+        #[arg(long, default_value_t = 200)]
+        lines: u32,
+        /// Follow the journal (`journalctl -f`).
+        #[arg(long, short)]
+        follow: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProviderCommand {
+    /// List installed packages' `provider:` blocks — services (with
+    /// unit state), ingress URLs, verbs, health probe.
+    List {
+        /// Also list packages without a `provider:` block.
+        #[arg(long)]
+        all: bool,
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -251,32 +306,72 @@ struct Env {
 
 impl Env {
     fn from_env() -> Self {
+        // The project config (`./tamias.{yml,yaml,toml}`) fills roots the
+        // env vars leave unset — explicit `TAMIAS_*`/XDG vars win. A
+        // broken config warns and is ignored rather than failing every
+        // verb before it starts.
+        let config = cli_config();
         Self {
-            store_root: store_root(),
-            cache_root: cache_root(),
+            store_root: store_root(config.as_ref()),
+            cache_root: cache_root(config.as_ref()),
             registry_root: registry_root(),
         }
     }
 }
 
-fn store_root() -> PathBuf {
-    std::env::var_os("TAMIAS_HOME")
-        .map(|h| PathBuf::from(h).join("store"))
-        .or_else(|| {
-            std::env::var_os("XDG_DATA_HOME").map(|d| PathBuf::from(d).join("tamias/store"))
-        })
+/// The effective config file in the cwd, if any — the same discovery the
+/// `config` verb uses. Parse/read failures warn and yield `None`.
+fn cli_config() -> Option<tamias_config::Config> {
+    let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
+    match tamias_config::load_in(Path::new("."), &formats) {
+        Ok(found) => found.map(|(_, c)| c),
+        Err(e) => {
+            eprintln!("tamias: warning — ignoring config file: {e}");
+            None
+        }
+    }
+}
+
+/// A config `Location` → its `root` as a path. Only `local` (or unset)
+/// kinds resolve — `cf` and anything else are reserved (T-015): warn and
+/// yield `None` so the caller falls through to env/defaults instead of
+/// silently pointing at a backend that isn't wired.
+fn location_root(loc: &tamias_config::Location, what: &str) -> Option<String> {
+    match loc.kind.as_deref() {
+        None | Some("local") => loc.root.clone(),
+        Some(kind) => {
+            eprintln!(
+                "tamias: warning — {what}.kind '{kind}' is not wired yet; ignoring {what}.root"
+            );
+            None
+        }
+    }
+}
+
+fn store_root(config: Option<&tamias_config::Config>) -> PathBuf {
+    if let Some(root) = std::env::var_os("TAMIAS_HOME") {
+        return PathBuf::from(root).join("store");
+    }
+    if let Some(root) = config.and_then(|c| location_root(&c.store, "store")) {
+        return PathBuf::from(root);
+    }
+    std::env::var_os("XDG_DATA_HOME")
+        .map(|d| PathBuf::from(d).join("tamias/store"))
         .or_else(|| {
             std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share/tamias/store"))
         })
         .unwrap_or_else(|| PathBuf::from(".tamias/store"))
 }
 
-fn cache_root() -> PathBuf {
-    std::env::var_os("TAMIAS_CACHE")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("XDG_CACHE_HOME").map(|d| PathBuf::from(d).join("tamias/fetch"))
-        })
+fn cache_root(config: Option<&tamias_config::Config>) -> PathBuf {
+    if let Some(root) = std::env::var_os("TAMIAS_CACHE") {
+        return PathBuf::from(root);
+    }
+    if let Some(root) = config.and_then(|c| location_root(&c.cache, "cache")) {
+        return PathBuf::from(root);
+    }
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(|d| PathBuf::from(d).join("tamias/fetch"))
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache/tamias/fetch")))
         .unwrap_or_else(|| PathBuf::from(".tamias/fetch"))
 }
@@ -651,6 +746,27 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
         Some(Command::Service { cmd }) => {
             run_service(cmd)?;
         }
+        Some(Command::Drivers { json }) => {
+            drivers_list(json)?;
+        }
+        Some(Command::Provider { cmd }) => {
+            let ProviderCommand::List { all, json } = cmd;
+            provider_list(&env, all, json)?;
+        }
+        Some(Command::Run {
+            name,
+            service,
+            args,
+        }) => {
+            run_provider_service(&env, &name, service.as_deref(), &args)?;
+        }
+        Some(Command::Logs {
+            name,
+            lines,
+            follow,
+        }) => {
+            logs(&env, &name, lines, follow)?;
+        }
         Some(Command::Version) => {
             println!("tamias {}", env!("CARGO_PKG_VERSION"));
         }
@@ -750,7 +866,15 @@ enum ServiceCommand {
     /// Unit status.
     Status { unit: String },
     /// Follow the unit's logs.
-    Logs { unit: String },
+    Logs {
+        unit: String,
+        /// Journal lines to show.
+        #[arg(long, default_value_t = 200)]
+        lines: u32,
+        /// Follow the journal (`journalctl -f`).
+        #[arg(long, short)]
+        follow: bool,
+    },
     /// Disable + remove the unit file.
     Uninstall { unit: String },
 }
@@ -772,15 +896,7 @@ fn provider_of(entry: &StoreEntry) -> Result<Option<Manifest>, Error> {
 /// don't collide). Deterministic: two packages claiming the same unit
 /// name resolve last-deploy-wins on the unit file.
 fn provider_unit_name(manifest: &Manifest, service: &str) -> String {
-    let base = manifest
-        .provider
-        .as_ref()
-        .and_then(|p| p.name.clone())
-        .unwrap_or_else(|| match &manifest.scope {
-            Some(scope) => format!("{scope}-{}", manifest.name),
-            None => manifest.name.clone(),
-        });
-    format!("{base}-{service}")
+    format!("{}-{service}", provider_base(manifest))
 }
 
 /// Render a provider service as a [`ServiceSpec`] — exec string → argv
@@ -933,13 +1049,383 @@ fn run_service(cmd: ServiceCommand) -> Result<(), Error> {
             println!("disabled {unit}");
         }
         ServiceCommand::Status { unit } => deploy.status(&unit)?,
-        ServiceCommand::Logs { unit } => deploy.logs(&unit)?,
+        ServiceCommand::Logs {
+            unit,
+            lines,
+            follow,
+        } => deploy.logs_with(&[unit], lines, follow)?,
         ServiceCommand::Uninstall { unit } => {
             deploy.uninstall(&unit)?;
             println!("removed unit {unit}");
         }
     }
     Ok(())
+}
+
+/// `drivers` — every discovered `tamias-driver-<type>` (PATH first, then
+/// `<tamias-home>/drivers/`, deduped by name — the same scan dispatch
+/// uses) with its `capabilities` probe. A driver that won't answer
+/// reports `capabilities: null` instead of failing the listing.
+fn drivers_list(json: bool) -> Result<(), Error> {
+    let installed = tamias_driver::drivers_dir();
+    let mut rows = Vec::new();
+    for (kind, path) in tamias_driver::discovered_drivers() {
+        let caps = tamias_driver::capabilities(&path).ok();
+        let strings = |key: &str| -> Vec<String> {
+            caps.as_ref()
+                .and_then(|c| c.get(key))
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let types = strings("types");
+        let types = if types.is_empty() {
+            vec![kind.clone()]
+        } else {
+            types
+        };
+        let verbs = strings("verbs");
+        let location = if path.starts_with(&installed) {
+            "installed"
+        } else {
+            "path"
+        };
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+        rows.push(serde_json::json!({
+            "name": name,
+            "type": kind,
+            "types": types,
+            "verbs": verbs,
+            "location": location,
+            "path": path.display().to_string(),
+            "capabilities": caps,
+        }));
+    }
+    if json {
+        return print_json(&serde_json::json!({ "drivers": rows }));
+    }
+    if rows.is_empty() {
+        println!("no drivers discovered");
+        return Ok(());
+    }
+    let join = |row: &serde_json::Value, key: &str| -> String {
+        row[key]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "-".to_string())
+    };
+    for row in &rows {
+        let caps = if row["capabilities"].is_null() {
+            "unreachable".to_string()
+        } else {
+            row["capabilities"].to_string()
+        };
+        println!(
+            "{}  types: {}  verbs: {}  [{}] {}\n  capabilities: {caps}",
+            row["name"].as_str().unwrap_or("?"),
+            join(row, "types"),
+            join(row, "verbs"),
+            row["location"].as_str().unwrap_or("?"),
+            row["path"].as_str().unwrap_or("?"),
+        );
+    }
+    Ok(())
+}
+
+/// Best-effort `systemctl --user is-enabled <unit>` — bounded at 3s;
+/// `None` when systemd can't answer (no user bus, timeout). `is-enabled`
+/// exits non-zero for `disabled`/`masked`/`not-found`, so the state is
+/// read from stdout (stderr as fallback), not the exit status.
+fn unit_state(unit: &str) -> Option<String> {
+    let mut cmd = std::process::Command::new("systemctl");
+    cmd.args(["--user", "is-enabled", unit]);
+    let out = tamias_core::output_with_timeout(&mut cmd, Duration::from_secs(3)).ok()?;
+    let state = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if state.is_empty() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return (!err.is_empty()).then_some(err);
+    }
+    Some(state)
+}
+
+/// The provider display/identity base — `provider.name`, else the
+/// scope-qualified package name (shared by [`provider_unit_name`] and
+/// `provider list`).
+fn provider_base(manifest: &Manifest) -> String {
+    manifest
+        .provider
+        .as_ref()
+        .and_then(|p| p.name.clone())
+        .unwrap_or_else(|| match &manifest.scope {
+            Some(scope) => format!("{scope}-{}", manifest.name),
+            None => manifest.name.clone(),
+        })
+}
+
+/// `provider list` — installed packages' `provider:` blocks. Default:
+/// only packages that declare one; `--all` adds the rest as
+/// provider-less rows.
+fn provider_list(env: &Env, all: bool, json: bool) -> Result<(), Error> {
+    let mut rows = Vec::new();
+    let mut texts = Vec::new();
+    for entry in Store::new(&env.store_root).entries()? {
+        let manifest = entry.manifest().ok();
+        let Some(manifest) = manifest.filter(|m| m.provider.is_some()) else {
+            if all {
+                rows.push(serde_json::json!({
+                    "package": entry.label(),
+                    "provider": null,
+                }));
+                texts.push(format!("{}  (no provider block)", entry.label()));
+            }
+            continue;
+        };
+        // `filter` above guarantees `provider` is `Some` here.
+        let Some(provider) = manifest.provider.as_ref() else {
+            continue;
+        };
+        let base = provider_base(&manifest);
+        let mut service_rows = Vec::new();
+        let mut service_lines = Vec::new();
+        for service in &provider.services {
+            let unit = provider_unit_name(&manifest, &service.name);
+            let state = unit_state(&unit);
+            service_rows.push(serde_json::json!({
+                "name": service.name,
+                "unit": format!("{unit}.service"),
+                "exec": service.exec,
+                "state": state,
+            }));
+            service_lines.push(format!(
+                "  service {} → {}.service ({})\n    exec: {}",
+                service.name,
+                unit,
+                state.as_deref().unwrap_or("-"),
+                service.exec
+            ));
+        }
+        let ingress: Vec<serde_json::Value> = provider
+            .ingress
+            .iter()
+            .map(|i| {
+                serde_json::json!({
+                    "public_url": i.public_url,
+                    "listen": i.listen,
+                    "path": i.path,
+                })
+            })
+            .collect();
+        let health = provider.health.as_ref().map(|h| h.cmd.clone());
+        rows.push(serde_json::json!({
+            "package": entry.label(),
+            "provider": base,
+            "services": service_rows,
+            "ingress": ingress,
+            "verbs": provider.verbs,
+            "health": health,
+            "dir": entry.dir.display().to_string(),
+        }));
+        let mut block = format!("{} — provider {}", entry.label(), base);
+        for line in service_lines {
+            block.push('\n');
+            block.push_str(&line);
+        }
+        for i in &provider.ingress {
+            let mut line = format!("  ingress {}", i.public_url);
+            if let Some(listen) = &i.listen {
+                line.push_str(&format!(" (listen {listen}"));
+                if let Some(path) = &i.path {
+                    line.push_str(path);
+                }
+                line.push(')');
+            } else if let Some(path) = &i.path {
+                line.push_str(&format!(" (path {path})"));
+            }
+            block.push('\n');
+            block.push_str(&line);
+        }
+        if !provider.verbs.is_empty() {
+            block.push_str(&format!("\n  verbs: {}", provider.verbs.join(", ")));
+        }
+        if let Some(cmd) = &health {
+            block.push_str(&format!("\n  health: {cmd}"));
+        }
+        texts.push(block);
+    }
+    if json {
+        return print_json(&serde_json::json!({ "providers": rows }));
+    }
+    if texts.is_empty() {
+        println!("no provider packages installed");
+    } else {
+        println!("{}", texts.join("\n"));
+    }
+    Ok(())
+}
+
+/// `run <pkg> [service] [-- args…]` — exec a provider service's `exec`
+/// argv in the foreground via `tamias-shell`: the unit's env
+/// (`env_file` parsed as `K=V` lines, inline `env` overriding — the same
+/// order systemd applies), `workdir` (`~` expanded) or the payload dir
+/// as cwd, and a scrubbed child environment (parent credentials never
+/// leak). This is the no-systemd counterpart of the rendered unit —
+/// `provider.health.cmd` and richer verbs are T8-5's job.
+fn run_provider_service(
+    env: &Env,
+    name: &str,
+    service: Option<&str>,
+    extra: &[String],
+) -> Result<(), Error> {
+    let entry = Store::new(&env.store_root).find(name)?;
+    let manifest = provider_of(&entry)?.ok_or_else(|| {
+        Error::Failed(format!(
+            "{}: no provider: block — `tamias run` needs provider.services",
+            entry.label()
+        ))
+    })?;
+    let provider = manifest
+        .provider
+        .as_ref()
+        .ok_or_else(|| Error::Failed(format!("{}: no provider: block", entry.label())))?;
+    let names = || {
+        provider
+            .services
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let svc = match service {
+        Some(s) => provider
+            .services
+            .iter()
+            .find(|x| x.name == s)
+            .ok_or_else(|| {
+                Error::Failed(format!(
+                    "{}: no provider service '{s}' (have: {})",
+                    entry.label(),
+                    names()
+                ))
+            })?,
+        None => match provider.services.as_slice() {
+            [] => {
+                return Err(Error::Failed(format!(
+                    "{}: provider declares no services",
+                    entry.label()
+                )));
+            }
+            [one] => one,
+            many => {
+                return Err(Error::Failed(format!(
+                    "{}: provider declares {} services — pass one: {}",
+                    entry.label(),
+                    many.len(),
+                    names()
+                )));
+            }
+        },
+    };
+    let mut argv = tamias_deploy_local::split_exec(&svc.exec)?;
+    argv.extend(extra.iter().cloned());
+    // env_file first, inline env overrides — systemd's order.
+    let mut vars: Vec<(String, String)> = Vec::new();
+    if let Some(env_file) = &svc.env_file {
+        let path = PathBuf::from(tamias_deploy_local::expand_home(env_file));
+        // The unit renders `EnvironmentFile=-` (optional) — a missing
+        // file is not an error here either.
+        if path.is_file() {
+            let text = std::fs::read_to_string(&path)
+                .map_err(Error::io(format!("read {}", path.display())))?;
+            for line in text.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                match line.split_once('=') {
+                    Some((k, v)) => vars.push((k.trim().to_string(), unquote_env(v.trim()))),
+                    None => eprintln!(
+                        "tamias: warning — ignoring malformed env_file line in {}",
+                        path.display()
+                    ),
+                }
+            }
+        }
+    }
+    vars.extend(svc.env.iter().map(|(k, v)| (k.clone(), v.clone())));
+    let workdir = svc
+        .workdir
+        .as_deref()
+        .map(tamias_deploy_local::expand_home)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| entry.dir.clone());
+    let status = tamias_shell::exec_with_env(&workdir, &argv, &vars)
+        .map_err(Error::io("exec provider service"))?;
+    if !status.success() {
+        return Err(Error::Failed(format!("{} exited {status}", svc.name)));
+    }
+    Ok(())
+}
+
+/// Strip one layer of matching surrounding quotes from an env_file
+/// value — systemd unquotes `KEY="a b"`/`KEY='a b'` the same way.
+fn unquote_env(value: &str) -> String {
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2
+        && ((bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\''))
+    {
+        return value[1..value.len() - 1].to_string();
+    }
+    value.to_string()
+}
+
+/// `logs <pkg|unit>` — journalctl over a provider package's units, or a
+/// bare unit base name (`tamias service logs` with `--lines`/`--follow`).
+fn logs(env: &Env, name: &str, lines: u32, follow: bool) -> Result<(), Error> {
+    let deploy = tamias_deploy_local::LocalDeploy::new();
+    match Store::new(&env.store_root).find(name) {
+        Ok(entry) => {
+            let Some(manifest) = provider_of(&entry)? else {
+                return Err(Error::Failed(format!(
+                    "{}: no provider: block — `tamias logs` needs provider.services (or pass a unit name)",
+                    entry.label()
+                )));
+            };
+            let units: Vec<String> = manifest
+                .provider
+                .as_ref()
+                .map(|p| {
+                    p.services
+                        .iter()
+                        .map(|s| provider_unit_name(&manifest, &s.name))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if units.is_empty() {
+                return Err(Error::Failed(format!(
+                    "{}: provider declares no services",
+                    entry.label()
+                )));
+            }
+            deploy.logs_with(&units, lines, follow)
+        }
+        // Not a store entry → treat the name as a unit base name.
+        Err(_) => deploy.logs_with(&[name.to_string()], lines, follow),
+    }
 }
 
 /// The registry check — a configured `publish.default` registry must
@@ -1104,6 +1590,8 @@ mod tests {
     static CWD: std::sync::Mutex<()> = std::sync::Mutex::new(());
     /// Serializes tests that mutate `TAMIAS_HOME`/`TAMIAS_ALLOW_DRIVERS`.
     static DRVENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// Serializes tests that prepend fake binaries to `PATH`.
+    static PATHL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn env(root: &std::path::Path) -> Env {
         Env {
@@ -1489,19 +1977,19 @@ mod tests {
         std::env::set_var("TAMIAS_HOME", "/th");
         std::env::set_var("TAMIAS_CACHE", "/tc");
         std::env::set_var("TAMIAS_REGISTRY", "/tr");
-        let _ = (store_root(), cache_root(), registry_root());
+        let _ = (store_root(None), cache_root(None), registry_root());
         std::env::remove_var("TAMIAS_HOME");
         std::env::remove_var("TAMIAS_CACHE");
         std::env::remove_var("TAMIAS_REGISTRY");
         std::env::set_var("XDG_DATA_HOME", "/xd");
         std::env::set_var("XDG_CACHE_HOME", "/xc");
-        let _ = (store_root(), cache_root(), registry_root());
+        let _ = (store_root(None), cache_root(None), registry_root());
         std::env::remove_var("XDG_DATA_HOME");
         std::env::remove_var("XDG_CACHE_HOME");
         std::env::set_var("HOME", "/h");
-        let _ = (store_root(), cache_root(), registry_root());
+        let _ = (store_root(None), cache_root(None), registry_root());
         std::env::remove_var("HOME");
-        let _ = (store_root(), cache_root(), registry_root());
+        let _ = (store_root(None), cache_root(None), registry_root());
     }
 
     #[test]
@@ -1636,6 +2124,7 @@ mod tests {
 
     #[test]
     fn add_with_existing_manifest_and_service_verbs() {
+        let _p = PATHL.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let e = env(tmp.path());
         let dir = pkg(tmp.path());
@@ -1824,6 +2313,7 @@ mod tests {
     #[test]
     fn service_status_logs_uninstall() {
         use std::os::unix::fs::PermissionsExt;
+        let _p = PATHL.lock().unwrap();
         let tmp = tempfile::tempdir().unwrap();
         let bin = tmp.path().join("bin");
         std::fs::create_dir_all(&bin).unwrap();
@@ -2140,6 +2630,10 @@ mod tests {
                 "deploy",
                 "uninstall",
                 "service",
+                "drivers",
+                "provider",
+                "run",
+                "logs",
             ]
         );
     }
@@ -2246,6 +2740,203 @@ mod tests {
                 .source_ref,
             "./other"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn drivers_provider_run_logs() {
+        use std::os::unix::fs::PermissionsExt;
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        // a driver installed under <tamias-home>/drivers — capabilities answers
+        let dd = tmp.path().join("th/drivers");
+        std::fs::create_dir_all(&dd).unwrap();
+        let driver = dd.join("tamias-driver-fx");
+        std::fs::write(
+            &driver,
+            "#!/bin/sh\nif [ \"$1\" = capabilities ]; then echo '{\"types\":[\"fx\"],\"verbs\":[\"install\",\"deploy\"]}'; fi\nexit 0\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+        run_args(e.clone(), &["tamias", "drivers"]).unwrap();
+        run_args(e.clone(), &["tamias", "drivers", "--json"]).unwrap();
+
+        // a provider package + a plain one
+        let dir = tmp.path().join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        let env_file = tmp.path().join("svc.env");
+        std::fs::write(
+            &env_file,
+            "# comment\nFILE_VAR=\"quoted value\"\nBADLINE\nOTHER=1\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            format!(
+                "name: gate\nversion: 1.0.0\nprovider:\n  name: gateprov\n  services:\n    - name: web\n      exec: \"printenv RUN_MARK\"\n      env: {{RUN_MARK: ok}}\n    - name: api\n      exec: \"/bin/echo api-argv\"\n    - name: envtest\n      exec: >-\n        sh -c \"test \\\"$FILE_VAR\\\" = 'quoted value' && test \\\"$INLINE\\\" = 'inline'\"\n      env_file: {}\n      env: {{INLINE: inline}}\n  ingress:\n    - public_url: https://ci.example.com\n      listen: 127.0.0.1:29173\n      path: /hook\n  verbs: [run, logs]\n  health: {{cmd: \"curl -sf localhost:29173/health\"}}\n",
+                env_file.display()
+            ),
+        )
+        .unwrap();
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        // a plain package (no provider:) for --all / run / logs negatives
+        let plain = tmp.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::write(plain.join("tamias.yaml"), "name: w\nversion: 1.0.0\n").unwrap();
+        std::fs::write(plain.join("a.txt"), "a").unwrap();
+        run_args(e.clone(), &["tamias", "install", plain.to_str().unwrap()]).unwrap();
+
+        // provider list — default (provider only), --all, --json
+        run_args(e.clone(), &["tamias", "provider", "list"]).unwrap();
+        run_args(e.clone(), &["tamias", "provider", "list", "--all"]).unwrap();
+        run_args(e.clone(), &["tamias", "provider", "list", "--json"]).unwrap();
+        run_args(
+            e.clone(),
+            &["tamias", "provider", "list", "--all", "--json"],
+        )
+        .unwrap();
+
+        // run — sole-service pick needs the service arg here (3 services);
+        // env_file parsing + quoting + inline env override exercised by envtest
+        run_args(e.clone(), &["tamias", "run", "gate", "web"]).unwrap();
+        run_args(e.clone(), &["tamias", "run", "gate", "api", "--", "hello"]).unwrap();
+        run_args(e.clone(), &["tamias", "run", "gate", "envtest"]).unwrap();
+        assert!(run_args(e.clone(), &["tamias", "run", "gate"]).is_err()); // ambiguous
+        assert!(run_args(e.clone(), &["tamias", "run", "gate", "nope"]).is_err());
+        assert!(run_args(e.clone(), &["tamias", "run", "w"]).is_err()); // no provider
+        assert!(run_args(e.clone(), &["tamias", "run", "ghost"]).is_err());
+
+        // logs — fake journalctl records argv; package → all provider units
+        let _p = PATHL.lock().unwrap();
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let jlog = tmp.path().join("journal.log");
+        let fake = bin.join("journalctl");
+        std::fs::write(&fake, "#!/bin/sh\necho \"$@\" >> \"$JLOG_PATH\"\nexit 0\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let old_path = std::env::var_os("PATH").unwrap_or_default();
+        let mut newp = bin.clone().into_os_string();
+        newp.push(":");
+        newp.push(&old_path);
+        std::env::set_var("PATH", newp);
+        std::env::set_var("JLOG_PATH", &jlog);
+        let r1 = run_args(e.clone(), &["tamias", "logs", "gate", "--lines", "50"]);
+        let r2 = run_args(e.clone(), &["tamias", "logs", "otherunit", "-f"]);
+        let r3 = run_args(
+            e.clone(),
+            &["tamias", "service", "logs", "u", "--lines", "5"],
+        );
+        let r4 = run_args(e.clone(), &["tamias", "logs", "w"]); // no provider → err
+        std::env::set_var("PATH", old_path);
+        std::env::remove_var("JLOG_PATH");
+        r1.unwrap();
+        r2.unwrap();
+        r3.unwrap();
+        assert!(r4.is_err());
+        let calls = std::fs::read_to_string(&jlog).unwrap();
+        assert!(calls.contains("-u gateprov-web.service"), "{calls}");
+        assert!(calls.contains("-u gateprov-api.service"), "{calls}");
+        assert!(calls.contains("-u gateprov-envtest.service"), "{calls}");
+        assert!(calls.contains("-n 50"), "{calls}");
+        assert!(calls.contains("-u otherunit.service"), "{calls}");
+        assert!(calls.contains("-f"), "{calls}");
+        assert!(calls.contains("-u u.service -n 5"), "{calls}");
+
+        std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn config_locations_resolve_store_and_cache() {
+        // tamias-config is wired for store/cache roots: a project
+        // `tamias.yml` `store.root`/`cache.root` become the Env roots
+        // when the env vars are unset; `kind: cf` is reserved → ignored.
+        // Lock order matters: DRVENV before CWD — sibling tests take
+        // DRVENV→PATHL→CWD, so acquiring out of order deadlocks.
+        let _g2 = DRVENV.lock().unwrap();
+        let _g = CWD.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(
+            proj.join("tamias.yml"),
+            "store:\n  root: /cfg-store\ncache:\n  kind: local\n  root: /cfg-cache\n",
+        )
+        .unwrap();
+        let prev = std::env::current_dir().unwrap();
+        let keys = [
+            "TAMIAS_HOME",
+            "TAMIAS_CACHE",
+            "TAMIAS_REGISTRY",
+            "XDG_DATA_HOME",
+            "XDG_CACHE_HOME",
+            "HOME",
+        ];
+        let saved: Vec<(String, Option<std::ffi::OsString>)> = keys
+            .iter()
+            .map(|k| (k.to_string(), std::env::var_os(k)))
+            .collect();
+        for k in &keys {
+            std::env::remove_var(k);
+        }
+        std::env::set_current_dir(&proj).unwrap();
+        let e = Env::from_env();
+        std::env::set_current_dir(&prev).unwrap();
+        for (k, v) in saved {
+            if let Some(v) = v {
+                std::env::set_var(k, v);
+            }
+        }
+        assert_eq!(e.store_root, PathBuf::from("/cfg-store"));
+        assert_eq!(e.cache_root, PathBuf::from("/cfg-cache"));
+        // env vars still win over the config file
+        std::env::set_var("TAMIAS_HOME", "/env-home");
+        let cfg = tamias_config::Config {
+            store: tamias_config::Location {
+                kind: None,
+                root: Some("/cfg-store".into()),
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            store_root(Some(&cfg)),
+            PathBuf::from("/env-home").join("store")
+        );
+        std::env::remove_var("TAMIAS_HOME");
+        // a reserved kind warns + falls through to the default chain —
+        // with every root env var cleared that's `./.tamias/store`.
+        let cf = tamias_config::Config {
+            store: tamias_config::Location {
+                kind: Some("cf".into()),
+                root: Some("https://x".into()),
+            },
+            ..Default::default()
+        };
+        let saved2: Vec<(String, Option<std::ffi::OsString>)> = keys
+            .iter()
+            .map(|k| (k.to_string(), std::env::var_os(k)))
+            .collect();
+        for k in &keys {
+            std::env::remove_var(k);
+        }
+        let root = store_root(Some(&cf));
+        for (k, v) in saved2 {
+            if let Some(v) = v {
+                std::env::set_var(k, v);
+            }
+        }
+        assert_eq!(root, PathBuf::from(".tamias/store"));
+    }
+
+    #[test]
+    fn unquote_env_strips_matching_quotes() {
+        assert_eq!(unquote_env("\"a b\""), "a b");
+        assert_eq!(unquote_env("'a b'"), "a b");
+        assert_eq!(unquote_env("plain"), "plain");
+        assert_eq!(unquote_env("\"unclosed"), "\"unclosed");
+        assert_eq!(unquote_env("\"\""), "");
     }
 
     #[cfg(unix)]

@@ -389,6 +389,130 @@ fn driver_discovery_dispatches() {
 }
 
 #[test]
+fn drivers_lists_capabilities() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    // a driver installed under <tamias-home>/drivers answers capabilities
+    let dd = home.join("drivers");
+    std::fs::create_dir_all(&dd).unwrap();
+    let driver = dd.join("tamias-driver-fx");
+    std::fs::write(
+        &driver,
+        "#!/bin/sh\nif [ \"$1\" = capabilities ]; then echo '{\"types\":[\"fx\"],\"verbs\":[\"install\",\"deploy\",\"uninstall\"]}'; fi\nexit 0\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let cache = tmp.path().join("cache");
+    let o = tamias(&home, &cache, &["drivers", "--json"]);
+    assert!(o.status.success(), "drivers: {}", stderr(&o));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    let drivers = value["drivers"].as_array().unwrap();
+    let fx = drivers
+        .iter()
+        .find(|d| d["name"] == "tamias-driver-fx")
+        .expect("fx driver listed");
+    assert_eq!(fx["types"], serde_json::json!(["fx"]));
+    assert_eq!(fx["location"], "installed");
+    assert!(fx["path"].as_str().unwrap().contains("drivers"));
+    assert_eq!(
+        fx["capabilities"]["verbs"],
+        serde_json::json!(["install", "deploy", "uninstall"])
+    );
+    // text mode too
+    let o = tamias(&home, &cache, &["drivers"]);
+    assert!(o.status.success(), "drivers text: {}", stderr(&o));
+    assert!(stdout(&o).contains("tamias-driver-fx"), "{}", stdout(&o));
+}
+
+#[test]
+fn provider_list_shows_provider_packages() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: gate\nversion: 1.0.0\nprovider:\n  name: gateprov\n  services:\n    - name: web\n      exec: \"/bin/true\"\n  ingress:\n    - public_url: https://ci.example.com\n      path: /hook\n  verbs: [run, logs]\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    let plain = tmp.path().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    std::fs::write(plain.join("tamias.yaml"), "name: w\nversion: 1.0.0\n").unwrap();
+    std::fs::write(plain.join("a.txt"), "a").unwrap();
+    assert!(tamias(&home, &cache, &["install", pkg.to_str().unwrap()])
+        .status
+        .success());
+    assert!(tamias(&home, &cache, &["install", plain.to_str().unwrap()])
+        .status
+        .success());
+    // default: only the provider package
+    let o = tamias(&home, &cache, &["provider", "list"]);
+    assert!(o.status.success(), "provider list: {}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("gate@1.0.0"), "{out}");
+    assert!(out.contains("gateprov-web.service"), "{out}");
+    assert!(out.contains("https://ci.example.com"), "{out}");
+    assert!(!out.contains("w@1.0.0"), "{out}");
+    // --all adds the plain package
+    let o = tamias(&home, &cache, &["provider", "list", "--all"]);
+    assert!(stdout(&o).contains("w@1.0.0"), "{}", stdout(&o));
+    // --json parses and carries the provider block
+    let o = tamias(&home, &cache, &["provider", "list", "--json"]);
+    assert!(o.status.success(), "provider list --json: {}", stderr(&o));
+    let value: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    let providers = value["providers"].as_array().unwrap();
+    assert_eq!(providers.len(), 1);
+    assert_eq!(providers[0]["provider"], "gateprov");
+    assert_eq!(providers[0]["services"][0]["unit"], "gateprov-web.service");
+    assert_eq!(
+        providers[0]["ingress"][0]["public_url"],
+        "https://ci.example.com"
+    );
+    assert_eq!(providers[0]["verbs"], serde_json::json!(["run", "logs"]));
+}
+
+#[test]
+fn run_execs_provider_service_foreground() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    // single service → no service arg needed; exec prints via printenv
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: solo\nversion: 1.0.0\nprovider:\n  services:\n    - name: main\n      exec: \"printenv RUN_MARK\"\n      env: {RUN_MARK: ok}\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+    assert!(tamias(&home, &cache, &["install", pkg.to_str().unwrap()])
+        .status
+        .success());
+    // the service env reaches the child; exit 0
+    let o = tamias(&home, &cache, &["run", "solo"]);
+    assert!(o.status.success(), "run: {}", stderr(&o));
+    assert!(stdout(&o).contains("ok"), "{}", stdout(&o));
+    // a package without provider: → error
+    let plain = tmp.path().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    std::fs::write(plain.join("tamias.yaml"), "name: w\nversion: 1.0.0\n").unwrap();
+    std::fs::write(plain.join("a.txt"), "a").unwrap();
+    assert!(tamias(&home, &cache, &["install", plain.to_str().unwrap()])
+        .status
+        .success());
+    let o = tamias(&home, &cache, &["run", "w"]);
+    assert!(!o.status.success(), "run on plain package must fail");
+    let o = tamias(&home, &cache, &["run", "ghost"]);
+    assert!(!o.status.success());
+}
+
+#[test]
 fn bare_tamias_prints_help() {
     let o = Command::new(tamias_bin()).output().unwrap();
     assert!(o.status.success(), "bare tamias: {}", stderr(&o));
@@ -440,6 +564,10 @@ fn manifest_lists_every_verb() {
         "deploy",
         "uninstall",
         "service",
+        "drivers",
+        "provider",
+        "run",
+        "logs",
     ] {
         assert!(verbs.contains(&want), "manifest missing verb {want}");
     }
