@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-win","actor":"luis","ts":1794331020,"op":{"op":"claim","glob":"crates/tamias-deploy-windows/**","ttl_secs":3600}}
+{"id":"","ws":"devin-win","actor":"luis","ts":1794331021,"op":{"op":"claim","glob":"crates/tamias-deploy/**","ttl_secs":3600}}
