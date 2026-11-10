@@ -3,10 +3,15 @@
 //! request per line on stdin, write one JSON response per line on stdout.
 //! Same wire as `sepia serve` / `cuora serve` / `myco serve`.
 //!
-//! Ops: `install`, `sync`, `list`, `info`, `verify`, `remove`, `search`,
-//! `publish`, `registry.list`, `registry.get`, `registry.add`,
+//! Ops: `install`, `plan`, `sync`, `list`, `info`, `verify`, `remove`,
+//! `search`, `publish`, `registry.list`, `registry.get`, `registry.add`,
 //! `registry.remove`. Requests are `{"op":"…", …}`; responses are
 //! `{"ok":true,"result":…}` or `{"ok":false,"error":"…"}`.
+//!
+//! `plan` is `tamias install --plan` — `{"op":"plan","ref":…,
+//! "allow_drivers":…}` fetches/plans and reports what a real install
+//! would do (includes, drivers, provider services, trust tier,
+//! would-be problems) without committing or dispatching.
 //!
 //! `sync` reconciles the *server's* cwd project dep set against the
 //! store + `tamias.lock` — the same `tamias sync` semantics
@@ -150,6 +155,26 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 "digest": entry.record.digest,
                 "signed": entry.record.signature.is_some(),
             }))
+        }
+        "plan" => {
+            // `tamias install --plan` — the dry-run over the same
+            // store/cache roots + config resolution. Reports what a
+            // real install would do; commits and dispatches nothing.
+            let reference = str_field(&req, "ref")?;
+            let allow_drivers = req
+                .get("allow_drivers")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let plan = tamias_install::plan_install(
+                &tamias_install::Env::for_config(
+                    env.store_root.clone(),
+                    env.cache_root.clone(),
+                    Some(&env_config(env)),
+                ),
+                reference,
+                allow_drivers,
+            )?;
+            Ok(serde_json::to_value(&plan).map_err(|e| Error::Failed(e.to_string()))?)
         }
         "sync" => {
             // `tamias sync` — reconcile the project dep set against
@@ -503,6 +528,40 @@ mod tests {
             dispatch(&env, r#"{"op":"remove","name":"srv"}"#).unwrap()["name"],
             "srv"
         );
+    }
+
+    #[test]
+    fn dispatch_plan_is_a_dry_run() {
+        let env = env();
+        let pkg = tempfile::tempdir().unwrap();
+        std::fs::write(
+            pkg.path().join("tamias.yaml"),
+            "name: srv\nversion: 1.0.0\ntype: files\n",
+        )
+        .unwrap();
+        std::fs::write(pkg.path().join("a.txt"), "a").unwrap();
+        let req = format!(
+            "{{\"op\":\"plan\",\"ref\":{:?}}}",
+            pkg.path().to_str().unwrap()
+        );
+        let plan = dispatch(&env, &req).unwrap();
+        assert_eq!(plan["manifest"]["name"], "srv");
+        assert_eq!(plan["manifest"]["version"], "1.0.0");
+        assert!(plan["payload_digest"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:"));
+        assert!(plan["trust"].as_str().is_some());
+        // nothing committed — the store stays empty
+        assert_eq!(
+            dispatch(&env, r#"{"op":"list"}"#)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+        assert!(dispatch(&env, r#"{"op":"plan"}"#).is_err());
     }
 
     #[test]

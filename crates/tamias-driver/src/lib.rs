@@ -103,9 +103,14 @@ pub fn drivers_dir() -> PathBuf {
 }
 
 /// Find the driver for a content type — `tamias-driver-<kind>` on `PATH`,
-/// then `<tamias-home>/drivers/`.
+/// then `<tamias-home>/drivers/`. Kinds outside the manifest charset
+/// ([`tamias_core::is_valid_kind`]) never resolve — a hand-built store
+/// record can't smuggle `../` into the driver-name join.
 #[must_use]
 pub fn find_driver(kind: &str) -> Option<PathBuf> {
+    if !tamias_core::is_valid_kind(kind) {
+        return None;
+    }
     let name = format!("tamias-driver-{kind}");
     if let Some(path) = lookup(&name) {
         return Some(path);
@@ -279,6 +284,12 @@ fn dispatch_with_timeout(
     args: &[String],
     timeout: Duration,
 ) -> Result<Option<DriverOutput>, Error> {
+    // Defense in depth: manifests validate `type:`/`kind` at parse, but
+    // store records and direct callers can bypass that — refuse loudly
+    // rather than resolving `tamias-driver-<kind>` for a hostile kind.
+    if !tamias_core::is_valid_kind(kind) {
+        return Err(Error::Failed(format!("invalid driver kind {kind:?}")));
+    }
     let Some(driver) = find_driver(kind) else {
         return Ok(None);
     };
@@ -558,6 +569,19 @@ mod tests {
         assert!(dispatch("fx", "install", dir.path(), "n", None).unwrap());
         assert!(discovered_drivers().iter().any(|(k, _)| k == "fx"));
         std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn hostile_kind_never_resolves_a_driver() {
+        let _guard = EnvGuard::new();
+        let dir = tempfile::tempdir().unwrap();
+        for bad in ["../x", "a/b", "A", "", "a b", ".."] {
+            assert!(find_driver(bad).is_none(), "kind {bad:?} must not resolve");
+            assert!(
+                dispatch(bad, "install", dir.path(), "n", None).is_err(),
+                "kind {bad:?} must fail dispatch"
+            );
+        }
     }
 
     #[test]

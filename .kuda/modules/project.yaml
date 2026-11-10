@@ -59,7 +59,7 @@ provenance:
   - 8e032ed9afe33857903f042c5602086609df6d69
   - 98f4aa814ba47a8c6741d5ca11e09eececd0296f
   - 21a6946ca8191968b92247cc13a3f88eb02ad1ff
-  - 99320cf9b19b7bff42dede0895ebf11e867aec4a
+  - c2dd7d509c2b9d7cd0edd1e5bc36d1c1c07362fb
   - f6add38190dced8f5cffcbbb25e5610b6357fe7b
   - 2734918a0a33b89702752a27a20a5ae85b159940
   - 13c1457a7cee4deca035fd7c572bc1ade9274a9e
@@ -71,7 +71,7 @@ provenance:
   - e2fc25e216d16449105fb4ab420bebf2f02d06d4
   - 020c4f723e38d786392a98d87df67530e4fc1443
   - 8fcedfde5dcf4d5a61b0dbdd9942dbeec0fd0d53
-  - 9a7c78299d0dd922bcc6772e45f3c2a8162f09f6
-  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
-  generated_at: '1794341890'
+  - 25563075ac5afe8660909c52320d83ac6ae0b5c2
+  commit_sha: d6bae6ac4d86bafaf6bb174e84f0d253e3df19d3
+  generated_at: '1794348291'
   generator: kuda-template/0.1.2
