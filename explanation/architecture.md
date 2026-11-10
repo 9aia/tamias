@@ -63,8 +63,11 @@ distribution; every content *meaning* is an adapter.
 ref ─► resolve ─► (cache hit?) ─► fetch ─► driver install ─► store
 ```
 
-`overlay (include:)` is parsed and surfaced but not yet applied on the
-install path — payload composition is reserved machinery.
+`include:` composes payloads: each entry resolves to a store payload
+or a recursively-installed ref, `overlay()` deep-merges bases (earlier
+includes win, local wins) and the *composed* tree is what drivers see,
+what gets digested, and what the store commits. `publish`/`bundle pack`
+flatten includes by default (`--keep-includes` ships the raw payload).
 
 `resolve` pins git refs to a commit sha up front, so the content-
 addressed cache can be hit *before* fetching. The fetch→unpack split is

@@ -75,8 +75,13 @@ dep that ships `drivers/` needs `--allow-drivers` (or
 or a dep with no lock entry fails that dep instead of installing or
 moving it — the lockfile must already describe the world.
 
+`tamias sync --from-lock` flips the spec: `tamias.lock` entries are
+the source of truth — each recorded `source_ref` installs pinned, the
+manifest's `deps:` are ignored, and the lock is never rewritten. Use it
+for reproducible restores; use plain `sync` to move with your refs.
+
 The same reconcile is available to embedders as the `sync` op of
-`tamias serve` (`{"op":"sync","locked":…,"allow_drivers":…,"dir":…}` —
+`tamias serve` (`{"op":"sync","locked":…,"from_lock":…,"allow_drivers":…,"dir":…}` —
 `dir` defaults to the server's cwd) and in the TUI's Manifest pane
 (`s` or `:sync`, behind a confirm).
 
