@@ -91,6 +91,9 @@ Panes/tabs:
    `tamias-ops` crate.
 4. Scope: **full surface** — provider lifecycle, `tamias.yml` deps form,
    and `bundle pack`/`publish` authoring are in v1, not deferred.
-5. T-014 ordering: the shared-ops extraction in Phase 0 *is* the T-014
+5. Prerequisite: **P-002** (registry sources + configurable limits)
+   — the Registry/Author panes need named registries and serve ops it
+   defines; lands first or alongside Phase 0.
+6. T-014 ordering: the shared-ops extraction in Phase 0 *is* the T-014
    dedupe for the ops the TUI needs; remaining pipeline dedupe continues
    under T-014 independently.

@@ -15,6 +15,12 @@ verb `tamias ui`, `tui` feature default-on, shared ops in widened
 
 ## Phase 0 — shared ops groundwork
 
+> **Prerequisite**: P-002/PL-005 (registry sources + limits) lands
+> first or alongside — the Registry pane (Phase 3) and Author pane
+> (Phase 6) consume named registries + serve ops it defines. Phase 0's
+> `tamias-serve` Env widening is shared work with PL-005 Phase 4 —
+> sequence them together.
+
 - [x] Resolve open questions (verb, gate, ops home) — see P-001 Decisions.
 - [ ] Add workspace deps: `ratatui = "0.30"`, `crossterm = "0.29"`,
       `notify = "8"`, `portable-pty = "0.9"` (dev-dep on tamias-tui).
