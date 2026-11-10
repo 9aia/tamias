@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-audit","actor":"luis","ts":1794348137,"op":{"op":"claim","glob":"crates/**","ttl_secs":3600}}
+{"id":"","ws":"devin-audit","actor":"luis","ts":1794348311,"op":{"op":"presence","status":"left"}}
