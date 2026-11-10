@@ -60,8 +60,11 @@ distribution; every content *meaning* is an adapter.
 ## The install path
 
 ```
-ref ─► resolve ─► (cache hit?) ─► fetch ─► overlay (include:) ─► driver install ─► store
+ref ─► resolve ─► (cache hit?) ─► fetch ─► driver install ─► store
 ```
+
+`overlay (include:)` is parsed and surfaced but not yet applied on the
+install path — payload composition is reserved machinery.
 
 `resolve` pins git refs to a commit sha up front, so the content-
 addressed cache can be hit *before* fetching. The fetch→unpack split is
