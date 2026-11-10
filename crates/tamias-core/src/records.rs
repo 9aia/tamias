@@ -37,6 +37,17 @@ pub struct StoreRecord {
     /// it against `allowed_signers`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    /// The verified signing principal (`@scope/name` or bare `name`)
+    /// recorded at install — `None` on records that predate
+    /// trust-tier reporting or carried no signature. `tamias verify`
+    /// re-derives it live when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signer: Option<String>,
+    /// The `tamias-sign` trust-tier wire spelling (`official` /
+    /// `signed` / `pinned` / `unpinned` / `bad`) at install time —
+    /// `None` on older records; surfaces re-derive lazily.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<String>,
     /// Unix seconds at install time.
     pub installed_at: u64,
 }
@@ -125,6 +136,8 @@ mod tests {
             resolved: resolved.into(),
             digest: "sha256:d".into(),
             signature: None,
+            signer: None,
+            trust: None,
             installed_at: 0,
         }
     }

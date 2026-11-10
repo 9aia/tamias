@@ -29,6 +29,12 @@ pub struct RegistryEntry {
     /// `cf:` installs and `tamias verify`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    /// Publisher display identity carried by the index (P-005) —
+    /// display metadata only; nothing populates it yet (no publisher
+    /// identity exists), but the schema round-trips it through the
+    /// local and `cf` registries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
     /// Path to the `.tgz`, relative to the registry root.
     pub file: String,
 }
@@ -123,6 +129,7 @@ mod tests {
             kind: None,
             digest: "sha256:d".into(),
             signature: None,
+            publisher: None,
             file: "n/0.0.0.tgz".into(),
         };
         assert_eq!(entry.label(), "n");
@@ -140,5 +147,32 @@ mod tests {
             parse_registry_ref("http://h/x/"),
             RegistryRef::Http("http://h/x".into())
         );
+    }
+
+    #[test]
+    fn publisher_round_trips_through_index_json() {
+        let entry = RegistryEntry {
+            name: "n".into(),
+            scope: Some("acme".into()),
+            version: Some("1.0.0".into()),
+            kind: None,
+            digest: "sha256:d".into(),
+            signature: None,
+            publisher: Some("@acme".into()),
+            file: "acme/n/1.0.0.tgz".into(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("\"publisher\":\"@acme\""), "{json}");
+        let back: RegistryEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, entry);
+        // absent → None, and skipped on serialize
+        let bare = RegistryEntry {
+            publisher: None,
+            ..entry
+        };
+        let json = serde_json::to_string(&bare).unwrap();
+        assert!(!json.contains("publisher"), "{json}");
+        let back: RegistryEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.publisher, None);
     }
 }

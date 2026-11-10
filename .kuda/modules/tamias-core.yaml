@@ -2,6 +2,16 @@ name: tamias-core
 path: crates/tamias-core/Cargo.toml
 purpose: Pure domain — package identity (@scope/name@semver), refs, manifests, records, digests (no I/O)
 api:
+- name: DEFAULT_MAX_ENTRIES
+  kind: const
+  file: crates/tamias-core/src/archive.rs
+  line: 69
+  module: tamias-core
+- name: DEFAULT_MAX_UNPACK_BYTES
+  kind: const
+  file: crates/tamias-core/src/archive.rs
+  line: 65
+  module: tamias-core
 - name: DocFormat
   kind: type
   file: crates/tamias-core/src/overlay.rs
@@ -40,7 +50,7 @@ api:
 - name: Manifest
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 38
+  line: 54
   module: tamias-core
 - name: POLL
   kind: const
@@ -50,27 +60,27 @@ api:
 - name: Provider
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 79
+  line: 95
   module: tamias-core
 - name: ProviderHealth
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 144
+  line: 160
   module: tamias-core
 - name: ProviderHook
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 132
+  line: 148
   module: tamias-core
 - name: ProviderIngress
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 118
+  line: 134
   module: tamias-core
 - name: ProviderService
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 97
+  line: 113
   module: tamias-core
 - name: RECORD_FILE
   kind: const
@@ -80,7 +90,7 @@ api:
 - name: StoreEntry
   kind: type
   file: crates/tamias-core/src/records.rs
-  line: 46
+  line: 57
   module: tamias-core
 - name: StoreRecord
   kind: type
@@ -110,7 +120,7 @@ api:
 - name: archive_tests
   kind: module
   file: crates/tamias-core/src/archive.rs
-  line: 185
+  line: 257
   module: tamias-core
 - name: atomic
   kind: module
@@ -125,17 +135,17 @@ api:
 - name: check
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 179
+  line: 195
   module: tamias-core
 - name: check
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 350
+  line: 366
   module: tamias-core
 - name: check_single_line
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 163
+  line: 179
   module: tamias-core
 - name: content_digest
   kind: function
@@ -145,17 +155,17 @@ api:
 - name: copy_tree
   kind: function
   file: crates/tamias-core/src/records.rs
-  line: 97
+  line: 108
   module: tamias-core
 - name: copy_tree_propagates_copy_failure
   kind: function
   file: crates/tamias-core/src/records.rs
-  line: 147
+  line: 160
   module: tamias-core
 - name: copy_tree_skips_symlinks
   kind: function
   file: crates/tamias-core/src/records.rs
-  line: 165
+  line: 178
   module: tamias-core
 - name: dedup_by_id
   kind: function
@@ -192,17 +202,7 @@ api:
   file: crates/tamias-core/src/process.rs
   line: 83
   module: tamias-core
-- name: drain_stdout
-  kind: function
-  file: crates/tamias-core/src/process.rs
-  line: 73
-  module: tamias-core
-- name: error
-  kind: module
-  file: crates/tamias-core/src/lib.rs
-  line: 15
-  module: tamias-core
-api_omitted: 114
+api_omitted: 125
 deps:
 - flate2
 - hex
@@ -261,18 +261,18 @@ provenance:
   - crates/tamias-core/tests/props.rs
   hashes:
   - 3768f539fab709dfed5a488a2ba669f602e14f73
-  - 918fc8e03b4c23def9d21eaf9789fced7c73371f
+  - cea8a7d5f6176f6597363fb04509f1f6cf8727eb
   - 0d7a6cf52913cb69facccecc985a743277960ff6
   - bf42b5dcc0b30109a2bcee497b675ba447cab7f0
   - 3050b521008bf72751d6ffcab5f7dcbeced1d9f6
   - ea8ff165afcdccfccd8aad76171a031df45b4c05
-  - 2613a7c3e1c8461be8c0e0ea1072d73ae8d28949
-  - a25544fa47271fbcb94d4b7dda0077eeb4a01613
+  - 24f827cb8ae8dc05fee255cc8b181b111a902dda
+  - aa1504117c4e73dc21b93d56e903e561f7ed2b63
   - 44f44be9271b9c03955c2a269d2e56a4bddc6f9e
   - d6ce3df521f4d85fdde031717f0a7345b0152098
-  - 6ef4e4fc8fef5ea2ee130c160399ec1a7f2b3267
-  - 5a1100761acd37ac4880baa89f7e804488ca6e7a
-  - abef6c8b93f9c94df683bde915e4b2129aa2c6e6
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - 5b009cd1135bfa3db0f3b4be137c80398503c410
+  - 2a50fa7f36f1fb3af8946ca611ef14520a706243
+  - 1d8f69e21ec4d6bb45e702432caa1d56e02c97d8
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

@@ -359,6 +359,11 @@ mod tests {
 
     use std::path::PathBuf;
 
+    // Every test here reaches `install_inner` → driver discovery reads
+    // process env (`TAMIAS_HOME` → `drivers_dir`), so all serialize on
+    // the shared env lock — same rule as the lib.rs tests.
+    use crate::tests::EnvGuard;
+
     use super::*;
 
     /// A package fixture — `tamias.yaml` + one payload file.
@@ -401,6 +406,7 @@ mod tests {
 
     #[test]
     fn sync_installs_then_reports_current() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let p = pkg(tmp.path(), "w");
         let proj = project(tmp.path(), &[p.display().to_string()]);
@@ -429,6 +435,7 @@ mod tests {
 
     #[test]
     fn sync_reinstalls_on_lock_drift_and_aggregates_failures() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let p = pkg(tmp.path(), "w");
         let ghost = tmp.path().join("no-such-pkg");
@@ -457,6 +464,7 @@ mod tests {
 
     #[test]
     fn sync_without_lock_entry_reinstalls() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let p = pkg(tmp.path(), "w");
         let dep = p.display().to_string();
@@ -471,6 +479,7 @@ mod tests {
 
     #[test]
     fn sync_locked_refuses_drift_and_missing() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let p = pkg(tmp.path(), "w");
         let dep = p.display().to_string();
@@ -505,6 +514,7 @@ mod tests {
 
     #[test]
     fn sync_missing_manifest_errors() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let env = env(tmp.path());
         assert!(sync_project(&env, tmp.path(), Surface::Cli, opts(), &mut |_| {}).is_err());
@@ -512,6 +522,7 @@ mod tests {
 
     #[test]
     fn sync_empty_deps_is_a_noop() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let proj = project(tmp.path(), &[]);
         let env = env(tmp.path());
@@ -539,6 +550,7 @@ mod tests {
 
     #[test]
     fn sync_from_lock_installs_pinned_and_never_rewrites() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let p = pkg(tmp.path(), "w");
         let dep = p.display().to_string();
@@ -582,6 +594,7 @@ mod tests {
 
     #[test]
     fn sync_from_lock_flags_post_install_mismatch() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let p = pkg(tmp.path(), "w");
         let dep = p.display().to_string();
@@ -608,6 +621,7 @@ mod tests {
 
     #[test]
     fn sync_from_lock_aggregates_failures_and_empty_lock() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let p = pkg(tmp.path(), "w");
         let good = p.display().to_string();
@@ -650,6 +664,7 @@ mod tests {
 
     #[test]
     fn sync_from_lock_bad_lock_errors() {
+        let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         let proj = tmp.path().join("proj");
         std::fs::create_dir_all(&proj).unwrap();

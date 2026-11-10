@@ -127,6 +127,7 @@ impl Registry for LocalRegistry {
             kind: manifest.kind.clone(),
             digest: dir_digest(payload_root)?,
             signature: signature.map(str::to_string),
+            publisher: None,
             file: rel,
         };
         // The index read-modify-write is serialized across processes —
@@ -274,16 +275,17 @@ fn serve_http_token(
          unauthenticated blob store (set {SERVE_TOKEN_ENV} for bearer auth)",
         root.display()
     );
-    // `--addr 0.0.0.0` (or any non-loopback bind) exposes the writable
-    // store to the network — say so loudly.
+    // `--addr 0.0.0.0` (or any non-loopback bind) with no bearer token
+    // exposes the writable store to the network — say so loudly.
     let exposed = addr
         .to_socket_addrs()
         .map(|mut addrs| addrs.any(|a| !a.ip().is_loopback()))
         .unwrap_or(false);
-    if exposed {
+    if exposed && token.is_none() {
         eprintln!(
-            "warning: registry is bound to a non-loopback address ({addr}) — \
-             anyone who can reach it can read/overwrite all blobs"
+            "warning: registry is bound to a non-loopback address ({addr}) with \
+             no {SERVE_TOKEN_ENV} — remote clients can read AND write the \
+             entire registry (every blob, including index.json)"
         );
     }
     for stream in listener.incoming() {

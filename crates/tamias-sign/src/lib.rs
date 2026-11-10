@@ -58,6 +58,12 @@ pub const SIGNING_KEY_ENV: &str = "TAMIAS_SIGNING_KEY";
 /// store/cache/registry resolution follows).
 pub const ALLOWED_SIGNERS_ENV: &str = "TAMIAS_ALLOWED_SIGNERS";
 
+/// Env var whose value is an `official_signers` file — the smaller
+/// trust set backing the official-badge check (P-005). Wins over
+/// `signing.official_signers`, same env-wins rule as
+/// [`ALLOWED_SIGNERS_ENV`].
+pub const OFFICIAL_SIGNERS_ENV: &str = "TAMIAS_OFFICIAL_SIGNERS";
+
 /// Canonical bytes for signing — the provenance anchors, one
 /// `key: value` per line, `-` for absent optional fields. Fixed
 /// order, no trailing ambiguity; both sides build it from the same
@@ -207,6 +213,10 @@ pub struct SigningPolicy {
     /// `allowed_signers` path (`~` expanded) — `None` when nothing
     /// configured and the default file doesn't exist.
     pub allowed_signers: Option<PathBuf>,
+    /// `official_signers` path (`~` expanded) — the smaller trust set
+    /// for the official-badge check; `None` when nothing configured
+    /// and the default file doesn't exist.
+    pub official_signers: Option<PathBuf>,
     /// Every install must carry a valid signature (only `cf:`/registry
     /// refs can supply one in v1 — see the crate docs).
     pub required: bool,
@@ -221,6 +231,9 @@ impl SigningPolicy {
     ///   `signing.allowed_signers` → `~/.config/tamias/allowed_signers`
     ///   (kept only when the file exists — a configured-but-missing
     ///   path still wins so the error names it).
+    /// - `official_signers`: `$TAMIAS_OFFICIAL_SIGNERS` →
+    ///   `signing.official_signers` → `~/.config/tamias/official_signers`
+    ///   — same precedence and keep-only-when-it-exists rule.
     /// - `required`/`namespace`: `signing.required`,
     ///   `signing.namespace` or [`DEFAULT_NAMESPACE`].
     #[must_use]
@@ -239,8 +252,22 @@ impl SigningPolicy {
                 let p = home_dir().join(".config/tamias/allowed_signers");
                 p.is_file().then_some(p)
             });
+        let official_signers = std::env::var(OFFICIAL_SIGNERS_ENV)
+            .ok()
+            .filter(|v| !v.is_empty())
+            .map(|v| expand_tilde(&v))
+            .or_else(|| {
+                signing
+                    .and_then(|s| s.official_signers.as_deref())
+                    .map(expand_tilde)
+            })
+            .or_else(|| {
+                let p = home_dir().join(".config/tamias/official_signers");
+                p.is_file().then_some(p)
+            });
         Self {
             allowed_signers,
+            official_signers,
             required: signing.is_some_and(|s| s.required),
             namespace: signing
                 .and_then(|s| s.namespace.clone())
@@ -344,7 +371,18 @@ impl SignatureStatus {
 /// Check a package's signature status against `allowed_signers`
 /// (`None` → [`SignatureStatus::Unchecked`] when a sig is present).
 /// The payload signed is the canonical [`signing_bytes`] of the
-/// package's provenance anchors; `principal` is the bare package name.
+/// package's provenance anchors.
+///
+/// **Principal resolution.** Scoped packages (`@scope/name`) prefer
+/// the scope-qualified principal `@scope/name` — authorization in
+/// `allowed_signers` is per-principal, so `@acme/w` and `@other/w`
+/// don't share a signer line. For backward compatibility with
+/// allowed_signers files that only list the bare name, a scoped
+/// package falls back to the bare `name` principal when the scoped
+/// principal doesn't verify — a package verifies if *either* line
+/// authorizes the key. Unscoped packages use the bare name only.
+/// (The signed bytes already bind scope, so this is authorization
+/// granularity, not replay protection.)
 ///
 /// # Errors
 /// Propagates `ssh-keygen` spawn/IO failures from [`verify`].
@@ -357,22 +395,59 @@ pub fn signature_status(
     allowed_signers: Option<&Path>,
     namespace: &str,
 ) -> Result<SignatureStatus, Error> {
+    signature_status_detail(
+        name,
+        scope,
+        version,
+        digest,
+        signature,
+        allowed_signers,
+        namespace,
+    )
+    .map(|(status, _)| status)
+}
+
+/// [`signature_status`] plus *which* principal verified — the
+/// `@scope/name` or bare `name` allowed_signers line whose key
+/// checked out (`None` unless the status is
+/// [`SignatureStatus::Verified`]). Reporting surfaces (`tamias
+/// verify`, the [`TrustTier`] computation, install-time `signer`
+/// recording) use this to name who vouched for a package.
+///
+/// # Errors
+/// Propagates `ssh-keygen` spawn/IO failures from [`verify`].
+pub fn signature_status_detail(
+    name: &str,
+    scope: Option<&str>,
+    version: Option<&str>,
+    digest: &str,
+    signature: Option<&str>,
+    allowed_signers: Option<&Path>,
+    namespace: &str,
+) -> Result<(SignatureStatus, Option<String>), Error> {
     let Some(sig) = signature else {
-        return Ok(SignatureStatus::Unsigned);
+        return Ok((SignatureStatus::Unsigned, None));
     };
     let Some(signers) = allowed_signers else {
-        return Ok(SignatureStatus::Unchecked);
+        return Ok((SignatureStatus::Unchecked, None));
     };
     if !signers.is_file() {
-        return Ok(SignatureStatus::Unchecked);
+        return Ok((SignatureStatus::Unchecked, None));
     }
     let bytes = signing_bytes(name, scope, version, digest);
-    let ok = verify(&bytes, sig, signers, name, namespace)?;
-    Ok(if ok {
-        SignatureStatus::Verified
-    } else {
-        SignatureStatus::Failed
-    })
+    // Scoped packages try `@scope/name` first, then the bare-name
+    // fallback — the first principal that verifies is reported.
+    let mut principals = Vec::with_capacity(2);
+    if let Some(scope) = scope {
+        principals.push(format!("@{scope}/{name}"));
+    }
+    principals.push(name.to_string());
+    for principal in &principals {
+        if verify(&bytes, sig, signers, principal, namespace)? {
+            return Ok((SignatureStatus::Verified, Some(principal.clone())));
+        }
+    }
+    Ok((SignatureStatus::Failed, None))
 }
 
 /// The store-record convenience form of [`signature_status`].
@@ -390,6 +465,202 @@ pub fn record_signature_status(
         allowed_signers,
         namespace,
     )
+}
+
+/// Signature status against the policy's `official_signers` trust
+/// set — the official-badge check (P-005). Same principal rules as
+/// [`signature_status`]. Returns [`SignatureStatus::Unchecked`] when
+/// no `official_signers` is configured (or the file is missing) —
+/// `signature_status` already arms that way for `None`.
+pub fn official_signature_status(
+    name: &str,
+    scope: Option<&str>,
+    version: Option<&str>,
+    digest: &str,
+    signature: Option<&str>,
+    policy: &SigningPolicy,
+) -> Result<SignatureStatus, Error> {
+    signature_status(
+        name,
+        scope,
+        version,
+        digest,
+        signature,
+        policy.official_signers.as_deref(),
+        &policy.namespace,
+    )
+}
+
+/// The trust tier a package's provenance earns — the badge
+/// `tamias verify` and install records report (P-005 §A). Highest
+/// wins:
+///
+/// - [`TrustTier::Official`] — signature present and verified
+///   against `policy.official_signers`.
+/// - [`TrustTier::Signed`] — signature present and verified against
+///   `policy.allowed_signers`, but not the official set.
+/// - [`TrustTier::Bad`] — signature present and verification
+///   *failed* against every configured signers file. A failed
+///   signature must never display as merely unsigned.
+/// - [`TrustTier::Pinned`] — no verifiable signature, but
+///   `source_ref` carries an integrity pin (see [`ref_is_pinned`]).
+/// - [`TrustTier::Unpinned`] — everything else: a moving git
+///   branch/tag, bare http(s), fs paths.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TrustTier {
+    /// Verified against the `official_signers` trust set.
+    Official,
+    /// Verified against `allowed_signers` (not official).
+    Signed,
+    /// No signature, but the source ref pins content integrity.
+    Pinned,
+    /// No signature and no integrity pin.
+    Unpinned,
+    /// Signature present but verification failed.
+    Bad,
+}
+
+impl TrustTier {
+    /// Stable wire/report spelling — what `StoreRecord.trust`
+    /// records and `tamias verify --json` emits.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Official => "official",
+            Self::Signed => "signed",
+            Self::Pinned => "pinned",
+            Self::Unpinned => "unpinned",
+            Self::Bad => "bad",
+        }
+    }
+}
+
+/// Whether `source_ref` carries an integrity pin — the
+/// [`TrustTier::Pinned`] heuristic:
+///
+/// - `cf:` refs — the registry index digest pins the payload.
+/// - `#sha256:<hex>` / `#sha256=<hex>` fragments — pinned http
+///   tarballs.
+/// - `#` + a full 40-hex sha — a pinned git commit (mirrors
+///   `tamias-source-git`'s `is_full_sha`: lowercase hex only).
+fn ref_is_pinned(source_ref: &str) -> bool {
+    if source_ref.starts_with("cf:") {
+        return true;
+    }
+    let Some((_, fragment)) = source_ref.split_once('#') else {
+        return false;
+    };
+    if fragment.starts_with("sha256:") || fragment.starts_with("sha256=") {
+        return true;
+    }
+    fragment.len() == 40
+        && fragment
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// The trust-tier computation shared by [`trust_tier`] and
+/// [`trust_and_signer`]. A present signature is checked against
+/// `official_signers` first (short-circuit on Verified), then
+/// `allowed_signers`; a failure against every configured file is
+/// [`TrustTier::Bad`]. With no signers file at all the signature is
+/// *unchecked* — not failed — so the pin heuristic decides (an
+/// `Unchecked` signature is already a hard install error via
+/// [`enforce_signature`]; reaching here unchecked means a
+/// hand-edited record under re-verification). No signature skips
+/// straight to the pin heuristic.
+fn assess_trust(
+    source_ref: &str,
+    signature: Option<&str>,
+    name: &str,
+    scope: Option<&str>,
+    version: Option<&str>,
+    digest: &str,
+    policy: &SigningPolicy,
+) -> Result<(TrustTier, Option<String>), Error> {
+    if let Some(sig) = signature {
+        let mut checked = false;
+        let mut failed = false;
+        for (official, signers) in [
+            (true, policy.official_signers.as_deref()),
+            (false, policy.allowed_signers.as_deref()),
+        ] {
+            let Some(signers) = signers.filter(|p| p.is_file()) else {
+                continue;
+            };
+            checked = true;
+            let (status, principal) = signature_status_detail(
+                name,
+                scope,
+                version,
+                digest,
+                Some(sig),
+                Some(signers),
+                &policy.namespace,
+            )?;
+            match status {
+                SignatureStatus::Verified => {
+                    let tier = if official {
+                        TrustTier::Official
+                    } else {
+                        TrustTier::Signed
+                    };
+                    return Ok((tier, principal));
+                }
+                SignatureStatus::Failed => failed = true,
+                _ => {}
+            }
+        }
+        if checked && failed {
+            return Ok((TrustTier::Bad, None));
+        }
+    }
+    let tier = if ref_is_pinned(source_ref) {
+        TrustTier::Pinned
+    } else {
+        TrustTier::Unpinned
+    };
+    Ok((tier, None))
+}
+
+/// The package's [`TrustTier`] — **reporting only**; the install
+/// gate stays [`enforce_signature`]. `source_ref` is the ref the
+/// install was invoked with (pin detection reads it verbatim);
+/// `digest` is the payload digest the signature bound.
+///
+/// # Errors
+/// Propagates `ssh-keygen` spawn/IO failures from the signature
+/// checks.
+pub fn trust_tier(
+    source_ref: &str,
+    signature: Option<&str>,
+    name: &str,
+    scope: Option<&str>,
+    version: Option<&str>,
+    digest: &str,
+    policy: &SigningPolicy,
+) -> Result<TrustTier, Error> {
+    Ok(assess_trust(source_ref, signature, name, scope, version, digest, policy)?.0)
+}
+
+/// [`trust_tier`] plus the verified signing principal in one pass —
+/// the `@scope/name` or bare `name` that checked out (official set
+/// preferred), `None` for unsigned/failed tiers. The install
+/// pipeline records both on the [`StoreRecord`].
+///
+/// # Errors
+/// Propagates `ssh-keygen` spawn/IO failures from the signature
+/// checks.
+pub fn trust_and_signer(
+    source_ref: &str,
+    signature: Option<&str>,
+    name: &str,
+    scope: Option<&str>,
+    version: Option<&str>,
+    digest: &str,
+    policy: &SigningPolicy,
+) -> Result<(TrustTier, Option<String>), Error> {
+    assess_trust(source_ref, signature, name, scope, version, digest, policy)
 }
 
 /// Sign a payload dir's canonical provenance — `dir_digest(root)` is
@@ -493,6 +764,16 @@ mod tests {
     /// The allowed_signers line for `principal` + `key` —
     /// `<principal> <keytype> <base64>` via `ssh-keygen -y`.
     fn allow(dir: &Path, principal: &str, key: &Path) -> PathBuf {
+        // principals may be `@scope/name` — `/` can't appear in a filename
+        let name = format!("allowed-{}", principal.replace('/', "_"));
+        allow_file(dir, &name, principal, key)
+    }
+
+    /// [`allow`] with an explicit filename — for tests that need two
+    /// signers files authorizing the *same* principal (e.g. an
+    /// `allowed_signers` and an `official_signers` holding different
+    /// keys for `pkg`).
+    fn allow_file(dir: &Path, file: &str, principal: &str, key: &Path) -> PathBuf {
         let pubout = Command::new("ssh-keygen")
             .args(["-y", "-f"])
             .arg(key)
@@ -500,7 +781,7 @@ mod tests {
             .unwrap();
         assert!(pubout.status.success());
         let pubkey = String::from_utf8_lossy(&pubout.stdout).trim().to_string();
-        let path = dir.join(format!("allowed-{principal}"));
+        let path = dir.join(file);
         std::fs::write(&path, format!("{principal} {pubkey}\n")).unwrap();
         path
     }
@@ -667,5 +948,226 @@ mod tests {
         )
         .unwrap();
         assert_eq!(status, SignatureStatus::Verified);
+    }
+
+    #[test]
+    fn scoped_principal_resolution() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = gen_key(dir.path(), "k");
+        let other = gen_key(dir.path(), "k2");
+        let bytes = signing_bytes("w", Some("acme"), Some("1.0.0"), "sha256:d");
+        let sig = sign(&bytes, &key, DEFAULT_NAMESPACE).unwrap();
+        let status = |signers: &Path| {
+            signature_status(
+                "w",
+                Some("acme"),
+                Some("1.0.0"),
+                "sha256:d",
+                Some(&sig),
+                Some(signers),
+                DEFAULT_NAMESPACE,
+            )
+            .unwrap()
+        };
+
+        // (a) a `@acme/w` principal line verifies the scoped package
+        let scoped = allow(dir.path(), "@acme/w", &key);
+        assert_eq!(status(&scoped), SignatureStatus::Verified);
+
+        // (b) a bare `w` line still verifies it — the fallback keeps
+        // pre-scope allowed_signers files working
+        let bare = allow(dir.path(), "w", &key);
+        assert_eq!(status(&bare), SignatureStatus::Verified);
+
+        // (c) a key authorized only for `@other/w` does NOT verify
+        // `@acme/w` — scope-qualified authorization
+        let wrong_scope = allow(dir.path(), "@other/w", &key);
+        assert_eq!(status(&wrong_scope), SignatureStatus::Failed);
+        // same for the wrong *key* under the right principal
+        let wrong_key = allow(dir.path(), "@acme/w", &other);
+        assert_eq!(status(&wrong_key), SignatureStatus::Failed);
+    }
+
+    #[test]
+    fn signature_status_detail_reports_principal() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = gen_key(dir.path(), "k");
+        let bytes = signing_bytes("w", Some("acme"), None, "sha256:d");
+        let sig = sign(&bytes, &key, DEFAULT_NAMESPACE).unwrap();
+        let detail = |signers: &Path| {
+            signature_status_detail(
+                "w",
+                Some("acme"),
+                None,
+                "sha256:d",
+                Some(&sig),
+                Some(signers),
+                DEFAULT_NAMESPACE,
+            )
+            .unwrap()
+        };
+        // scoped principal line → reported verbatim
+        let scoped = allow(dir.path(), "@acme/w", &key);
+        assert_eq!(
+            detail(&scoped),
+            (SignatureStatus::Verified, Some("@acme/w".to_string()))
+        );
+        // bare-name fallback → the bare principal is reported
+        let bare = allow(dir.path(), "w", &key);
+        assert_eq!(
+            detail(&bare),
+            (SignatureStatus::Verified, Some("w".to_string()))
+        );
+        // unsigned / failed arms carry no principal
+        assert_eq!(
+            signature_status_detail(
+                "w",
+                Some("acme"),
+                None,
+                "sha256:d",
+                None,
+                Some(&bare),
+                DEFAULT_NAMESPACE,
+            )
+            .unwrap(),
+            (SignatureStatus::Unsigned, None)
+        );
+        let wrong = allow(dir.path(), "@acme/w", &gen_key(dir.path(), "k2"));
+        assert_eq!(detail(&wrong), (SignatureStatus::Failed, None));
+    }
+
+    #[test]
+    fn trust_tier_signed_official_and_bad() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = gen_key(dir.path(), "k");
+        let official_key = gen_key(dir.path(), "ok");
+        let rogue = gen_key(dir.path(), "rk");
+        // `key` is allowed-but-not-official; `official_key` is in the
+        // official set; `rogue` is in neither.
+        let allowed = allow(dir.path(), "pkg", &key);
+        let official = allow_file(dir.path(), "official-signers", "pkg", &official_key);
+        let policy = SigningPolicy {
+            allowed_signers: Some(allowed),
+            official_signers: Some(official),
+            required: false,
+            namespace: DEFAULT_NAMESPACE.to_string(),
+        };
+        let bytes = signing_bytes("pkg", None, None, "sha256:d");
+        let sig = sign(&bytes, &key, DEFAULT_NAMESPACE).unwrap();
+        let osig = sign(&bytes, &official_key, DEFAULT_NAMESPACE).unwrap();
+        let rsig = sign(&bytes, &rogue, DEFAULT_NAMESPACE).unwrap();
+        // a sig over different anchors fails everywhere
+        let wrong = sign(
+            &signing_bytes("pkg", None, None, "sha256:other"),
+            &key,
+            DEFAULT_NAMESPACE,
+        )
+        .unwrap();
+        let tier = |source_ref: &str, s: Option<&str>| {
+            trust_tier(source_ref, s, "pkg", None, None, "sha256:d", &policy).unwrap()
+        };
+
+        // official signature → Official (checked first, short-circuits)
+        assert_eq!(tier("cf:reg/pkg@1.0.0", Some(&osig)), TrustTier::Official);
+        // allowed-only signature → Signed
+        assert_eq!(tier("cf:reg/pkg@1.0.0", Some(&sig)), TrustTier::Signed);
+        // signature fails both configured files → Bad, even on a
+        // pinned ref — a bad sig never displays as merely unsigned
+        assert_eq!(tier("cf:reg/pkg@1.0.0", Some(&rsig)), TrustTier::Bad);
+        assert_eq!(tier("cf:reg/pkg@1.0.0", Some(&wrong)), TrustTier::Bad);
+        // trust_and_signer reports the verifying principal
+        let (t, who) = trust_and_signer(
+            "cf:reg/pkg@1.0.0",
+            Some(&sig),
+            "pkg",
+            None,
+            None,
+            "sha256:d",
+            &policy,
+        )
+        .unwrap();
+        assert_eq!((t, who.as_deref()), (TrustTier::Signed, Some("pkg")));
+        let (t, who) = trust_and_signer(
+            "cf:reg/pkg@1.0.0",
+            Some(&osig),
+            "pkg",
+            None,
+            None,
+            "sha256:d",
+            &policy,
+        )
+        .unwrap();
+        assert_eq!((t, who.as_deref()), (TrustTier::Official, Some("pkg")));
+    }
+
+    #[test]
+    fn trust_tier_pinned_and_unpinned() {
+        // no signers configured at all — signature presence can't be
+        // checked, so the pin heuristic decides
+        let policy = SigningPolicy {
+            allowed_signers: None,
+            official_signers: None,
+            required: false,
+            namespace: DEFAULT_NAMESPACE.to_string(),
+        };
+        let tier = |source_ref: &str| {
+            trust_tier(source_ref, None, "pkg", None, None, "sha256:d", &policy).unwrap()
+        };
+        // pinned arms
+        assert_eq!(tier("cf:reg/pkg@1.0.0"), TrustTier::Pinned);
+        assert_eq!(
+            tier("https://h/x.tgz#sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            TrustTier::Pinned
+        );
+        assert_eq!(
+            tier("https://h/x.tgz#sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            TrustTier::Pinned
+        );
+        assert_eq!(
+            tier("git:https://h/org/repo#0123456789abcdef0123456789abcdef01234567"),
+            TrustTier::Pinned
+        );
+        // unpinned arms
+        assert_eq!(tier("git:https://h/org/repo#main"), TrustTier::Unpinned);
+        assert_eq!(tier("git:https://h/org/repo"), TrustTier::Unpinned);
+        assert_eq!(tier("https://h/x.tgz"), TrustTier::Unpinned);
+        assert_eq!(tier("./local/pkg"), TrustTier::Unpinned);
+        // a short hex rev is NOT a full-sha pin
+        assert_eq!(tier("git:https://h/org/repo#0123456"), TrustTier::Unpinned);
+        // an unverifiable signature falls through to the pin heuristic
+        let dir = tempfile::tempdir().unwrap();
+        let key = gen_key(dir.path(), "k");
+        let sig = sign(
+            &signing_bytes("pkg", None, None, "sha256:d"),
+            &key,
+            DEFAULT_NAMESPACE,
+        )
+        .unwrap();
+        assert_eq!(
+            trust_tier(
+                "cf:reg/pkg@1.0.0",
+                Some(&sig),
+                "pkg",
+                None,
+                None,
+                "sha256:d",
+                &policy
+            )
+            .unwrap(),
+            TrustTier::Pinned
+        );
+        assert_eq!(
+            trust_tier(
+                "./local/pkg",
+                Some(&sig),
+                "pkg",
+                None,
+                None,
+                "sha256:d",
+                &policy
+            )
+            .unwrap(),
+            TrustTier::Unpinned
+        );
     }
 }

@@ -150,6 +150,8 @@ mod tests {
             resolved: "sha256:abc".into(),
             digest: "sha256:def".into(),
             signature: None,
+            signer: None,
+            trust: None,
             installed_at: 7,
         }
     }

@@ -43,9 +43,21 @@ enum Command {
         /// ./path | git:<url>[//subdir][#rev] | https://….tgz[#sha256:…]
         reference: String,
         /// Consent to register + run the package's bundled `drivers/`.
-        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1`.
+        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1` — a global env bypass
+        /// honored by every surface (CLI, serve, TUI).
         #[arg(long)]
         allow_drivers: bool,
+        /// Dry-run — report everything the install would do (manifest,
+        /// `include:` resolution, bundled drivers + consent, kind
+        /// driver, provider services, trust/signature, would-be
+        /// problems) without dispatching drivers or committing the
+        /// store. The fetch still populates the content-addressed
+        /// cache.
+        #[arg(long)]
+        plan: bool,
+        /// JSON output (with `--plan`).
+        #[arg(long)]
+        json: bool,
     },
     /// Install a ref and record it in `tamias.yaml` + `tamias.lock`.
     ///
@@ -56,7 +68,8 @@ enum Command {
         /// The ref to add.
         reference: String,
         /// Consent to register + run the package's bundled `drivers/`.
-        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1`.
+        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1` — a global env bypass
+        /// honored by every surface (CLI, serve, TUI).
         #[arg(long)]
         allow_drivers: bool,
     },
@@ -81,7 +94,8 @@ enum Command {
         #[arg(long)]
         from_lock: bool,
         /// Consent to register + run the packages' bundled `drivers/`.
-        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1`.
+        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1` — a global env bypass
+        /// honored by every surface (CLI, serve, TUI).
         #[arg(long)]
         allow_drivers: bool,
         /// JSON output.
@@ -117,6 +131,10 @@ enum Command {
         /// JSON output.
         #[arg(long)]
         json: bool,
+        /// Fail unless the package's trust tier is `official` —
+        /// the signature must verify against `signing.official_signers`.
+        #[arg(long = "require-official")]
+        require_official: bool,
     },
     /// Re-resolve + re-install a package from its recorded ref.
     Update {
@@ -126,7 +144,8 @@ enum Command {
         #[arg(long)]
         all: bool,
         /// Consent to register + run bundled `drivers/` on re-install.
-        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1`.
+        /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1` — a global env bypass
+        /// honored by every surface (CLI, serve, TUI).
         #[arg(long)]
         allow_drivers: bool,
         /// JSON output.
@@ -580,6 +599,116 @@ fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry
     )
 }
 
+/// `install --plan` — the dry-run in `tamias-install` over the same
+/// store/cache roots + config resolution as [`install`].
+fn plan_install(
+    env: &Env,
+    reference: &str,
+    allow_drivers: bool,
+) -> Result<tamias_install::InstallPlan, Error> {
+    tamias_install::plan_install(
+        &tamias_install::Env::for_config(
+            env.store_root.clone(),
+            env.cache_root.clone(),
+            cli_config().as_ref(),
+        ),
+        reference,
+        allow_drivers,
+    )
+}
+
+/// Human-readable render of an [`tamias_install::InstallPlan`] — the
+/// `install --plan` stdout (the plan IS the result).
+fn print_plan(plan: &tamias_install::InstallPlan) {
+    use tamias_install::IncludeResolution;
+    let m = &plan.manifest;
+    let scoped = match &m.scope {
+        Some(scope) => format!("@{scope}/{}", m.name),
+        None => m.name.clone(),
+    };
+    let label = match &m.version {
+        Some(v) => format!("{scoped}@{v}"),
+        None => scoped,
+    };
+    println!("ref:       {}", plan.reference);
+    println!(
+        "package:   {label}  (kind: {})",
+        m.kind.as_deref().unwrap_or("files")
+    );
+    println!(
+        "cache:     {}",
+        if plan.cache_hit {
+            "hit".to_string()
+        } else {
+            "miss — payload fetched into the cache".to_string()
+        }
+    );
+    println!("digest:    {}", plan.payload_digest);
+    if plan.has_includes {
+        println!(
+            "note:      include: non-empty — a real install commits the COMPOSED tree's digest"
+        );
+    }
+    println!(
+        "trust:     {}{}",
+        plan.trust,
+        plan.signer
+            .as_ref()
+            .map(|s| format!(" (signer: {s})"))
+            .unwrap_or_default()
+    );
+    if let Some(status) = &plan.signature_status {
+        println!("signature: {status}");
+    }
+    println!("includes:");
+    if plan.includes.is_empty() {
+        println!("  (none)");
+    }
+    for i in &plan.includes {
+        match &i.resolves_to {
+            IncludeResolution::StoreLabel(label) => {
+                println!("  {} → store {}", i.entry, label);
+            }
+            IncludeResolution::WouldInstall => {
+                println!("  {} → would install (recursive)", i.entry);
+            }
+            IncludeResolution::Missing => {
+                println!("  {} → missing", i.entry);
+            }
+        }
+    }
+    println!("drivers:");
+    if plan.bundled_drivers.is_empty() {
+        println!("  bundled: (none)");
+    }
+    for d in &plan.bundled_drivers {
+        println!(
+            "  bundled: {d}{}",
+            if plan.consent_required {
+                "  (consent required)"
+            } else {
+                ""
+            }
+        );
+    }
+    match &plan.driver {
+        Some(path) => println!("  kind driver: {}", path.display()),
+        None => println!("  kind driver: none"),
+    }
+    if !plan.provider_services.is_empty() {
+        println!("provider services (deploy only — not part of install):");
+        for s in &plan.provider_services {
+            println!("  {}: {}", s.name, s.exec);
+        }
+    }
+    if !plan.problems.is_empty() {
+        println!("problems:");
+        for p in &plan.problems {
+            println!("  - {p}");
+        }
+    }
+}
+
 /// `sync` — the shared dep-set reconcile in `tamias-install` over the
 /// cwd project (same discovery `add` uses); `from_lock` swaps the spec
 /// from the manifest's `deps:` to `tamias.lock` itself.
@@ -649,6 +778,8 @@ fn entry_json(entry: &StoreEntry) -> serde_json::Value {
         "resolved": entry.record.resolved,
         "digest": entry.record.digest,
         "signed": entry.record.signature.is_some(),
+        "trust": entry.record.trust,
+        "signer": entry.record.signer,
         "installed_at": entry.record.installed_at,
         "size": entry.size().ok(),
         "dir": entry.dir.display().to_string(),
@@ -784,13 +915,26 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
         Some(Command::Install {
             reference,
             allow_drivers,
+            plan,
+            json,
         }) => {
-            let entry = install(&env, &reference, allow_drivers)?;
-            println!(
-                "installed {} ({})",
-                entry.label(),
-                short_digest(&entry.record.digest)
-            );
+            if plan {
+                let plan = plan_install(&env, &reference, allow_drivers)?;
+                if json {
+                    let value =
+                        serde_json::to_value(&plan).map_err(|e| Error::Failed(e.to_string()))?;
+                    print_json(&value)?;
+                } else {
+                    print_plan(&plan);
+                }
+            } else {
+                let entry = install(&env, &reference, allow_drivers)?;
+                println!(
+                    "installed {} ({})",
+                    entry.label(),
+                    short_digest(&entry.record.digest)
+                );
+            }
         }
         Some(Command::Add {
             reference,
@@ -873,8 +1017,9 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 }
                 for e in entries {
                     println!(
-                        "{}  {}  {}",
+                        "{}  {}  {}  {}",
                         e.label(),
+                        e.record.trust.as_deref().unwrap_or("-"),
                         short_digest(&e.record.digest),
                         e.record.source_ref
                     );
@@ -898,11 +1043,17 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 println!("source:  {}", entry.record.source_ref);
                 println!("resolved: {}", entry.record.resolved);
                 println!("digest:  {}", entry.record.digest);
+                println!("trust:   {}", entry.record.trust.as_deref().unwrap_or("-"));
+                println!("signer:  {}", entry.record.signer.as_deref().unwrap_or("-"));
                 println!("size:    {} bytes", entry.size()?);
                 println!("dir:     {}", entry.dir.display());
             }
         }
-        Some(Command::Verify { name, json }) => {
+        Some(Command::Verify {
+            name,
+            json,
+            require_official,
+        }) => {
             let store = Store::new(&env.store_root);
             let report = store.verify(&name)?;
             // Signature status alongside the digest check — the record's
@@ -916,6 +1067,20 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 policy.allowed_signers.as_deref(),
                 &policy.namespace,
             )?;
+            // Trust tier + signer re-derived live — the record's
+            // `trust`/`signer` are install-time snapshots; recomputing
+            // keeps hand-edited records and rotated signers files
+            // honest (`entry.record.signer` wins when recorded).
+            let (trust, live_signer) = tamias_sign::trust_and_signer(
+                &entry.record.source_ref,
+                entry.record.signature.as_deref(),
+                &entry.record.name,
+                entry.record.scope.as_deref(),
+                entry.record.version.as_deref(),
+                &entry.record.digest,
+                &policy,
+            )?;
+            let signer = entry.record.signer.clone().or(live_signer);
             if json {
                 print_json(&serde_json::json!({
                     "name": report.name,
@@ -923,12 +1088,16 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                     "computed": report.computed,
                     "ok": report.ok,
                     "signature": signature.as_str(),
+                    "trust": trust.as_str(),
+                    "signer": signer,
                 }))?;
             }
             if report.ok {
                 if !json {
                     println!("{}: ok ({})", report.name, short_digest(&report.recorded));
                     println!("signature: {}", signature.as_str());
+                    println!("trust: {}", trust.as_str());
+                    println!("signer: {}", signer.as_deref().unwrap_or("-"));
                 }
             } else {
                 return Err(Error::Failed(format!(
@@ -953,6 +1122,13 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                     );
                 }
                 _ => {}
+            }
+            if require_official && trust != tamias_sign::TrustTier::Official {
+                return Err(Error::Failed(format!(
+                    "{}: trust tier is '{}' — --require-official needs 'official'",
+                    report.name,
+                    trust.as_str()
+                )));
             }
         }
         Some(Command::Update {
@@ -1102,6 +1278,8 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                             "version": e.version,
                             "kind": e.kind,
                             "digest": e.digest,
+                            "signed": e.signature.is_some(),
+                            "publisher": e.publisher,
                             "file": e.file,
                         })
                     })
@@ -1109,7 +1287,18 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 print_json(&serde_json::json!({ "results": results }))?;
             } else {
                 for e in &found {
-                    println!("{}  {}  {}", e.label(), short_digest(&e.digest), e.file);
+                    let signed = if e.signature.is_some() {
+                        "  [signed]"
+                    } else {
+                        ""
+                    };
+                    println!(
+                        "{}  {}  {}{}",
+                        e.label(),
+                        short_digest(&e.digest),
+                        e.file,
+                        signed
+                    );
                 }
             }
         }
@@ -1858,15 +2047,56 @@ fn doctor(env: &Env, json: bool) -> Result<(), Error> {
             files_ok,
         ),
     ];
+    // Trust-tier posture notes — warnings/infos never fail the run;
+    // they render as extra rows (`warn`/`info`) in both output modes.
+    let signing = tamias_sign::SigningPolicy::resolve(cli_config().as_ref());
+    let mut notes: Vec<(&str, String, &str)> = Vec::new();
+    if std::env::var("TAMIAS_ALLOW_DRIVERS").is_ok_and(|v| v == "1") {
+        notes.push((
+            "drivers",
+            "TAMIAS_ALLOW_DRIVERS=1 — bundled-driver consent is globally bypassed".to_string(),
+            "warn",
+        ));
+    }
+    if signing.required
+        && signing
+            .allowed_signers
+            .as_ref()
+            .is_none_or(|p| !p.is_file())
+    {
+        notes.push((
+            "signing",
+            "signing.required is set but no allowed_signers resolves — unsigned \
+             installs are rejected and signed installs will fail"
+                .to_string(),
+            "warn",
+        ));
+    }
+    if let Some(path) = &signing.official_signers {
+        notes.push((
+            "signing",
+            format!("official_signers: {}", path.display()),
+            "info",
+        ));
+    }
+
     if json {
-        let value: Vec<serde_json::Value> = checks
+        let mut value: Vec<serde_json::Value> = checks
             .iter()
             .map(|(k, v, ok)| serde_json::json!({"check": k, "detail": v, "ok": ok}))
             .collect();
+        for (k, v, level) in &notes {
+            value.push(serde_json::json!({
+                "check": k, "detail": v, "ok": true, "level": level,
+            }));
+        }
         print_json(&serde_json::Value::Array(value))?;
     } else {
         for (k, v, ok) in &checks {
             println!("{} {k}: {v}", if *ok { "ok " } else { "!! " });
+        }
+        for (k, v, level) in &notes {
+            println!("{level} {k}: {v}");
         }
     }
     let failed = checks.iter().filter(|(_, _, ok)| !*ok).count();
@@ -3041,6 +3271,7 @@ mod tests {
         let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        std::env::set_var("TAMIAS_CONSENT_FILE", tmp.path().join("consented.json"));
         std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
         let e = env(tmp.path());
         // a package shipping a bundled driver
@@ -3064,7 +3295,10 @@ mod tests {
         std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
         // flag consent → proceeds too
         run_args(e.clone(), &["tamias", "install", r, "--allow-drivers"]).unwrap();
-        // a drivers-shipping package also gates `add`
+        // a drivers-shipping package also gates `add` — but the installs
+        // above recorded per-package consent bound to the exact payload
+        // digest, so `add` on *changed* bytes re-prompts (P-005 §D.3)
+        std::fs::write(dir.join("changed.txt"), "x").unwrap();
         {
             let prev = std::env::current_dir().unwrap();
             std::env::set_current_dir(tmp.path()).unwrap();
@@ -3083,6 +3317,7 @@ mod tests {
         let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        std::env::set_var("TAMIAS_CONSENT_FILE", tmp.path().join("consented.json"));
         std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
         let e = env(tmp.path());
         // a package shipping a *compiled*-style driver under
@@ -3121,6 +3356,7 @@ mod tests {
         let _pg = ProcGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        std::env::set_var("TAMIAS_CONSENT_FILE", tmp.path().join("consented.json"));
         let e = env(tmp.path());
         let dir = tmp.path().join("pkgc");
         std::fs::create_dir_all(dir.join("drivers/bin/wasm32-unknown-unknown")).unwrap();
@@ -3246,6 +3482,8 @@ mod tests {
             resolved: "sha256:resolved".into(),
             digest: digest.into(),
             signature: None,
+            signer: None,
+            trust: None,
             installed_at: 0,
         };
         // no lockfile → left alone, never created

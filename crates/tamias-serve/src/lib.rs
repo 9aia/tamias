@@ -20,6 +20,12 @@
 //! `search`/`publish`/`registry.*` resolve named registry sources and
 //! config writes through `tamias-registry-open` — the same code the
 //! `tamias` CLI verbs use, so the wire surface can't diverge.
+//!
+//! **Trust boundary.** Stdin is fully trusted: `install` accepts
+//! `allow_drivers:true` (bundled-driver consent), and
+//! `publish`/`registry.add`/`registry.remove` mutate config and the
+//! registry. Embedders must treat the pipe as a privileged channel —
+//! never expose it to untrusted input.
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -238,10 +244,24 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 &policy.namespace,
             )?
             .as_str();
+            // Trust tier + signer re-derived live (same rule as the
+            // CLI's `verify`) — recorded `signer` wins when present.
+            let (trust, live_signer) = tamias_sign::trust_and_signer(
+                &entry.record.source_ref,
+                entry.record.signature.as_deref(),
+                &entry.record.name,
+                entry.record.scope.as_deref(),
+                entry.record.version.as_deref(),
+                &entry.record.digest,
+                &policy,
+            )?;
+            let signer = entry.record.signer.clone().or(live_signer);
             Ok(json!({
                 "name": report.name,
                 "ok": report.ok,
                 "signature": signature,
+                "trust": trust.as_str(),
+                "signer": signer,
             }))
         }
         "remove" => {
@@ -356,6 +376,7 @@ fn registry_entry_json(entry: &tamias_registry::RegistryEntry) -> Value {
         "kind": entry.kind,
         "digest": entry.digest,
         "signed": entry.signature.is_some(),
+        "publisher": entry.publisher,
         "file": entry.file,
     })
 }
@@ -698,6 +719,7 @@ mod tests {
         let _g = EnvGuard::new();
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        std::env::set_var("TAMIAS_CONSENT_FILE", tmp.path().join("consented.json"));
         std::env::remove_var("TAMIAS_ALLOW_DRIVERS");
         let env = Env {
             store_root: tmp.path().join("store"),
@@ -934,6 +956,8 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0]["name"], "wpkg");
         assert_eq!(results[0]["version"], "1.0.0");
+        assert_eq!(results[0]["signed"], false);
+        assert!(results[0]["publisher"].is_null());
         // search by raw dir ref → same registry, same result
         let raw = mine_reg.display().to_string();
         let by_ref = format!("{{\"op\":\"search\",\"query\":\"wpkg\",\"registry\":{raw:?}}}");

@@ -31,6 +31,7 @@ provenance:
   - project/index.md
   - project/issues/issue-0001-pavo-core-paths-rs-still-falls-back-to-tamias-tamias-fixed-to-tamias.md
   - project/issues/issue-0002-ship-compiled-tamias-driver-binaries-in-packages-driver-distribution-release-path.md
+  - project/issues/issue-0003-security-audit-2026-11-hardening-batch-kind-charset-untar-caps-include-pins-http-registries.md
   - project/plans/pl-0001-tamias-full-phased-plan-fetch-store-verify-install-publish-ports-adapters-local-cf.md
   - project/plans/pl-0002-p9-move-provisioning-deploy-service-from-peregrin-to-tamias-host-metaservice.md
   - project/plans/pl-0003-p10-tamias-driver-system-rust-di-scoverable-content-drivers-decouple-product-integrations.md
@@ -42,10 +43,11 @@ provenance:
   - project/proposals/proposal-0002-registry-sources-configurable-limits-named-registries-self-hosting-per-pkg-max-upload.md
   - project/proposals/proposal-0003-tamias-sync-install-a-project-s-dep-set-from-tamias-yaml-tamias-lock.md
   - project/proposals/proposal-0004-payload-composition-include-overlay-on-install-publish-lock-only-install.md
+  - project/proposals/proposal-0005-package-verification-official-badge-opt-in-service-consent-hardening.md
   hashes:
   - a8d17ca6e86c1faa677ebf8bbe55112e6b79ddb9
   - 67c21ea961d34b2db8bfd4e3441dc6001de32b9e
-  - 014fdb0dc856eb0c3151843226d20c0c0c887881
+  - 36ac2ea8fe35e4b83cff5a0f4bda798d1ea09360
   - 19a31a3ecdddb5e163a6ce4dc8d5303c8ce74004
   - 6d84ca6eeec801f5cb5415f9a9bb30f9b0f02f07
   - 12339db8c98b70eff0e6be7ff95aa05580c54881
@@ -57,17 +59,19 @@ provenance:
   - 8e032ed9afe33857903f042c5602086609df6d69
   - 98f4aa814ba47a8c6741d5ca11e09eececd0296f
   - 21a6946ca8191968b92247cc13a3f88eb02ad1ff
+  - 99320cf9b19b7bff42dede0895ebf11e867aec4a
   - f6add38190dced8f5cffcbbb25e5610b6357fe7b
   - 2734918a0a33b89702752a27a20a5ae85b159940
   - 13c1457a7cee4deca035fd7c572bc1ade9274a9e
   - 03b12d41126df13d00611a3fc698d4e40d3e1d4d
   - 60e7a5e2b8832a441294318e4e9e5ed43f24ca60
   - bd22e741a201d03d9180c97ee3adc078416dfb2e
-  - 0c569ec547b836f0e4c7c193021f7f8bc7e5d288
+  - b80f3ab788fb374062415e79566e479fd8c668d7
   - 35c5e480e4e99fb8f4e5c5e6ddb9fde060a95402
   - e2fc25e216d16449105fb4ab420bebf2f02d06d4
   - 020c4f723e38d786392a98d87df67530e4fc1443
-  - 8c250bed25d6fee0958876bc236e50c1b87febfe
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - 8fcedfde5dcf4d5a61b0dbdd9942dbeec0fd0d53
+  - 9a7c78299d0dd922bcc6772e45f3c2a8162f09f6
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

@@ -12,10 +12,15 @@ api:
   file: crates/tamias-sign/src/lib.rs
   line: 50
   module: tamias-sign
+- name: OFFICIAL_SIGNERS_ENV
+  kind: const
+  file: crates/tamias-sign/src/lib.rs
+  line: 65
+  module: tamias-sign
 - name: SEQ
   kind: const
   file: crates/tamias-sign/src/lib.rs
-  line: 176
+  line: 182
   module: tamias-sign
 - name: SIGNING_KEY_ENV
   kind: const
@@ -25,122 +30,167 @@ api:
 - name: SignatureStatus
   kind: type
   file: crates/tamias-sign/src/lib.rs
-  line: 318
+  line: 345
   module: tamias-sign
 - name: SigningPolicy
   kind: type
   file: crates/tamias-sign/src/lib.rs
-  line: 206
+  line: 212
+  module: tamias-sign
+- name: TrustTier
+  kind: type
+  file: crates/tamias-sign/src/lib.rs
+  line: 510
   module: tamias-sign
 - name: allow
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 495
+  line: 766
+  module: tamias-sign
+- name: allow_file
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 776
   module: tamias-sign
 - name: as_str
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 334
+  line: 361
+  module: tamias-sign
+- name: as_str
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 527
+  module: tamias-sign
+- name: assess_trust
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 572
   module: tamias-sign
 - name: default
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 255
+  line: 282
   module: tamias-sign
 - name: enforce_signature
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 429
+  line: 700
   module: tamias-sign
 - name: enforce_signature_policies
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 610
+  line: 891
   module: tamias-sign
 - name: expand_tilde
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 187
+  line: 193
   module: tamias-sign
 - name: gen_key
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 478
+  line: 749
   module: tamias-sign
 - name: home_dir
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 197
+  line: 203
+  module: tamias-sign
+- name: official_signature_status
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 475
   module: tamias-sign
 - name: record_signature_status
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 379
+  line: 454
   module: tamias-sign
 - name: record_signing_bytes
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 84
+  line: 90
   module: tamias-sign
-- name: resolve
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 227
-  module: tamias-sign
-- name: resolve_signing_key
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 266
-  module: tamias-sign
-- name: resolve_signing_key_order
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 639
-  module: tamias-sign
-- name: scratch_file
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 175
-  module: tamias-sign
-- name: sign
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 99
-  module: tamias-sign
-- name: sign_package
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 401
-  module: tamias-sign
-- name: sign_package_uses_payload_digest
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 650
-  module: tamias-sign
-- name: sign_verify_roundtrip_and_failures
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 522
-  module: tamias-sign
-- name: signature_status
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 351
-  module: tamias-sign
-- name: signature_status_arms
+- name: ref_is_pinned
   kind: function
   file: crates/tamias-sign/src/lib.rs
   line: 546
   module: tamias-sign
+- name: resolve
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 240
+  module: tamias-sign
+- name: resolve_signing_key
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 293
+  module: tamias-sign
+- name: resolve_signing_key_order
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 920
+  module: tamias-sign
+- name: scoped_principal_resolution
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 954
+  module: tamias-sign
+- name: scratch_file
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 181
+  module: tamias-sign
+- name: sign
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 105
+  module: tamias-sign
+- name: sign_package
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 672
+  module: tamias-sign
+- name: sign_package_uses_payload_digest
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 931
+  module: tamias-sign
+- name: sign_verify_roundtrip_and_failures
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 803
+  module: tamias-sign
+- name: signature_status
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 389
+  module: tamias-sign
+- name: signature_status_arms
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 827
+  module: tamias-sign
+- name: signature_status_detail
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 419
+  module: tamias-sign
+- name: signature_status_detail_reports_principal
+  kind: function
+  file: crates/tamias-sign/src/lib.rs
+  line: 992
+  module: tamias-sign
 - name: signing_bytes
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 66
+  line: 72
   module: tamias-sign
 - name: signing_bytes_is_canonical
   kind: function
   file: crates/tamias-sign/src/lib.rs
-  line: 509
+  line: 790
   module: tamias-sign
 - name: tamias-sign
   kind: module
@@ -150,13 +200,9 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-sign/src/lib.rs
-  line: 470
+  line: 741
   module: tamias-sign
-- name: verify
-  kind: function
-  file: crates/tamias-sign/src/lib.rs
-  line: 140
-  module: tamias-sign
+api_omitted: 5
 deps:
 - tamias-config
 - tamias-core
@@ -172,7 +218,7 @@ provenance:
   - crates/tamias-sign/src/lib.rs
   hashes:
   - c44122c7d689e10a79ee73c20710d2f647a86a31
-  - 9096e0adcd385e8e9d71c1b9eaf33ea81628afce
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - 677567a0037ef4759e4b386addb232f909bc2a64
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

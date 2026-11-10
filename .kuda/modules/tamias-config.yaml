@@ -15,32 +15,32 @@ api:
 - name: Config
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 309
+  line: 317
   module: tamias-config
 - name: ConfigFormat
   kind: trait
   file: crates/tamias-config/src/lib.rs
-  line: 364
+  line: 373
   module: tamias-config
 - name: DEFAULT_MAX_DOWNLOAD
   kind: const
   file: crates/tamias-config/src/lib.rs
-  line: 242
+  line: 250
   module: tamias-config
 - name: DEFAULT_MAX_UPLOAD
   kind: const
   file: crates/tamias-config/src/lib.rs
-  line: 239
+  line: 247
   module: tamias-config
 - name: EffectiveLimits
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 246
+  line: 254
   module: tamias-config
 - name: Limits
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 209
+  line: 217
   module: tamias-config
 - name: Location
   kind: type
@@ -60,7 +60,7 @@ api:
 - name: Repr
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 142
+  line: 150
   module: tamias-config
 - name: Search
   kind: type
@@ -70,17 +70,17 @@ api:
 - name: Signing
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 104
+  line: 105
   module: tamias-config
 - name: Toy
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 432
+  line: 441
   module: tamias-config
 - name: de_bytes_opt
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 136
+  line: 144
   module: tamias-config
 - name: effective_kind
   kind: function
@@ -90,92 +90,92 @@ api:
 - name: effective_limits
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 341
+  line: 350
   module: tamias-config
 - name: effective_limits_resolution_order
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 518
+  line: 527
   module: tamias-config
 - name: extensions
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 434
+  line: 443
   module: tamias-config
 - name: format_for
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 383
+  line: 392
   module: tamias-config
 - name: format_for_load_file_and_load_in
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 450
+  line: 459
   module: tamias-config
 - name: glob_match
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 256
+  line: 264
   module: tamias-config
 - name: glob_match_patterns
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 503
+  line: 512
   module: tamias-config
 - name: is_empty
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 233
+  line: 241
   module: tamias-config
 - name: is_false
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 129
+  line: 137
   module: tamias-config
 - name: load_file
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 399
+  line: 408
   module: tamias-config
 - name: load_in
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 411
+  line: 420
   module: tamias-config
 - name: package_limits
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 292
+  line: 300
   module: tamias-config
 - name: parse
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 437
+  line: 446
   module: tamias-config
 - name: parse_bytes
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 171
+  line: 179
   module: tamias-config
 - name: parse_bytes_units
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 488
+  line: 497
   module: tamias-config
 - name: registry_kind_inference
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 589
+  line: 598
   module: tamias-config
 - name: render
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 444
+  line: 453
   module: tamias-config
 - name: ser_bytes_opt
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 154
+  line: 162
   module: tamias-config
 - name: tamias-config
   kind: module
@@ -185,7 +185,7 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-config/src/lib.rs
-  line: 428
+  line: 437
   module: tamias-config
 deps:
 - serde
@@ -203,7 +203,7 @@ provenance:
   - crates/tamias-config/src/lib.rs
   hashes:
   - 632480163263ef27edab2d729003066436e1a9d5
-  - 494e8decf560bca5bb0d53827d4f77e650abde66
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - 215b28316d28d5bbd7a02cb590c3c6956f5e98f3
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

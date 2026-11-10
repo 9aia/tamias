@@ -29,8 +29,10 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use tamias_core::{find_store_entry, Error, StoreEntry, StoreRecord};
-use tamias_source::expand_path;
+use tamias_source::{expand_path, Spec};
 use tamias_source_fs::FsSpec;
+use tamias_source_git::GitSpec;
+use tamias_source_http::HttpSpec;
 use tamias_store_local::Store;
 
 use crate::{install_inner, Env, Progress, Surface};
@@ -73,6 +75,8 @@ pub(crate) fn pending_label(
         resolved: resolved.to_string(),
         digest: String::new(),
         signature: None,
+        signer: None,
+        trust: None,
         installed_at: 0,
     };
     StoreEntry {
@@ -151,6 +155,14 @@ fn resolve_base(
     }
     // 2. Installable ref — recurse through the full pipeline.
     let spec = crate::refs().parse(text).map_err(|_| missing_base(text))?;
+    // A remote include base is a transitive pull under this install's
+    // consent flags — warn when the ref isn't pinned so the operator
+    // knows provenance rides on "whatever the remote serves now".
+    // `cf:` refs need no warning: they're pinned by name@version plus
+    // the index-recorded payload digest.
+    if let Some(reason) = unpinned_remote_ref(&spec) {
+        eprintln!("warning: include '{text}' is an unpinned remote ref — {reason}");
+    }
     if spec.is::<FsSpec>() {
         // `FsSpec.path` is `expand_path(input)` — recompute it rather
         // than downcasting the opaque spec.
@@ -171,6 +183,83 @@ fn resolve_base(
     state.depth -= 1;
     let entry = result?;
     Ok(entry.dir)
+}
+
+/// Why a parsed include-base ref is an *unpinned remote pull*, or
+/// `None` when it's pinned/local. Remote refs fetched through `include:`
+/// are transitive pulls the top-level ref's consent flags cover — the
+/// warning is advisory (remote includes are legitimate), not a failure.
+///
+/// - `http(s)://…` without a `#sha256:` fragment → warn (unpinned).
+/// - `git:…` without a `#<rev>` that is a full 40-hex sha → warn
+///   (moving refs like `#main`/`#v1` resolve at fetch time). Local-path
+///   clones (`/`, `.`, `~`, `file://`) aren't remote pulls → no warn.
+/// - `cf:` is registry-pinned (name@version + index payload digest) →
+///   no warn; fs paths and store names never reach here as remote.
+fn unpinned_remote_ref(spec: &Spec) -> Option<&'static str> {
+    if let Some(http) = spec.downcast_ref::<HttpSpec>() {
+        return (http.digest.is_none()).then_some("http ref has no #sha256: digest pin");
+    }
+    if let Some(git) = spec.downcast_ref::<GitSpec>() {
+        let local = git.url.starts_with("file://")
+            || git.url.starts_with('/')
+            || git.url.starts_with('.')
+            || git.url.starts_with('~');
+        if !local {
+            let pinned = git
+                .rev
+                .as_deref()
+                .is_some_and(|rev| rev.len() == 40 && rev.bytes().all(|b| b.is_ascii_hexdigit()));
+            if !pinned {
+                return Some("git ref is not pinned to a full commit sha");
+            }
+        }
+    }
+    None
+}
+
+/// How an `include:` entry resolves for [`crate::plan_install`] — the
+/// store-name-then-ref classification of [`resolve_base`] minus the
+/// recursive install and any fetch.
+pub(crate) enum IncludePlan {
+    /// An installed store entry — carries its [`StoreEntry::label`].
+    Store(String),
+    /// Not a store name, but the ref grammar claims it — a real
+    /// install would recursively install it as a base.
+    WouldInstall,
+    /// Neither — carries why (an `@`-name that's not installed, an
+    /// ambiguous store name, an unparseable ref, or a path that
+    /// doesn't exist). A real install fails naming this entry.
+    Missing(String),
+}
+
+/// Classify one `include:` entry without installing anything — see
+/// [`IncludePlan`]. Mirrors [`resolve_base`]'s order: store name via
+/// [`find_store_entry`] first, `@`-prefixed names never fall through
+/// to ref resolution, fs paths must exist on disk.
+pub(crate) fn plan_include(entries: &[StoreEntry], text: &str) -> IncludePlan {
+    match find_store_entry(entries, text) {
+        Ok(Some(entry)) => return IncludePlan::Store(entry.label()),
+        Ok(None) => {}
+        // Ambiguous bare name — the real install errors; surface the
+        // reason so the plan's problems list stays accurate.
+        Err(e) => return IncludePlan::Missing(e.to_string()),
+    }
+    if text.starts_with('@') {
+        return IncludePlan::Missing(missing_base(text).to_string());
+    }
+    match crate::refs().parse(text) {
+        Ok(spec) => {
+            // `FsSpec.path` is `expand_path(input)` — same existence
+            // check `resolve_base` makes before recursing.
+            if spec.is::<FsSpec>() && !expand_path(Path::new(text)).exists() {
+                IncludePlan::Missing(missing_base(text).to_string())
+            } else {
+                IncludePlan::WouldInstall
+            }
+        }
+        Err(_) => IncludePlan::Missing(missing_base(text).to_string()),
+    }
 }
 
 /// The hard error for an include entry that is neither an installed
@@ -217,4 +306,48 @@ pub(crate) fn pin_manifest(local: &Path, dest: &Path) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    /// Parse `input` through the same grammar `resolve_base` uses.
+    fn parsed(input: &str) -> Spec {
+        crate::refs().parse(input).unwrap()
+    }
+
+    #[test]
+    fn unpinned_remote_ref_flags() {
+        // http(s) without #sha256: → warn; pinned → clean.
+        assert!(unpinned_remote_ref(&parsed("https://x/y.tgz")).is_some());
+        assert!(unpinned_remote_ref(&parsed("http://x/y.tgz")).is_some());
+        let sha = "a".repeat(64);
+        assert!(unpinned_remote_ref(&parsed(&format!("https://x/y.tgz#sha256:{sha}"))).is_none());
+        assert!(unpinned_remote_ref(&parsed(&format!("http://x/y.tgz#sha256={sha}"))).is_none());
+
+        // git: remote without a full-sha rev → warn.
+        assert!(unpinned_remote_ref(&parsed("git:https://h/o/r")).is_some());
+        assert!(unpinned_remote_ref(&parsed("git:org/repo#main")).is_some());
+        assert!(unpinned_remote_ref(&parsed("git:org/repo#v1.0")).is_some());
+        assert!(unpinned_remote_ref(&parsed("git:org/repo#abc1234")).is_some());
+        // full 40-hex sha → pinned.
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        assert!(unpinned_remote_ref(&parsed(&format!("git:org/repo#{commit}"))).is_none());
+        // local clones aren't remote pulls.
+        assert!(unpinned_remote_ref(&parsed("git:file:///tmp/r")).is_none());
+        assert!(unpinned_remote_ref(&parsed("git:/abs/path")).is_none());
+        assert!(unpinned_remote_ref(&parsed("git:./rel/path")).is_none());
+        assert!(unpinned_remote_ref(&parsed("git:~/path")).is_none());
+
+        // cf: is registry-pinned; fs paths and plain names are local.
+        assert!(unpinned_remote_ref(&parsed("cf:9aia/bucket/hello@0.1.0")).is_none());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pkg");
+        std::fs::create_dir_all(&path).unwrap();
+        assert!(unpinned_remote_ref(&parsed(path.to_str().unwrap())).is_none());
+    }
 }

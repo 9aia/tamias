@@ -735,6 +735,8 @@ mod tests {
                 resolved: "sha256:abc".into(),
                 digest: String::new(),
                 signature: None,
+                signer: None,
+                trust: None,
                 installed_at: 0,
             },
         };

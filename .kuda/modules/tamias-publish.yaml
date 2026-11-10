@@ -50,12 +50,12 @@ api:
 - name: pack_missing_base_fails_naming_it
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 352
+  line: 354
   module: tamias-publish
 - name: pack_resolves_fs_dir_and_installed_ref_bases
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 374
+  line: 376
   module: tamias-publish
 - name: pack_without_version_uses_name
   kind: function
@@ -95,7 +95,7 @@ api:
 - name: tgz_files
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 415
+  line: 419
   module: tamias-publish
 - name: unresolvable
   kind: function
@@ -127,7 +127,7 @@ provenance:
   - crates/tamias-publish/src/lib.rs
   hashes:
   - 628e0e9654aa2ca9ee3883a23cc7e509e290be45
-  - 1742696d8fad145f6fa013307f336a023fd71b71
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - 8664e75d740ade1a69934846963be00320420f39
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

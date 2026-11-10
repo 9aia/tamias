@@ -168,6 +168,18 @@ fn publish_tmp_path(version: &str) -> std::path::PathBuf {
 
 impl Registry for HttpRegistry {
     fn entries(&self) -> Result<Vec<RegistryEntry>, Error> {
+        // A cleartext index fetch is unauthenticated and modifiable in
+        // transit — the payload digests it records are only as
+        // trustworthy as this GET (signatures mitigate only when
+        // `allowed_signers` is configured). Warn per call: installs
+        // aren't hot loops.
+        if self.base.starts_with("http://") {
+            eprintln!(
+                "warning: fetching registry index {}/index.json over plain http — \
+                 the index is unauthenticated and modifiable in transit",
+                self.base
+            );
+        }
         // Only a genuine 404 (no index yet — first publish) yields an
         // empty list; any other read failure propagates so `publish`
         // never PUTs an index built from a failed read.
@@ -242,6 +254,7 @@ impl Registry for HttpRegistry {
             kind: manifest.kind.clone(),
             digest: dir_digest(payload_root)?,
             signature: signature.map(str::to_string),
+            publisher: None,
             file: rel,
         };
         let mut entries = self.entries()?;

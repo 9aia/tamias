@@ -32,6 +32,22 @@ pub fn is_valid_version(s: &str) -> bool {
         && !s.contains("..")
 }
 
+/// Content-type charset — `[a-z0-9][a-z0-9._-]*` with no `..`. The
+/// kind becomes `tamias-driver-<kind>` in PATH/home lookups, so it
+/// must stay a single safe path component (no `/`, no separators, no
+/// traversal).
+#[must_use]
+pub fn is_valid_kind(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        })
+        && s.bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && !s.contains("..")
+}
+
 /// The package manifest.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
@@ -372,6 +388,13 @@ impl Manifest {
                 )));
             }
         }
+        if let Some(kind) = &self.kind {
+            if !is_valid_kind(kind) {
+                return Err(Error::Failed(format!(
+                    "invalid content type '{kind}' — expected [a-z0-9][a-z0-9._-]* with no '..'"
+                )));
+            }
+        }
         if let Some(provider) = &self.provider {
             provider.check()?;
         }
@@ -487,6 +510,66 @@ mod tests {
                 "version {good:?} must pass"
             );
         }
+    }
+
+    #[test]
+    fn kind_validation() {
+        for bad in [
+            "../evil",
+            "a/b",
+            "a\\b",
+            "..",
+            ".",
+            "-lead",
+            ".lead",
+            "_lead",
+            "",
+            "Upper",
+            "has space",
+            "a..b",
+            "a\0b",
+        ] {
+            assert!(!is_valid_kind(bad), "kind {bad:?} must be rejected");
+            assert!(
+                Manifest {
+                    name: "x".into(),
+                    kind: Some(bad.into()),
+                    ..Default::default()
+                }
+                .validate()
+                .is_err(),
+                "kind {bad:?} must fail validation"
+            );
+        }
+        for good in [
+            "files",
+            "tamias",
+            "peregrin-bundle",
+            "myco-config",
+            "kuda-domain",
+            "mimus-rules",
+            "type.v2_beta-1",
+            "9lives",
+        ] {
+            assert!(is_valid_kind(good), "kind {good:?} must be accepted");
+            assert!(
+                Manifest {
+                    name: "x".into(),
+                    kind: Some(good.into()),
+                    ..Default::default()
+                }
+                .validate()
+                .is_ok(),
+                "kind {good:?} must pass validation"
+            );
+        }
+        // absent kind is fine
+        assert!(Manifest {
+            name: "x".into(),
+            ..Default::default()
+        }
+        .validate()
+        .is_ok());
     }
 
     #[test]

@@ -56,6 +56,8 @@ fn fixture() -> Fixture {
                 resolved: "sha256:0123456789abcdef".into(),
                 digest: String::new(), // install() fills it
                 signature: None,
+                signer: None,
+                trust: None,
                 installed_at: 0,
             },
         )

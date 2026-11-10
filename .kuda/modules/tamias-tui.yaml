@@ -40,7 +40,7 @@ api:
 - name: Drained
   kind: type
   file: crates/tamias-tui/tests/pty.rs
-  line: 120
+  line: 122
   module: tamias-tui
 - name: Fixture
   kind: type
@@ -175,12 +175,12 @@ api:
 - name: closed_pty_surfaces_an_error
   kind: function
   file: crates/tamias-tui/tests/pty.rs
-  line: 347
+  line: 349
   module: tamias-tui
 - name: command
   kind: function
   file: crates/tamias-tui/tests/pty.rs
-  line: 75
+  line: 77
   module: tamias-tui
 - name: command_parsing
   kind: function
@@ -195,14 +195,14 @@ api:
 - name: ctx
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 1179
+  line: 1184
   module: tamias-tui
 - name: ctx_from_env_resolves_roots
   kind: function
   file: crates/tamias-tui/src/lib.rs
   line: 182
   module: tamias-tui
-api_omitted: 138
+api_omitted: 139
 deps:
 - crossterm
 - notify
@@ -253,9 +253,9 @@ provenance:
   - 1f76706680dcf171f467dcae52131c8da4f4ff6d
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - b7587c582f89c0124f30035f21c8092a5c5dce7f
-  - 30611c3ea36e479642277816f4c60c22b9e5fa1d
-  - 0fb68a4ee8432d1c4cd26ab7c06e8d905a383f24
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - c41979bddfaa4cc559941ad71ca6d0f589ebf419
+  - 3ad22909943db81c2550d1e968bc077eecddf114
+  - 7c33e3b53797f14b73b0d7fcfefca0f11f1ac8c2
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

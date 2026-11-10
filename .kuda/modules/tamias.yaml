@@ -5,7 +5,7 @@ api:
 - name: BundleCommand
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 440
+  line: 459
   module: tamias
 - name: CACHE_MAX_AGE_DAYS
   kind: const
@@ -15,7 +15,7 @@ api:
 - name: CacheCommand
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 424
+  line: 443
   module: tamias
 - name: Cli
   kind: type
@@ -30,179 +30,179 @@ api:
 - name: DriverCommand
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 298
+  line: 317
   module: tamias
 - name: Env
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 458
+  line: 477
   module: tamias
 - name: PROC
   kind: const
   file: crates/tamias-cli/src/main.rs
-  line: 1911
+  line: 2142
   module: tamias
 - name: ProcGuard
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 1918
+  line: 2149
   module: tamias
 - name: ProviderCommand
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 335
+  line: 354
   module: tamias
 - name: RegistryCommand
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 349
+  line: 368
   module: tamias
 - name: RegistryKind
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 404
+  line: 423
   module: tamias
 - name: ServiceCommand
   kind: type
   file: crates/tamias-cli/src/main.rs
-  line: 1299
+  line: 1488
   module: tamias
 - name: add_records_manifest_and_lock
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2283
+  line: 2514
   module: tamias
 - name: add_with_existing_manifest_and_service_verbs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2707
+  line: 2938
   module: tamias
 - name: add_writes_manifest_and_lock
   kind: function
   file: crates/tamias-cli/tests/e2e.rs
-  line: 137
+  line: 185
   module: tamias
 - name: as_str
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 414
+  line: 433
   module: tamias
 - name: bare_tamias_prints_help
   kind: function
   file: crates/tamias-cli/tests/e2e.rs
-  line: 669
+  line: 736
   module: tamias
 - name: blocking_arms_execute
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2427
+  line: 2658
   module: tamias
 - name: cache_clean_all_conflicts_with_days
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3227
+  line: 3464
   module: tamias
 - name: cache_hit_fetch_error_and_scoped_info
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2512
+  line: 2743
   module: tamias
 - name: cache_root
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 528
+  line: 547
   module: tamias
 - name: cli_config
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 483
+  line: 502
   module: tamias
 - name: cli_docs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 624
+  line: 753
   module: tamias
 - name: cli_verbs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 615
+  line: 744
   module: tamias
 - name: config_locations_resolve_store_and_cache
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3508
+  line: 3747
   module: tamias
 - name: config_verb
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2977
+  line: 3208
   module: tamias
 - name: corrupt_cache_entry_never_installs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2353
+  line: 2584
   module: tamias
 - name: corrupt_cache_entry_replaced_on_refetch
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2405
+  line: 2636
   module: tamias
 - name: deploy_and_uninstall_use_the_driver
   kind: function
   file: crates/tamias-cli/tests/e2e.rs
-  line: 296
+  line: 363
   module: tamias
 - name: deploy_package
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 1347
+  line: 1536
   module: tamias
 - name: deploy_provider_name_scopes_unit_name
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2619
+  line: 2850
   module: tamias
 - name: deploy_registry_bakes_configured_upload_limit
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 4028
+  line: 4267
   module: tamias
 - name: deploy_renders_provider_services_and_uninstall_removes
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2588
+  line: 2819
   module: tamias
 - name: doctor
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 1783
+  line: 1973
   module: tamias
 - name: doctor_and_add_save_errors
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2801
+  line: 3032
   module: tamias
 - name: doctor_fails_on_unwritable_roots
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3598
+  line: 3837
   module: tamias
 - name: doctor_registry
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 1748
+  line: 1938
   module: tamias
 - name: driver_config_schema
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 1494
+  line: 1684
   module: tamias
 - name: driver_config_schema_dispatches_and_surfaces_unsupported
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 2182
+  line: 2413
   module: tamias
-api_omitted: 96
+api_omitted: 100
 deps:
 - clap
 - clap_complete
@@ -301,10 +301,10 @@ provenance:
   - e58c70bea39d5b252a1e819f242bbdcdf20e8b87
   - 30a263d674ef19de11c756d6f7537f91a421909e
   - 51b6a07dd57174197a937034b7eecebd5768ff8a
-  - 21a7195b6260ec15da90d9006ef3f14e1cee6aaa
+  - 4ad4be34822a72143b8307e779424fb2d1bdb61c
   - e018591237ffdcd5d419b3e224d40901ce1e6fb8
-  - 087fc70ac15bf4dc20f547882fda5d09e02b306f
-  - 23fbba6c5c77b5dd31d209b5b957a6c67ede3d89
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - b4f6f382afcad2552dcfc8598e49c64cf7d861bc
+  - 51ee5a15e979499016f9573c61de3e7f43ce2619
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

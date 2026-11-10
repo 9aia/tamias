@@ -59,26 +59,86 @@ pub fn pack_tgz_atomic(src_dir: &Path, out: &Path) -> Result<PathBuf, Error> {
     result.map(|()| out.to_path_buf())
 }
 
-/// Unpack a plain `.tar` stream.
+/// Default cap on total *unpacked* bytes — 2 GiB. `max_download`
+/// bounds the compressed blob only; a small `.tgz` can expand without
+/// bound, so every untar path enforces this ceiling.
+pub const DEFAULT_MAX_UNPACK_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Default cap on tar entry count — 100k entries bounds inode/dir spam
+/// from a tiny archive.
+pub const DEFAULT_MAX_ENTRIES: u64 = 100_000;
+
+/// Unpack a plain `.tar` stream under the default size/entry caps.
 ///
 /// # Errors
-/// Propagates read/write failures.
+/// Propagates read/write failures; fails when the unpacked size or
+/// entry count exceeds [`DEFAULT_MAX_UNPACK_BYTES`] /
+/// [`DEFAULT_MAX_ENTRIES`].
 pub fn untar(reader: impl Read, dest: &Path) -> Result<(), Error> {
-    unpack(Archive::new(reader), dest)
+    untar_limited(reader, dest, DEFAULT_MAX_UNPACK_BYTES, DEFAULT_MAX_ENTRIES)
 }
 
-/// Unpack a gzipped tarball stream (`.tgz`/`.tar.gz`).
+/// Unpack a plain `.tar` stream with explicit caps — `max_bytes` bounds
+/// total bytes written for regular files; `max_entries` bounds tar
+/// entries (dirs/symlinks included).
 ///
 /// # Errors
-/// Propagates read/write failures.
-pub fn untar_gz(reader: impl Read, dest: &Path) -> Result<(), Error> {
-    unpack(Archive::new(GzDecoder::new(reader)), dest)
+/// Propagates read/write failures; fails past either cap.
+pub fn untar_limited(
+    reader: impl Read,
+    dest: &Path,
+    max_bytes: u64,
+    max_entries: u64,
+) -> Result<(), Error> {
+    unpack(Archive::new(reader), dest, max_bytes, max_entries)
 }
 
-fn unpack<R: Read>(mut archive: Archive<R>, dest: &Path) -> Result<(), Error> {
+/// Unpack a gzipped tarball stream (`.tgz`/`.tar.gz`) under the default
+/// size/entry caps.
+///
+/// # Errors
+/// Propagates read/write failures; fails when the unpacked size or
+/// entry count exceeds the defaults.
+pub fn untar_gz(reader: impl Read, dest: &Path) -> Result<(), Error> {
+    untar_gz_limited(reader, dest, DEFAULT_MAX_UNPACK_BYTES, DEFAULT_MAX_ENTRIES)
+}
+
+/// Unpack a gzipped tarball stream with explicit caps — see
+/// [`untar_limited`].
+///
+/// # Errors
+/// Propagates read/write failures; fails past either cap.
+pub fn untar_gz_limited(
+    reader: impl Read,
+    dest: &Path,
+    max_bytes: u64,
+    max_entries: u64,
+) -> Result<(), Error> {
+    unpack(
+        Archive::new(GzDecoder::new(reader)),
+        dest,
+        max_bytes,
+        max_entries,
+    )
+}
+
+fn unpack<R: Read>(
+    mut archive: Archive<R>,
+    dest: &Path,
+    max_bytes: u64,
+    max_entries: u64,
+) -> Result<(), Error> {
     fs::create_dir_all(dest).map_err(Error::io(format!("create {}", dest.display())))?;
     let entries = archive.entries().map_err(Error::io("read tar entries"))?;
+    let mut unpacked: u64 = 0;
+    let mut seen: u64 = 0;
     for entry in entries {
+        seen += 1;
+        if seen > max_entries {
+            return Err(Error::Failed(format!(
+                "tarball exceeds entry limit ({max_entries} entries)"
+            )));
+        }
         let mut entry = entry.map_err(Error::io("read tar entry"))?;
         let path = entry.path().map_err(Error::io("read tar entry path"))?;
         let Some(rel) = sanitize(&path)? else {
@@ -96,8 +156,20 @@ fn unpack<R: Read>(mut archive: Archive<R>, dest: &Path) -> Result<(), Error> {
                     .map_err(Error::io(format!("create {}", parent.display())))?;
                 let mut file = fs::File::create(&target)
                     .map_err(Error::io(format!("create {}", target.display())))?;
-                io::copy(&mut entry, &mut file)
-                    .map_err(Error::io(format!("write {}", target.display())))?;
+                // Read at most `remaining + 1` bytes so an oversized
+                // file trips the cap without buffering it whole.
+                let remaining = max_bytes.saturating_sub(unpacked);
+                let written = io::copy(
+                    &mut (&mut entry).take(remaining.saturating_add(1)),
+                    &mut file,
+                )
+                .map_err(Error::io(format!("write {}", target.display())))?;
+                unpacked = unpacked.saturating_add(written);
+                if unpacked > max_bytes {
+                    return Err(Error::Failed(format!(
+                        "tarball exceeds unpacked size limit ({max_bytes} bytes)"
+                    )));
+                }
                 set_mode(&entry, &target)?;
             }
             EntryType::Symlink => {
@@ -345,6 +417,79 @@ mod archive_tests {
         let dest = tempfile::tempdir().unwrap();
         untar(Cursor::new(bytes), dest.path()).unwrap();
         assert!(dest.path().join("ok.txt").is_file());
+    }
+
+    /// A tar stream with `files` regular entries of `size` bytes each.
+    fn tar_with_files(files: usize, size: usize) -> Vec<u8> {
+        let mut builder = Builder::new(Vec::new());
+        let data = vec![b'x'; size];
+        for i in 0..files {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(size as u64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            builder
+                .append_data(&mut h, format!("f{i}.txt"), &data[..])
+                .unwrap();
+        }
+        builder.into_inner().unwrap()
+    }
+
+    #[test]
+    fn untar_limited_byte_cap() {
+        let bytes = tar_with_files(1, 100);
+        let dest = tempfile::tempdir().unwrap();
+        // under the cap → ok
+        untar_limited(Cursor::new(&bytes), dest.path(), 100, 10).unwrap();
+        assert_eq!(
+            std::fs::metadata(dest.path().join("f0.txt")).unwrap().len(),
+            100
+        );
+        // over the cap → error
+        let dest2 = tempfile::tempdir().unwrap();
+        assert!(untar_limited(Cursor::new(&bytes), dest2.path(), 99, 10).is_err());
+        // zero cap rejects any non-empty file
+        let dest3 = tempfile::tempdir().unwrap();
+        assert!(untar_limited(Cursor::new(&bytes), dest3.path(), 0, 10).is_err());
+    }
+
+    #[test]
+    fn untar_limited_byte_cap_counts_across_files() {
+        // two 60-byte files = 120 unpacked; a 100-byte cap trips on the
+        // second file even though each fits alone.
+        let bytes = tar_with_files(2, 60);
+        let dest = tempfile::tempdir().unwrap();
+        assert!(untar_limited(Cursor::new(&bytes), dest.path(), 100, 10).is_err());
+        let dest2 = tempfile::tempdir().unwrap();
+        untar_limited(Cursor::new(&bytes), dest2.path(), 120, 10).unwrap();
+    }
+
+    #[test]
+    fn untar_limited_entry_cap() {
+        let bytes = tar_with_files(3, 1);
+        let dest = tempfile::tempdir().unwrap();
+        assert!(untar_limited(Cursor::new(&bytes), dest.path(), 1 << 20, 3).is_ok());
+        let dest2 = tempfile::tempdir().unwrap();
+        assert!(untar_limited(Cursor::new(&bytes), dest2.path(), 1 << 20, 2).is_err());
+    }
+
+    #[test]
+    fn untar_gz_limited_caps_apply() {
+        // gzip a small tar, then unpack with a tiny byte cap.
+        let tar_bytes = tar_with_files(1, 50);
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        std::io::Write::write_all(&mut enc, &tar_bytes).unwrap();
+        let gz = enc.finish().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        assert!(untar_gz_limited(Cursor::new(&gz), dest.path(), 10, 100).is_err());
+        let dest2 = tempfile::tempdir().unwrap();
+        untar_gz_limited(Cursor::new(&gz), dest2.path(), 50, 100).unwrap();
+        assert_eq!(
+            std::fs::metadata(dest2.path().join("f0.txt"))
+                .unwrap()
+                .len(),
+            50
+        );
     }
 
     #[cfg(unix)]

@@ -1130,8 +1130,13 @@ pub fn run(ctx: &Ctx, job: &Job, log: &mut dyn FnMut(String)) -> Result<Outcome,
             allow_drivers,
         } => {
             let entry = install_ref(ctx, reference, *allow_drivers, log)?;
+            let trust = entry
+                .record
+                .trust
+                .as_deref()
+                .map_or_else(String::new, |t| format!(" — trust: {t}"));
             Ok(Outcome::Text(format!(
-                "installed {} ({})",
+                "installed {} ({}){trust}",
                 entry.label(),
                 short(&entry.record.digest)
             )))
@@ -1193,6 +1198,7 @@ mod tests {
             kind: Some("files".into()),
             digest: digest.into(),
             signature: None,
+            publisher: None,
             file: file.into(),
         }
     }

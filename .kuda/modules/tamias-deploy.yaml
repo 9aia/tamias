@@ -10,22 +10,22 @@ api:
 - name: ServiceSpec
   kind: type
   file: crates/tamias-deploy/src/lib.rs
-  line: 27
+  line: 28
   module: tamias-deploy
 - name: State
   kind: type
   file: crates/tamias-deploy/src/lib.rs
-  line: 98
+  line: 99
   module: tamias-deploy
 - name: expand_home
   kind: function
   file: crates/tamias-deploy/src/lib.rs
-  line: 62
+  line: 63
   module: tamias-deploy
 - name: split_exec
   kind: function
   file: crates/tamias-deploy/src/lib.rs
-  line: 96
+  line: 97
   module: tamias-deploy
 - name: tamias-deploy
   kind: module
@@ -45,7 +45,7 @@ provenance:
   - crates/tamias-deploy/src/lib.rs
   hashes:
   - cf266e216f76188736f30f53afcff0fdf41e03bd
-  - ec17633ea4fa2a180fa8e4d622bf31348ea266db
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - 2386b09a4430c7cf9901318850444238b9575cea
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

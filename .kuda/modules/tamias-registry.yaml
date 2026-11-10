@@ -5,7 +5,7 @@ api:
 - name: Registry
   kind: trait
   file: crates/tamias-registry/src/lib.rs
-  line: 52
+  line: 58
   module: tamias-registry
 - name: RegistryEntry
   kind: type
@@ -15,27 +15,32 @@ api:
 - name: RegistryRef
   kind: type
   file: crates/tamias-registry/src/lib.rs
-  line: 91
+  line: 97
   module: tamias-registry
 - name: label
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 39
+  line: 45
   module: tamias-registry
 - name: label_and_ref_parse
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 118
+  line: 124
   module: tamias-registry
 - name: parse_registry_ref
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 100
+  line: 106
+  module: tamias-registry
+- name: publisher_round_trips_through_index_json
+  kind: function
+  file: crates/tamias-registry/src/lib.rs
+  line: 153
   module: tamias-registry
 - name: search
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 76
+  line: 82
   module: tamias-registry
 - name: tamias-registry
   kind: module
@@ -45,7 +50,7 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-registry/src/lib.rs
-  line: 110
+  line: 116
   module: tamias-registry
 deps:
 - serde
@@ -66,8 +71,8 @@ provenance:
   - crates/tamias-registry/tests/props.rs
   hashes:
   - 9ab3d6d666009614cefb8ee05e7662792a43f5dd
-  - aa58bf4c0c63520e6d4ba18221234501c00a4196
+  - 6919455800eb186125d0bf1176b28e5f6133f0c3
   - 9c76c50538df4b424c71707ee8c7b4a786ad6101
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  commit_sha: 85a0f537d86ef2b122ba869de57f7d1a89c3ffd4
+  generated_at: '1794341890'
   generator: kuda-template/0.1.2

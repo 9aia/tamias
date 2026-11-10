@@ -97,8 +97,9 @@ pub struct Search {
 
 /// `[signing]` — optional package signing (`ssh-keygen -Y`, namespace
 /// `tamias-package`; see `tamias-sign`). Secret **names** never values:
-/// `key`/`allowed_signers` are paths, `key_env` names an env var whose
-/// value is a key *path* — key material never lives here.
+/// `key`/`allowed_signers`/`official_signers` are paths, `key_env`
+/// names an env var whose value is a key *path* — key material never
+/// lives here.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Signing {
@@ -111,10 +112,17 @@ pub struct Signing {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_env: Option<String>,
     /// `allowed_signers` file (authorized_keys-style, principal =
-    /// package name) for signature verification. `$TAMIAS_ALLOWED_SIGNERS`
+    /// `@scope/name` for scoped packages, else the bare name — with a
+    /// bare-name fallback) for signature verification.
+    /// `$TAMIAS_ALLOWED_SIGNERS`
     /// wins; default `~/.config/tamias/allowed_signers`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_signers: Option<String>,
+    /// `official_signers` file — the smaller trust set backing the
+    /// official-badge check. `$TAMIAS_OFFICIAL_SIGNERS` wins; default
+    /// `~/.config/tamias/official_signers`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub official_signers: Option<String>,
     /// Every install must carry a valid signature. Only registry
     /// (`cf:`) refs can supply one — see `tamias-sign`'s docs.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -324,7 +332,8 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Limits::is_empty")]
     pub limits: Limits,
     /// Package signing policy — `publish --sign` key resolution and
-    /// install/verify `allowed_signers` enforcement (`tamias-sign`).
+    /// install/verify `allowed_signers`/`official_signers` enforcement
+    /// and trust-tier reporting (`tamias-sign`).
     pub signing: Signing,
 }
 

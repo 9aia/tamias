@@ -135,6 +135,16 @@ fn short_sha(s: &str) -> String {
     bare.chars().take(12).collect()
 }
 
+/// Trust badge for a store record — `record.trust` carries the
+/// `tamias-sign` wire spelling (`official`/`signed`/`pinned`/
+/// `unpinned`/`bad`); `None` on records that predate trust tiers,
+/// which render no badge.
+fn trust_badge(rec: &tamias_core::StoreRecord) -> String {
+    rec.trust
+        .as_deref()
+        .map_or_else(String::new, |t| format!(" [{t}]"))
+}
+
 fn draw_pane(f: &mut Frame, m: &mut Model, area: Rect) {
     match m.pane {
         Pane::Installed => {
@@ -421,7 +431,7 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
             let r = &m.entries[i];
             let rec = &r.entry.record;
             Row::new(vec![
-                r.entry.label(),
+                format!("{}{}", r.entry.label(), trust_badge(rec)),
                 rec.kind.clone().unwrap_or_else(|| "-".into()),
                 rec.source_ref.clone(),
                 short_sha(&rec.resolved),
@@ -491,7 +501,17 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
                 rec.installed_at
             )),
         ]),
+        Line::from(vec![
+            Span::styled("trust:      ", Style::default().fg(ACCENT)),
+            Span::raw(rec.trust.clone().unwrap_or_else(|| "-".into())),
+        ]),
     ];
+    if let Some(signer) = &rec.signer {
+        lines.push(Line::from(vec![
+            Span::styled("signer:     ", Style::default().fg(ACCENT)),
+            Span::raw(signer.clone()),
+        ]));
+    }
     match &detail.manifest {
         Some(manifest) => {
             if let Some(desc) = &manifest.description {

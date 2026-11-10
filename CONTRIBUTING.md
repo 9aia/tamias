@@ -46,6 +46,16 @@ nightly needed.
   tests, fixtures, docs, or logs.
 - Never hand-edit `project/` when a `myco` verb exists.
 
+## Driver trust boundary
+
+`tamias-driver-<type>` binaries run with full user privileges over
+untrusted `--dir` payloads shipped inside packages. Driver authors
+must treat payload content as hostile: never execute payload files
+themselves, validate every path against traversal, and don't trust
+manifest-declared paths. Consent (`--allow-drivers` /
+`TAMIAS_ALLOW_DRIVERS=1` / the per-package consent file) gates
+*registration* — it is not a sandbox.
+
 ## Releasing
 
 Run `cargo xtask package` first — it packages + verifies every crate as

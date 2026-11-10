@@ -26,6 +26,8 @@ tamias-driver.workspace = true
 tamias-sign.workspace = true
 tempfile.workspace = true
 tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 tamias-registry.workspace = true

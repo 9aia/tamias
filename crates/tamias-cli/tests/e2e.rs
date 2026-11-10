@@ -29,6 +29,9 @@ fn tamias(home: &Path, cache: &Path, args: &[&str]) -> Output {
         .args(args)
         .env("TAMIAS_HOME", home)
         .env("TAMIAS_CACHE", cache)
+        // per-test consent file — driver-consent records must never
+        // leak into the real ~/.config/tamias across test runs
+        .env("TAMIAS_CONSENT_FILE", cache.join("consented.json"))
         .env_remove("TAMIAS_ALLOW_DRIVERS")
         .output()
         .unwrap()
@@ -82,6 +85,51 @@ fn install_list_info_verify_remove() {
     assert!(o.status.success(), "remove: {}", stderr(&o));
     let o = tamias(&home, &cache, &["list"]);
     assert!(stdout(&o).contains("no packages installed"));
+}
+
+#[test]
+fn list_and_info_surface_recorded_trust() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget\nversion: 1.0.0\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("a.txt"), "a").unwrap();
+
+    let o = tamias(&home, &cache, &["install", pkg.to_str().unwrap()]);
+    assert!(o.status.success(), "install: {}", stderr(&o));
+
+    // fs-path installs record the `unpinned` trust tier at install.
+    let o = tamias(&home, &cache, &["list"]);
+    assert!(o.status.success());
+    let text = stdout(&o);
+    assert!(text.contains("widget@1.0.0"), "{text}");
+    assert!(text.contains("unpinned"), "trust badge missing: {text}");
+
+    // --json carries trust + signer (null when unrecorded).
+    let o = tamias(&home, &cache, &["list", "--json"]);
+    assert!(o.status.success());
+    let list: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    let pkg = &list["packages"][0];
+    assert_eq!(pkg["trust"], "unpinned");
+    assert!(pkg["signer"].is_null());
+
+    let o = tamias(&home, &cache, &["info", "widget"]);
+    assert!(o.status.success(), "info: {}", stderr(&o));
+    let text = stdout(&o);
+    assert!(text.contains("trust:   unpinned"), "{text}");
+    assert!(text.contains("signer:  -"), "{text}");
+
+    let o = tamias(&home, &cache, &["info", "widget", "--json"]);
+    assert!(o.status.success());
+    let info: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    assert_eq!(info["trust"], "unpinned");
+    assert!(info["signer"].is_null());
 }
 
 #[test]
@@ -226,6 +274,25 @@ fn publish_search_and_install_from_registry_tgz() {
         .output()
         .unwrap();
     assert!(stdout(&o).contains("widget@2.0.0"), "{}", stdout(&o));
+
+    // --json carries signed + publisher (unverified index metadata).
+    let o = Command::new(tamias_bin())
+        .args([
+            "search",
+            "widget",
+            "--registry",
+            reg.to_str().unwrap(),
+            "--json",
+        ])
+        .env("TAMIAS_HOME", &home)
+        .env("TAMIAS_CACHE", &cache)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "search --json: {}", stderr(&o));
+    let results: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    let hit = &results["results"][0];
+    assert_eq!(hit["signed"], false);
+    assert!(hit["publisher"].is_null());
 
     // install the published .tgz via an fs ref, then verify it landed.
     let tgz = reg.join("widget/2.0.0.tgz");
@@ -894,6 +961,7 @@ fn install_registers_bundled_driver() {
         .args(["install", other.to_str().unwrap()])
         .env("TAMIAS_HOME", &home)
         .env("TAMIAS_CACHE", &cache)
+        .env("TAMIAS_CONSENT_FILE", cache.join("consented.json"))
         .env("TAMIAS_ALLOW_DRIVERS", "1")
         .output()
         .unwrap();
@@ -1177,4 +1245,50 @@ fn publish_sign_and_signed_cf_install() {
 
     server.kill().ok();
     let _ = server.wait();
+}
+
+#[test]
+fn install_plan_is_a_dry_run() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let pkg = tmp.path().join("pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget\nversion: 1.2.3\ntype: files\n",
+    )
+    .unwrap();
+    std::fs::write(pkg.join("data.txt"), "hello").unwrap();
+
+    let o = tamias(&home, &cache, &["install", pkg.to_str().unwrap(), "--plan"]);
+    assert!(o.status.success(), "plan: {}", stderr(&o));
+    let out = stdout(&o);
+    assert!(out.contains("widget@1.2.3"), "{out}");
+    assert!(out.contains("unpinned"), "{out}");
+    assert!(out.contains("includes:"), "{out}");
+    assert!(
+        !out.contains("installed "),
+        "plan must not claim an install: {out}"
+    );
+
+    // the dry-run committed nothing — and did not print the install line
+    let o = tamias(&home, &cache, &["list"]);
+    assert!(stdout(&o).contains("no packages installed"));
+
+    // --json emits the serialized plan; the second fetch is a cache hit
+    let o = tamias(
+        &home,
+        &cache,
+        &["install", pkg.to_str().unwrap(), "--plan", "--json"],
+    );
+    assert!(o.status.success(), "plan --json: {}", stderr(&o));
+    let plan: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
+    assert_eq!(plan["manifest"]["name"], "widget");
+    assert_eq!(plan["manifest"]["version"], "1.2.3");
+    assert_eq!(plan["trust"], "unpinned");
+    assert_eq!(plan["cache_hit"], true);
+    assert!(plan["problems"].as_array().unwrap().is_empty());
+    let o = tamias(&home, &cache, &["list"]);
+    assert!(stdout(&o).contains("no packages installed"));
 }

@@ -72,6 +72,8 @@ proptest! {
                 resolved: "r".into(),
                 digest: "d".into(),
                 signature: None,
+                signer: None,
+                trust: None,
                 installed_at: 0,
             }));
         }

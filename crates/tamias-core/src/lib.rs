@@ -19,14 +19,17 @@ pub mod overlay;
 pub mod process;
 pub mod project;
 pub mod records;
-pub use archive::{pack_tgz, pack_tgz_atomic, untar, untar_gz};
+pub use archive::{
+    pack_tgz, pack_tgz_atomic, untar, untar_gz, untar_gz_limited, untar_limited,
+    DEFAULT_MAX_ENTRIES, DEFAULT_MAX_UNPACK_BYTES,
+};
 pub use atomic::write_atomic;
 pub use digest::{content_digest, dir_digest, dir_size, file_digest, sha256_hex, short_digest};
 pub use error::Error;
 pub use identity::{Identity, IdentityError};
 pub use manifest::{
-    is_valid_name, is_valid_version, Manifest, Provider, ProviderHealth, ProviderHook,
-    ProviderIngress, ProviderService, MANIFEST_NAMES,
+    is_valid_kind, is_valid_name, is_valid_version, Manifest, Provider, ProviderHealth,
+    ProviderHook, ProviderIngress, ProviderService, MANIFEST_NAMES,
 };
 pub use overlay::{find_store_entry, overlay, payload_root};
 pub use process::output_with_timeout;
