@@ -9,29 +9,47 @@ verify:
 - project/TODO.md
 - project/adrs/0001-seed-tamias-from-arca-re-derive-peregrin-s-distribution-engine.md
 - project/adrs/0002-ref-source-are-ports-the-grammar-and-the-transport-leave-core.md
+- project/adrs/0003-binary-distribution-release-tarballs-ride-existing-https-refs-no-new-channel-in-v1.md
+- project/handoffs/T-016.md
 - project/index.md
+- project/issues/issue-0001-pavo-core-paths-rs-still-falls-back-to-tamias-tamias-fixed-to-tamias.md
+- project/issues/issue-0002-ship-compiled-tamias-driver-binaries-in-packages-driver-distribution-release-path.md
 - project/plans/pl-0001-tamias-full-phased-plan-fetch-store-verify-install-publish-ports-adapters-local-cf.md
-- project/plans/pl-0002-p9-move-provisioning-deploy-service-from-peregrin-to-tamias-host-metaservice.md
-- project/plans/pl-0003-p10-tamias-driver-system-rust-di-scoverable-content-drivers-decouple-product-integrations.md
 provenance:
   files:
   - project/BACKLOG.md
   - project/TODO.md
   - project/adrs/0001-seed-tamias-from-arca-re-derive-peregrin-s-distribution-engine.md
   - project/adrs/0002-ref-source-are-ports-the-grammar-and-the-transport-leave-core.md
+  - project/adrs/0003-binary-distribution-release-tarballs-ride-existing-https-refs-no-new-channel-in-v1.md
+  - project/handoffs/T-016.md
   - project/index.md
+  - project/issues/issue-0001-pavo-core-paths-rs-still-falls-back-to-tamias-tamias-fixed-to-tamias.md
+  - project/issues/issue-0002-ship-compiled-tamias-driver-binaries-in-packages-driver-distribution-release-path.md
   - project/plans/pl-0001-tamias-full-phased-plan-fetch-store-verify-install-publish-ports-adapters-local-cf.md
   - project/plans/pl-0002-p9-move-provisioning-deploy-service-from-peregrin-to-tamias-host-metaservice.md
   - project/plans/pl-0003-p10-tamias-driver-system-rust-di-scoverable-content-drivers-decouple-product-integrations.md
+  - project/plans/pl-0004-tamias-tui-phased-delivery.md
+  - project/plans/pl-0005-registry-sources-configurable-limits-phased-delivery.md
+  - project/proposals/proposal-0001-tamias-tui-interactive-package-manager-tamias-ui.md
+  - project/proposals/proposal-0002-registry-sources-configurable-limits-named-registries-self-hosting-per-pkg-max-upload.md
   hashes:
   - a8d17ca6e86c1faa677ebf8bbe55112e6b79ddb9
-  - 8da9d483a8aebcafc95ec3c298e27e312dc9c90d
+  - 6783ecb60cc08e6fac295a244e76ed78a48946c8
   - 19a31a3ecdddb5e163a6ce4dc8d5303c8ce74004
   - 6d84ca6eeec801f5cb5415f9a9bb30f9b0f02f07
+  - 12339db8c98b70eff0e6be7ff95aa05580c54881
+  - 52fdf249b2a32b05513122e37df6f152f654e9c6
   - 8e032ed9afe33857903f042c5602086609df6d69
+  - 03324655f776f218e52df53664f17fa5f30f48b1
+  - 21a6946ca8191968b92247cc13a3f88eb02ad1ff
   - f6add38190dced8f5cffcbbb25e5610b6357fe7b
   - 2734918a0a33b89702752a27a20a5ae85b159940
   - 13c1457a7cee4deca035fd7c572bc1ade9274a9e
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - 08817b5e68cff272b4c31e82d80293a81b4ea946
+  - 6da84efff2f59484255290e3d116092944d69cd4
+  - be75908ef6c4aff9abb28c67ea7eeafeaecede16
+  - f56c314272d6fd0667856fe20020ed55a06d971e
+  commit_sha: 2907a11bbfcbde6bdc63110143f8d7091c1c638a
+  generated_at: '1794290396'
   generator: kuda-template/0.1.2

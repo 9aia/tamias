@@ -53,7 +53,7 @@ provenance:
   - crates/tamias-config-toml/src/lib.rs
   hashes:
   - e2354bf66bcc103954918876c89f75663f28633e
-  - 81690e1a8c8532e4f7b9105f1ee9150c60c3849a
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - ad98228dbb6e5f9e81b4816710665057369f2ea0
+  commit_sha: 2907a11bbfcbde6bdc63110143f8d7091c1c638a
+  generated_at: '1794290396'
   generator: kuda-template/0.1.2

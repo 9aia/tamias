@@ -15,67 +15,157 @@ api:
 - name: Config
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 61
+  line: 270
   module: tamias-config
 - name: ConfigFormat
   kind: trait
   file: crates/tamias-config/src/lib.rs
-  line: 74
+  line: 322
+  module: tamias-config
+- name: DEFAULT_MAX_DOWNLOAD
+  kind: const
+  file: crates/tamias-config/src/lib.rs
+  line: 203
+  module: tamias-config
+- name: DEFAULT_MAX_UPLOAD
+  kind: const
+  file: crates/tamias-config/src/lib.rs
+  line: 200
+  module: tamias-config
+- name: EffectiveLimits
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 207
+  module: tamias-config
+- name: Limits
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 170
   module: tamias-config
 - name: Location
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 25
+  line: 31
   module: tamias-config
 - name: Publish
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 52
+  line: 82
   module: tamias-config
 - name: Registry
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 37
+  line: 43
+  module: tamias-config
+- name: Repr
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 107
+  module: tamias-config
+- name: Search
+  kind: type
+  file: crates/tamias-config/src/lib.rs
+  line: 91
   module: tamias-config
 - name: Toy
   kind: type
   file: crates/tamias-config/src/lib.rs
-  line: 142
+  line: 390
+  module: tamias-config
+- name: de_bytes_opt
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 101
+  module: tamias-config
+- name: effective_kind
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 66
+  module: tamias-config
+- name: effective_limits
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 299
+  module: tamias-config
+- name: effective_limits_resolution_order
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 476
   module: tamias-config
 - name: extensions
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 144
+  line: 392
   module: tamias-config
 - name: format_for
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 93
+  line: 341
   module: tamias-config
 - name: format_for_load_file_and_load_in
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 160
+  line: 408
+  module: tamias-config
+- name: glob_match
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 217
+  module: tamias-config
+- name: glob_match_patterns
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 461
+  module: tamias-config
+- name: is_empty
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 194
   module: tamias-config
 - name: load_file
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 109
+  line: 357
   module: tamias-config
 - name: load_in
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 121
+  line: 369
+  module: tamias-config
+- name: package_limits
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 253
   module: tamias-config
 - name: parse
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 147
+  line: 395
+  module: tamias-config
+- name: parse_bytes
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 132
+  module: tamias-config
+- name: parse_bytes_units
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 446
+  module: tamias-config
+- name: registry_kind_inference
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 547
   module: tamias-config
 - name: render
   kind: function
   file: crates/tamias-config/src/lib.rs
-  line: 154
+  line: 402
+  module: tamias-config
+- name: ser_bytes_opt
+  kind: function
+  file: crates/tamias-config/src/lib.rs
+  line: 119
   module: tamias-config
 - name: tamias-config
   kind: module
@@ -85,7 +175,7 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-config/src/lib.rs
-  line: 138
+  line: 386
   module: tamias-config
 deps:
 - serde
@@ -103,7 +193,7 @@ provenance:
   - crates/tamias-config/src/lib.rs
   hashes:
   - 632480163263ef27edab2d729003066436e1a9d5
-  - c0be3fd384d3083e4e7f8645d69dabc342b48356
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - 00b30c56c1cc3033c7d2f16ebd85cd1cdf6f0ce8
+  commit_sha: 2907a11bbfcbde6bdc63110143f8d7091c1c638a
+  generated_at: '1794290396'
   generator: kuda-template/0.1.2

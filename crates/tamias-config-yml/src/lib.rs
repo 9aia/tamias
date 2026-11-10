@@ -37,12 +37,16 @@ mod tests {
         assert_eq!(f.extensions(), &["yml", "yaml"]);
         let cfg = f
             .parse(
-                "store:\n  kind: local\npublish:\n  default: cloud\nregistries:\n  cloud:\n    url: https://x\n    token_env: T\n",
+                "store:\n  kind: local\npublish:\n  default: cloud\nsearch:\n  default: mirror\nregistries:\n  cloud:\n    kind: cf\n    url: https://x\n    token_env: T\n    limits:\n      max_upload: 256MiB\nlimits:\n  max_download: 1GiB\n  packages:\n    \"kuda-*\":\n      max_upload: 2GiB\n",
             )
             .unwrap();
         assert_eq!(cfg.store.kind.as_deref(), Some("local"));
         assert_eq!(cfg.publish.default.as_deref(), Some("cloud"));
+        assert_eq!(cfg.search.default.as_deref(), Some("mirror"));
         assert_eq!(cfg.registries["cloud"].url.as_deref(), Some("https://x"));
+        assert_eq!(cfg.registries["cloud"].limits.max_upload, Some(256 << 20));
+        assert_eq!(cfg.limits.max_download, Some(1 << 30));
+        assert_eq!(cfg.limits.packages["kuda-*"].max_upload, Some(2 << 30));
         assert!(f.parse("[store]\nkind = \"local\"").is_err());
         // render round-trips
         let text = f.render(&cfg).unwrap();

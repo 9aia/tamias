@@ -35,12 +35,16 @@ mod tests {
         assert_eq!(f.extensions(), &["toml"]);
         let cfg = f
             .parse(
-                "[store]\nkind = \"local\"\n[publish]\ndefault = \"cloud\"\n[registries.cloud]\nurl = \"https://x\"\ntoken_env = \"T\"\n",
+                "[store]\nkind = \"local\"\n[publish]\ndefault = \"cloud\"\n[search]\ndefault = \"mirror\"\n[registries.cloud]\nkind = \"http\"\nurl = \"https://x\"\ntoken_env = \"T\"\n[registries.cloud.limits]\nmax_upload = \"256MiB\"\n[limits]\nmax_download = 1073741824\n[limits.packages.\"kuda-*\"]\nmax_upload = \"2GiB\"\n",
             )
             .unwrap();
         assert_eq!(cfg.store.kind.as_deref(), Some("local"));
         assert_eq!(cfg.publish.default.as_deref(), Some("cloud"));
+        assert_eq!(cfg.search.default.as_deref(), Some("mirror"));
         assert_eq!(cfg.registries["cloud"].url.as_deref(), Some("https://x"));
+        assert_eq!(cfg.registries["cloud"].limits.max_upload, Some(256 << 20));
+        assert_eq!(cfg.limits.max_download, Some(1 << 30));
+        assert_eq!(cfg.limits.packages["kuda-*"].max_upload, Some(2 << 30));
         assert!(f.parse("name: x").is_err());
         // render round-trips
         let text = f.render(&cfg).unwrap();

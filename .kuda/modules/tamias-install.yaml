@@ -1,0 +1,133 @@
+name: tamias-install
+path: crates/tamias-install/Cargo.toml
+purpose: The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit
+api:
+- name: DRVENV
+  kind: const
+  file: crates/tamias-install/src/lib.rs
+  line: 250
+  module: tamias-install
+- name: Env
+  kind: type
+  file: crates/tamias-install/src/lib.rs
+  line: 39
+  module: tamias-install
+- name: Progress
+  kind: type
+  file: crates/tamias-install/src/lib.rs
+  line: 81
+  module: tamias-install
+- name: Surface
+  kind: type
+  file: crates/tamias-install/src/lib.rs
+  line: 50
+  module: tamias-install
+- name: bad_ref_and_missing_manifest_fail
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 358
+  module: tamias-install
+- name: consent_gate_and_surface_hints
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 295
+  module: tamias-install
+- name: consent_refusal
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 60
+  module: tamias-install
+- name: drivers_hint
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 69
+  module: tamias-install
+- name: env
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 252
+  module: tamias-install
+- name: fetch_or_cached
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 217
+  module: tamias-install
+- name: install
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 112
+  module: tamias-install
+- name: install_reports_progress_and_commits
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 274
+  module: tamias-install
+- name: install_with_progress
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 124
+  module: tamias-install
+- name: pkg
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 261
+  module: tamias-install
+- name: refs
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 199
+  module: tamias-install
+- name: sources
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 208
+  module: tamias-install
+- name: tamias-install
+  kind: module
+  file: crates/tamias-install/Cargo.toml
+  line: 1
+  module: tamias-install
+- name: tests
+  kind: module
+  file: crates/tamias-install/src/lib.rs
+  line: 244
+  module: tamias-install
+- name: unknown_kind_fails_without_entry
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 332
+  module: tamias-install
+deps:
+- tamias-cache-local
+- tamias-core
+- tamias-driver
+- tamias-source
+- tamias-source-cf
+- tamias-source-fs
+- tamias-source-git
+- tamias-source-http
+- tamias-store-local
+- tracing
+- tempfile
+- tamias-cache-local
+- tamias-core
+- tamias-source
+- tamias-source-cf
+- tamias-source-fs
+- tamias-source-git
+- tamias-source-http
+- tamias-store-local
+notes: ''
+verify:
+- crates/tamias-install/Cargo.toml
+- crates/tamias-install/src/lib.rs
+provenance:
+  files:
+  - crates/tamias-install/Cargo.toml
+  - crates/tamias-install/src/lib.rs
+  hashes:
+  - d9d65c8f2cae1cfa4ac61a5f7a72aef6a52f9be7
+  - e5b5754298db64d3529385cfad7a3fca62113b77
+  commit_sha: 2907a11bbfcbde6bdc63110143f8d7091c1c638a
+  generated_at: '1794290396'
+  generator: kuda-template/0.1.2

@@ -5,122 +5,192 @@ api:
 - name: FailRunner
   kind: type
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 250
+  line: 689
   module: tamias-deploy-local
 - name: LocalDeploy
   kind: type
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 61
+  line: 76
   module: tamias-deploy-local
 - name: Recorder
   kind: type
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 206
+  line: 497
   module: tamias-deploy-local
 - name: Runner
   kind: trait
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 31
+  line: 46
   module: tamias-deploy-local
 - name: ServiceSpec
   kind: type
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 16
+  line: 18
+  module: tamias-deploy-local
+- name: State
+  kind: type
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 355
   module: tamias-deploy-local
 - name: SystemRunner
   kind: type
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 41
+  line: 56
+  module: tamias-deploy-local
+- name: check_unit_fields
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 253
+  module: tamias-deploy-local
+- name: check_unit_name
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 233
+  module: tamias-deploy-local
+- name: daemon_reload
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 134
   module: tamias-deploy-local
 - name: default
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 159
+  line: 225
   module: tamias-deploy-local
 - name: default_uses_new
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 293
+  line: 741
   module: tamias-deploy-local
 - name: default_uses_system_runner
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 272
+  line: 716
   module: tamias-deploy-local
 - name: disable
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 117
+  line: 155
   module: tamias-deploy-local
 - name: enable
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 108
+  line: 144
   module: tamias-deploy-local
 - name: error_arm_and_extra_verbs
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 258
+  line: 697
+  module: tamias-deploy-local
+- name: expand_home
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 326
+  module: tamias-deploy-local
+- name: expand_home_cases
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 591
   module: tamias-deploy-local
 - name: install
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 95
+  line: 117
   module: tamias-deploy-local
 - name: install_enable_uninstall
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 239
+  line: 600
   module: tamias-deploy-local
 - name: logs
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 137
+  line: 177
+  module: tamias-deploy-local
+- name: logs_with
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 188
   module: tamias-deploy-local
 - name: new
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 69
+  line: 84
+  module: tamias-deploy-local
+- name: quote_arg
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 413
+  module: tamias-deploy-local
+- name: quotes_argv_with_spaces_and_quotes
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 557
+  module: tamias-deploy-local
+- name: rejects_newline_injection_in_spec
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 635
+  module: tamias-deploy-local
+- name: rejects_unit_name_traversal
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 613
   module: tamias-deploy-local
 - name: render_unit
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 170
+  line: 432
   module: tamias-deploy-local
 - name: render_with_workdir_and_env
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 279
+  line: 723
   module: tamias-deploy-local
 - name: renders_a_unit
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 231
+  line: 526
+  module: tamias-deploy-local
+- name: renders_env_file_workdir_and_extras
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 538
   module: tamias-deploy-local
 - name: run
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 44
+  line: 59
   module: tamias-deploy-local
 - name: run
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 208
+  line: 499
   module: tamias-deploy-local
 - name: run
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 252
+  line: 691
   module: tamias-deploy-local
 - name: spec
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 217
+  line: 508
+  module: tamias-deploy-local
+- name: split_exec
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 353
+  module: tamias-deploy-local
+- name: split_exec_quotes_and_escapes
+  kind: function
+  file: crates/tamias-deploy-local/src/lib.rs
+  line: 577
   module: tamias-deploy-local
 - name: status
   kind: function
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 126
+  line: 165
   module: tamias-deploy-local
 - name: tamias-deploy-local
   kind: module
@@ -130,38 +200,9 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-deploy-local/src/lib.rs
-  line: 200
+  line: 491
   module: tamias-deploy-local
-- name: uninstall
-  kind: function
-  file: crates/tamias-deploy-local/src/lib.rs
-  line: 148
-  module: tamias-deploy-local
-- name: unit
-  kind: function
-  file: crates/tamias-deploy-local/src/lib.rs
-  line: 164
-  module: tamias-deploy-local
-- name: unit_dir
-  kind: function
-  file: crates/tamias-deploy-local/src/lib.rs
-  line: 81
-  module: tamias-deploy-local
-- name: unit_dir
-  kind: function
-  file: crates/tamias-deploy-local/src/lib.rs
-  line: 191
-  module: tamias-deploy-local
-- name: unit_path
-  kind: function
-  file: crates/tamias-deploy-local/src/lib.rs
-  line: 87
-  module: tamias-deploy-local
-- name: with_default
-  kind: function
-  file: crates/tamias-deploy-local/src/lib.rs
-  line: 75
-  module: tamias-deploy-local
+api_omitted: 7
 deps:
 - tamias-core
 - tempfile
@@ -176,7 +217,7 @@ provenance:
   - crates/tamias-deploy-local/src/lib.rs
   hashes:
   - dbaf50440fe4217f50e69cb22cfff2951f69d2f0
-  - d4f5fc2b64e330e96234f6f791569baa073de24e
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - cb0a8eae1740c0d49742423cd63079cee8011ef9
+  commit_sha: 2907a11bbfcbde6bdc63110143f8d7091c1c638a
+  generated_at: '1794290396'
   generator: kuda-template/0.1.2
