@@ -14,7 +14,7 @@ concern.
 | **sturn** | coordination | claim the store lock during concurrent installs |
 | **bupha / ci-gate** | CI gate | bupha is the CI repo — `type: bupha` bundles via `tamias-driver-bupha`; the org gate is mid-migration back from the peregrin `ci-gate` campaign (PL-013) |
 | **sepia** | sessions | — |
-| **cicada** | scheduling | `tamias update --all` + registry reindex |
+| **cicada** | calendars | `type: cicada` bundles via `tamias-driver-cicada` (install validates, deploy plans — apply stays cicada's gate); `tamias update --all` + registry reindex |
 
 A hosted registry is in scope (it's a `registry` impl). A daemon or
 multi-actor arbitration belongs to peregrin.
