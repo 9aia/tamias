@@ -1,1 +1,1 @@
-{"id":"","ws":"tamias","actor":"luis","ts":1794282197,"op":{"op":"claim","glob":"AGENTS.md README.md CONTRIBUTING.md scripts/release.sh","ttl_secs":3600}}
+{"id":"","ws":"tamias","actor":"luis","ts":1794282228,"op":{"op":"claim","glob":"docs/** scripts/**","ttl_secs":3600}}
