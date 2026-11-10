@@ -89,6 +89,45 @@ impl Lock {
         self.packages
             .sort_by(|a, b| (&a.scope, &a.name).cmp(&(&b.scope, &b.name)));
     }
+
+    /// Refresh the pinned entry for `record`'s (scope, name) in the
+    /// lockfile at `path` — the `update`/`pin` "keep `tamias.lock`
+    /// honest" rule: when the file exists *and* already pins the
+    /// package, update `source_ref`/`resolved`/`digest`/`version`;
+    /// otherwise leave it alone. Never creates the file — that's
+    /// [`Self::upsert_record`]'s (`add`'s) job.
+    ///
+    /// # Errors
+    /// Fails on lock read/parse/write error.
+    pub fn sync_record(path: &Path, record: &StoreRecord) -> Result<(), Error> {
+        if !path.is_file() {
+            return Ok(());
+        }
+        let mut lock = Self::load(path)?;
+        let Some(entry) = lock
+            .packages
+            .iter_mut()
+            .find(|e| e.name == record.name && e.scope == record.scope)
+        else {
+            return Ok(());
+        };
+        entry.source_ref = record.source_ref.clone();
+        entry.resolved = record.resolved.clone();
+        entry.digest = record.digest.clone();
+        entry.version = record.version.clone();
+        lock.save(path)
+    }
+
+    /// Upsert `LockEntry::from_record(record)` into the lockfile at
+    /// `path`, creating it when missing — the `add`/dep-record tail.
+    ///
+    /// # Errors
+    /// Fails on lock read/parse/write error.
+    pub fn upsert_record(path: &Path, record: &StoreRecord) -> Result<(), Error> {
+        let mut lock = Self::load(path)?;
+        lock.upsert(LockEntry::from_record(record));
+        lock.save(path)
+    }
 }
 
 #[cfg(test)]

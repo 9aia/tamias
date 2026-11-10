@@ -170,17 +170,17 @@ api:
 - name: dir_digest
   kind: function
   file: crates/tamias-core/src/digest.rs
-  line: 95
+  line: 103
   module: tamias-core
 - name: dir_digest_order_independent_and_stable
   kind: function
   file: crates/tamias-core/src/digest.rs
-  line: 137
+  line: 145
   module: tamias-core
 - name: dir_size
   kind: function
   file: crates/tamias-core/src/digest.rs
-  line: 110
+  line: 118
   module: tamias-core
 - name: doc_format
   kind: function
@@ -202,7 +202,7 @@ api:
   file: crates/tamias-core/src/lib.rs
   line: 15
   module: tamias-core
-api_omitted: 110
+api_omitted: 113
 deps:
 - flate2
 - hex
@@ -263,16 +263,16 @@ provenance:
   - 3768f539fab709dfed5a488a2ba669f602e14f73
   - 918fc8e03b4c23def9d21eaf9789fced7c73371f
   - 0d7a6cf52913cb69facccecc985a743277960ff6
-  - b8f9b4647e2af968679ef34a7e8786385a375b69
+  - bf42b5dcc0b30109a2bcee497b675ba447cab7f0
   - 3050b521008bf72751d6ffcab5f7dcbeced1d9f6
   - ea8ff165afcdccfccd8aad76171a031df45b4c05
-  - 71a1f6ab2a77311817c58330dcc4c8323a5cdb6a
+  - 2f62b8d5d033817a391eb38fe38081a645b72752
   - d23fd15b44c7562b2ee985ab0e3ec8154e9c096d
   - 82ba1d899d8cb2a2d4eeb1ca1811d0ee18fef576
   - d6ce3df521f4d85fdde031717f0a7345b0152098
-  - b90dad60b9a1705b4accf66d97e1e778f5dc5fae
+  - cbe41379a2d51c0a5cef660a5731b84fb9e347dc
   - f3a18421075d0e555f803bc7b80899ddb6f28d18
   - e156b1d25a978fb792909b8e88e4b6c83bf56f26
-  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
-  generated_at: '1794323780'
+  commit_sha: 7aa9f387819e82e57cc32445c9c4c3c6c196afb8
+  generated_at: '1794327709'
   generator: kuda-template/0.1.2

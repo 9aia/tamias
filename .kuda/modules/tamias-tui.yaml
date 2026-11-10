@@ -15,12 +15,12 @@ api:
 - name: Base
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 635
+  line: 609
   module: tamias-tui
 - name: CACHE_MAX_AGE
   kind: const
   file: crates/tamias-tui/src/ops.rs
-  line: 32
+  line: 34
   module: tamias-tui
 - name: Cmd
   kind: type
@@ -55,7 +55,7 @@ api:
 - name: Job
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 37
+  line: 39
   module: tamias-tui
 - name: LOG_CAP
   kind: const
@@ -65,7 +65,7 @@ api:
 - name: LOG_LINES
   kind: const
   file: crates/tamias-tui/src/ops.rs
-  line: 928
+  line: 900
   module: tamias-tui
 - name: MUTED
   kind: const
@@ -95,7 +95,7 @@ api:
 - name: Outcome
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 281
+  line: 283
   module: tamias-tui
 - name: Pane
   kind: type
@@ -145,7 +145,7 @@ api:
 - name: add_dep
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 772
+  line: 743
   module: tamias-tui
 - name: app
   kind: module
@@ -165,7 +165,7 @@ api:
 - name: cache_clean
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 472
+  line: 452
   module: tamias-tui
 - name: chrome
   kind: function
@@ -195,7 +195,7 @@ api:
 - name: ctx
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 1091
+  line: 1062
   module: tamias-tui
 - name: ctx_from_env_resolves_roots
   kind: function
@@ -253,9 +253,9 @@ provenance:
   - 33e51d0e901080cd688d4dd812a4168ae6d82fff
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - d77fd2e56addc6401e7b0d0eb00e45bbb91b2914
+  - 0171e39261719c8d742ef4c9558c13836ca8d47f
   - 288e4e94bd777386b56883fdabda96b8e6c28f53
   - 5b9b7c378e5500638fbf90629bc649400abf4336
-  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
-  generated_at: '1794323780'
+  commit_sha: 7aa9f387819e82e57cc32445c9c4c3c6c196afb8
+  generated_at: '1794327709'
   generator: kuda-template/0.1.2

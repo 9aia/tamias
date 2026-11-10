@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tamias_cache_local::FetchCache;
-use tamias_core::{payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord};
+use tamias_core::{short_digest, Error, Lock, Manifest, StoreEntry, StoreRecord};
 use tamias_install::{self, Progress, Surface};
 use tamias_registry::{parse_registry_ref, RegistryEntry, RegistryRef};
 use tamias_registry_open as ro;
@@ -28,8 +28,10 @@ use tamias_store_local::Store;
 use crate::app::Msg;
 use crate::Ctx;
 
-/// `cache clean` default window — same 30 days as `tamias cache clean`.
-const CACHE_MAX_AGE: Duration = Duration::from_secs(30 * 86_400);
+/// `cache clean` default window — the shared
+/// [`tamias_cache_local::DEFAULT_MAX_AGE`] (same 30 days as
+/// `tamias cache clean`).
+const CACHE_MAX_AGE: Duration = tamias_cache_local::DEFAULT_MAX_AGE;
 
 /// One unit of blocking work — `Clone` so a bundled-driver consent
 /// refusal can hand the job back to the UI to re-run with consent.
@@ -319,14 +321,15 @@ fn env_config(ctx: &Ctx) -> tamias_config::Config {
 }
 
 /// `install`/`update`'s `tamias_install::Env` — `max_download` from
-/// the config's global `limits` (per-package overrides can't apply:
-/// the name isn't known until after the fetch).
+/// the config's global `limits` via the shared [`tamias_install::Env::for_config`]
+/// (per-package overrides can't apply: the name isn't known until
+/// after the fetch).
 fn install_env(ctx: &Ctx) -> tamias_install::Env {
-    tamias_install::Env {
-        store_root: ctx.store_root.clone(),
-        cache_root: ctx.cache_root.clone(),
-        max_download: Some(env_config(ctx).effective_limits(None, None).max_download),
-    }
+    tamias_install::Env::for_config(
+        ctx.store_root.clone(),
+        ctx.cache_root.clone(),
+        Some(&env_config(ctx)),
+    )
 }
 
 /// Run `reference` through the shared install pipeline, streaming
@@ -353,27 +356,10 @@ fn install_ref(
     )
 }
 
-/// Keep `tamias.lock` honest after `update`/`pin` — the CLI's rule:
-/// when a lockfile exists in the cwd *and* already pins the package,
-/// refresh its entry; never create one here.
+/// Keep `tamias.lock` honest after `update`/`pin` — the shared
+/// [`Lock::sync_record`] rule (same as the CLI's `sync_lock`).
 fn sync_lock(record: &tamias_core::StoreRecord) -> Result<(), Error> {
-    let lock_path = PathBuf::from("tamias.lock");
-    if !lock_path.is_file() {
-        return Ok(());
-    }
-    let mut lock = Lock::load(&lock_path)?;
-    let Some(entry) = lock
-        .packages
-        .iter_mut()
-        .find(|e| e.name == record.name && e.scope == record.scope)
-    else {
-        return Ok(());
-    };
-    entry.source_ref = record.source_ref.clone();
-    entry.resolved = record.resolved.clone();
-    entry.digest = record.digest.clone();
-    entry.version = record.version.clone();
-    lock.save(&lock_path)
+    Lock::sync_record(Path::new("tamias.lock"), record)
 }
 
 /// `verify` — recompute the payload digest against the record.
@@ -395,21 +381,15 @@ fn verify(ctx: &Ctx, name: &str) -> Result<Outcome, Error> {
     }
 }
 
-/// `remove` — the serve/CLI rule: driver `uninstall` dispatch first
-/// (a failing driver keeps the store entry); a missing driver on a
-/// non-`files` kind warns that provider resources may remain.
+/// `remove` — the shared lightweight uninstall
+/// ([`tamias_install::remove`], serve's rule): driver `uninstall`
+/// dispatch first (a failing driver keeps the store entry); a missing
+/// driver on a non-`files` kind warns that provider resources may
+/// remain.
 fn remove(ctx: &Ctx, name: &str, log: &mut dyn FnMut(String)) -> Result<Outcome, Error> {
-    let store = Store::new(&ctx.store_root);
-    let entry = store.find(name)?;
-    let kind = entry.record.kind.as_deref().unwrap_or("files");
-    if !tamias_driver::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None)?
-        && kind != "files"
-    {
-        log(format!(
-            "warning — no driver for type '{kind}'; provider resources may remain"
-        ));
-    }
-    let record = store.remove(name)?;
+    let record = tamias_install::remove(&ctx.store_root, name, &mut |m| {
+        log(format!("warning — {m}"));
+    })?;
     Ok(Outcome::Text(format!("removed {}", record.name)))
 }
 
@@ -582,20 +562,14 @@ fn writable(dir: &Path) -> bool {
         .is_ok()
 }
 
-/// `search` — same routing as serve's `search` op: `target` flag →
-/// `TAMIAS_REGISTRY` → `search.default` → `publish.default` → the
-/// local default root; then `registry.search(query)`.
+/// `search` — the shared `tamias_registry_open::search` routing:
+/// `target` flag → `TAMIAS_REGISTRY` → `search.default` →
+/// `publish.default` → the local default root; then
+/// `registry.search(query)`.
 fn search(ctx: &Ctx, query: &str, target: Option<&str>) -> Result<Outcome, Error> {
     let config = env_config(ctx);
-    let value = ro::registry_target(
-        target,
-        &[
-            config.search.default.as_deref(),
-            config.publish.default.as_deref(),
-        ],
-    );
-    let registry = ro::open_registry(&ctx.registry_root, Some(&config), value.as_deref(), None)?;
-    let results = registry.search(query)?;
+    let (results, value) =
+        tamias_registry_open::search(&ctx.registry_root, Some(&config), target, query)?;
     Ok(Outcome::Search {
         target: value.unwrap_or_else(|| "default".to_string()),
         results,
@@ -758,13 +732,10 @@ pub fn project_manifest() -> Result<(PathBuf, Manifest), Error> {
 
 /// `tamias add`'s manifest+lock tail — save the project manifest,
 /// then upsert `tamias.lock` with the installed record (the lock is
-/// created here, same as `add`).
+/// created here, same as `add`) — the shared [`Lock::upsert_record`].
 fn save_project_dep(path: &Path, project: &Manifest, record: &StoreRecord) -> Result<(), Error> {
     project.save(path)?;
-    let lock_path = PathBuf::from("tamias.lock");
-    let mut lock = Lock::load(&lock_path)?;
-    lock.upsert(LockEntry::from_record(record));
-    lock.save(&lock_path)
+    Lock::upsert_record(Path::new("tamias.lock"), record)
 }
 
 /// `tamias add <ref>` — install, then record the ref in the project
@@ -850,10 +821,10 @@ fn pack(dir: &str, out: Option<&str>) -> Result<Outcome, Error> {
     Ok(Outcome::Text(format!("packed → {}", packed.display())))
 }
 
-/// `tamias publish <dir> [registry]` — the serve `publish` op's exact
-/// path: `publish.default` routing → `payload_root` → `Manifest::load`
-/// → `open_registry` (named-registry + per-package limits apply) →
-/// `registry.publish`.
+/// `tamias publish <dir> [registry]` — the shared `publish_plan`
+/// resolution (`tamias-registry-open`, same as serve's `publish` op
+/// and the CLI): named-registry + per-package limits apply inside
+/// `open_registry`; the "publishing" line logs pre-open like before.
 fn publish(
     ctx: &Ctx,
     dir: &str,
@@ -861,21 +832,22 @@ fn publish(
     log: &mut dyn FnMut(String),
 ) -> Result<Outcome, Error> {
     let config = env_config(ctx);
-    let target = ro::registry_target(registry, &[config.publish.default.as_deref()]);
-    let root = payload_root(Path::new(dir))?;
-    let manifest = Manifest::load(&root)?;
-    log(format!(
-        "publishing {} → {}",
-        manifest.name,
-        target.as_deref().unwrap_or("default (local root)")
-    ));
-    let registry = ro::open_registry(
+    let plan = tamias_registry_open::publish_plan(
+        Path::new(dir),
         &ctx.registry_root,
         Some(&config),
-        target.as_deref(),
-        Some(&manifest.name),
+        registry,
+        &[config.publish.default.as_deref()],
+        &mut |manifest, target| {
+            log(format!(
+                "publishing {} → {}",
+                manifest.name,
+                target.unwrap_or("default (local root)")
+            ));
+        },
     )?;
-    let entry = registry.publish(&root, &manifest)?;
+    let target = plan.target.clone();
+    let entry = plan.publish()?;
     Ok(Outcome::Text(format!(
         "published {} → {}",
         entry.label(),
@@ -1074,11 +1046,10 @@ pub fn run(ctx: &Ctx, job: &Job, log: &mut dyn FnMut(String)) -> Result<Outcome,
     }
 }
 
-/// `sha256:<hex>` → first 12 hex chars (same shortening the CLI/serve
-/// surfaces use).
+/// `sha256:<hex>` → first 12 hex chars — the shared
+/// [`short_digest`] (same shortening the CLI/serve surfaces use).
 fn short(digest: &str) -> &str {
-    let s = digest.strip_prefix("sha256:").unwrap_or(digest);
-    s.get(..12).unwrap_or(s)
+    short_digest(digest)
 }
 
 #[cfg(test)]

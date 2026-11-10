@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use tamias_config::{Config, ConfigFormat, Registry as ConfigRegistry, CONFIG_ENV};
 use tamias_config_toml::TomlFormat;
 use tamias_config_yml::YmlFormat;
-use tamias_core::Error;
-use tamias_registry::{parse_registry_ref, Registry, RegistryRef};
+use tamias_core::{payload_root, Error, Manifest};
+use tamias_registry::{parse_registry_ref, Registry, RegistryEntry, RegistryRef};
 use tamias_registry_cf::HttpRegistry;
 use tamias_registry_local::LocalRegistry;
 
@@ -173,6 +173,95 @@ fn http_registry(base: &str, token_env: Option<&str>, name: &str) -> Result<Http
         registry = registry.with_token(token);
     }
     Ok(registry)
+}
+
+/// `search <query> [registry]` — the shared routing + open + query
+/// behind `tamias search`, `tamias serve`'s `search` op, and `tamias
+/// ui`'s Registry pane: `registry_target(flag, [search.default,
+/// publish.default])` → `open_registry` → `registry.search`. Returns
+/// `(results, resolved_target)` — `None` target means the local
+/// default root.
+///
+/// # Errors
+/// Fails on registry resolution or the search itself.
+pub fn search(
+    registry_root: &Path,
+    config: Option<&Config>,
+    flag: Option<&str>,
+    query: &str,
+) -> Result<(Vec<RegistryEntry>, Option<String>), Error> {
+    let target = registry_target(
+        flag,
+        &[
+            config.and_then(|c| c.search.default.as_deref()),
+            config.and_then(|c| c.publish.default.as_deref()),
+        ],
+    );
+    let registry = open_registry(registry_root, config, target.as_deref(), None)?;
+    let results = registry.search(query)?;
+    Ok((results, target))
+}
+
+/// A resolved `publish <dir> [registry]` — the payload root, loaded
+/// manifest, routed target, and opened registry (named-registry +
+/// per-package limits applied). Surfaces render their own progress
+/// around [`publish_plan`] and finish with [`PublishPlan::publish`].
+pub struct PublishPlan {
+    /// `payload_root(dir)` — the dir holding `tamias.yaml`.
+    pub root: PathBuf,
+    /// The validated package manifest.
+    pub manifest: Manifest,
+    /// The opened registry — [`PublishPlan::publish`] goes through it.
+    pub registry: Box<dyn Registry>,
+    /// The resolved target (`--registry` flag → `TAMIAS_REGISTRY` →
+    /// `config_defaults`); `None` → the local default root.
+    pub target: Option<String>,
+}
+
+impl PublishPlan {
+    /// Upload the packed payload — `registry.publish(&root, &manifest)`.
+    ///
+    /// # Errors
+    /// Propagates pack/publish failures from the registry impl.
+    pub fn publish(&self) -> Result<RegistryEntry, Error> {
+        self.registry.publish(&self.root, &self.manifest)
+    }
+}
+
+/// `publish <dir> [registry]` resolution — the shared head of
+/// `tamias publish`, `tamias serve`'s `publish` op, and `tamias ui`'s
+/// Author pane: `payload_root` → `Manifest::load` → `registry_target`
+/// → `open_registry`. `report` fires after the manifest loads and the
+/// target resolves but *before* the registry opens, so each surface
+/// keeps its own "publishing …" line in its own position (the CLI
+/// prints post-open; the TUI logs pre-open).
+///
+/// # Errors
+/// Fails on a missing/invalid manifest or registry resolution.
+pub fn publish_plan(
+    dir: &Path,
+    registry_root: &Path,
+    config: Option<&Config>,
+    flag: Option<&str>,
+    config_defaults: &[Option<&str>],
+    report: &mut dyn FnMut(&Manifest, Option<&str>),
+) -> Result<PublishPlan, Error> {
+    let root = payload_root(dir)?;
+    let manifest = Manifest::load(&root)?;
+    let target = registry_target(flag, config_defaults);
+    report(&manifest, target.as_deref());
+    let registry = open_registry(
+        registry_root,
+        config,
+        target.as_deref(),
+        Some(&manifest.name),
+    )?;
+    Ok(PublishPlan {
+        root,
+        manifest,
+        registry,
+        target,
+    })
 }
 
 /// The config file registry management verbs read/write — `file`,

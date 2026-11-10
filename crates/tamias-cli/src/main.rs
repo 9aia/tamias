@@ -15,14 +15,15 @@ use tamias_cache_local::FetchCache;
 use tamias_config::{ConfigFormat, CONFIG_ENV, CONFIG_NAMES};
 use tamias_config_toml::TomlFormat;
 use tamias_config_yml::YmlFormat;
-use tamias_core::{payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord};
+use tamias_core::{short_digest, Error, Lock, Manifest, StoreEntry, StoreRecord};
 use tamias_install::{Progress, Surface};
 use tamias_registry::Registry;
 use tamias_registry_local::{serve_http, serve_http_with_limits};
 use tamias_store_local::Store;
 
-/// Default fetch-cache eviction age for `cache clean` — 30 days.
-const CACHE_MAX_AGE_DAYS: u64 = 30;
+/// Default fetch-cache eviction age for `cache clean` — 30 days, the
+/// shared [`tamias_cache_local::DEFAULT_MAX_AGE`] window in days.
+const CACHE_MAX_AGE_DAYS: u64 = tamias_cache_local::DEFAULT_MAX_AGE.as_secs() / 86_400;
 
 #[derive(Parser)]
 #[command(
@@ -510,14 +511,11 @@ fn registry_root() -> PathBuf {
 /// actions → stdout).
 fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry, Error> {
     tamias_install::install_with_progress(
-        &tamias_install::Env {
-            store_root: env.store_root.clone(),
-            cache_root: env.cache_root.clone(),
-            // Global `limits.max_download` caps http(s)/`cf:` fetches —
-            // per-package overrides can't apply (the name is unknown
-            // until after the fetch).
-            max_download: cli_config().map(|c| c.effective_limits(None, None).max_download),
-        },
+        &tamias_install::Env::for_config(
+            env.store_root.clone(),
+            env.cache_root.clone(),
+            cli_config().as_ref(),
+        ),
         reference,
         allow_drivers,
         Surface::Cli,
@@ -528,11 +526,6 @@ fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry
             Progress::Done { label } => eprintln!("tamias: done — {label}"),
         },
     )
-}
-
-fn short(digest: &str) -> &str {
-    let s = digest.strip_prefix("sha256:").unwrap_or(digest);
-    s.get(..12).unwrap_or(s)
 }
 
 /// The `manifest` verb list — the top-level subcommand names, generated
@@ -589,28 +582,11 @@ fn writable(dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Keep `tamias.lock` honest after `update`/`pin`: when a lockfile exists
-/// in the cwd *and* already pins this package, refresh its entry to the
-/// new record. A missing lockfile — or one that doesn't pin the package —
-/// is left alone (never created here; that's `add`'s job).
+/// Keep `tamias.lock` honest after `update`/`pin` — the shared
+/// [`Lock::sync_record`] rule (cwd `tamias.lock`, refresh pinned
+/// entries only, never create).
 fn sync_lock(record: &StoreRecord) -> Result<(), Error> {
-    let lock_path = PathBuf::from("tamias.lock");
-    if !lock_path.is_file() {
-        return Ok(());
-    }
-    let mut lock = Lock::load(&lock_path)?;
-    let Some(entry) = lock
-        .packages
-        .iter_mut()
-        .find(|e| e.name == record.name && e.scope == record.scope)
-    else {
-        return Ok(());
-    };
-    entry.source_ref = record.source_ref.clone();
-    entry.resolved = record.resolved.clone();
-    entry.digest = record.digest.clone();
-    entry.version = record.version.clone();
-    lock.save(&lock_path)
+    Lock::sync_record(Path::new("tamias.lock"), record)
 }
 
 /// Open a registry by name-or-ref — the shared resolution lives in
@@ -623,12 +599,6 @@ fn open_registry(
     package: Option<&str>,
 ) -> Result<Box<dyn Registry>, Error> {
     tamias_registry_open::open_registry(&env.registry_root, config, value, package)
-}
-
-/// The `--registry` value `publish`/`search` resolve — shared with
-/// `tamias serve`; kept as a wrapper so call sites read unchanged.
-fn registry_target(flag: Option<&str>, config_defaults: &[Option<&str>]) -> Option<String> {
-    tamias_registry_open::registry_target(flag, config_defaults)
 }
 
 /// `registry add` — validate + write through the shared
@@ -736,7 +706,7 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             println!(
                 "installed {} ({})",
                 entry.label(),
-                short(&entry.record.digest)
+                short_digest(&entry.record.digest)
             );
         }
         Some(Command::Add {
@@ -756,14 +726,11 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 project.deps.push(reference.clone());
             }
             project.save(&manifest_path)?;
-            let lock_path = PathBuf::from("tamias.lock");
-            let mut lock = Lock::load(&lock_path)?;
-            lock.upsert(LockEntry::from_record(&entry.record));
-            lock.save(&lock_path)?;
+            Lock::upsert_record(Path::new("tamias.lock"), &entry.record)?;
             println!(
                 "added {} → tamias.yaml + tamias.lock ({})",
                 entry.label(),
-                short(&entry.record.digest)
+                short_digest(&entry.record.digest)
             );
         }
         Some(Command::Remove { name }) => {
@@ -790,7 +757,7 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                     println!(
                         "{}  {}  {}",
                         e.label(),
-                        short(&e.record.digest),
+                        short_digest(&e.record.digest),
                         e.record.source_ref
                     );
                 }
@@ -829,14 +796,14 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             }
             if report.ok {
                 if !json {
-                    println!("{}: ok ({})", report.name, short(&report.recorded));
+                    println!("{}: ok ({})", report.name, short_digest(&report.recorded));
                 }
             } else {
                 return Err(Error::Failed(format!(
                     "{}: digest mismatch — recorded {}, computed {}",
                     report.name,
-                    short(&report.recorded),
-                    short(&report.computed)
+                    short_digest(&report.recorded),
+                    short_digest(&report.computed)
                 )));
             }
         }
@@ -914,20 +881,19 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
         }
         Some(Command::Publish { dir, registry }) => {
             let config = cli_config();
-            let target = registry_target(
+            // The shared publish resolution (`tamias-registry-open`) —
+            // same code `tamias serve`'s `publish` op and `tamias ui`
+            // take. The "publishing" line prints post-open, pre-upload.
+            let plan = tamias_registry_open::publish_plan(
+                &dir,
+                &env.registry_root,
+                config.as_ref(),
                 registry.as_deref(),
                 &[config.as_ref().and_then(|c| c.publish.default.as_deref())],
-            );
-            let root = payload_root(&dir)?;
-            let manifest = Manifest::load(&root)?;
-            let registry = open_registry(
-                &env,
-                config.as_ref(),
-                target.as_deref(),
-                Some(&manifest.name),
+                &mut |_, _| {},
             )?;
-            eprintln!("tamias: publishing {}", manifest.name);
-            let entry = registry.publish(&root, &manifest)?;
+            eprintln!("tamias: publishing {}", plan.manifest.name);
+            let entry = plan.publish()?;
             println!("published {}", entry.label());
         }
         Some(Command::Search {
@@ -936,15 +902,14 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             json,
         }) => {
             let config = cli_config();
-            let target = registry_target(
+            // The shared search routing (`tamias-registry-open`) — same
+            // code `tamias serve`'s `search` op and `tamias ui` take.
+            let (found, _target) = tamias_registry_open::search(
+                &env.registry_root,
+                config.as_ref(),
                 registry.as_deref(),
-                &[
-                    config.as_ref().and_then(|c| c.search.default.as_deref()),
-                    config.as_ref().and_then(|c| c.publish.default.as_deref()),
-                ],
-            );
-            let registry = open_registry(&env, config.as_ref(), target.as_deref(), None)?;
-            let found = registry.search(&query)?;
+                &query,
+            )?;
             if json {
                 let results: Vec<serde_json::Value> = found
                     .iter()
@@ -963,7 +928,7 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 print_json(&serde_json::json!({ "results": results }))?;
             } else {
                 for e in &found {
-                    println!("{}  {}  {}", e.label(), short(&e.digest), e.file);
+                    println!("{}  {}  {}", e.label(), short_digest(&e.digest), e.file);
                 }
             }
         }
@@ -1741,6 +1706,8 @@ fn run_main(cli: Cli, env: Env) -> ExitCode {
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
     #![allow(clippy::unwrap_used)]
+
+    use tamias_core::LockEntry;
 
     use super::*;
     /// Serializes tests that touch process-global state — env vars, the
@@ -3667,23 +3634,23 @@ mod tests {
         std::env::set_var("TAMIAS_REGISTRY", "envreg");
         // flag > env > config defaults (first set wins)
         assert_eq!(
-            registry_target(Some("flag"), &[Some("cfg")]),
+            tamias_registry_open::registry_target(Some("flag"), &[Some("cfg")]),
             Some("flag".to_string())
         );
         assert_eq!(
-            registry_target(None, &[Some("cfg")]),
+            tamias_registry_open::registry_target(None, &[Some("cfg")]),
             Some("envreg".to_string())
         );
         std::env::remove_var("TAMIAS_REGISTRY");
         assert_eq!(
-            registry_target(None, &[Some("cfg")]),
+            tamias_registry_open::registry_target(None, &[Some("cfg")]),
             Some("cfg".to_string())
         );
         assert_eq!(
-            registry_target(None, &[None, Some("pub")]),
+            tamias_registry_open::registry_target(None, &[None, Some("pub")]),
             Some("pub".to_string())
         );
-        assert_eq!(registry_target(None, &[None]), None);
+        assert_eq!(tamias_registry_open::registry_target(None, &[None]), None);
         match saved {
             Some(v) => std::env::set_var("TAMIAS_REGISTRY", v),
             None => std::env::remove_var("TAMIAS_REGISTRY"),

@@ -22,7 +22,7 @@
 //! and driver actions to stdout; `tamias serve` drops them. Consent
 //! hints embedded in errors are surface-tuned via [`Surface`].
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tamias_cache_local::FetchCache;
@@ -47,6 +47,26 @@ pub struct Env {
     /// overrides can't apply here: the package name isn't known until
     /// after the fetch.
     pub max_download: Option<u64>,
+}
+
+impl Env {
+    /// An `Env` whose `max_download` comes from `config`'s global
+    /// `limits` — `None` config → `None` (the source's built-in
+    /// default, the same 512 MiB `effective_limits` falls back to).
+    /// The one resolution `tamias install`/`add`/`update`, `tamias
+    /// serve`'s `install` op, and `tamias ui`'s install jobs share.
+    #[must_use]
+    pub fn for_config(
+        store_root: PathBuf,
+        cache_root: PathBuf,
+        config: Option<&tamias_config::Config>,
+    ) -> Self {
+        Self {
+            store_root,
+            cache_root,
+            max_download: config.map(|c| c.effective_limits(None, None).max_download),
+        }
+    }
 }
 
 /// Which surface is installing — tunes the consent hints embedded in
@@ -239,6 +259,35 @@ fn sources(max_download: Option<u64>) -> Sources {
         .with(Arc::new(cf))
         .with(Arc::new(cap(HttpSource::new())))
         .with(Arc::new(FsSource::new()))
+}
+
+/// `remove` — the lightweight uninstall shared by `tamias serve`'s
+/// `remove` op and `tamias ui`'s Remove job: find the entry, dispatch
+/// the kind driver's `uninstall` verb *before* dropping the store
+/// entry (a failing driver keeps it), then `Store::remove`. A missing
+/// driver on a non-`files` kind reports through `warn` — provider
+/// resources may remain. (`files` is built in; `tamias uninstall` /
+/// `tamias-provider::uninstall` is the provider-aware teardown, and
+/// the CLI's bare `remove` skips dispatch entirely.)
+///
+/// # Errors
+/// Store lookup, driver dispatch, or store removal failures.
+pub fn remove(
+    store_root: &Path,
+    name: &str,
+    warn: &mut dyn FnMut(String),
+) -> Result<StoreRecord, Error> {
+    let store = Store::new(store_root);
+    let entry = store.find(name)?;
+    let kind = entry.record.kind.as_deref().unwrap_or("files");
+    if !tamias_driver::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None)?
+        && kind != "files"
+    {
+        warn(format!(
+            "no driver for type '{kind}'; provider resources may remain"
+        ));
+    }
+    store.remove(name)
 }
 
 /// plan → cache-hit or fetch+commit → `(payload_dir, resolved_id)`.

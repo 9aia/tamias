@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tamias_core::{payload_root, Error, Manifest};
+use tamias_core::Error;
 use tamias_store_local::Store;
 
 /// Store + cache + registry roots, plus the config file the
@@ -163,20 +163,11 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
         }
         "remove" => {
             let name = str_field(&req, "name")?;
-            let store = Store::new(&env.store_root);
-            let entry = store.find(name)?;
-            let kind = entry.record.kind.as_deref().unwrap_or("files");
-            // Same teardown rule as `tamias uninstall`: a failing driver
-            // keeps the store entry; a missing one warns loudly.
-            if !tamias_driver::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None)?
-                && kind != "files"
-            {
-                eprintln!(
-                    "tamias-serve: warning — no driver for type '{kind}'; \
-                     provider resources may remain"
-                );
-            }
-            let record = store.remove(name)?;
+            // The shared lightweight uninstall (`tamias_install::remove`)
+            // — same teardown rule as `tamias ui`'s Remove job.
+            let record = tamias_install::remove(&env.store_root, name, &mut |m| {
+                eprintln!("tamias-serve: warning — {m}");
+            })?;
             Ok(json!({"name": record.name}))
         }
         // --- registry sources (shared with the CLI verbs) ---
@@ -221,21 +212,10 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
             let flag = req.get("registry").and_then(Value::as_str);
             let config = env_config(env);
             // Same routing as `tamias search`: flag → TAMIAS_REGISTRY →
-            // search.default → publish.default → local default root.
-            let target = tamias_registry_open::registry_target(
-                flag,
-                &[
-                    config.search.default.as_deref(),
-                    config.publish.default.as_deref(),
-                ],
-            );
-            let registry = tamias_registry_open::open_registry(
-                &env.registry_root,
-                Some(&config),
-                target.as_deref(),
-                None,
-            )?;
-            let found = registry.search(query)?;
+            // search.default → publish.default → local default root —
+            // the shared `search` (`tamias-registry-open`).
+            let (found, _target) =
+                tamias_registry_open::search(&env.registry_root, Some(&config), flag, query)?;
             Ok(json!({"results": found.iter().map(registry_entry_json).collect::<Vec<_>>()}))
         }
         "publish" => {
@@ -243,18 +223,17 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
             let flag = req.get("registry").and_then(Value::as_str);
             let config = env_config(env);
             // Same routing as `tamias publish`: flag → TAMIAS_REGISTRY →
-            // publish.default → local default root.
-            let target =
-                tamias_registry_open::registry_target(flag, &[config.publish.default.as_deref()]);
-            let root = payload_root(Path::new(dir))?;
-            let manifest = Manifest::load(&root)?;
-            let registry = tamias_registry_open::open_registry(
+            // publish.default → local default root — the shared
+            // `publish_plan` resolution (`tamias-registry-open`).
+            let plan = tamias_registry_open::publish_plan(
+                Path::new(dir),
                 &env.registry_root,
                 Some(&config),
-                target.as_deref(),
-                Some(&manifest.name),
+                flag,
+                &[config.publish.default.as_deref()],
+                &mut |_, _| {},
             )?;
-            let entry = registry.publish(&root, &manifest)?;
+            let entry = plan.publish()?;
             Ok(registry_entry_json(&entry))
         }
         other => Err(Error::Failed(format!("unknown op '{other}'"))),
@@ -276,7 +255,9 @@ fn registry_entry_json(entry: &tamias_registry::RegistryEntry) -> Value {
 }
 
 /// A convenience default cache eviction window re-exported for callers that
-/// embed the loop and manage their own cache.
+/// embed the loop and manage their own cache — 30 days, kept in sync with
+/// [`tamias_cache_local::DEFAULT_MAX_AGE`] (dev-dep only here, so the
+/// value is spelled out rather than linked).
 pub const DEFAULT_CACHE_MAX_AGE: Duration = Duration::from_secs(30 * 86_400);
 
 #[cfg(test)]

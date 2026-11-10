@@ -24,6 +24,14 @@ pub fn content_digest(bytes: &[u8]) -> String {
     format!("sha256:{}", sha256_hex(bytes))
 }
 
+/// `sha256:<hex>` → its first 12 chars — the display shortening the
+/// CLI/TUI surfaces share (`sha256:abcdef…` → `abcdef123456`).
+#[must_use]
+pub fn short_digest(digest: &str) -> &str {
+    let s = digest.strip_prefix("sha256:").unwrap_or(digest);
+    s.get(..12).unwrap_or(s)
+}
+
 /// `sha256:<hex>` of a file's contents.
 ///
 /// # Errors

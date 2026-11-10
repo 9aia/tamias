@@ -2706,6 +2706,7 @@ name = "tamias-install"
 version = "0.1.0"
 dependencies = [
  "tamias-cache-local",
+ "tamias-config",
  "tamias-core",
  "tamias-driver",
  "tamias-source",

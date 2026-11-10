@@ -21,7 +21,7 @@ pub mod project;
 pub mod records;
 pub use archive::{pack_tgz, pack_tgz_atomic, untar, untar_gz};
 pub use atomic::write_atomic;
-pub use digest::{content_digest, dir_digest, dir_size, file_digest, sha256_hex};
+pub use digest::{content_digest, dir_digest, dir_size, file_digest, sha256_hex, short_digest};
 pub use error::Error;
 pub use identity::{Identity, IdentityError};
 pub use manifest::{

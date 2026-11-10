@@ -14,6 +14,7 @@ documentation.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
+tamias-config.workspace = true
 tamias-source.workspace = true
 tamias-source-cf.workspace = true
 tamias-source-fs.workspace = true

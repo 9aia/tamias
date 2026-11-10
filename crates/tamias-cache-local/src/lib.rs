@@ -21,6 +21,11 @@ fn valid_key(key: &str) -> bool {
         && key != ".."
 }
 
+/// Default `cache clean` eviction window — entries older than 30 days
+/// go. Shared by the CLI's `cache clean` default, `tamias serve`'s
+/// `DEFAULT_CACHE_MAX_AGE`, and `tamias ui`'s clean job.
+pub const DEFAULT_MAX_AGE: Duration = Duration::from_secs(30 * 86_400);
+
 /// Integrity metadata written at commit time — one `<root>/.meta/<key>.json`
 /// per entry. It lives *outside* the payload dir so it never enters
 /// `dir_digest`, `copy_tree`, or `entries()`.
