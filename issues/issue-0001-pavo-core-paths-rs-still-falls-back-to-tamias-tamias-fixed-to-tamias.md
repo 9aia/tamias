@@ -12,4 +12,3 @@ tamias commit d263b18 changed tamias-driver::tamias_home() no-env fallback from 
 
 - 2026-11-10 Already fixed upstream: pavo 4cce795 'fix(core): tamias_home fallback ./tamias -> ./.tamias' is on origin/main; paths.rs:21 now falls back to ./.tamias. Resolved.
 
-- 2026-11-10 x
