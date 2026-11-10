@@ -8,99 +8,80 @@ priority = "medium"
 links = ["P-001"]
 +++
 
-Proposal: P-001 (`proposals/proposal-0001-…`). Precedent: `myco-tui`
-(ratatui 0.30 + crossterm 0.29 + notify, `myco ui` behind `tui` feature).
+Proposal: P-001. Precedent: `myco-tui` (ratatui 0.30 + crossterm 0.29 +
+notify, `myco ui` behind `tui` feature). Decisions locked in P-001:
+verb `tamias ui`, `tui` feature default-on, shared ops in widened
+`tamias-serve`.
 
-## Phase 0 — decisions + groundwork
+## Phase 0 — shared ops groundwork
 
-- [ ] Resolve open questions in P-001: verb name (`ui` vs `tui`), feature
-      gate default, shared-ops home (`tamias-serve::Env` widening vs new
-      `tamias-ops`), ordering vs T-014.
+- [x] Resolve open questions (verb, gate, ops home) — see P-001 Decisions.
 - [ ] Add workspace deps: `ratatui = "0.30"`, `crossterm = "0.29"`,
-      `notify = "8"`, `portable-pty = "0.9"` (dev-dep).
-- [ ] Extract shared ops surface the CLI verbs, `tamias serve`, and the
-      TUI all call: at minimum `list`/`info`/`verify`/`remove`/`install`
-      (already in tamias-install), plus `search` (registry-aware Env),
-      `update`, `pin`, `cache clean`. Do this as the T-014 dedupe or a
-      scoped subset — no fourth copy of fetch→driver→store.
+      `notify = "8"`, `portable-pty = "0.9"` (dev-dep on tamias-tui).
+- [ ] Widen `tamias-serve`: `Env` gains registry + config context so ops
+      cover `search`, `update`, `pin`, `cache clean` (in addition to
+      existing install/list/info/verify/remove). CLI verbs and serve
+      dispatch refactor onto it — scoped T-014 dedupe, no 4th copy.
+- [ ] Add serve/TUI-needed ops for later phases behind the same surface:
+      `service list`, `run`, `logs`, `deploy`, `uninstall`,
+      `manifest get/set-deps`, `bundle pack`, `publish` (can land
+      per-phase instead — decide at extraction time).
 
 ## Phase 1 — skeleton + installed view (read-only)
 
-- [ ] `crates/tamias-tui` crate: `run(...)` entry mirroring
-      `myco_tui::run` — alt-screen, raw mode, panic hook, terminal Guard,
-      crossterm event loop, `notify` watcher on store root for
-      auto-reload.
-- [ ] App model: installed entries (name, type, source_ref, resolved,
-      digest, size) loaded via `tamias-store-local::Store`; `/` filter
-      (client-side substring, case-insensitive); `j/k`/arrows, `Tab`/`1-3`
-      pane switch, `?` help overlay, `:` command line, `q`/`Ctrl-C` quit,
-      mouse wheel + click.
-- [ ] `tamias ui` verb in tamias-cli behind `tui` feature
-      (`default = ["tui"]`; `Serve`-style env construction from
-      `Env::from_env` + config).
-- [ ] PTY smoke test (`tests/pty.rs`, portable-pty): launch, draw list,
-      quit cleanly.
+- [ ] `crates/tamias-tui`: `run(...)` mirroring `myco_tui::run` — alt
+      screen, raw mode, panic hook, terminal Guard, crossterm loop,
+      `notify` watcher on store root.
+- [ ] App model: installed entries via `tamias-store-local::Store`;
+      `/` client-side filter; `j/k`/arrows, `Tab`/`1`-`5` panes, `?`
+      help, `:` palette, `q`/`Ctrl-C`, mouse.
+- [ ] `tamias ui` verb in tamias-cli behind `tui` feature; env from
+      `Env::from_env` + config.
+- [ ] PTY smoke test (`tests/pty.rs`): launch, draw, quit cleanly.
 
 ## Phase 2 — actions on installed packages
 
-- [ ] Detail pane: full manifest, provenance (source_ref/resolved/digest),
-      size, provider/services, drivers, last verify result.
-- [ ] `v` verify, `u` update, `p` pin — confirm modal where mutating;
-      errors surface in a status/log line, never panic.
-- [ ] `r` remove — confirm modal naming the package + warning when a
-      non-`files` kind driver teardown may leave provider resources
-      (same rule as tamias-serve's remove).
-- [ ] Worker-thread execution for any op that can block (verify on large
-      payloads); spinner + cancellable where feasible.
+- [ ] Detail pane: manifest, provenance, provider/services, drivers,
+      verify status.
+- [ ] `v` verify, `u` update, `p` pin, `c` cache clean, `d` doctor —
+      confirm modals where mutating; errors to status line, never panic.
+- [ ] `r` remove — confirm modal + non-`files` driver-teardown warning
+      (same rule as serve's remove).
+- [ ] Worker-thread exec for blocking ops; spinner.
 
-## Phase 3 — install + registry search
+## Phase 3 — registry search + install
 
-- [ ] Registry pane: debounced search-as-you-type over the shared
-      `search` op; columns name/scope/type/version/desc; `i` installs
-      selected entry's ref.
-- [ ] `i` install-by-ref prompt (grammar hint in placeholder:
-      `./dir | git:…#rev | https://….tgz#sha256:… | cf:…`).
-- [ ] Bundled-driver consent modal → maps to `allow_drivers` on the
-      install call (no env var).
-- [ ] Progress pane: stream install phases (fetch → verify → store →
-      driver dispatch) from a channel fed by the worker thread.
-- [ ] `c` cache clean (`--all`/days via `:` args), `d` doctor summary.
+- [ ] Registry pane: debounced search-as-you-type; `i` installs selected
+      ref.
+- [ ] `i` install-by-ref prompt with grammar hint.
+- [ ] Bundled-driver consent modal → `allow_drivers` (no env var).
+- [ ] Progress pane: streamed phases via channel.
 
-## Phase 4 — polish + ship
+## Phase 4 — provider lifecycle
 
-- [ ] `R` reload + `notify` watcher covering store root AND registry
-      index dir if browsed.
-- [ ] Help overlay documents full keymap; `:` palette covers every
-      bound verb.
-- [ ] Session/state persistence only if it earns its keep (myco-tui
-      saves session; tamias likely stateless — decide in review).
-- [ ] Docs: `docs/` page (how-to: "manage packages interactively"),
-      `gen-cli-docs` picks up `ui` verb automatically; README mention.
-- [ ] `cargo xtask check` + `test` green; PTY tests cover quit-path
-      terminal restore (raw-mode leak regression).
+- [ ] Services pane: `provider:` blocks + unit state table.
+- [ ] `run` exec — PTY pane or scrollback tail; `logs` follow view.
+- [ ] `deploy`/`uninstall` with confirms; extend tamias-serve ops as
+      needed (or call tamias-deploy-local/-cf directly — pick at impl).
 
-## Decisions locked (2026-11-10)
+## Phase 5 — manifest editor (`tamias.yml` deps form)
 
-- Verb `tamias ui`; `tui` feature in `default`; shared ops live in
-  `tamias-serve` with a widened (registry-aware) `Env`.
+- [ ] Editable deps rows: add/remove/set-ref; commits through the same
+      manifest+lock write path as `tamias add`.
+- [ ] Read-only render of the rest of the manifest (no free-form YAML
+      editing).
 
-## Scope expansion (2026-11-10) — phases revised
+## Phase 6 — authoring
 
-Provider lifecycle, tamias.yml form editing, and authoring moved into
-scope. Revised phases:
+- [ ] `bundle pack <dir>` flow: dir prompt → progress → output path.
+- [ ] `publish <dir> --registry <ref>` flow: dir + registry prompts →
+      progress → result.
 
-- Phase 0 unchanged (shared ops widening in tamias-serve).
-- Phase 1 unchanged (skeleton + installed view).
-- Phase 2 unchanged (actions on installed packages).
-- Phase 3: registry search + install + progress (unchanged).
-- Phase 4 (new): **provider lifecycle pane** — services/units table
-  (state, restart), `run` exec (PTY pane or scrollback tail), `logs`
-  follow view, `deploy`/`uninstall` with confirms. Requires extending
-  tamias-serve ops for service/run/logs/deploy or direct
-  tamias-deploy-local/-cf calls.
-- Phase 5 (new): **manifest editor** — `tamias.yml` deps as editable
-  rows (add/remove/set ref), committed through the same manifest+lock
-  write path as `tamias add`; TOML variant reads but YAML is standard.
-- Phase 6 (new): **authoring** — `bundle pack` dir flow, `publish`
-  dir+registry flow, reuse progress pane.
-- Phase 7 (was 4): polish + ship — docs, xtask check/test, PTY tests.
+## Phase 7 — polish + ship
+
+- [ ] `R` reload + `notify` on store root and browsed registry index.
+- [ ] Help overlay + `:` palette cover every bound verb.
+- [ ] Docs: `docs/` how-to page; `gen-cli-docs` picks up `ui`;
+      README mention.
+- [ ] `cargo xtask check` + `test` green; PTY tests cover terminal
+      restore on quit paths.

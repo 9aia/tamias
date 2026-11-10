@@ -31,14 +31,12 @@ the proven `myco-tui` pattern in the org:
   (`default = ["tui"]`, `--no-default-features` keeps the lean binary —
   same as myco). Workspace deps gain `ratatui = "0.30"`,
   `crossterm = "0.29"`, `notify`, `portable-pty` (dev).
-- **Thin front-end, not a shell-out**: the TUI calls the same library ops
-  the verbs do — `tamias-install::install` for installs, `tamias-store-local`
-  `Store` for list/info/verify/remove — with `Env { store_root,
-  cache_root }` built the same way `tamias serve`/`Env::from_env` does.
-  No subprocess, no re-parsed CLI output. Where an op only exists as CLI
-  code today (search, update, pin, cache clean), extract it into a shared
-  lib surface the verb and the TUI both call — this *advances* T-014
-  (dedupe the install pipeline) rather than adding a fourth divergent copy.
+- **Thin front-end, not a shell-out**: the TUI calls shared library ops —
+  `tamias-install::install`, `tamias-store-local::Store`, and ops
+  extracted into `tamias-serve` (see Decisions) — with `Env { store_root,
+  cache_root, … }` built the same way `Env::from_env` does. No subprocess,
+  no re-parsed CLI output, no fourth copy of fetch→driver→store: this
+  *advances* T-014 (dedupe the install pipeline).
 
 ## UX sketch
 
@@ -49,44 +47,38 @@ Panes/tabs:
   in-memory entry list — store is a small local dir, so this is O(n)
   and instant; no index needed). `Enter` opens a detail pane: full manifest,
   provenance record, provider/services, bundled drivers, verify status.
-- **Registry** — search-as-you-type against `tamias search`'s index
+- **Registry** — search-as-you-type against the shared `search` op
   (debounced; local registry = instant, remote = one request per pause).
   Results show name/scope/type/version/description; `i` installs the
   selected ref.
+- **Services** — provider lifecycle: installed packages' `provider:`
+  blocks, unit state, `run` exec (PTY pane or scrollback tail), `logs`
+  follow view, `deploy`/`uninstall` with confirms.
+- **Manifest** — `tamias.yml` `deps:` as an editable form: add/remove/set
+  ref rows; writes go through the same manifest+lock path as `tamias
+  add`, never hand-edited YAML drift.
+- **Author** — `bundle pack <dir>` and `publish <dir> --registry <ref>`
+  flows with dir/registry prompts and the shared progress pane.
 - **Actions** — verbs bound to keys + `:` palette:
   `i` install-by-ref (prompt), `r` remove, `v` verify, `u` update,
   `p` pin, `c` cache clean, `d` doctor. Destructive ops (`r`, `u` on a
   moving ref) confirm via modal; installs that ship bundled `drivers/`
   raise the same consent prompt the CLI's `--allow-drivers` flag gates —
   answered `y`/`n` in the TUI, never a hidden env var.
-- **Progress** — installs run on a worker thread; the UI streams
-  fetch/store/verify phases into a log pane with a spinner. `tamias-serve`'s
-  silent `Surface::Rpc` hints don't apply — the TUI wants the verbose
-  progress surface.
-- **Keymap** — vim-style per myco-tui: `j/k` move, `Tab`/`1`/`2`/`3`
-  switch panes, `/` filter, `:` commands (`:install <ref>`, `:remove <name>`,
-  `:q`), `?` help, `R` reload, `q`/`Ctrl-C` quit.
+- **Progress** — long ops (install, publish, verify on large payloads)
+  run on a worker thread; the UI streams phases into a log pane with a
+  spinner. `tamias-serve`'s silent `Surface::Rpc` hints don't apply —
+  the TUI wants the verbose progress surface.
+- **Keymap** — vim-style per myco-tui: `j/k` move, `Tab`/`1`-`5`
+  switch panes, `/` filter, `:` commands (`:install <ref>`,
+  `:remove <name>`, `:q`), `?` help, `R` reload, `q`/`Ctrl-C` quit.
 
 ## Non-goals (v1)
 
-- `publish`/`bundle pack` authoring flows — read/search/install/manage only.
-- `service`/`run`/`logs`/`deploy` provider lifecycle — revisit once the
-  package-management core is proven; these are daemon-adjacent.
-- Editing `tamias.yaml` deps — `add` stays a CLI verb for now.
 - Multi-registry browsing beyond the configured default + `--registry`.
-
-## Open questions
-
-1. Verb name: `tamias ui` (myco parity) vs `tamias tui` vs `tamias manage`.
-2. Should the TUI live behind the `tui` cargo feature (myco pattern) or
-   ship unconditionally? Feature-gate keeps `cargo install tamias
-   --no-default-features` lean; default-on matches `myco ui` UX.
-3. Extend `tamias-serve` ops (search/update/pin) vs. a new shared ops lib —
-   serve's `Env` is store/cache only; registry-aware ops need a wider Env.
-   Leaning: widen `tamias-serve::Env` (or a sibling `tamias-ops`) so CLI,
-   serve, and TUI share one dispatch.
-4. Does T-014 (shared install pipeline extraction) land first, or does the
-   TUI's shared-ops extraction subsume it?
+- `tamias.yaml` editing beyond the `deps:` form (no schema-free YAML
+  round-trip; the form covers the mutation `tamias add` performs).
+- Daemon/multi-actor concerns — still peregrin's, per the boundary.
 
 ## Decisions (2026-11-10)
 
@@ -94,21 +86,11 @@ Panes/tabs:
 2. Gate: **`tui` cargo feature, on by default** — `--no-default-features`
    keeps the lean binary.
 3. Ops surface: **extend `tamias-serve`** — widen `Env` to be
-   registry-aware so CLI verbs, `tamias serve`, and `tamias ui` share one
-   dispatch; no new `tamias-ops` crate.
-
-## Scope expansion (2026-11-10)
-
-Non-goals removed — v1 now also covers:
-
-- **Provider lifecycle**: `service` (list/start/stop/restart unit ops),
-  `run` (foreground exec — spawn in a PTY pane or tail view), `logs`
-  (journal tail + follow), `deploy`/`uninstall` provider teardown.
-  These are daemon-adjacent but are first-class tamias verbs; the TUI
-  is the natural console for them.
-- **`tamias.yml` editing**: deps editor as a form — list `deps:` entries
-  with add/remove/ref-edit rows; writes the project manifest via the
-  same code path `tamias add` uses (manifest + lock update together, no
-  hand-edited YAML drift).
-- **Authoring**: `bundle pack <dir>` and `publish <dir> --registry <ref>`
-  — dir picker/prompt, registry picker, progress pane reuse.
+   registry-aware (and later service/authoring-aware) so CLI verbs,
+   `tamias serve`, and `tamias ui` share one dispatch; no new
+   `tamias-ops` crate.
+4. Scope: **full surface** — provider lifecycle, `tamias.yml` deps form,
+   and `bundle pack`/`publish` authoring are in v1, not deferred.
+5. T-014 ordering: the shared-ops extraction in Phase 0 *is* the T-014
+   dedupe for the ops the TUI needs; remaining pipeline dedupe continues
+   under T-014 independently.
