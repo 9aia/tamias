@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-plt005b","actor":"luis","ts":1794291412,"op":{"op":"claim","glob":"fs:crates/tamias-cli/**","ttl_secs":3600}}
+{"id":"","ws":"devin-plt005b","actor":"luis","ts":1794291413,"op":{"op":"claim","glob":"fs:crates/tamias-serve/**","ttl_secs":3600}}
