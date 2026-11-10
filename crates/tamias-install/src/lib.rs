@@ -41,7 +41,7 @@ use tamias_store_local::Store;
 
 mod include;
 mod sync;
-pub use sync::{sync_project, DepOutcome, DepStatus, SyncOptions, SyncReport};
+pub use sync::{sync_project, DepOutcome, DepStatus, SyncOptions, SyncReport, SyncSource};
 
 /// Store + fetch-cache roots the pipeline writes through.
 #[derive(Clone, Debug)]

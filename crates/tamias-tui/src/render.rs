@@ -722,7 +722,7 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
             }
         }
         Pane::Manifest => {
-            "j/k · a add dep · d/x remove · e edit ref · s sync · R reload · : cmds · q quit"
+            "j/k · a add dep · d/x remove · e edit ref · s sync · S sync-lock · R reload · : cmds · q quit"
         }
         Pane::Author => "p pack · P publish · r registries · R reload · : cmds · q quit",
     };
@@ -829,7 +829,7 @@ commands:  :q  :r/:reload  :help  :install <ref>  :remove <name>
            :services  :service <verb> <unit>  :run <pkg> [svc]
            :logs <pkg|unit> [-f]  :deploy <name>  :manifest
            :pack <dir> [out]  :publish <dir> [registry]  :registries
-           :sync
+           :sync [--from-lock]
 mouse:     wheel scrolls · click row selects · click tab switches
 
 services pane:  provider services + unit state · s/S start/stop ·
@@ -838,6 +838,7 @@ services pane:  provider services + unit state · s/S start/stop ·
 manifest pane:  deps rows editable — a add · d/x remove · e new ref
                 (writes tamias.yaml + tamias.lock like `tamias add`)
                 s / :sync reconciles deps: against the store + lock
+                S / :sync --from-lock installs tamias.lock entries verbatim
 author pane:    p bundle pack · P publish (confirm) · r registries";
     let width = area.width.min(72) as usize;
     let h = text.lines().count() as u16 + 2;

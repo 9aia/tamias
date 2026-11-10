@@ -155,12 +155,16 @@ pub enum Job {
         /// Bundled-driver consent.
         allow_drivers: bool,
     },
-    /// `tamias sync` — reconcile the project manifest's `deps:`
-    /// against the store + `tamias.lock` (install missing/drifted,
-    /// never removes).
+    /// `tamias sync` — reconcile the project dep set against the
+    /// store + `tamias.lock` (install missing/drifted, never removes).
+    /// `from_lock` treats `tamias.lock` itself as the spec (`:sync
+    /// --from-lock`).
     Sync {
         /// Bundled-driver consent.
         allow_drivers: bool,
+        /// Install `tamias.lock` entries verbatim instead of the
+        /// manifest's `deps:`.
+        from_lock: bool,
     },
     // --- phase 6: authoring ---
     /// `tamias bundle pack <dir> [out]`.
@@ -226,7 +230,13 @@ impl Job {
             Self::AddDep { reference, .. } => format!("add dep {reference}"),
             Self::RemoveDep { reference } => format!("remove dep {reference}"),
             Self::SetDep { old, new, .. } => format!("set dep {old} → {new}"),
-            Self::Sync { .. } => "sync deps".to_string(),
+            Self::Sync { from_lock, .. } => {
+                if *from_lock {
+                    "sync --from-lock".to_string()
+                } else {
+                    "sync deps".to_string()
+                }
+            }
             Self::Pack { dir, .. } => format!("pack {dir}"),
             Self::Publish { dir, registry } => match registry {
                 Some(r) => format!("publish {dir} → {r}"),
@@ -279,8 +289,12 @@ impl Job {
                 new,
                 allow_drivers: true,
             },
-            Self::Sync { .. } => Self::Sync {
+            Self::Sync {
+                allow_drivers: _,
+                from_lock,
+            } => Self::Sync {
                 allow_drivers: true,
+                from_lock,
             },
             other => other,
         }
@@ -843,28 +857,41 @@ fn set_dep(
 }
 
 /// `tamias sync` — the shared [`tamias_install::sync_project`] over
-/// the project manifest the Manifest pane edits (same
-/// [`project_manifest`] discovery, so `tamias.toml`-only projects get
-/// the same refusal). Per-dep outcomes stream to the log; any failure
-/// is an error after the lines are logged (consent refusals already
-/// propagated through `is_driver_consent_refusal` upstream).
+/// the project the Manifest pane edits (same [`project_manifest`]
+/// discovery, so `tamias.toml`-only projects get the same refusal).
+/// `from_lock` swaps the spec to `tamias.lock` itself — the manifest
+/// isn't even required then. Per-dep outcomes stream to the log; any
+/// failure is an error after the lines are logged (consent refusals
+/// already propagated through `is_driver_consent_refusal` upstream).
 fn sync_deps(
     ctx: &Ctx,
     allow_drivers: bool,
+    from_lock: bool,
     log: &mut dyn FnMut(String),
 ) -> Result<Outcome, Error> {
-    let (path, _manifest) = project_manifest()?;
-    let dir = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+    // `--from-lock` needs no manifest at all — `tamias.lock` in the
+    // cwd is the whole spec (a `tamias.toml`-only project syncs fine).
+    let dir = if from_lock {
+        PathBuf::from(".")
+    } else {
+        let (path, _manifest) = project_manifest()?;
+        path.parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    };
     let report = tamias_install::sync_project(
         &install_env(ctx),
-        dir,
+        &dir,
         Surface::Tui,
         tamias_install::SyncOptions {
             allow_drivers,
             locked: false,
+            source: if from_lock {
+                tamias_install::SyncSource::Lock
+            } else {
+                tamias_install::SyncSource::Deps
+            },
         },
         &mut |p| match p {
             Progress::Fetching { reference } => log(format!("fetching {reference}")),
@@ -883,10 +910,14 @@ fn sync_deps(
             report.failed()
         )));
     }
-    Ok(Outcome::Text(format!(
-        "sync: {} dep(s) reconciled",
-        report.outcomes.len()
-    )))
+    Ok(Outcome::Text(if from_lock {
+        format!(
+            "sync --from-lock: {} dep(s) reconciled",
+            report.outcomes.len()
+        )
+    } else {
+        format!("sync: {} dep(s) reconciled", report.outcomes.len())
+    }))
 }
 
 /// `tamias bundle pack <dir> [out]` — `tamias-publish`'s pack.
@@ -1122,7 +1153,10 @@ pub fn run(ctx: &Ctx, job: &Job, log: &mut dyn FnMut(String)) -> Result<Outcome,
             new,
             allow_drivers,
         } => set_dep(ctx, old, new, *allow_drivers, log),
-        Job::Sync { allow_drivers } => sync_deps(ctx, *allow_drivers, log),
+        Job::Sync {
+            allow_drivers,
+            from_lock,
+        } => sync_deps(ctx, *allow_drivers, *from_lock, log),
         Job::Pack { dir, out } => pack(dir, out.as_deref(), ctx),
         Job::Publish { dir, registry } => publish(ctx, dir, registry.as_deref(), log),
         Job::Registries => registries(ctx),

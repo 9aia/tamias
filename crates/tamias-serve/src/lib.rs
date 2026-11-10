@@ -8,12 +8,14 @@
 //! `registry.remove`. Requests are `{"op":"…", …}`; responses are
 //! `{"ok":true,"result":…}` or `{"ok":false,"error":"…"}`.
 //!
-//! `sync` reconciles the *server's* cwd project manifest
-//! (`tamias.yaml` `deps:`) against the store + `tamias.lock` — the
-//! same `tamias sync` semantics (`{"op":"sync","locked":…,
-//! "allow_drivers":…,"dir":…}`; `dir` defaults to `.`). Per-dep
-//! outcomes come back in `result.deps`; a bundled-driver consent
-//! refusal is an `ok:false` error like `install`'s.
+//! `sync` reconciles the *server's* cwd project dep set against the
+//! store + `tamias.lock` — the same `tamias sync` semantics
+//! (`{"op":"sync","locked":…,"from_lock":…,"allow_drivers":…,
+//! "dir":…}`; `dir` defaults to `.`). `from_lock: true` treats
+//! `tamias.lock` itself as the spec (no manifest consult, no lock
+//! rewrite). Per-dep outcomes come back in `result.deps`; a
+//! bundled-driver consent refusal is an `ok:false` error like
+//! `install`'s.
 //!
 //! `search`/`publish`/`registry.*` resolve named registry sources and
 //! config writes through `tamias-registry-open` — the same code the
@@ -144,15 +146,21 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
             }))
         }
         "sync" => {
-            // `tamias sync` — reconcile the project manifest's `deps:`
-            // against the store + `tamias.lock`. `dir` (default `.`)
-            // is the project dir; fs refs inside `deps:` still resolve
+            // `tamias sync` — reconcile the project dep set against
+            // the store + `tamias.lock`. `dir` (default `.`) is the
+            // project dir; fs refs inside `deps:` still resolve
             // against the server's cwd, same as `install`.
+            // `from_lock: true` swaps the spec to `tamias.lock`
+            // itself (the manifest's `deps:` is not consulted).
             let allow_drivers = req
                 .get("allow_drivers")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             let locked = req.get("locked").and_then(Value::as_bool).unwrap_or(false);
+            let from_lock = req
+                .get("from_lock")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let dir = req
                 .get("dir")
                 .and_then(Value::as_str)
@@ -170,6 +178,11 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 tamias_install::SyncOptions {
                     allow_drivers,
                     locked,
+                    source: if from_lock {
+                        tamias_install::SyncSource::Lock
+                    } else {
+                        tamias_install::SyncSource::Deps
+                    },
                 },
                 &mut |_| {},
             )?;
@@ -497,6 +510,53 @@ mod tests {
         assert_eq!(res["deps"][0]["status"], "current");
         // an explicit dir override works too, and a missing manifest errs
         assert!(dispatch(&env, r#"{"op":"sync","dir":"/no/such/dir"}"#).is_err());
+    }
+
+    #[test]
+    fn dispatch_sync_from_lock_uses_lock_as_spec() {
+        let _g = EnvGuard::new();
+        let env = env();
+        let tmp = tempfile::tempdir().unwrap();
+        // a package fixture + a project dir holding ONLY tamias.lock
+        let pkg = tmp.path().join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(pkg.join("tamias.yaml"), "name: sw\nversion: 1.0.0\n").unwrap();
+        std::fs::write(pkg.join("a.txt"), "a").unwrap();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        // seed the lock via a deps-mode sync against a scratch env is
+        // overkill — install + upsert the record directly
+        let seed_env = Env {
+            store_root: tmp.path().join("seed-store"),
+            cache_root: tmp.path().join("seed-cache"),
+            ..env.clone()
+        };
+        let entry = tamias_install::install_with_progress(
+            &tamias_install::Env {
+                store_root: seed_env.store_root.clone(),
+                cache_root: seed_env.cache_root.clone(),
+                max_download: None,
+                signing: tamias_sign::SigningPolicy::default(),
+            },
+            &pkg.display().to_string(),
+            false,
+            tamias_install::Surface::Rpc,
+            &mut |_| {},
+        )
+        .unwrap();
+        tamias_core::Lock::upsert_record(&proj.join("tamias.lock"), &entry.record).unwrap();
+        // a manifest whose deps: would fail if consulted
+        std::fs::write(proj.join("tamias.yaml"), "deps:\n  - /no/such/dep\n").unwrap();
+
+        let dir = proj.display().to_string();
+        let req = format!(r#"{{"op":"sync","from_lock":true,"dir":"{dir}"}}"#);
+        let res = dispatch(&env, &req).unwrap();
+        assert_eq!(res["failed"], 0);
+        assert_eq!(res["deps"][0]["status"], "installed");
+        assert_eq!(res["deps"][0]["dep"], pkg.display().to_string());
+        // second run → current
+        let res = dispatch(&env, &req).unwrap();
+        assert_eq!(res["deps"][0]["status"], "current");
     }
 
     #[test]

@@ -60,17 +60,26 @@ enum Command {
         #[arg(long)]
         allow_drivers: bool,
     },
-    /// Reconcile the cwd project's `deps:` (tamias.yaml + tamias.lock)
-    /// against the store — install what's missing or drifted.
+    /// Reconcile the cwd project's dep set against the store —
+    /// install what's missing or drifted. Never removes store
+    /// entries: the store is global, not project-scoped;
+    /// `tamias remove` stays the uninstall verb.
     ///
-    /// Never removes store entries: the store is global, not
-    /// project-scoped; `tamias remove` stays the uninstall verb.
+    /// By default the spec is the project manifest's `deps:`
+    /// (tamias.yaml + tamias.lock); `--from-lock` swaps the spec to
+    /// `tamias.lock` itself — each entry's pinned `source_ref` is
+    /// installed, the manifest is not consulted, and the lock is
+    /// never rewritten.
     Sync {
         /// Strict mode — every dep must already be current per
         /// `tamias.lock` + the store; drift or a missing lock entry
         /// fails the dep instead of installing/moving it.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from_lock")]
         locked: bool,
+        /// Install `tamias.lock` entries verbatim (the lock is the
+        /// spec) instead of reconciling the manifest's `deps:`.
+        #[arg(long)]
+        from_lock: bool,
         /// Consent to register + run the packages' bundled `drivers/`.
         /// Equivalent: `TAMIAS_ALLOW_DRIVERS=1`.
         #[arg(long)]
@@ -572,8 +581,14 @@ fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry
 }
 
 /// `sync` — the shared dep-set reconcile in `tamias-install` over the
-/// cwd project manifest + `tamias.lock` (same discovery `add` uses).
-fn sync(env: &Env, locked: bool, allow_drivers: bool) -> Result<tamias_install::SyncReport, Error> {
+/// cwd project (same discovery `add` uses); `from_lock` swaps the spec
+/// from the manifest's `deps:` to `tamias.lock` itself.
+fn sync(
+    env: &Env,
+    locked: bool,
+    from_lock: bool,
+    allow_drivers: bool,
+) -> Result<tamias_install::SyncReport, Error> {
     tamias_install::sync_project(
         &tamias_install::Env::for_config(
             env.store_root.clone(),
@@ -585,6 +600,11 @@ fn sync(env: &Env, locked: bool, allow_drivers: bool) -> Result<tamias_install::
         tamias_install::SyncOptions {
             allow_drivers,
             locked,
+            source: if from_lock {
+                tamias_install::SyncSource::Lock
+            } else {
+                tamias_install::SyncSource::Deps
+            },
         },
         &mut progress_lines,
     )
@@ -798,10 +818,11 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
         }
         Some(Command::Sync {
             locked,
+            from_lock,
             allow_drivers,
             json,
         }) => {
-            let report = sync(&env, locked, allow_drivers)?;
+            let report = sync(&env, locked, from_lock, allow_drivers)?;
             if json {
                 let deps: Vec<serde_json::Value> = report
                     .outcomes
@@ -3345,6 +3366,37 @@ mod tests {
         std::fs::create_dir_all(&empty).unwrap();
         std::env::set_current_dir(&empty).unwrap();
         assert!(run_args(e.clone(), &["tamias", "sync"]).is_err());
+        std::env::set_current_dir(&prev).unwrap();
+    }
+
+    #[test]
+    fn sync_from_lock_uses_lock_as_spec() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        let dep = dir.display().to_string();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&proj).unwrap();
+        // `add` populates tamias.yaml + tamias.lock
+        run_args(e.clone(), &["tamias", "add", &dep]).unwrap();
+        // --from-lock against a fresh store installs the pinned ref —
+        // and ignores the manifest's deps: entirely
+        let e2 = env(&tmp.path().join("fresh"));
+        std::fs::write(proj.join("tamias.yaml"), "deps:\n  - /no/such/dep\n").unwrap();
+        run_args(e2.clone(), &["tamias", "sync", "--from-lock"]).unwrap();
+        assert!(Store::new(&e2.store_root).find("w").is_ok());
+        // --json + current-on-second-run both work; --locked conflicts
+        run_args(e2.clone(), &["tamias", "sync", "--from-lock", "--json"]).unwrap();
+        // --locked is meaningless under --from-lock — clap rejects it
+        assert!(Cli::try_parse_from(["tamias", "sync", "--from-lock", "--locked"]).is_err());
+        // no lock at all → empty report, success
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        std::env::set_current_dir(&empty).unwrap();
+        run_args(e2.clone(), &["tamias", "sync", "--from-lock"]).unwrap();
         std::env::set_current_dir(&prev).unwrap();
     }
 

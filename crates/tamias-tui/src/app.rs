@@ -261,9 +261,13 @@ enum Cmd {
     Registries,
     /// `:manifest` — (re)load the project manifest.
     Manifest,
-    /// `:sync` — reconcile the project manifest's `deps:` (Manifest
-    /// pane `s` too).
-    Sync,
+    /// `:sync [--from-lock]` — reconcile the project dep set
+    /// (`--from-lock` treats `tamias.lock` as the spec; Manifest pane
+    /// `s`/`S` too).
+    Sync {
+        /// Install `tamias.lock` entries verbatim.
+        from_lock: bool,
+    },
 }
 
 /// Parse a `:` command line (the leading `:` already stripped).
@@ -387,7 +391,18 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
         }
         "registries" | "registry-list" => Ok(Cmd::Registries),
         "manifest" => Ok(Cmd::Manifest),
-        "sync" | "s" => Ok(Cmd::Sync),
+        "sync" | "s" => {
+            // `:sync [--from-lock]` — the only flag; anything else is
+            // a usage error.
+            let mut from_lock = false;
+            for tok in rest.split_whitespace() {
+                match tok {
+                    "--from-lock" => from_lock = true,
+                    _ => return Err("usage: :sync [--from-lock]".into()),
+                }
+            }
+            Ok(Cmd::Sync { from_lock })
+        }
         other => Err(format!("unknown command ':{other}'")),
     }
 }
@@ -1394,11 +1409,17 @@ impl Model {
                 self.mode = Mode::Prompt(PromptKind::AddDep);
             }
             // `s` reconciles the whole `deps:` set (`tamias sync`) —
-            // confirm first like the other mutating verbs.
-            's' => self.confirm_job(
-                "sync deps",
+            // confirm first like the other mutating verbs. `S` is the
+            // lock-spec variant (`tamias sync --from-lock`).
+            's' | 'S' => self.confirm_job(
+                if key == 'S' {
+                    "sync --from-lock"
+                } else {
+                    "sync deps"
+                },
                 Job::Sync {
                     allow_drivers: false,
+                    from_lock: key == 'S',
                 },
             ),
             // `d`/`x` both drop the dep (the proposal's two remove
@@ -1566,11 +1587,16 @@ impl Model {
                 self.load_manifest();
                 self.say("manifest reloaded");
             }
-            Ok(Cmd::Sync) => {
+            Ok(Cmd::Sync { from_lock }) => {
                 self.confirm_job(
-                    "sync deps",
+                    if from_lock {
+                        "sync --from-lock"
+                    } else {
+                        "sync deps"
+                    },
                     Job::Sync {
                         allow_drivers: false,
+                        from_lock,
                     },
                 );
             }
@@ -2025,8 +2051,16 @@ mod tests {
         );
         assert_eq!(parse_command("registries").unwrap(), Cmd::Registries);
         assert_eq!(parse_command("manifest").unwrap(), Cmd::Manifest);
-        assert_eq!(parse_command("sync").unwrap(), Cmd::Sync);
-        assert_eq!(parse_command("s").unwrap(), Cmd::Sync);
+        assert_eq!(
+            parse_command("sync").unwrap(),
+            Cmd::Sync { from_lock: false }
+        );
+        assert_eq!(parse_command("s").unwrap(), Cmd::Sync { from_lock: false });
+        assert_eq!(
+            parse_command("sync --from-lock").unwrap(),
+            Cmd::Sync { from_lock: true }
+        );
+        assert!(parse_command("sync bogus").is_err());
         assert!(parse_command("pack").is_err());
         assert!(parse_command("publish").is_err());
     }
@@ -2044,10 +2078,17 @@ mod tests {
         }
         let s = Job::Sync {
             allow_drivers: false,
+            from_lock: true,
         };
-        assert!(s.label().contains("sync"));
+        assert!(s.label().contains("from-lock"));
         match s.with_drivers_allowed() {
-            Job::Sync { allow_drivers } => assert!(allow_drivers),
+            Job::Sync {
+                allow_drivers,
+                from_lock,
+            } => {
+                assert!(allow_drivers);
+                assert!(from_lock);
+            }
             _ => panic!("wrong variant"),
         }
         let v = Job::Verify("w".into());

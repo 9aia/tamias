@@ -16,6 +16,14 @@
 //! matches it; anything else is a per-dep `failed` outcome and nothing
 //! is installed or re-resolved — the lockfile must already describe
 //! the world.
+//!
+//! [`SyncSource::Lock`] (`--from-lock`, PL-0007 / P-004 §C) swaps the
+//! spec: `tamias.lock` itself is the dep set. Each entry's recorded
+//! `source_ref` (which carries the pinned rev/digest) is installed
+//! when the store record doesn't already match; the manifest's
+//! `deps:` is never consulted, the lock is never rewritten, and a
+//! post-install record that doesn't match the lock entry reports
+//! `failed`. Sync still never removes.
 
 use std::path::Path;
 
@@ -90,8 +98,22 @@ impl SyncReport {
     }
 }
 
-/// Sync knobs — the `--locked`/`--allow-drivers` pair every surface
-/// exposes (the TUI has no `--locked` UI; it always passes `false`).
+/// Where [`sync_project`] reads its dep set from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SyncSource {
+    /// The project manifest's `deps:` (default) — `tamias sync`.
+    #[default]
+    Deps,
+    /// `tamias.lock` entries verbatim — `tamias sync --from-lock`
+    /// (PL-0007). The lock is the spec: no manifest consult, no lock
+    /// rewrite; [`SyncOptions::locked`] has no meaning here (every
+    /// entry is already pinned).
+    Lock,
+}
+
+/// Sync knobs — the `--locked`/`--allow-drivers`/`--from-lock` trio
+/// every surface exposes (the TUI has no `--locked` UI; it always
+/// passes `false`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SyncOptions {
     /// Consent to register + run payload-bundled `drivers/` —
@@ -101,8 +123,11 @@ pub struct SyncOptions {
     pub allow_drivers: bool,
     /// Strict mode — deps must already be `current` per `tamias.lock`
     /// and the store; drift or a missing lock entry fails the dep
-    /// instead of installing/moving it.
+    /// instead of installing/moving it. Ignored under
+    /// [`SyncSource::Lock`] (the lock is already the strict spec).
     pub locked: bool,
+    /// The dep-set source — manifest `deps:` or `tamias.lock`.
+    pub source: SyncSource,
 }
 
 /// The lock entry pinned for `dep` — matched on `source_ref`, the
@@ -131,19 +156,25 @@ fn record_matches(record: &StoreRecord, lock: &LockEntry) -> bool {
         && record.digest == lock.digest
 }
 
-/// Sync the project manifest in `dir` (`tamias.yaml`/`.yml`/`.toml`
-/// via [`Manifest::path_in`]) against `dir/tamias.lock` and the store
-/// under `env.store_root`. Progress streams through `report` exactly
-/// like [`install_with_progress`]; `surface` tunes consent hints.
+/// Sync the project in `dir` against the store under `env.store_root`
+/// and `dir/tamias.lock`. [`SyncOptions::source`] picks the spec:
+/// [`SyncSource::Deps`] (default) reconciles the project manifest's
+/// `deps:` (the manifest is required and the lock is refreshed per
+/// install); [`SyncSource::Lock`] treats `tamias.lock` itself as the
+/// spec — no manifest is consulted and the lock is never rewritten.
+/// Progress streams through `report` exactly like
+/// [`install_with_progress`]; `surface` tunes consent hints.
 ///
 /// Per-dep install failures are collected into the report (sync keeps
 /// going); a bundled-driver consent refusal, a manifest/lock I/O
 /// failure, or a lock-write failure aborts with `Err`.
 ///
 /// # Errors
-/// Fails when no project manifest exists in `dir`, the manifest or
-/// lock can't be read, a dep's install hits a consent refusal, or a
-/// lock write fails.
+/// Under [`SyncSource::Deps`]: fails when no project manifest exists
+/// in `dir`, the manifest or lock can't be read, a dep's install hits
+/// a consent refusal, or a lock write fails. Under
+/// [`SyncSource::Lock`]: fails when the lock can't be read or a
+/// consent refusal aborts.
 pub fn sync_project(
     env: &Env,
     dir: &Path,
@@ -151,6 +182,9 @@ pub fn sync_project(
     options: SyncOptions,
     report: &mut dyn FnMut(Progress),
 ) -> Result<SyncReport, Error> {
+    if options.source == SyncSource::Lock {
+        return sync_from_lock(env, dir, surface, options, report);
+    }
     let Some(manifest_path) = Manifest::path_in(dir) else {
         return Err(Error::Failed(format!(
             "no tamias.yaml/.yml/.toml in {} — sync needs a project manifest",
@@ -221,6 +255,95 @@ pub fn sync_project(
             Err(e) if crate::is_driver_consent_refusal(&e) => return Err(e),
             Err(e) => outcomes.push(DepOutcome {
                 dep: dep.clone(),
+                status: DepStatus::Failed,
+                detail: e.to_string(),
+            }),
+        }
+    }
+    Ok(SyncReport { outcomes })
+}
+
+/// `--from-lock` (PL-0007 / P-004 §C): `tamias.lock` is the spec.
+/// Each entry's recorded `source_ref` — which carries the pinned
+/// rev/digest — is installed when the store record doesn't already
+/// match the entry; the manifest's `deps:` is never consulted and the
+/// lockfile is never written. After a successful install the record
+/// is checked against the lock entry ([`record_matches`]); a mismatch
+/// reports `failed` (the pinned source produced a different record
+/// than the lock describes). Sync still never removes store entries.
+/// A missing `tamias.lock` is an empty lock → an empty report.
+fn sync_from_lock(
+    env: &Env,
+    dir: &Path,
+    surface: Surface,
+    options: SyncOptions,
+    report: &mut dyn FnMut(Progress),
+) -> Result<SyncReport, Error> {
+    let lock_path = dir.join("tamias.lock");
+    let lock = Lock::load(&lock_path)?;
+    let store = Store::new(&env.store_root);
+    let entries = store.entries()?;
+
+    let mut outcomes = Vec::with_capacity(lock.packages.len());
+    for entry in &lock.packages {
+        // Match the store by (scope, name) only — a lock entry may
+        // omit `version` where the record carries one, and the store
+        // holds a single record per (scope, name) regardless.
+        let store_entry = entries
+            .iter()
+            .find(|e| e.record.name == entry.name && e.record.scope == entry.scope);
+        let current = store_entry.is_some_and(|e| record_matches(&e.record, entry));
+        if current {
+            outcomes.push(DepOutcome {
+                dep: entry.source_ref.clone(),
+                status: DepStatus::Current,
+                detail: store_entry
+                    .map(StoreEntry::label)
+                    .unwrap_or_else(|| entry.source_ref.clone()),
+            });
+            continue;
+        }
+        match install_with_progress(
+            env,
+            &entry.source_ref,
+            options.allow_drivers,
+            surface,
+            report,
+        ) {
+            Ok(installed) => {
+                let reinstalled = entries.iter().any(|e| {
+                    e.record.name == installed.record.name
+                        && e.record.scope == installed.record.scope
+                });
+                let (status, detail) = if record_matches(&installed.record, entry) {
+                    (
+                        if reinstalled {
+                            DepStatus::Reinstalled
+                        } else {
+                            DepStatus::Installed
+                        },
+                        installed.label(),
+                    )
+                } else {
+                    (
+                        DepStatus::Failed,
+                        format!(
+                            "installed record drifted from tamias.lock ({})",
+                            installed.label()
+                        ),
+                    )
+                };
+                outcomes.push(DepOutcome {
+                    dep: entry.source_ref.clone(),
+                    status,
+                    detail,
+                });
+            }
+            // Consent refusals propagate — the surfaces' consent modals
+            // key off `is_driver_consent_refusal` on the returned Err.
+            Err(e) if crate::is_driver_consent_refusal(&e) => return Err(e),
+            Err(e) => outcomes.push(DepOutcome {
+                dep: entry.source_ref.clone(),
                 status: DepStatus::Failed,
                 detail: e.to_string(),
             }),
@@ -356,6 +479,7 @@ mod tests {
         let locked = SyncOptions {
             allow_drivers: false,
             locked: true,
+            ..SyncOptions::default()
         };
         // nothing installed, no lock → failed, nothing fetched
         let report = sync_project(&env, &proj, Surface::Cli, locked, &mut |_| {}).unwrap();
@@ -394,5 +518,146 @@ mod tests {
         let report = sync_project(&env, &proj, Surface::Cli, opts(), &mut |_| {}).unwrap();
         assert!(report.outcomes.is_empty());
         assert!(report.is_ok());
+    }
+
+    // --- --from-lock (SyncSource::Lock, PL-0007) ---
+
+    fn lock_opts() -> SyncOptions {
+        SyncOptions {
+            source: SyncSource::Lock,
+            ..SyncOptions::default()
+        }
+    }
+
+    /// Install `dep` once and write `dir/tamias.lock` from the record
+    /// — the same tail `add` uses, minus the manifest.
+    fn write_lock(env: &Env, dir: &Path, dep: &str) -> StoreRecord {
+        let entry = install_with_progress(env, dep, false, Surface::Cli, &mut |_| {}).unwrap();
+        Lock::upsert_record(&dir.join("tamias.lock"), &entry.record).unwrap();
+        entry.record
+    }
+
+    #[test]
+    fn sync_from_lock_installs_pinned_and_never_rewrites() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = pkg(tmp.path(), "w");
+        let dep = p.display().to_string();
+        // project dir with ONLY a lock — no manifest is consulted
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let env_seed = env(&tmp.path().join("seed"));
+        write_lock(&env_seed, &proj, &dep);
+        let lock_before = std::fs::read_to_string(proj.join("tamias.lock")).unwrap();
+        // a manifest whose deps: would fail if consulted
+        std::fs::write(proj.join("tamias.yaml"), "deps:\n  - /no/such/dep\n").unwrap();
+
+        // fresh store → installs the pinned ref
+        let env = env(&tmp.path().join("fresh"));
+        let mut events = Vec::new();
+        let report = sync_project(&env, &proj, Surface::Cli, lock_opts(), &mut |pr| {
+            events.push(pr)
+        })
+        .unwrap();
+        assert_eq!(report.outcomes.len(), 1);
+        assert_eq!(report.outcomes[0].dep, dep);
+        assert_eq!(report.outcomes[0].status, DepStatus::Installed);
+        assert!(matches!(events[0], Progress::Fetching { .. }));
+        assert!(Store::new(&env.store_root).find("w").is_ok());
+        // the lock is the spec — it is never rewritten
+        assert_eq!(
+            std::fs::read_to_string(proj.join("tamias.lock")).unwrap(),
+            lock_before
+        );
+
+        // second run → current, no fetch
+        let mut events2 = Vec::new();
+        let report2 = sync_project(&env, &proj, Surface::Cli, lock_opts(), &mut |pr| {
+            events2.push(pr)
+        })
+        .unwrap();
+        assert_eq!(report2.outcomes[0].status, DepStatus::Current);
+        assert!(events2.is_empty());
+        assert!(report2.is_ok());
+    }
+
+    #[test]
+    fn sync_from_lock_flags_post_install_mismatch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = pkg(tmp.path(), "w");
+        let dep = p.display().to_string();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let env_seed = env(&tmp.path().join("seed"));
+        write_lock(&env_seed, &proj, &dep);
+        // tamper with the recorded digest — the pinned source can't
+        // produce it, so the post-install record check must fail
+        let lock_path = proj.join("tamias.lock");
+        let mut lock = Lock::load(&lock_path).unwrap();
+        lock.packages[0].digest = "sha256:bogus".into();
+        lock.save(&lock_path).unwrap();
+
+        let env = env(&tmp.path().join("fresh"));
+        let report = sync_project(&env, &proj, Surface::Cli, lock_opts(), &mut |_| {}).unwrap();
+        assert_eq!(report.outcomes[0].status, DepStatus::Failed);
+        assert!(report.outcomes[0].detail.contains("drifted"));
+        assert_eq!(report.failed(), 1);
+        // the tampered lock is untouched
+        let lock = Lock::load(&lock_path).unwrap();
+        assert_eq!(lock.packages[0].digest, "sha256:bogus");
+    }
+
+    #[test]
+    fn sync_from_lock_aggregates_failures_and_empty_lock() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = pkg(tmp.path(), "w");
+        let good = p.display().to_string();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let env_seed = env(&tmp.path().join("seed"));
+        write_lock(&env_seed, &proj, &good);
+        // a second lock entry pointing at a missing source
+        let mut lock = Lock::load(&proj.join("tamias.lock")).unwrap();
+        lock.upsert(LockEntry {
+            name: "ghost".into(),
+            scope: None,
+            version: None,
+            source_ref: "/no/such/pkg".into(),
+            resolved: "sha256:x".into(),
+            digest: "sha256:y".into(),
+        });
+        lock.save(&proj.join("tamias.lock")).unwrap();
+
+        let env = env(&tmp.path().join("fresh"));
+        let report = sync_project(&env, &proj, Surface::Cli, lock_opts(), &mut |_| {}).unwrap();
+        assert_eq!(report.outcomes.len(), 2);
+        // the lock sorts by (scope, name) — "ghost" precedes "w"
+        assert_eq!(report.outcomes[0].dep, "/no/such/pkg");
+        assert_eq!(report.outcomes[0].status, DepStatus::Failed);
+        assert_eq!(report.outcomes[1].dep, good);
+        assert_eq!(report.outcomes[1].status, DepStatus::Installed);
+        // the good dep survived the bad one — sync never removes
+        assert!(Store::new(&env.store_root).find("w").is_ok());
+
+        // empty lock → empty report; missing lock → same
+        let empty = tmp.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        let report = sync_project(&env, &empty, Surface::Cli, lock_opts(), &mut |_| {}).unwrap();
+        assert!(report.outcomes.is_empty() && report.is_ok());
+        Lock::default().save(&empty.join("tamias.lock")).unwrap();
+        let report = sync_project(&env, &empty, Surface::Cli, lock_opts(), &mut |_| {}).unwrap();
+        assert!(report.outcomes.is_empty() && report.is_ok());
+    }
+
+    #[test]
+    fn sync_from_lock_bad_lock_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("tamias.lock"), ": not : yaml :").unwrap();
+        let env = env(tmp.path());
+        assert!(sync_project(&env, &proj, Surface::Cli, lock_opts(), &mut |_| {}).is_err());
+        // deps-mode reads the same lock — a manifest + bad lock errs too
+        std::fs::write(proj.join("tamias.yaml"), "deps: []\n").unwrap();
+        assert!(sync_project(&env, &proj, Surface::Cli, opts(), &mut |_| {}).is_err());
     }
 }
