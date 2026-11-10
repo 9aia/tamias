@@ -10,12 +10,12 @@ api:
 - name: DepOutcome
   kind: type
   file: crates/tamias-install/src/sync.rs
-  line: 60
+  line: 68
   module: tamias-install
 - name: DepStatus
   kind: type
   file: crates/tamias-install/src/sync.rs
-  line: 29
+  line: 37
   module: tamias-install
 - name: Env
   kind: type
@@ -50,12 +50,17 @@ api:
 - name: SyncOptions
   kind: type
   file: crates/tamias-install/src/sync.rs
-  line: 96
+  line: 118
   module: tamias-install
 - name: SyncReport
   kind: type
   file: crates/tamias-install/src/sync.rs
-  line: 71
+  line: 79
+  module: tamias-install
+- name: SyncSource
+  kind: type
+  file: crates/tamias-install/src/sync.rs
+  line: 103
   module: tamias-install
 - name: allow
   kind: function
@@ -65,7 +70,7 @@ api:
 - name: as_str
   kind: function
   file: crates/tamias-install/src/sync.rs
-  line: 47
+  line: 55
   module: tamias-install
 - name: bad_ref_and_missing_manifest_fail
   kind: function
@@ -100,12 +105,12 @@ api:
 - name: env
   kind: function
   file: crates/tamias-install/src/sync.rs
-  line: 266
+  line: 389
   module: tamias-install
 - name: failed
   kind: function
   file: crates/tamias-install/src/sync.rs
-  line: 79
+  line: 87
   module: tamias-install
 - name: fetch_or_cached
   kind: function
@@ -195,14 +200,9 @@ api:
 - name: is_ok
   kind: function
   file: crates/tamias-install/src/sync.rs
-  line: 88
+  line: 96
   module: tamias-install
-- name: lock_entry_for
-  kind: function
-  file: crates/tamias-install/src/sync.rs
-  line: 110
-  module: tamias-install
-api_omitted: 33
+api_omitted: 41
 deps:
 - tamias-cache-local
 - tamias-config
@@ -243,8 +243,8 @@ provenance:
   hashes:
   - 8abce97b239d751b389b905398c0dd393c62d3f4
   - ef6f131d67e1de28e9b6c67afdb5e3cfe0bf94a5
-  - be6ec56dbc3ad87a42966647f03bde13e6077842
-  - d4e0978851fbc6dd1c985f122c02f4639a9b621d
-  commit_sha: faedaff9ebefacf629d7dac98eefa50674a2fd9c
-  generated_at: '1794333497'
+  - 6472da942073396a4127fb1f2c203b63c7569e79
+  - c1d9678feccc6614736fadfe378c2dcb83b4d009
+  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
+  generated_at: '1794334084'
   generator: kuda-template/0.1.2

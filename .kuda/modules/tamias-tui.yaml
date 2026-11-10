@@ -15,7 +15,7 @@ api:
 - name: Base
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 637
+  line: 651
   module: tamias-tui
 - name: CACHE_MAX_AGE
   kind: const
@@ -65,7 +65,7 @@ api:
 - name: LOG_LINES
   kind: const
   file: crates/tamias-tui/src/ops.rs
-  line: 986
+  line: 1017
   module: tamias-tui
 - name: MUTED
   kind: const
@@ -85,7 +85,7 @@ api:
 - name: Model
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 422
+  line: 437
   module: tamias-tui
 - name: Msg
   kind: type
@@ -95,7 +95,7 @@ api:
 - name: Outcome
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 294
+  line: 308
   module: tamias-tui
 - name: Pane
   kind: type
@@ -145,7 +145,7 @@ api:
 - name: add_dep
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 771
+  line: 785
   module: tamias-tui
 - name: app
   kind: module
@@ -155,17 +155,17 @@ api:
 - name: arm_watch
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 708
+  line: 723
   module: tamias-tui
 - name: author_verb
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1427
+  line: 1448
   module: tamias-tui
 - name: cache_clean
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 480
+  line: 494
   module: tamias-tui
 - name: chrome
   kind: function
@@ -185,17 +185,17 @@ api:
 - name: command_parsing
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1935
+  line: 1961
   module: tamias-tui
 - name: confirm_job
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1073
+  line: 1088
   module: tamias-tui
 - name: ctx
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 1145
+  line: 1179
   module: tamias-tui
 - name: ctx_from_env_resolves_roots
   kind: function
@@ -250,12 +250,12 @@ provenance:
   - crates/tamias-tui/tests/pty.rs
   hashes:
   - b6a235087c38037ce9ad4db4bddbfe7ee52a710d
-  - 304604bc477d6612b54d73556e9c4ac0e17ee672
+  - 1f76706680dcf171f467dcae52131c8da4f4ff6d
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - c9659cac01e6232a77a03a7a57cbfda299310660
-  - 4e043558892ad0052dddbf118940818ad3859ddf
+  - b7587c582f89c0124f30035f21c8092a5c5dce7f
+  - 30611c3ea36e479642277816f4c60c22b9e5fa1d
   - 0fb68a4ee8432d1c4cd26ab7c06e8d905a383f24
-  commit_sha: faedaff9ebefacf629d7dac98eefa50674a2fd9c
-  generated_at: '1794333497'
+  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
+  generated_at: '1794334084'
   generator: kuda-template/0.1.2
