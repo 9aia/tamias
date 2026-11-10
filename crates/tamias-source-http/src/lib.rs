@@ -13,8 +13,9 @@ use std::path::Path;
 use tamias_core::{sha256_hex, untar_gz, Error};
 use tamias_source::{Fetched, Plan, RefKind, Source, Spec};
 
-/// Largest tarball a fetch buffers — 512 MiB.
-const MAX_TARBALL: u64 = 512 * 1024 * 1024;
+/// Built-in fetch cap — 512 MiB, mirroring `tamias-config`'s
+/// `DEFAULT_MAX_DOWNLOAD`. [`HttpSource::with_max_download`] overrides.
+pub const DEFAULT_MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 
 /// Global request timeout — a hung host can't block a fetch forever.
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
@@ -87,6 +88,9 @@ fn cleartext_unpinned(url: &str, digest: &Option<String>) -> bool {
 /// The http source.
 pub struct HttpSource {
     agent: ureq::Agent,
+    /// Largest response body `fetch` buffers — the configured
+    /// `limits.max_download` when the caller threads it through.
+    max_download: u64,
 }
 
 impl HttpSource {
@@ -105,7 +109,17 @@ impl HttpSource {
     /// An http source over a custom agent (proxies, timeouts, fakes).
     #[must_use]
     pub fn with_agent(agent: ureq::Agent) -> Self {
-        Self { agent }
+        Self {
+            agent,
+            max_download: DEFAULT_MAX_DOWNLOAD,
+        }
+    }
+
+    /// Cap fetch bodies at `bytes` — the configured `max_download`.
+    #[must_use]
+    pub fn with_max_download(mut self, bytes: u64) -> Self {
+        self.max_download = bytes;
+        self
     }
 }
 
@@ -184,7 +198,7 @@ impl Source for HttpSource {
         let bytes = response
             .body_mut()
             .with_config()
-            .limit(MAX_TARBALL)
+            .limit(self.max_download)
             .read_to_vec()
             .map_err(|e| Error::Failed(format!("read {url}: {e}")))?;
         let hex = sha256_hex(&bytes);
@@ -327,6 +341,21 @@ mod tests {
         assert!(HttpPlan::new("http://x/y.tgz", None)
             .prefetch_identity()
             .is_none());
+    }
+
+    #[test]
+    fn max_download_caps_fetch_bodies() {
+        let bytes = tarball();
+        let port = serve(bytes.clone(), "200 OK");
+        let source = HttpSource::new().with_max_download(1);
+        let plan = HttpPlan::new(format!("http://127.0.0.1:{port}/x.tgz"), None);
+        let dest = tempfile::tempdir().unwrap();
+        assert!(source.fetch(&plan, dest.path()).is_err());
+        // The default cap is far above a test tarball.
+        let port = serve(bytes, "200 OK");
+        let plan = HttpPlan::new(format!("http://127.0.0.1:{port}/x.tgz"), None);
+        let dest = tempfile::tempdir().unwrap();
+        assert!(HttpSource::new().fetch(&plan, dest.path()).is_ok());
     }
 
     #[test]

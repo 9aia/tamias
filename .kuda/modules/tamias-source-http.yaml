@@ -5,97 +5,112 @@ api:
 - name: CONNECT_TIMEOUT
   kind: const
   file: crates/tamias-source-http/src/lib.rs
-  line: 23
+  line: 24
+  module: tamias-source-http
+- name: DEFAULT_MAX_DOWNLOAD
+  kind: const
+  file: crates/tamias-source-http/src/lib.rs
+  line: 18
   module: tamias-source-http
 - name: ForeignPlan
   kind: type
   file: crates/tamias-source-http/src/lib.rs
-  line: 201
+  line: 230
   module: tamias-source-http
 - name: HttpPlan
   kind: type
   file: crates/tamias-source-http/src/lib.rs
-  line: 113
+  line: 133
   module: tamias-source-http
 - name: HttpRefKind
   kind: type
   file: crates/tamias-source-http/src/lib.rs
-  line: 27
+  line: 28
   module: tamias-source-http
 - name: HttpSource
   kind: type
   file: crates/tamias-source-http/src/lib.rs
-  line: 82
+  line: 89
   module: tamias-source-http
 - name: HttpSpec
   kind: type
   file: crates/tamias-source-http/src/lib.rs
-  line: 31
-  module: tamias-source-http
-- name: MAX_TARBALL
-  kind: const
-  file: crates/tamias-source-http/src/lib.rs
-  line: 17
+  line: 32
   module: tamias-source-http
 - name: TIMEOUT
   kind: const
   file: crates/tamias-source-http/src/lib.rs
-  line: 20
+  line: 21
   module: tamias-source-http
 - name: accepts
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 138
+  line: 158
   module: tamias-source-http
 - name: claims
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 39
+  line: 40
+  module: tamias-source-http
+- name: cleartext_unpinned
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 84
+  module: tamias-source-http
+- name: cleartext_unpinned_predicate
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 362
   module: tamias-source-http
 - name: default
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 107
+  line: 127
   module: tamias-source-http
 - name: fetch
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 152
+  line: 172
+  module: tamias-source-http
+- name: max_download_caps_fetch_bodies
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 347
   module: tamias-source-http
 - name: new
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 89
+  line: 99
   module: tamias-source-http
 - name: new
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 121
+  line: 141
   module: tamias-source-http
 - name: parse
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 45
+  line: 46
   module: tamias-source-http
 - name: parse_plan_fetch_and_errors
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 235
+  line: 264
   module: tamias-source-http
 - name: plan
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 142
+  line: 162
   module: tamias-source-http
 - name: prefetch_identity
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 130
+  line: 150
   module: tamias-source-http
 - name: serve
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 205
+  line: 234
   module: tamias-source-http
 - name: tamias-source-http
   kind: module
@@ -105,17 +120,22 @@ api:
 - name: tarball
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 225
+  line: 254
   module: tamias-source-http
 - name: tests
   kind: module
   file: crates/tamias-source-http/src/lib.rs
-  line: 192
+  line: 221
   module: tamias-source-http
 - name: with_agent
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 101
+  line: 111
+  module: tamias-source-http
+- name: with_max_download
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 120
   module: tamias-source-http
 deps:
 - tamias-core
@@ -137,8 +157,8 @@ provenance:
   - crates/tamias-source-http/tests/props.rs
   hashes:
   - 59ec68e1f9512a030552d9b51e0e59cef86fce9d
-  - 268627c7007f081971b0035a813246d416a38e1b
+  - 26ce9eafa3d9e7e19ac6bdd9fbc74af670c10dc7
   - 32ad9146c1e60127c9418e6b92325cf32e42357b
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  commit_sha: 91e7a237d8fbc78d3cbe3c0f396a4f364be71e88
+  generated_at: '1794291650'
   generator: kuda-template/0.1.2

@@ -20,13 +20,28 @@ use tamias_registry::{Registry, RegistryEntry};
 #[derive(Clone, Debug)]
 pub struct LocalRegistry {
     root: PathBuf,
+    /// Upload cap enforced in [`Registry::publish`] — `Some` rejects a
+    /// packed `.tgz` larger than the configured `limits.max_upload`.
+    /// `None` (the default) leaves direct dir writes uncapped; the
+    /// `registry serve` HTTP surface enforces its own cap regardless.
+    max_upload: Option<u64>,
 }
 
 impl LocalRegistry {
     /// A registry under `root` (created lazily on first publish).
     #[must_use]
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            max_upload: None,
+        }
+    }
+
+    /// Cap publishes at `bytes` — the configured `max_upload`.
+    #[must_use]
+    pub fn with_max_upload(mut self, bytes: u64) -> Self {
+        self.max_upload = Some(bytes);
+        self
     }
 
     /// The root dir.
@@ -86,6 +101,20 @@ impl Registry for LocalRegistry {
         // Blob lands atomically — a crash mid-pack leaves a stray
         // `*.tmp`, never a truncated `.tgz` at the canonical path.
         pack_tgz_atomic(payload_root, &out)?;
+        // The size probe runs post-pack/pre-index: an over-limit blob is
+        // removed before it can be served or referenced.
+        if let Some(max) = self.max_upload {
+            let size = fs::metadata(&out)
+                .map_err(Error::io(format!("stat {}", out.display())))?
+                .len();
+            if size > max {
+                let _ = fs::remove_file(&out);
+                return Err(Error::Failed(format!(
+                    "payload tarball {} is {size} bytes — exceeds the {max}-byte upload limit",
+                    out.display()
+                )));
+            }
+        }
         let entry = RegistryEntry {
             name: manifest.name.clone(),
             scope: manifest.scope.clone(),
@@ -183,8 +212,8 @@ fn lock_stale(path: &Path) -> bool {
         .unwrap_or(true)
 }
 
-/// Largest PUT body the dev server accepts — matches the fetch-side
-/// `MAX_TARBALL` convention; bigger blobs can't be installed anyway.
+/// Default PUT cap — mirrors `tamias-config`'s `DEFAULT_MAX_UPLOAD`
+/// (512 MiB); bigger blobs can't be installed anyway.
 const MAX_PUT: u64 = 512 * 1024 * 1024;
 
 /// Per-read timeout on a connection — an idle client can't stall the
@@ -208,16 +237,30 @@ const SERVE_TOKEN_ENV: &str = "TAMIAS_REGISTRY_SERVE_TOKEN";
 /// # Errors
 /// Propagates the bind failure; per-request errors are logged, not fatal.
 pub fn serve_http(addr: &str, root: &Path) -> Result<(), Error> {
+    serve_http_with_limits(addr, root, MAX_PUT)
+}
+
+/// [`serve_http`] with an explicit upload cap — the configured
+/// `limits.max_upload` (flag > config > this default).
+///
+/// # Errors
+/// Propagates the bind failure; per-request errors are logged, not fatal.
+pub fn serve_http_with_limits(addr: &str, root: &Path, max_upload: u64) -> Result<(), Error> {
     let token = std::env::var(SERVE_TOKEN_ENV)
         .ok()
         .filter(|t| !t.is_empty());
-    serve_http_token(addr, root, token.as_deref())
+    serve_http_token(addr, root, token.as_deref(), max_upload)
 }
 
-/// [`serve_http`] with an explicit bearer token — `Some` requires
-/// `Authorization: Bearer <token>` on every request. Split out so tests
-/// don't race on the process env.
-fn serve_http_token(addr: &str, root: &Path, token: Option<&str>) -> Result<(), Error> {
+/// [`serve_http_with_limits`] with an explicit bearer token — `Some`
+/// requires `Authorization: Bearer <token>` on every request. Split out
+/// so tests don't race on the process env.
+fn serve_http_token(
+    addr: &str,
+    root: &Path,
+    token: Option<&str>,
+    max_upload: u64,
+) -> Result<(), Error> {
     let listener = std::net::TcpListener::bind(addr).map_err(Error::io(format!("bind {addr}")))?;
     fs::create_dir_all(root).map_err(Error::io(format!("create {}", root.display())))?;
     eprintln!(
@@ -240,7 +283,7 @@ fn serve_http_token(addr: &str, root: &Path, token: Option<&str>) -> Result<(), 
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                if let Err(e) = handle(&mut stream, root, token) {
+                if let Err(e) = handle(&mut stream, root, token, max_upload) {
                     eprintln!("tamias registry: {e}");
                 }
             }
@@ -250,7 +293,12 @@ fn serve_http_token(addr: &str, root: &Path, token: Option<&str>) -> Result<(), 
     Ok(())
 }
 
-fn handle(stream: &mut std::net::TcpStream, root: &Path, token: Option<&str>) -> Result<(), Error> {
+fn handle(
+    stream: &mut std::net::TcpStream,
+    root: &Path,
+    token: Option<&str>,
+    max_upload: u64,
+) -> Result<(), Error> {
     use std::io::{BufRead, BufReader, Read};
 
     // Bound every read on this connection — headers AND body — so an
@@ -308,7 +356,7 @@ fn handle(stream: &mut std::net::TcpStream, root: &Path, token: Option<&str>) ->
         "PUT" => {
             // Reject the declared length BEFORE allocating — a huge
             // Content-Length must not become a huge vec.
-            if content_length > MAX_PUT {
+            if content_length > max_upload {
                 return respond(stream, 413, b"payload too large");
             }
             let mut body = vec![0u8; content_length as usize];
@@ -471,7 +519,7 @@ mod tests {
         std::thread::spawn({
             let addr = addr.clone();
             move || {
-                let _ = serve_http_token(&addr, &rp, None);
+                let _ = serve_http_token(&addr, &rp, None, MAX_PUT);
             }
         });
         wait_ready(&addr);
@@ -490,6 +538,61 @@ mod tests {
     }
 
     #[test]
+    fn serve_http_custom_upload_limit() {
+        let root = tempfile::tempdir().unwrap();
+        let rp = root.path().to_path_buf();
+        let addr = free_addr();
+        std::thread::spawn({
+            let addr = addr.clone();
+            move || {
+                let _ = serve_http_token(&addr, &rp, None, 4);
+            }
+        });
+        wait_ready(&addr);
+        // Over the configured cap → 413 before the body is read.
+        let big = raw(
+            &addr,
+            b"PUT /big HTTP/1.1\r\nContent-Length: 5\r\n\r\n12345",
+        );
+        assert!(big.contains("413"), "{big}");
+        assert!(!root.path().join("big").exists());
+        // At the cap → accepted.
+        let ok = raw(
+            &addr,
+            b"PUT /small HTTP/1.1\r\nContent-Length: 4\r\n\r\n1234",
+        );
+        assert!(ok.contains("200"), "{ok}");
+        assert_eq!(std::fs::read(root.path().join("small")).unwrap(), b"1234");
+    }
+
+    #[test]
+    fn publish_enforces_max_upload() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("tamias.yaml"),
+            "name: capped\nversion: 1.0.0\n",
+        )
+        .unwrap();
+        std::fs::write(src.path().join("blob.bin"), vec![0u8; 4096]).unwrap();
+        let reg_dir = tempfile::tempdir().unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        // A 1-byte cap rejects the packed .tgz and leaves no blob behind.
+        let registry = LocalRegistry::new(reg_dir.path()).with_max_upload(1);
+        let err = registry.publish(src.path(), &manifest).unwrap_err();
+        assert!(err.to_string().contains("upload limit"), "{err}");
+        assert!(!reg_dir.path().join("capped/1.0.0.tgz").exists());
+        assert!(registry.entries().unwrap().is_empty());
+        // Generous cap → publishes fine.
+        let registry = LocalRegistry::new(reg_dir.path()).with_max_upload(1 << 20);
+        assert!(registry.publish(src.path(), &manifest).is_ok());
+        // Default (no cap) → also fine.
+        let reg2 = tempfile::tempdir().unwrap();
+        assert!(LocalRegistry::new(reg2.path())
+            .publish(src.path(), &manifest)
+            .is_ok());
+    }
+
+    #[test]
     fn serve_http_bearer_token() {
         let root = tempfile::tempdir().unwrap();
         let rp = root.path().to_path_buf();
@@ -497,7 +600,7 @@ mod tests {
         std::thread::spawn({
             let addr = addr.clone();
             move || {
-                let _ = serve_http_token(&addr, &rp, Some("sekret"));
+                let _ = serve_http_token(&addr, &rp, Some("sekret"), MAX_PUT);
             }
         });
         wait_ready(&addr);

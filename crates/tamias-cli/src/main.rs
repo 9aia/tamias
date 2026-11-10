@@ -19,7 +19,7 @@ use tamias_core::{payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, St
 use tamias_install::{Progress, Surface};
 use tamias_registry::{parse_registry_ref, Registry, RegistryRef};
 use tamias_registry_cf::HttpRegistry;
-use tamias_registry_local::{serve_http, LocalRegistry};
+use tamias_registry_local::{serve_http, serve_http_with_limits, LocalRegistry};
 use tamias_store_local::Store;
 
 /// Default fetch-cache eviction age for `cache clean` — 30 days.
@@ -311,6 +311,11 @@ enum RegistryCommand {
         /// Registry root (default `~/.local/share/tamias/registry`).
         #[arg(long)]
         dir: Option<PathBuf>,
+        /// Upload cap — bytes or a human size (`256MiB`, `1GiB`).
+        /// Overrides the config's global `limits.max_upload`; the
+        /// built-in 512 MiB default applies when neither is set.
+        #[arg(long)]
+        max_upload: Option<String>,
     },
     /// Add a named registry to the config file.
     Add {
@@ -513,6 +518,10 @@ fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry
         &tamias_install::Env {
             store_root: env.store_root.clone(),
             cache_root: env.cache_root.clone(),
+            // Global `limits.max_download` caps http(s)/`cf:` fetches —
+            // per-package overrides can't apply (the name is unknown
+            // until after the fetch).
+            max_download: cli_config().map(|c| c.effective_limits(None, None).max_download),
         },
         reference,
         allow_drivers,
@@ -614,21 +623,51 @@ fn sync_lock(record: &StoreRecord) -> Result<(), Error> {
 /// default local root. Callers resolve the routing defaults
 /// (`publish.default`/`search.default`, `TAMIAS_REGISTRY` env) into
 /// `value` before calling — env wins over config, flag over env.
+///
+/// `package` (the manifest name on publish) selects per-package limit
+/// overrides; the resolved [`tamias_config::EffectiveLimits`] are handed
+/// to the adapter (`with_max_upload`), which enforces them — the
+/// packed-tarball size probe runs post-pack/pre-upload inside
+/// `publish`, so an over-limit payload never reaches the wire or the
+/// index.
 fn open_registry(
     env: &Env,
     config: Option<&tamias_config::Config>,
     value: Option<&str>,
+    package: Option<&str>,
 ) -> Result<Box<dyn Registry>, Error> {
     let Some(value) = value else {
-        return Ok(Box::new(LocalRegistry::new(&env.registry_root)));
+        return Ok(Box::new(
+            LocalRegistry::new(&env.registry_root)
+                .with_max_upload(effective_limits(config, None, package).max_upload),
+        ));
     };
     if let Some(named) = config.and_then(|c| c.registries.get(value)) {
-        return open_named_registry(env, value, named);
+        return open_named_registry(env, value, named, config, package);
     }
+    let eff = effective_limits(config, Some(value), package);
     Ok(match parse_registry_ref(value) {
-        RegistryRef::Local(path) => Box::new(LocalRegistry::new(path)),
-        RegistryRef::Http(base) => Box::new(HttpRegistry::from_env(base)),
+        RegistryRef::Local(path) => {
+            Box::new(LocalRegistry::new(path).with_max_upload(eff.max_upload))
+        }
+        RegistryRef::Http(base) => {
+            Box::new(http_registry(&base, None, value)?.with_max_upload(eff.max_upload))
+        }
     })
+}
+
+/// The effective limits for a publish/search target — `value` doubles
+/// as the registry name when it matches a `registries` key (raw
+/// dir/http refs simply miss the lookup and get global + package rules).
+fn effective_limits(
+    config: Option<&tamias_config::Config>,
+    value: Option<&str>,
+    package: Option<&str>,
+) -> tamias_config::EffectiveLimits {
+    config.map_or_else(
+        || tamias_config::Config::default().effective_limits(value, package),
+        |c| c.effective_limits(value, package),
+    )
 }
 
 /// Build the `Registry` impl for a `registries` entry — explicit
@@ -640,7 +679,10 @@ fn open_named_registry(
     env: &Env,
     name: &str,
     reg: &tamias_config::Registry,
+    config: Option<&tamias_config::Config>,
+    package: Option<&str>,
 ) -> Result<Box<dyn Registry>, Error> {
+    let eff = effective_limits(config, Some(name), package);
     match reg.effective_kind().as_str() {
         "local" => {
             let root = reg
@@ -648,21 +690,27 @@ fn open_named_registry(
                 .clone()
                 .map(PathBuf::from)
                 .unwrap_or_else(|| env.registry_root.clone());
-            Ok(Box::new(LocalRegistry::new(root)))
+            Ok(Box::new(
+                LocalRegistry::new(root).with_max_upload(eff.max_upload),
+            ))
         }
         "http" | "cf" => {
             let base = reg.url.clone().ok_or_else(|| {
                 Error::Failed(format!("registry '{name}': kind http/cf needs a url"))
             })?;
             http_registry(&base, reg.token_env.as_deref(), name)
+                .map(|r| Box::new(r.with_max_upload(eff.max_upload)) as Box<dyn Registry>)
         }
         other => {
             eprintln!(
                 "tamias: warning — registry '{name}': unknown kind '{other}'; inferring from url"
             );
             match parse_registry_ref(reg.url.as_deref().unwrap_or_default()) {
-                RegistryRef::Local(path) => Ok(Box::new(LocalRegistry::new(path))),
-                RegistryRef::Http(base) => http_registry(&base, reg.token_env.as_deref(), name),
+                RegistryRef::Local(path) => Ok(Box::new(
+                    LocalRegistry::new(path).with_max_upload(eff.max_upload),
+                )),
+                RegistryRef::Http(base) => http_registry(&base, reg.token_env.as_deref(), name)
+                    .map(|r| Box::new(r.with_max_upload(eff.max_upload)) as Box<dyn Registry>),
             }
         }
     }
@@ -672,11 +720,10 @@ fn open_named_registry(
 /// var holding the token (the var's *name* lives in config; the value
 /// is read at connect time, never stored). `TAMIAS_REGISTRY_TOKEN` is
 /// the fallback when `token_env` is unset or its var is empty.
-fn http_registry(
-    base: &str,
-    token_env: Option<&str>,
-    name: &str,
-) -> Result<Box<dyn Registry>, Error> {
+///
+/// Returns the concrete [`HttpRegistry`] (not the trait object) so
+/// callers can layer on the resolved upload cap.
+fn http_registry(base: &str, token_env: Option<&str>, name: &str) -> Result<HttpRegistry, Error> {
     let base = base.trim_end_matches('/');
     if !(base.starts_with("http://") || base.starts_with("https://")) {
         return Err(Error::Failed(format!(
@@ -700,7 +747,7 @@ fn http_registry(
     if let Some(token) = token {
         registry = registry.with_token(token);
     }
-    Ok(Box::new(registry))
+    Ok(registry)
 }
 
 /// The `--registry` value `publish`/`search` resolve: explicit flag →
@@ -1085,9 +1132,14 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 registry.as_deref(),
                 &[config.as_ref().and_then(|c| c.publish.default.as_deref())],
             );
-            let registry = open_registry(&env, config.as_ref(), target.as_deref())?;
             let root = payload_root(&dir)?;
             let manifest = Manifest::load(&root)?;
+            let registry = open_registry(
+                &env,
+                config.as_ref(),
+                target.as_deref(),
+                Some(&manifest.name),
+            )?;
             eprintln!("tamias: publishing {}", manifest.name);
             let entry = registry.publish(&root, &manifest)?;
             println!("published {}", entry.label());
@@ -1105,7 +1157,7 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                     config.as_ref().and_then(|c| c.publish.default.as_deref()),
                 ],
             );
-            let registry = open_registry(&env, config.as_ref(), target.as_deref())?;
+            let registry = open_registry(&env, config.as_ref(), target.as_deref(), None)?;
             let found = registry.search(&query)?;
             if json {
                 let results: Vec<serde_json::Value> = found
@@ -1135,9 +1187,25 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             println!("packed → {}", packed.display());
         }
         Some(Command::Registry { file, cmd }) => match cmd {
-            RegistryCommand::Serve { addr, dir } => {
+            RegistryCommand::Serve {
+                addr,
+                dir,
+                max_upload,
+            } => {
                 let root = dir.unwrap_or_else(|| env.registry_root.clone());
-                serve_http(&addr, &root)?;
+                // Flag > config global `limits.max_upload` > built-in
+                // default (serve_http's own fallback).
+                let limit = match &max_upload {
+                    Some(text) => Some(
+                        tamias_config::parse_bytes(text)
+                            .map_err(|e| Error::Failed(format!("--max-upload: {e}")))?,
+                    ),
+                    None => cli_config().and_then(|c| c.limits.max_upload),
+                };
+                match limit {
+                    Some(max) => serve_http_with_limits(&addr, &root, max)?,
+                    None => serve_http(&addr, &root)?,
+                }
             }
             RegistryCommand::Add {
                 name,
@@ -1151,7 +1219,14 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
         },
         Some(Command::DeployRegistry { out }) => {
             let out = out.unwrap_or_else(|| PathBuf::from("tamias-registry-worker"));
-            for action in tamias_deploy::Deploy::deploy(&tamias_deploy_cf::CfDeploy, &out)? {
+            // Bake the configured global upload cap into the Worker —
+            // per-registry/package rules don't apply to a fresh deploy.
+            let deploy = match cli_config() {
+                Some(config) => tamias_deploy_cf::CfDeploy::default()
+                    .with_max_upload(config.effective_limits(None, None).max_upload),
+                None => tamias_deploy_cf::CfDeploy::default(),
+            };
+            for action in tamias_deploy::Deploy::deploy(&deploy, &out)? {
                 println!("{action}");
             }
         }
@@ -1967,7 +2042,7 @@ fn doctor_registry(env: &Env) -> (String, bool) {
     let config = cli_config();
     let routed = config.as_ref().and_then(|c| c.publish.default.clone());
     let label = routed.clone().unwrap_or_else(|| "default".to_string());
-    let (primary, ok) = match open_registry(env, config.as_ref(), routed.as_deref()) {
+    let (primary, ok) = match open_registry(env, config.as_ref(), routed.as_deref(), None) {
         Ok(registry) => match registry.entries() {
             Ok(entries) => (format!("{label}: {} entr(ies)", entries.len()), true),
             Err(e) => (format!("{label}: {e}"), false),
@@ -3963,5 +4038,144 @@ mod tests {
         assert_eq!(fmt_bytes(512 << 20), "512MiB");
         assert_eq!(fmt_bytes(1 << 30), "1GiB");
         assert_eq!(fmt_bytes(1536), "1536B");
+    }
+
+    /// A second payload dir with a different package name — for
+    /// per-package limit overrides.
+    fn pkg_named(root: &std::path::Path, name: &str) -> std::path::PathBuf {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            format!("name: {name}\nversion: 1.0.0\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        dir
+    }
+
+    #[test]
+    fn publish_enforces_configured_upload_limits() {
+        let _g = DRVENV.lock().unwrap();
+        let _c = CWD.lock().unwrap();
+        let saved_cfg = std::env::var_os(CONFIG_ENV);
+        let saved_reg = std::env::var_os("TAMIAS_REGISTRY");
+        std::env::remove_var(CONFIG_ENV);
+        std::env::remove_var("TAMIAS_REGISTRY");
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        // global cap of 10 bytes rejects every publish; the `w`
+        // package override (1 MiB) and the `mine` registry's own cap
+        // exercise the resolution chain.
+        let named_reg = tmp.path().join("named-reg");
+        std::fs::write(
+            proj.join("tamias.yml"),
+            format!(
+                "limits:\n  max_upload: 10\n  packages:\n    w:\n      max_upload: 1048576\nregistries:\n  mine:\n    kind: local\n    url: {}\n    limits:\n      max_upload: 10\n",
+                named_reg.display()
+            ),
+        )
+        .unwrap();
+        let w = pkg(tmp.path());
+        let other = pkg_named(tmp.path(), "other");
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&proj).unwrap();
+        // `w` matches the package override → publishes to the default
+        // (env) registry root.
+        let ok = run_args(e.clone(), &["tamias", "publish", w.to_str().unwrap()]);
+        // `other` has no override → the 10-byte global cap rejects.
+        let err = run_args(e.clone(), &["tamias", "publish", other.to_str().unwrap()]);
+        // `--registry mine`: the package override still wins over the
+        // registry's own 10-byte cap (package rules resolve first), so
+        // `w` publishes; `other` falls through to the registry cap.
+        let named_w = run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "publish",
+                w.to_str().unwrap(),
+                "--registry",
+                "mine",
+            ],
+        );
+        let named_other = run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "publish",
+                other.to_str().unwrap(),
+                "--registry",
+                "mine",
+            ],
+        );
+        std::env::set_current_dir(&prev).unwrap();
+        match saved_cfg {
+            Some(v) => std::env::set_var(CONFIG_ENV, v),
+            None => std::env::remove_var(CONFIG_ENV),
+        }
+        match saved_reg {
+            Some(v) => std::env::set_var("TAMIAS_REGISTRY", v),
+            None => std::env::remove_var("TAMIAS_REGISTRY"),
+        }
+        ok.unwrap();
+        named_w.unwrap();
+        let err = err.unwrap_err().to_string();
+        assert!(err.contains("upload limit"), "{err}");
+        assert!(named_other
+            .unwrap_err()
+            .to_string()
+            .contains("upload limit"));
+        // both successful publishes landed in their respective roots
+        assert!(e.registry_root.join("index.json").is_file());
+        assert!(named_reg.join("index.json").is_file());
+    }
+
+    #[test]
+    fn deploy_registry_bakes_configured_upload_limit() {
+        let _g = DRVENV.lock().unwrap();
+        let _c = CWD.lock().unwrap();
+        let saved_cfg = std::env::var_os(CONFIG_ENV);
+        std::env::remove_var(CONFIG_ENV);
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        std::fs::write(proj.join("tamias.yml"), "limits:\n  max_upload: 4096\n").unwrap();
+        let out = tmp.path().join("worker");
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&proj).unwrap();
+        let r = run_args(
+            e.clone(),
+            &["tamias", "deploy-registry", "--out", out.to_str().unwrap()],
+        );
+        // …and with no config at all → the built-in default is baked.
+        let bare = tmp.path().join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::env::set_current_dir(&bare).unwrap();
+        let out2 = tmp.path().join("worker2");
+        let r2 = run_args(
+            e.clone(),
+            &["tamias", "deploy-registry", "--out", out2.to_str().unwrap()],
+        );
+        std::env::set_current_dir(&prev).unwrap();
+        match saved_cfg {
+            Some(v) => std::env::set_var(CONFIG_ENV, v),
+            None => std::env::remove_var(CONFIG_ENV),
+        }
+        r.unwrap();
+        r2.unwrap();
+        let toml = std::fs::read_to_string(out.join("wrangler.toml")).unwrap();
+        assert!(toml.contains("MAX_UPLOAD_BYTES = \"4096\""), "{toml}");
+        let toml2 = std::fs::read_to_string(out2.join("wrangler.toml")).unwrap();
+        assert!(
+            toml2.contains("MAX_UPLOAD_BYTES = \"536870912\""),
+            "{toml2}"
+        );
+        // the worker itself reads the var (server-side enforcement)
+        let js = std::fs::read_to_string(out.join("index.js")).unwrap();
+        assert!(js.contains("env.MAX_UPLOAD_BYTES"));
+        assert!(js.contains("status: 413"));
     }
 }

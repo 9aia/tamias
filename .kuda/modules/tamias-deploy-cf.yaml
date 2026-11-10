@@ -5,27 +5,42 @@ api:
 - name: CfDeploy
   kind: type
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 20
+  line: 33
+  module: tamias-deploy-cf
+- name: DEFAULT_MAX_UPLOAD
+  kind: const
+  file: crates/tamias-deploy-cf/src/lib.rs
+  line: 29
+  module: tamias-deploy-cf
+- name: MAX_UPLOAD_PLACEHOLDER
+  kind: const
+  file: crates/tamias-deploy-cf/src/lib.rs
+  line: 24
   module: tamias-deploy-cf
 - name: WORKER_JS
   kind: const
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 14
+  line: 18
   module: tamias-deploy-cf
 - name: WRANGLER_TOML
   kind: const
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 16
+  line: 21
   module: tamias-deploy-cf
 - name: deploy
   kind: function
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 23
+  line: 48
+  module: tamias-deploy-cf
+- name: deploy_bakes_configured_upload_limit
+  kind: function
+  file: crates/tamias-deploy-cf/src/lib.rs
+  line: 90
   module: tamias-deploy-cf
 - name: deploy_writes_worker_and_config
   kind: function
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 44
+  line: 77
   module: tamias-deploy-cf
 - name: tamias-deploy-cf
   kind: module
@@ -35,7 +50,22 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-deploy-cf/src/lib.rs
-  line: 38
+  line: 71
+  module: tamias-deploy-cf
+- name: with_max_upload
+  kind: function
+  file: crates/tamias-deploy-cf/src/lib.rs
+  line: 41
+  module: tamias-deploy-cf
+- name: worker_auth_fails_closed
+  kind: function
+  file: crates/tamias-deploy-cf/src/lib.rs
+  line: 119
+  module: tamias-deploy-cf
+- name: worker_reads_upload_limit_and_rejects_over_limit
+  kind: function
+  file: crates/tamias-deploy-cf/src/lib.rs
+  line: 101
   module: tamias-deploy-cf
 deps:
 - tamias-core
@@ -53,7 +83,7 @@ provenance:
   - crates/tamias-deploy-cf/src/lib.rs
   hashes:
   - 1bb89b67605f598c9a5fb1f2eb04d4eda1093f50
-  - 8e9c899f3c48e22aabd392718963f0ac4f7c2391
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - 0b36cc769e8e7779c2624ab875ff4965f12a67b5
+  commit_sha: 91e7a237d8fbc78d3cbe3c0f396a4f364be71e88
+  generated_at: '1794291650'
   generator: kuda-template/0.1.2

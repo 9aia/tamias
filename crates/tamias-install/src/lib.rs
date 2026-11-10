@@ -41,6 +41,12 @@ pub struct Env {
     pub store_root: PathBuf,
     /// The fetch-cache root.
     pub cache_root: PathBuf,
+    /// Fetch cap for http(s)/`cf:` tarballs — the configured
+    /// `limits.max_download` when the caller threads it through;
+    /// `None` → the source's built-in default (512 MiB). Per-package
+    /// overrides can't apply here: the package name isn't known until
+    /// after the fetch.
+    pub max_download: Option<u64>,
 }
 
 /// Which surface is installing — tunes the consent hints embedded in
@@ -131,7 +137,7 @@ pub fn install_with_progress(
     let span = tracing::info_span!("install", reference);
     let _enter = span.enter();
     let spec = refs().parse(reference)?;
-    let planned = sources().plan(&*spec)?;
+    let planned = sources(env.max_download).plan(&*spec)?;
     report(Progress::Fetching {
         reference: reference.to_string(),
     });
@@ -204,12 +210,21 @@ fn refs() -> Refs {
         .with(Arc::new(FsRefKind))
 }
 
-/// The source registry.
-fn sources() -> Sources {
+/// The source registry — `max_download` caps http(s)/`cf:` tarball
+/// fetches (the configured `limits.max_download`, `None` → default).
+fn sources(max_download: Option<u64>) -> Sources {
+    let cap = |s: HttpSource| match max_download {
+        Some(bytes) => s.with_max_download(bytes),
+        None => s,
+    };
+    let cf = match max_download {
+        Some(bytes) => CfSource::new().with_max_download(bytes),
+        None => CfSource::new(),
+    };
     Sources::new()
         .with(Arc::new(GitSource::new()))
-        .with(Arc::new(CfSource::new()))
-        .with(Arc::new(HttpSource::new()))
+        .with(Arc::new(cf))
+        .with(Arc::new(cap(HttpSource::new())))
         .with(Arc::new(FsSource::new()))
 }
 
@@ -254,6 +269,7 @@ mod tests {
         let env = Env {
             store_root: dir.path().join("store"),
             cache_root: dir.path().join("cache"),
+            max_download: None,
         };
         (dir, env)
     }
@@ -300,6 +316,7 @@ mod tests {
         let env = Env {
             store_root: tmp.path().join("store"),
             cache_root: tmp.path().join("cache"),
+            max_download: None,
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(pkg.join("drivers")).unwrap();
@@ -337,6 +354,7 @@ mod tests {
         let env = Env {
             store_root: tmp.path().join("store"),
             cache_root: tmp.path().join("cache"),
+            max_download: None,
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(&pkg).unwrap();

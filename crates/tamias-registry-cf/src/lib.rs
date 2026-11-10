@@ -14,10 +14,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tamias_core::{dir_digest, is_valid_name, is_valid_version, pack_tgz, Error, Manifest};
 use tamias_registry::{Registry, RegistryEntry};
 
-/// Largest `.tgz` blob a publish will PUT — matches the fetch-side
-/// `MAX_TARBALL` in `tamias-source-http`; bigger payloads can't be
-/// installed anyway.
-const MAX_TARBALL: u64 = 512 * 1024 * 1024;
+/// Largest `.tgz` blob a publish will PUT by default — mirrors
+/// `tamias-config`'s `DEFAULT_MAX_UPLOAD` (512 MiB);
+/// [`HttpRegistry::with_max_upload`] overrides with the configured
+/// `limits.max_upload`. Bigger payloads can't be installed anyway.
+const DEFAULT_MAX_UPLOAD: u64 = 512 * 1024 * 1024;
+
+/// Largest response body a blob GET buffers — mirrors the fetch-side
+/// `DEFAULT_MAX_DOWNLOAD` in `tamias-source-http` (512 MiB). The client
+/// only GETs `index.json` today (capped tighter by `MAX_INDEX`); this
+/// guards any future blob read.
+const DEFAULT_MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 
 /// `index.json` is a small catalog — cap its GET well below the blob
 /// limit so a hostile/buggy store can't OOM the client.
@@ -28,6 +35,10 @@ pub struct HttpRegistry {
     base: String,
     agent: ureq::Agent,
     token: Option<String>,
+    /// Upload cap checked against the packed tarball before the PUT —
+    /// the configured `limits.max_upload` when the caller threads it
+    /// through. The server stays authoritative regardless.
+    max_upload: u64,
 }
 
 impl HttpRegistry {
@@ -44,6 +55,7 @@ impl HttpRegistry {
                     .build(),
             ),
             token: None,
+            max_upload: DEFAULT_MAX_UPLOAD,
         }
     }
 
@@ -51,6 +63,14 @@ impl HttpRegistry {
     #[must_use]
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.token = Some(token.into());
+        self
+    }
+
+    /// Cap publishes at `bytes` — the configured `limits.max_upload`.
+    /// Best-effort client preflight; the server enforces its own limit.
+    #[must_use]
+    pub fn with_max_upload(mut self, bytes: u64) -> Self {
+        self.max_upload = bytes;
         self
     }
 
@@ -91,7 +111,7 @@ impl HttpRegistry {
         let limit = if key == "index.json" {
             MAX_INDEX
         } else {
-            MAX_TARBALL
+            DEFAULT_MAX_DOWNLOAD
         };
         resp.body_mut()
             .with_config()
@@ -190,18 +210,21 @@ impl Registry for HttpRegistry {
         pack_tgz(payload_root, &tmp)?;
         // Stream the tarball — `File`'s AsSendBody sets Content-Length
         // from metadata, so the whole .tgz never lands in memory. Reject
-        // oversized payloads up front: fetch caps tarballs at MAX_TARBALL.
+        // oversized payloads before the PUT: the configured
+        // `limits.max_upload` client-side, the server's own cap
+        // authoritatively.
         let file =
             std::fs::File::open(&tmp).map_err(Error::io(format!("open {}", tmp.display())))?;
         let size = file
             .metadata()
             .map_err(Error::io(format!("stat {}", tmp.display())))?
             .len();
-        if size > MAX_TARBALL {
+        if size > self.max_upload {
             let _ = std::fs::remove_file(&tmp);
             return Err(Error::Failed(format!(
-                "payload tarball {} exceeds the {MAX_TARBALL}-byte limit",
-                tmp.display()
+                "payload tarball {} is {size} bytes — exceeds the {}-byte upload limit",
+                tmp.display(),
+                self.max_upload
             )));
         }
         self.put(&rel, file)?;
@@ -275,6 +298,18 @@ mod tests {
             ..Default::default()
         };
         assert!(registry.publish(src.path(), &manifest).is_err());
+    }
+
+    #[test]
+    fn publish_enforces_max_upload_before_put() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("tamias.yaml"), "name: x\nversion: 1.0.0\n").unwrap();
+        let manifest = Manifest::load(src.path()).unwrap();
+        // A 1-byte cap fails on the packed tarball before any network
+        // I/O — the dead-server URL proves no PUT was attempted.
+        let registry = HttpRegistry::new("http://127.0.0.1:1").with_max_upload(1);
+        let err = registry.publish(src.path(), &manifest).unwrap_err();
+        assert!(err.to_string().contains("upload limit"), "{err}");
     }
 
     #[test]

@@ -5,7 +5,7 @@ api:
 - name: CfPlan
   kind: type
   file: crates/tamias-source-cf/src/lib.rs
-  line: 102
+  line: 121
   module: tamias-source-cf
 - name: CfRefKind
   kind: type
@@ -25,12 +25,12 @@ api:
 - name: ForeignPlan
   kind: type
   file: crates/tamias-source-cf/src/lib.rs
-  line: 150
+  line: 187
   module: tamias-source-cf
 - name: accepts
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 109
+  line: 133
   module: tamias-source-cf
 - name: cf_base_url
   kind: function
@@ -42,20 +42,30 @@ api:
   file: crates/tamias-source-cf/src/lib.rs
   line: 39
   module: tamias-source-cf
+- name: default
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 116
+  module: tamias-source-cf
 - name: fetch
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 133
+  line: 158
+  module: tamias-source-cf
+- name: fetch_rejects_payload_digest_mismatch
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 275
   module: tamias-source-cf
 - name: grammar_plan_fetch_and_errors
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 185
+  line: 222
   module: tamias-source-cf
 - name: new
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 97
+  line: 101
   module: tamias-source-cf
 - name: parse
   kind: function
@@ -70,12 +80,12 @@ api:
 - name: plan
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 113
+  line: 137
   module: tamias-source-cf
 - name: serve_registry
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 155
+  line: 192
   module: tamias-source-cf
 - name: tamias-source-cf
   kind: module
@@ -85,7 +95,12 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-source-cf/src/lib.rs
-  line: 144
+  line: 181
+  module: tamias-source-cf
+- name: with_max_download
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 109
   module: tamias-source-cf
 deps:
 - tamias-core
@@ -114,8 +129,8 @@ provenance:
   - crates/tamias-source-cf/tests/props.rs
   hashes:
   - 1455812a4c18d352c6d58bbc8102e69502d7e09e
-  - 0e2236898d3afd2017dfd885e0c36e5e876266b8
+  - 2c07ad921f7b17707db7320fbe12fc05b1d579bf
   - 32215f5222a96dc1a54fe876d70b722b8adf36d1
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  commit_sha: 91e7a237d8fbc78d3cbe3c0f396a4f364be71e88
+  generated_at: '1794291650'
   generator: kuda-template/0.1.2

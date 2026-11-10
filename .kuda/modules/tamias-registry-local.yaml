@@ -2,126 +2,207 @@ name: tamias-registry-local
 path: crates/tamias-registry-local/Cargo.toml
 purpose: dir registry impl — a folder index, servable over HTTP
 api:
+- name: IndexLock
+  kind: type
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 152
+  module: tamias-registry-local
+- name: LOCK_TIMEOUT
+  kind: const
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 159
+  module: tamias-registry-local
 - name: LocalRegistry
   kind: type
   file: crates/tamias-registry-local/src/lib.rs
-  line: 17
+  line: 21
+  module: tamias-registry-local
+- name: MAX_PUT
+  kind: const
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 217
+  module: tamias-registry-local
+- name: READ_TIMEOUT
+  kind: const
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 221
+  module: tamias-registry-local
+- name: SERVE_TOKEN_ENV
+  kind: const
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 225
+  module: tamias-registry-local
+- name: STALE_AFTER
+  kind: const
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 157
+  module: tamias-registry-local
+- name: acquire
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 167
   module: tamias-registry-local
 - name: bad_index_errors
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 275
+  line: 655
+  module: tamias-registry-local
+- name: concurrent_publishes_keep_all_entries
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 690
+  module: tamias-registry-local
+- name: drop
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 201
   module: tamias-registry-local
 - name: entries
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 40
+  line: 59
   module: tamias-registry-local
 - name: entries_publish_twice_and_label
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 226
+  line: 440
+  module: tamias-registry-local
+- name: free_addr
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 470
   module: tamias-registry-local
 - name: handle
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 116
+  line: 296
   module: tamias-registry-local
 - name: index_path
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 34
+  line: 53
   module: tamias-registry-local
-- name: new
-  kind: function
-  file: crates/tamias-registry-local/src/lib.rs
-  line: 24
-  module: tamias-registry-local
-- name: publish
-  kind: function
-  file: crates/tamias-registry-local/src/lib.rs
-  line: 51
-  module: tamias-registry-local
-- name: publish_and_read_io_errors
-  kind: function
-  file: crates/tamias-registry-local/src/lib.rs
-  line: 283
-  module: tamias-registry-local
-- name: publish_and_search
+- name: lock_stale
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
   line: 208
   module: tamias-registry-local
+- name: new
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 33
+  module: tamias-registry-local
+- name: publish
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 70
+  module: tamias-registry-local
+- name: publish_and_read_io_errors
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 718
+  module: tamias-registry-local
+- name: publish_and_search
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 422
+  module: tamias-registry-local
+- name: publish_enforces_max_upload
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 569
+  module: tamias-registry-local
+- name: publish_leaves_no_tmp_or_lock_litter
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 662
+  module: tamias-registry-local
+- name: publish_rejects_unsafe_manifest_fields
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 627
+  module: tamias-registry-local
 - name: raw
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 244
+  line: 458
   module: tamias-registry-local
 - name: respond
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 181
+  line: 393
   module: tamias-registry-local
 - name: respond_unknown_code_uses_error_reason
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 374
+  line: 806
   module: tamias-registry-local
 - name: root
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 30
+  line: 49
   module: tamias-registry-local
 - name: sanitize_default_curdir_arms
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 348
+  line: 784
   module: tamias-registry-local
 - name: sanitize_key
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 165
+  line: 377
   module: tamias-registry-local
 - name: search_scoped_entry
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 332
+  line: 768
   module: tamias-registry-local
 - name: serve_http
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 96
+  line: 239
+  module: tamias-registry-local
+- name: serve_http_bearer_token
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 596
+  module: tamias-registry-local
+- name: serve_http_custom_upload_limit
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 541
   module: tamias-registry-local
 - name: serve_http_io_errors
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 415
+  line: 846
   module: tamias-registry-local
 - name: serve_http_method_and_query
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 313
+  line: 748
+  module: tamias-registry-local
+- name: serve_http_rejects_oversized_content_length
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 515
   module: tamias-registry-local
 - name: serve_http_roundtrip
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 254
+  line: 490
   module: tamias-registry-local
-- name: serve_io_error_arms
+- name: serve_http_token
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 391
+  line: 258
   module: tamias-registry-local
-- name: tamias-registry-local
-  kind: module
-  file: crates/tamias-registry-local/Cargo.toml
-  line: 1
-  module: tamias-registry-local
-- name: tests
-  kind: module
+- name: serve_http_with_limits
+  kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 204
+  line: 248
   module: tamias-registry-local
+api_omitted: 5
 deps:
 - serde_json
 - tamias-core
@@ -139,7 +220,7 @@ provenance:
   - crates/tamias-registry-local/src/lib.rs
   hashes:
   - 51ef3679e4e57f8ded9dd6b8fe7be1488e63be2e
-  - f614e7f1d78b3187dac88d62bb1dd69b5dc9c189
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - 53cdae706f28af623cafda135f72614655665150
+  commit_sha: 91e7a237d8fbc78d3cbe3c0f396a4f364be71e88
+  generated_at: '1794291650'
   generator: kuda-template/0.1.2

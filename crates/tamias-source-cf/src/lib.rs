@@ -88,14 +88,33 @@ fn cf_base_url(address: &str) -> String {
 }
 
 /// The `cf:` source — a Cloudflare registry.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct CfSource;
+#[derive(Clone, Copy, Debug)]
+pub struct CfSource {
+    /// Fetch cap handed to the delegated [`HttpSource`] — the configured
+    /// `limits.max_download` when the caller threads it through.
+    max_download: u64,
+}
 
 impl CfSource {
-    /// The source — stateless.
+    /// The source.
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self {
+            max_download: tamias_source_http::DEFAULT_MAX_DOWNLOAD,
+        }
+    }
+
+    /// Cap fetched tarballs at `bytes` — the configured `max_download`.
+    #[must_use]
+    pub fn with_max_download(mut self, bytes: u64) -> Self {
+        self.max_download = bytes;
+        self
+    }
+}
+
+impl Default for CfSource {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -141,7 +160,9 @@ impl Source for CfSource {
         let CfPlan { url, digest } = plan
             .downcast_ref::<CfPlan>()
             .ok_or_else(|| Error::Failed("CfSource only fetches cf plans".to_string()))?;
-        let fetched = HttpSource::new().fetch(&HttpPlan::new(url.clone(), None), dest_dir)?;
+        let fetched = HttpSource::new()
+            .with_max_download(self.max_download)
+            .fetch(&HttpPlan::new(url.clone(), None), dest_dir)?;
         // Verify the unpacked payload against the digest the registry
         // index recorded at publish — a swapped or truncated tarball
         // fails here instead of installing under the right name@version.

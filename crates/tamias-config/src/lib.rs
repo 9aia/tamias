@@ -128,8 +128,12 @@ where
 
 /// Parse `<number>[ <unit>]` into bytes. Units are binary:
 /// `B`/`K`/`KB`/`KiB` = 1024ⁿ — `1K`, `1KB`, `1KiB` are all 1024.
-/// Fractions allowed (`1.5GiB`).
-fn parse_bytes(text: &str) -> Result<u64, String> {
+/// Fractions allowed (`1.5GiB`). Also the parser behind CLI size flags
+/// (`--max-upload 256MiB`).
+///
+/// # Errors
+/// Fails on a non-numeric size, an unknown unit, or u64 overflow.
+pub fn parse_bytes(text: &str) -> Result<u64, String> {
     let text = text.trim();
     let split = text
         .find(|c: char| !(c.is_ascii_digit() || c == '.'))

@@ -90,6 +90,8 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 &tamias_install::Env {
                     store_root: env.store_root.clone(),
                     cache_root: env.cache_root.clone(),
+                    // Serve-side limits land with the Phase-4 Env widening.
+                    max_download: None,
                 },
                 reference,
                 allow_drivers,

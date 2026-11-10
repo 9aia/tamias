@@ -6,4 +6,10 @@ compatibility_date = "2026-11-01"
 binding = "REGISTRY"
 bucket_name = "tamias-registry"
 
+# Upload cap baked at deploy time — `tamias deploy-registry` substitutes
+# the configured limits.max_upload here; the worker falls back to its
+# built-in 512 MiB default when the var is absent.
+[vars]
+MAX_UPLOAD_BYTES = "{{MAX_UPLOAD_BYTES}}"
+
 # Set the token with:  wrangler secret put REGISTRY_TOKEN
