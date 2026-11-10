@@ -1,1 +1,1 @@
-{"id":"","ws":"tamias","actor":"luis","ts":1794276117,"op":{"op":"claim","glob":"crates/tamias-serve/**","ttl_secs":3600}}
+{"id":"","ws":"tamias","actor":"luis","ts":1794276117,"op":{"op":"claim","glob":"Cargo.toml","ttl_secs":3600}}
