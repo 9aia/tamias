@@ -3,6 +3,13 @@
 //! `include:` entries outrank later ones. Conflicting `.yaml`/`.yml`/
 //! `.json` files merge document-wise; other files resolve whole-file with
 //! the higher priority winning.
+//!
+//! **Reserved machinery:** [`overlay`] has no caller on the install
+//! path yet — `Manifest::include` is parsed and displayed but nothing
+//! resolves the base refs or composes layers. Kept (with its tests)
+//! because payload composition is designed-for; wiring it is a feature,
+//! not cleanup. [`payload_root`] *is* live — every install/publish
+//! path uses it to find the manifest dir.
 
 use std::fs;
 use std::path::{Path, PathBuf};

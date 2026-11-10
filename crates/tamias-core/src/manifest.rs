@@ -50,8 +50,18 @@ pub struct Manifest {
     /// Base packages to compose under this payload — installed store
     /// names or installable source refs. Local wins; earlier includes
     /// win over later ones.
+    ///
+    /// **Parsed and surfaced, not yet applied:** no install path
+    /// resolves `include:` entries or runs the deep-merge
+    /// ([`crate::overlay::overlay`]); the field rides manifests and
+    /// views today. Reserved for payload composition.
     pub include: Vec<String>,
     /// Direct dependencies — refs this project wants installed.
+    /// Recorded by `tamias add` (and the TUI deps form) into the
+    /// project manifest; `tamias.lock` pins each resolved record.
+    /// No verb re-installs the dep set from the manifest yet — the
+    /// lock is the resolved-record ledger `add`/`update`/`pin` keep
+    /// honest.
     pub deps: Vec<String>,
     /// `provider:` — the declarative runtime spec a deploy driver
     /// materializes (service units, ingress/forge hooks, health probe).

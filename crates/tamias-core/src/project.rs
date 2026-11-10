@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 use crate::{Error, StoreRecord};
 
 /// The lockfile — resolved packages, sorted by (scope, name).
+///
+/// Written by `tamias add` ([`Lock::upsert_record`]) and kept honest by
+/// `update`/`pin` ([`Lock::sync_record`]). Nothing reads it back to
+/// drive installs yet — there is no `tamias sync`/install-from-lock
+/// verb; it is the resolved-record ledger a reproducible-install verb
+/// will consume.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Lock {

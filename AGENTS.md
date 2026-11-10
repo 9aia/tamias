@@ -68,16 +68,17 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `crates/tamias-registry` + `-local`/`-cf` | index + publish port + impls (local dir, optionally HTTP-served; CF Worker client) |
 | `crates/tamias-registry-open` | shared registry-source layer — name-or-ref resolution + named-source config CRUD, consumed by `tamias-cli` and `tamias-serve` |
 | `crates/tamias-publish` | author-side packing — payload dir + manifest → `.tgz` |
+| `crates/tamias-provider` | provider lifecycle shared by `tamias` (CLI verbs) and `tamias ui` — `provider:` block → unit names, systemctl probes, deploy/uninstall teardown, `run` exec spec, `logs` unit list |
 | `crates/tamias-deploy` + `-local`/`-cf` | deploy port — provision a remote registry (`-cf` materializes Worker + wrangler config) / per-user service unit, systemd or launchd (`-local`) |
 | `crates/tamias-driver` | content-driver host — discovers `tamias-driver-<type>` on PATH/`<tamias-home>/drivers/`, dispatches install/deploy/uninstall, registers payload-bundled drivers (consent-gated): portable `drivers/<name>` files plus compiled `drivers/bin/<target-triple>/<name>` bins — only the host triple's dir is installed, a missing platform is a hard error |
 | `crates/tamias-install` | the one install pipeline — ref → plan → fetch/cache → manifest → bundled-driver consent + dispatch → store commit; consumed by `tamias-cli` (`install`/`add`/`update`) and `tamias-serve` (`install` op) with surface-tuned progress/consent hints |
 | `crates/tamias-driver-tamias` | the *pavo* view driver for the tamias product itself (bin `tamias-driver-tamias`, manifest `name: "tamias"`, `types: []` — read-only over store/cache/registry/drivers). The `tamias-driver-` prefix is required for pavo discovery; it is **not** a content-type driver — a hypothetical `type: tamias` package would fail loudly on the unknown verb, never silently |
 | `crates/tamias-serve` | ndjson JSON-RPC over stdio for embedding (`install`/`list`/`info`/`verify`/`remove`/`search`/`publish`/`registry.*`) — same wire as `sepia serve`/`cuora serve`/`myco serve` |
 | `crates/tamias-tui` | `tamias ui` — interactive package-manager TUI (ratatui/crossterm/notify) over `tamias-store-local`; default `tui` feature on `tamias-cli`, standalone `tamias-tui` bin reads `TAMIAS_*` env |
-| `crates/tamias-shell` | `bash -c` / direct-argv exec helper with env injection (intended for `tamias run`) — **orphan: declared in the workspace but zero dependents** |
+| `crates/tamias-shell` | `bash -c` / direct-argv exec helper with env injection — used by `tamias run` (cli) and the TUI's `scrub_env` (ops.rs) |
 | `crates/tamias-sign` | optional package signing — `ssh-keygen -Y sign`/`verify` (namespace `tamias-package`, sturn-style) over name/scope/version/payload-digest; signatures ride the registry index (`publish --sign`), verified by `cf:` installs + `tamias verify` against `signing.allowed_signers` |
 | `crates/tamias-telemetry` | opt-in OpenTelemetry layer over the daemons' `tracing` stack (OTLP only when an endpoint is configured) |
-| `crates/tamias-testkit` | fixtures + impl conformance |
+| `crates/tamias-testkit` | fixtures + impl conformance — **scaffold only** (empty; reserved for the P2b conformance suites) |
 | `crates/tamias-cli` | the `tamias` binary — clap, `--json`, `manifest`/`schema` |
 | `xtask` (pkg `tamias-xtask`) | check / test / coverage / install / package / smoke / site |
 

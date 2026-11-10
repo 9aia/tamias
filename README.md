@@ -97,7 +97,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `tamias-registry-open` | shared registry-source layer — name-or-ref resolution + named-source config CRUD (CLI + `serve`) |
 | `tamias-publish` | author-side orchestration |
 | `tamias-config` + `-yml,-toml` | config model + file formats (YAML standard, TOML alt) |
-| `tamias-testkit` | impl conformance |
+| `tamias-testkit` | fixtures + impl conformance (scaffold — empty, reserved) |
 | `tamias-cli` | the `tamias` binary |
 | `xtask` | check / test / coverage / install / site |
 

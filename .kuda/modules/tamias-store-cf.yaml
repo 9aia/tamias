@@ -19,7 +19,7 @@ provenance:
   - crates/tamias-store-cf/src/lib.rs
   hashes:
   - 8ae64c043758a8753ba6fe63fa3b82b4f52930f8
-  - 3a0b4f0188e05730cc8646b83a47168254a5467b
-  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
-  generated_at: '1794328873'
+  - f4d9e4324f436ac707a549421c4bd907d752408d
+  commit_sha: 24214a8628a32f7fe3c1175a78872d987476380e
+  generated_at: '1794329275'
   generator: kuda-template/0.1.2

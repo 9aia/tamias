@@ -5,7 +5,7 @@ api:
 - name: DocFormat
   kind: type
   file: crates/tamias-core/src/overlay.rs
-  line: 64
+  line: 71
   module: tamias-core
 - name: Error
   kind: type
@@ -25,12 +25,12 @@ api:
 - name: Lock
   kind: type
   file: crates/tamias-core/src/project.rs
-  line: 13
+  line: 19
   module: tamias-core
 - name: LockEntry
   kind: type
   file: crates/tamias-core/src/project.rs
-  line: 20
+  line: 26
   module: tamias-core
 - name: MANIFEST_NAMES
   kind: const
@@ -50,27 +50,27 @@ api:
 - name: Provider
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 67
+  line: 77
   module: tamias-core
 - name: ProviderHealth
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 132
+  line: 142
   module: tamias-core
 - name: ProviderHook
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 120
+  line: 130
   module: tamias-core
 - name: ProviderIngress
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 106
+  line: 116
   module: tamias-core
 - name: ProviderService
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 85
+  line: 95
   module: tamias-core
 - name: RECORD_FILE
   kind: const
@@ -90,17 +90,17 @@ api:
 - name: apply_layer
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 133
+  line: 140
   module: tamias-core
 - name: apply_layer_copy_error
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 262
+  line: 269
   module: tamias-core
 - name: apply_layer_unparseable_doc_falls_through_to_copy
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 272
+  line: 279
   module: tamias-core
 - name: archive
   kind: module
@@ -125,17 +125,17 @@ api:
 - name: check
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 167
+  line: 177
   module: tamias-core
 - name: check
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 338
+  line: 348
   module: tamias-core
 - name: check_single_line
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 151
+  line: 161
   module: tamias-core
 - name: content_digest
   kind: function
@@ -160,7 +160,7 @@ api:
 - name: dedup_by_id
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 123
+  line: 130
   module: tamias-core
 - name: digest
   kind: module
@@ -185,7 +185,7 @@ api:
 - name: doc_format
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 69
+  line: 76
   module: tamias-core
 - name: drain_stderr
   kind: function
@@ -267,12 +267,12 @@ provenance:
   - 3050b521008bf72751d6ffcab5f7dcbeced1d9f6
   - ea8ff165afcdccfccd8aad76171a031df45b4c05
   - 2f62b8d5d033817a391eb38fe38081a645b72752
-  - d23fd15b44c7562b2ee985ab0e3ec8154e9c096d
-  - 82ba1d899d8cb2a2d4eeb1ca1811d0ee18fef576
+  - f5c22ae439a5ce890266d8796fa08efd953232e4
+  - df06ce48c28b467aa50b31537115a862d77d9ffd
   - d6ce3df521f4d85fdde031717f0a7345b0152098
-  - 5862cf2151f4aa9ee228481f271cc614d5d3a592
+  - 3e89a83f88a15c2f0f05f1651f0a33296abec473
   - 5a1100761acd37ac4880baa89f7e804488ca6e7a
   - abef6c8b93f9c94df683bde915e4b2129aa2c6e6
-  commit_sha: 6fb02493dbb13601217bc48b1771942d06af9677
-  generated_at: '1794328873'
+  commit_sha: 24214a8628a32f7fe3c1175a78872d987476380e
+  generated_at: '1794329275'
   generator: kuda-template/0.1.2
