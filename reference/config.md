@@ -13,9 +13,10 @@
 
 | field | type | required | notes |
 |---|---|---|---|
-| `kind` | `string` | optional | `local` (default) or `cf`. |
+| `kind` | `string` | optional | Explicit kind — `local` \| `http` \| `cf`. Unset → inferred from `url` (http(s) → `http`, anything else → `local`), so configs written before kinds were explicit keep working. |
 | `url` | `string` | optional | Base URL (http) or root dir. |
 | `token_env` | `string` | optional | Env var **name** holding the bearer token — never the token. |
+| `limits` | `Limits` | optional | Per-registry limit overrides (values + package rules). |
 
 ## `[publish]` — publish routing
 
@@ -29,8 +30,10 @@
 |---|---|---|---|
 | `store` | `Location` | optional | Install store location — `root` applies when `kind` is `local`/unset and `TAMIAS_HOME`/XDG env is unset (env wins). |
 | `cache` | `Location` | optional | Fetch-cache location — same resolution rule as `store`. |
-| `registries` | `BTreeMap<String, Registry>` | optional | Named registries. |
+| `registries` | `BTreeMap<String, Registry>` | optional | Named registries — `publish`/`search --registry &lt;name&gt;` and the `publish.default`/`search.default` routing resolve through these. |
 | `publish` | `Publish` | optional | Publish routing. |
+| `search` | `Search` | optional | Search routing. |
+| `limits` | `Limits` | optional | Global byte limits + per-package overrides. |
 
 ## format trait (parse/render)
 

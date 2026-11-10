@@ -19,6 +19,7 @@ documented at source (doc comments).
 - [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
 - [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
 - [tamias-install](/tamias/api/tamias_install/index.html) — adapter
+- [tamias-provider](/tamias/api/tamias_provider/index.html) — adapter
 - [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
 - [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
 - [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter
@@ -33,4 +34,5 @@ documented at source (doc comments).
 - [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
 - [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
 - [tamias-testkit](/tamias/api/tamias_testkit/index.html) — adapter
+- [tamias-tui](/tamias/api/tamias_tui/index.html) — adapter
 - [tamias](/tamias/api/tamias/index.html) — binary
