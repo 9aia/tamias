@@ -494,7 +494,7 @@ pub fn render_unit(spec: &ServiceSpec) -> String {
         "ExecStart={}\n",
         spec.exec
             .iter()
-            .map(|a| quote_arg(&unit_field(a)))
+            .map(|a| quote_arg(&unit_field(&expand_home(a))))
             .collect::<Vec<_>>()
             .join(" ")
     ));
@@ -594,6 +594,24 @@ mod tests {
         assert!(text.contains("Restart=always"));
         assert!(text.contains("RestartSec=2"));
         assert!(text.contains("After=network-online.target postgresql.service"));
+    }
+
+    #[test]
+    fn expands_home_in_exec_argv() {
+        let spec = ServiceSpec {
+            exec: vec![
+                "~/.local/bin/tool".into(),
+                "serve".into(),
+                "--dir".into(),
+                "~/data".into(),
+            ],
+            ..spec()
+        };
+        let text = render_unit(&spec);
+        let home = std::env::var("HOME").unwrap_or_default();
+        assert!(text.contains(&format!(
+            "ExecStart={home}/.local/bin/tool serve --dir {home}/data"
+        )));
     }
 
     #[test]
