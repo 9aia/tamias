@@ -42,6 +42,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-publish` | adapter | author side — pack + push |
 | `tamias-registry-cf` | adapter | Cloudflare registry impl — a Worker + R2 over HTTP |
 | `tamias-registry-local` | adapter | dir registry impl — a folder index, servable over HTTP |
+| `tamias-registry-open` | adapter | shared registry-source layer — name-or-ref resolution + named-source config CRUD |
 | `tamias-serve` | adapter | ndjson JSON-RPC over stdio — the embedding surface |
 | `tamias-shell` | adapter | Run a command in a working directory via bash -c — the generic shell-out helper |
 | `tamias-source-cf` | adapter | Cloudflare registry source impl — the `cf:` ref arm |
@@ -81,10 +82,13 @@ including the `--allow-drivers` consent gate on payload-shipped drivers.
 
 ## The embedding surface
 
-`tamias serve` (the `tamias-serve` crate) runs the same install/list/
-info/verify/remove verbs as an **ndjson JSON-RPC service over stdio** —
-for agents and daemons that want a persistent handle instead of
-one-shot CLI calls. The protocol is specified in
+`tamias serve` (the `tamias-serve` crate) runs the same
+install/list/info/verify/remove verbs plus the registry surface —
+`search`, `publish`, and `registry.list|get|add|remove` — as an
+**ndjson JSON-RPC service over stdio** for agents and daemons that want
+a persistent handle instead of one-shot CLI calls. Registry name-or-ref
+resolution and config writes go through `tamias-registry-open`, the same
+code the CLI verbs use. The protocol is specified in
 [serve reference](/reference/serve).
 
 ## Observability

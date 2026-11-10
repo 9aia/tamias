@@ -22,8 +22,22 @@ service exits when stdin closes.
 | `info` | `name` | `{label, resolved, digest, size}` |
 | `verify` | `name` | `{name, ok}` |
 | `remove` | `name` | `{name}` — runs driver teardown first, like `tamias uninstall` |
+| `search` | `query`, `registry?` | `{results: [{label, name, scope, version, kind, digest, file}]}` |
+| `publish` | `dir`, `registry?` | `{label, name, scope, version, kind, digest, file}` |
+| `registry.list` | — | `{registries: [{name, kind, effective_kind, url, token_env, limits}]}` |
+| `registry.get` | `name` | one registry object (same shape as `registry.list` items) |
+| `registry.add` | `name`, `kind`, `url`, `token_env?` | `{name, config}` — writes the config file |
+| `registry.remove` | `name` | `{name, config}` |
 
 `name` accepts `@scope/name` or bare `name`, same as the CLI.
+
+`search`/`publish` take `registry` as a **name or raw ref** — identical
+resolution to `--registry` on the CLI verbs: config `registries` name →
+raw dir/http ref → routing defaults (`search.default` →
+`publish.default`) → `TAMIAS_REGISTRY` env → the local default root.
+`registry.add`/`remove` write `tamias.{yml,yaml,toml}` through the same
+path as `tamias registry add|remove`; `token_env` is an env var *name*,
+never a token value.
 
 ## Driver consent
 
@@ -35,8 +49,10 @@ without it.
 ## Environment
 
 The service honors the same roots as the CLI: `TAMIAS_HOME` (store +
-`drivers/`), `TAMIAS_CACHE`, `TAMIAS_REGISTRY`, and the telemetry vars
-(`TAMIAS_OTEL_*`).
+`drivers/`), `TAMIAS_CACHE`, `TAMIAS_REGISTRY`, `TAMIAS_CONFIG` (the
+config file `registry.*` ops read/write and `search`/`publish` resolve
+against — re-read per request, so writes are visible in-session), and
+the telemetry vars (`TAMIAS_OTEL_*`).
 
 ## Example
 

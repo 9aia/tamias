@@ -22,6 +22,7 @@ documented at source (doc comments).
 - [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
 - [tamias-registry-cf](/tamias/api/tamias_registry_cf/index.html) — adapter
 - [tamias-registry-local](/tamias/api/tamias_registry_local/index.html) — adapter
+- [tamias-registry-open](/tamias/api/tamias_registry_open/index.html) — adapter
 - [tamias-serve](/tamias/api/tamias_serve/index.html) — adapter
 - [tamias-shell](/tamias/api/tamias_shell/index.html) — adapter
 - [tamias-source-cf](/tamias/api/tamias_source_cf/index.html) — adapter
