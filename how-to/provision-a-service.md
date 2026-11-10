@@ -105,7 +105,36 @@ If neither a driver nor `provider.services[]` applies, `deploy` reports
 `nothing to deploy (type …)` and succeeds. `uninstall` runs the driver's
 teardown, removes the declarative units (best-effort per unit), then
 drops the store entry; with no driver it warns that provider-side
-resources may remain.
+resources may remain. When the manifest declares `ingress[].hooks[]`,
+`deploy` prints a hint pointing at `tamias driver exec <pkg> hooks
+register --dry-run` — hook registration stays explicit (the
+`public_url` fronts a tunnel the operator confirms first).
+
+## Run provider verbs through the driver
+
+The lifecycle verbs (`install`/`deploy`/`uninstall`) aren't the whole
+surface — a driver may declare extra ops verbs in `capabilities.verbs`
+(`hooks`, `health`, `status`, …). `tamias driver exec` is the generic
+passthrough:
+
+```sh
+tamias drivers --json                        # each driver's declared verbs
+tamias driver exec ci-gate hooks register --dry-run
+tamias driver exec ci-gate hooks register    # real run — forge API + secrets
+tamias driver exec ci-gate hooks unregister
+tamias driver exec ci-gate health            # JSON status probe
+tamias driver exec ci-gate status            # per-unit is-active/is-enabled
+tamias driver exec ci-gate logs --lines 50
+```
+
+The verb plus everything after it passes through verbatim after the
+standard `--dir`/`--name` flags (add `--config <file>` before the verb's
+args to forward a node config). The driver's stdout/stderr stream back.
+`tamias run` stays the *local* service-exec surface — provider-specific
+ops that need the driver's context (manifest secrets, forge API, unit
+state) go through `driver exec` instead. `tamias deploy` never
+auto-registers ingress hooks: `public_url` fronts a tunnel the operator
+confirms, so registration is always an explicit, reviewable step.
 
 ## Inspect providers
 

@@ -32,6 +32,7 @@ Commands:
   uninstall        Uninstall — provider teardown + drop the store entry
   service          Manage a per-user service unit (systemd)
   drivers          List discovered content drivers (`tamias-driver-<type>` on PATH + `<tamias-home>/drivers/`)
+  driver           Provider-verb dispatch — run a driver verb beyond the lifecycle three (`install`/`deploy`/`uninstall`)
   provider         Provider packages — the declarative `provider:` runtime spec
   run              Run an installed provider service's exec in the foreground — the unit's argv + env, without systemd. `tamias run <pkg> [service] [-- extra-args]`
   logs             Follow a package's provider units' journals — `tamias logs <pkg|unit>`. A package name resolves to all its provider units; anything else is treated as a unit base name

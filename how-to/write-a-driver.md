@@ -16,7 +16,30 @@ tamias-driver-<type> <verb> --dir <dir> --name <name> [--config <file>]
 | `install` | materialize the payload at `--dir` |
 | `deploy` | activate (unit, hooks) |
 | `uninstall` | tear down |
-| `capabilities` | print `{"types":[…]}` on stdout — the types this binary handles |
+| `capabilities` | print `{"types":[…],"verbs":[…]}` on stdout — the types + verbs this binary handles |
+
+## Ops verbs beyond the lifecycle three
+
+`install`/`deploy`/`uninstall` are the only verbs tamias dispatches on
+its own. A driver may declare **provider ops verbs** — `health`,
+`status`, `hooks register`, anything the product needs — by listing them
+in `capabilities.verbs`; the operator reaches them through the generic
+passthrough:
+
+```sh
+tamias driver exec <pkg> <verb> [args…]
+# → tamias-driver-<type> <verb> --dir <dir> --name <name> [--config <f>] [args…]
+```
+
+Everything after `<verb>` lands verbatim as trailing argv, so verbs can
+take their own flags (`--dry-run`, `--api-base`, …). The driver's
+stdout/stderr stream back — status/probe verbs should print JSON or
+report lines. `tamias drivers --json` shows each driver's declared
+verbs; `tamias driver exec` warns (but still dispatches) when the verb
+isn't declared — the driver stays the authority. Provider verbs that
+answer with data are the right place for forge-hook registration,
+health probes, and unit status; `tamias run` remains local service exec
+only.
 
 `--config` is an optional path to a node/config file carrying operator
 params (`tamias deploy --config`). Exit zero on success; a non-zero
