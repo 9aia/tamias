@@ -1,1 +1,1 @@
-{"id":"","ws":"devin-t014","actor":"luis","ts":1794326525,"op":{"op":"claim","glob":"fs:crates/**","ttl_secs":3600}}
+{"id":"","ws":"devin-t014","actor":"luis","ts":1794327728,"op":{"op":"presence","status":"left"}}
