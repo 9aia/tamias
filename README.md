@@ -106,8 +106,9 @@ tamias = **content distribution**. Neighbors: **peregrin** (orchestration
 — its `install/…` verbs become thin wrappers here), **myco** (work memory
 — kinds/views/templates ship as a content type), **kuda** (code memory —
 domain packs), **mimus** (rules packs), **cuora** (secrets — publish tokens
-via `cuora://`), **sturn** (claims the store lock), **bupha**/**ci-gate**
-(the first published bundle), **sepia** (sessions), **cicada** (scheduled
+via `cuora://`), **sturn** (claims the store lock), **bupha** (retired)/
+`ci-gate` (the first published bundle — the gate is now the peregrin
+ci-gate campaign), **sepia** (sessions), **cicada** (scheduled
 updates).
 
 ## Status

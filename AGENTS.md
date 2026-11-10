@@ -98,7 +98,8 @@ store + fetch cache, and content-type dispatch. Neighbors own theirs:
   `cuora://` refs (values never in `tamias.yaml`).
 - **sturn** — ephemeral coordination; claim the store/lock during
   concurrent installs.
-- **bupha** / `ci-gate` — the first published bundle.
+- **bupha** (retired) / `ci-gate` — the first published bundle; the
+  gate is now the peregrin `ci-gate` campaign.
 - **sepia** — session lifecycle · **cicada** — scheduled updates.
 
 A hosted registry is in scope (it's a store/registry impl); a daemon or

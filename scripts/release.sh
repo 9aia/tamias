@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Triggered by bupha watch on pushes to 9aia/tamias (script runner).
-# The leading sleep is the debounce window: a newer push kills this
-# run via cancel_running, so only the last push in a quiet window
-# releases. Runs inside a detached worktree — commits/tags are pushed
-# from here, not from the main checkout.
+# Manual release — run by an operator on main (bupha watch, the old
+# push trigger, is retired; releases are operator-run).
+# The leading sleep is the debounce window: only the last invocation
+# in a quiet window releases. Commits/tags are pushed to main.
 #
 # Publishes to crates.io in dependency order (a crate's path deps must
 # already be on the registry). Needs: `cargo-edit` (cargo set-version)

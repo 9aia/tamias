@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# bupha gate for main — runs in a detached worktree of the pushed sha.
+# ci-gate campaign gate for main — runs in a detached worktree of the
+# pushed sha (bupha watch is retired; the peregrin ci-gate campaign
+# is the gate).
 # check = fmt + clippy -D warnings; test = the whole suite.
 set -euo pipefail
 
