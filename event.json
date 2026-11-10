@@ -1,1 +1,1 @@
-{"id":"","ws":"t8-3-cli-surface","actor":"luis","ts":1794276868,"op":{"op":"claim","glob":"crates/tamias-driver/src/lib.rs","ttl_secs":3600}}
+{"id":"","ws":"t8-3-cli-surface","actor":"luis","ts":1794276868,"op":{"op":"claim","glob":"crates/tamias-deploy-local/**","ttl_secs":3600}}
