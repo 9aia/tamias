@@ -3,25 +3,54 @@
 //! request per line on stdin, write one JSON response per line on stdout.
 //! Same wire as `sepia serve` / `cuora serve` / `myco serve`.
 //!
-//! Ops: `install`, `list`, `info`, `verify`, `remove`. Requests are
-//! `{"op":"…", …}`; responses are `{"ok":true,"result":…}` or
-//! `{"ok":false,"error":"…"}`.
+//! Ops: `install`, `list`, `info`, `verify`, `remove`, `search`,
+//! `publish`, `registry.list`, `registry.get`, `registry.add`,
+//! `registry.remove`. Requests are `{"op":"…", …}`; responses are
+//! `{"ok":true,"result":…}` or `{"ok":false,"error":"…"}`.
+//!
+//! `search`/`publish`/`registry.*` resolve named registry sources and
+//! config writes through `tamias-registry-open` — the same code the
+//! `tamias` CLI verbs use, so the wire surface can't diverge.
 
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tamias_core::Error;
+use tamias_core::{payload_root, Error, Manifest};
 use tamias_store_local::Store;
 
-/// Store + cache roots.
+/// Store + cache + registry roots, plus the config file the
+/// registry-aware ops read/write.
 #[derive(Clone, Debug)]
 pub struct Env {
     /// The local store root.
     pub store_root: PathBuf,
     /// The fetch-cache root.
     pub cache_root: PathBuf,
+    /// The default local-registry root (`TAMIAS_REGISTRY`/XDG) — the
+    /// target when a `search`/`publish` `registry` value is absent.
+    pub registry_root: PathBuf,
+    /// Explicit config file for the registry-aware ops — `None` honors
+    /// `TAMIAS_CONFIG` then `./tamias.{yml,yaml,toml}` discovery, and
+    /// the file is re-read per op so a `registry.add` is visible to a
+    /// later `search`/`publish` in the same session.
+    pub config_file: Option<PathBuf>,
+}
+
+/// The effective config for read-side resolution (`search`/`publish`
+/// routing, `install`'s download cap) — mirrors the CLI's
+/// warn-and-ignore posture: a broken config warns and yields defaults
+/// rather than failing every op. Management ops (`registry.*`) read
+/// through `config_target` directly and propagate parse errors.
+fn env_config(env: &Env) -> tamias_config::Config {
+    match tamias_registry_open::load_config(env.config_file.as_deref()) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("tamias-serve: warning — ignoring config file: {e}");
+            tamias_config::Config::default()
+        }
+    }
 }
 
 /// Run the loop until stdin closes.
@@ -90,8 +119,9 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 &tamias_install::Env {
                     store_root: env.store_root.clone(),
                     cache_root: env.cache_root.clone(),
-                    // Serve-side limits land with the Phase-4 Env widening.
-                    max_download: None,
+                    // Global `limits.max_download` caps http(s)/`cf:`
+                    // fetches — same resolution as the CLI's install.
+                    max_download: Some(env_config(env).effective_limits(None, None).max_download),
                 },
                 reference,
                 allow_drivers,
@@ -149,8 +179,100 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
             let record = store.remove(name)?;
             Ok(json!({"name": record.name}))
         }
+        // --- registry sources (shared with the CLI verbs) ---
+        "registry.list" => {
+            let (_path, config) = tamias_registry_open::config_target(env.config_file.as_deref())?;
+            let items: Vec<Value> = config
+                .registries
+                .iter()
+                .map(|(name, reg)| tamias_registry_open::registry_json(name, reg))
+                .collect();
+            Ok(json!({"registries": items}))
+        }
+        "registry.get" => {
+            let name = str_field(&req, "name")?;
+            let reg = tamias_registry_open::get_registry(env.config_file.as_deref(), name)?;
+            Ok(tamias_registry_open::registry_json(name, &reg))
+        }
+        "registry.add" => {
+            let name = str_field(&req, "name")?;
+            let kind = str_field(&req, "kind")?;
+            let url = str_field(&req, "url")?;
+            let token_env = req
+                .get("token_env")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            let path = tamias_registry_open::add_registry(
+                env.config_file.as_deref(),
+                name,
+                kind,
+                url,
+                token_env,
+            )?;
+            Ok(json!({"name": name, "config": path.display().to_string()}))
+        }
+        "registry.remove" => {
+            let name = str_field(&req, "name")?;
+            let path = tamias_registry_open::remove_registry(env.config_file.as_deref(), name)?;
+            Ok(json!({"name": name, "config": path.display().to_string()}))
+        }
+        "search" => {
+            let query = str_field(&req, "query")?;
+            let flag = req.get("registry").and_then(Value::as_str);
+            let config = env_config(env);
+            // Same routing as `tamias search`: flag → TAMIAS_REGISTRY →
+            // search.default → publish.default → local default root.
+            let target = tamias_registry_open::registry_target(
+                flag,
+                &[
+                    config.search.default.as_deref(),
+                    config.publish.default.as_deref(),
+                ],
+            );
+            let registry = tamias_registry_open::open_registry(
+                &env.registry_root,
+                Some(&config),
+                target.as_deref(),
+                None,
+            )?;
+            let found = registry.search(query)?;
+            Ok(json!({"results": found.iter().map(registry_entry_json).collect::<Vec<_>>()}))
+        }
+        "publish" => {
+            let dir = str_field(&req, "dir")?;
+            let flag = req.get("registry").and_then(Value::as_str);
+            let config = env_config(env);
+            // Same routing as `tamias publish`: flag → TAMIAS_REGISTRY →
+            // publish.default → local default root.
+            let target =
+                tamias_registry_open::registry_target(flag, &[config.publish.default.as_deref()]);
+            let root = payload_root(Path::new(dir))?;
+            let manifest = Manifest::load(&root)?;
+            let registry = tamias_registry_open::open_registry(
+                &env.registry_root,
+                Some(&config),
+                target.as_deref(),
+                Some(&manifest.name),
+            )?;
+            let entry = registry.publish(&root, &manifest)?;
+            Ok(registry_entry_json(&entry))
+        }
         other => Err(Error::Failed(format!("unknown op '{other}'"))),
     }
+}
+
+/// One registry index entry as a JSON object — the `search`/`publish`
+/// result shape (same fields the CLI's `--json` prints).
+fn registry_entry_json(entry: &tamias_registry::RegistryEntry) -> Value {
+    json!({
+        "label": entry.label(),
+        "name": entry.name,
+        "scope": entry.scope,
+        "version": entry.version,
+        "kind": entry.kind,
+        "digest": entry.digest,
+        "file": entry.file,
+    })
 }
 
 /// A convenience default cache eviction window re-exported for callers that
@@ -174,6 +296,8 @@ mod tests {
         Env {
             store_root: dir.path().join("store"),
             cache_root: dir.path().join("cache"),
+            registry_root: dir.path().join("registry"),
+            config_file: None,
         }
     }
 
@@ -377,6 +501,8 @@ mod tests {
         let env = Env {
             store_root: tmp.path().join("store"),
             cache_root: tmp.path().join("cache"),
+            registry_root: tmp.path().join("registry"),
+            config_file: None,
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(pkg.join("drivers")).unwrap();
@@ -423,6 +549,8 @@ mod tests {
         let env = Env {
             store_root: tmp.path().join("store"),
             cache_root: tmp.path().join("cache"),
+            registry_root: tmp.path().join("registry"),
+            config_file: None,
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(&pkg).unwrap();
@@ -461,6 +589,8 @@ mod tests {
         let env = Env {
             store_root: tmp.path().join("store"),
             cache_root: tmp.path().join("cache"),
+            registry_root: tmp.path().join("registry"),
+            config_file: None,
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(&pkg).unwrap();
@@ -497,5 +627,130 @@ mod tests {
         assert!(dispatch(&env, r#"{"op":"verify","name":"x"}"#).is_err());
         assert!(dispatch(&env, r#"{"op":"remove","name":"x"}"#).is_err());
         std::fs::set_permissions(&env.store_root, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// An `Env` whose `registry.*` ops read/write `tmp/tamias.yml` —
+    /// no `TAMIAS_CONFIG`/cwd dependence.
+    fn registry_env(tmp: &std::path::Path) -> Env {
+        Env {
+            store_root: tmp.join("store"),
+            cache_root: tmp.join("cache"),
+            registry_root: tmp.join("reg-root"),
+            config_file: Some(tmp.join("tamias.yml")),
+        }
+    }
+
+    #[test]
+    fn registry_ops_round_trip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = registry_env(tmp.path());
+        // empty to start
+        let list = dispatch(&env, r#"{"op":"registry.list"}"#).unwrap();
+        assert_eq!(list["registries"].as_array().unwrap().len(), 0);
+        // add → list → get → remove
+        let reg_dir = tmp.path().join("reg").display().to_string();
+        let add = format!(
+            "{{\"op\":\"registry.add\",\"name\":\"mine\",\"kind\":\"local\",\"url\":{reg_dir:?},\"token_env\":\"MY_REG_TOKEN\"}}"
+        );
+        let res = dispatch(&env, &add).unwrap();
+        assert_eq!(res["name"], "mine");
+        let list = dispatch(&env, r#"{"op":"registry.list"}"#).unwrap();
+        let regs = list["registries"].as_array().unwrap();
+        assert_eq!(regs.len(), 1);
+        assert_eq!(regs[0]["name"], "mine");
+        assert_eq!(regs[0]["effective_kind"], "local");
+        // the env var *name* is exposed; no token value exists to leak
+        assert_eq!(regs[0]["token_env"], "MY_REG_TOKEN");
+        let get = dispatch(&env, r#"{"op":"registry.get","name":"mine"}"#).unwrap();
+        assert_eq!(get["name"], "mine");
+        assert_eq!(get["url"], reg_dir);
+        // the file on disk round-tripped through the YAML renderer
+        let text = std::fs::read_to_string(tmp.path().join("tamias.yml")).unwrap();
+        assert!(
+            text.contains("registries:") && text.contains("mine"),
+            "{text}"
+        );
+        // duplicate add + unknown get/remove error
+        assert!(dispatch(&env, &add).is_err());
+        assert!(dispatch(&env, r#"{"op":"registry.get","name":"ghost"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"registry.remove","name":"ghost"}"#).is_err());
+        let rem = dispatch(&env, r#"{"op":"registry.remove","name":"mine"}"#).unwrap();
+        assert_eq!(rem["name"], "mine");
+        assert!(dispatch(&env, r#"{"op":"registry.get","name":"mine"}"#).is_err());
+    }
+
+    #[test]
+    fn registry_op_error_arms() {
+        let tmp = tempfile::tempdir().unwrap();
+        let env = registry_env(tmp.path());
+        assert!(dispatch(&env, r#"{"op":"registry.get"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"registry.add","name":"x","kind":"local"}"#).is_err());
+        assert!(dispatch(
+            &env,
+            r#"{"op":"registry.add","name":"x","kind":"bogus","url":"/y"}"#
+        )
+        .is_err());
+        assert!(dispatch(
+            &env,
+            r#"{"op":"registry.add","name":"x","kind":"http","url":"/y"}"#
+        )
+        .is_err());
+        assert!(dispatch(&env, r#"{"op":"registry.remove"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"search"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"publish"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"publish","dir":"/nonexistent-xyz"}"#).is_err());
+    }
+
+    #[test]
+    fn publish_search_route_by_name_and_raw_ref() {
+        let _g = DRVENV.lock().unwrap();
+        let saved = std::env::var_os("TAMIAS_REGISTRY");
+        std::env::remove_var("TAMIAS_REGISTRY");
+        let tmp = tempfile::tempdir().unwrap();
+        let env = registry_env(tmp.path());
+        // a payload package + a named local registry
+        let pkg = tmp.path().join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(pkg.join("tamias.yaml"), "name: wpkg\nversion: 1.0.0\n").unwrap();
+        std::fs::write(pkg.join("a.txt"), "a").unwrap();
+        let mine_reg = tmp.path().join("mine-reg");
+        let add = format!(
+            "{{\"op\":\"registry.add\",\"name\":\"mine\",\"kind\":\"local\",\"url\":{:?}}}",
+            mine_reg.display().to_string()
+        );
+        assert!(dispatch(&env, &add).is_ok());
+        // publish by registry *name*
+        let pub_by_name = format!(
+            "{{\"op\":\"publish\",\"dir\":{:?},\"registry\":\"mine\"}}",
+            pkg.display().to_string()
+        );
+        let published = dispatch(&env, &pub_by_name).unwrap();
+        assert_eq!(published["name"], "wpkg");
+        assert!(mine_reg.join("index.json").is_file());
+        // search by name → the published entry
+        let found = dispatch(&env, r#"{"op":"search","query":"wpkg","registry":"mine"}"#).unwrap();
+        let results = found["results"].as_array().unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "wpkg");
+        assert_eq!(results[0]["version"], "1.0.0");
+        // search by raw dir ref → same registry, same result
+        let raw = mine_reg.display().to_string();
+        let by_ref = format!("{{\"op\":\"search\",\"query\":\"wpkg\",\"registry\":{raw:?}}}");
+        let found = dispatch(&env, &by_ref).unwrap();
+        assert_eq!(found["results"].as_array().unwrap().len(), 1);
+        // no registry → the env default root: the bare publish landed
+        // there, so the bare search finds that copy (not "mine"'s)
+        let bare = format!(
+            "{{\"op\":\"publish\",\"dir\":{:?}}}",
+            pkg.display().to_string()
+        );
+        assert!(dispatch(&env, &bare).is_ok());
+        assert!(env.registry_root.join("index.json").is_file());
+        let found = dispatch(&env, r#"{"op":"search","query":"wpkg"}"#).unwrap();
+        assert_eq!(found["results"].as_array().unwrap().len(), 1);
+        match saved {
+            Some(v) => std::env::set_var("TAMIAS_REGISTRY", v),
+            None => std::env::remove_var("TAMIAS_REGISTRY"),
+        }
     }
 }

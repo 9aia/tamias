@@ -66,6 +66,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `crates/tamias-store` + `-local`/`-cf` | install store port + impls (`-cf` scaffolded) |
 | `crates/tamias-cache` + `-local`/`-cf` | content-addressed fetch cache (`-cf` scaffolded) |
 | `crates/tamias-registry` + `-local`/`-cf` | index + publish port + impls (local dir, optionally HTTP-served; CF Worker client) |
+| `crates/tamias-registry-open` | shared registry-source layer — name-or-ref resolution + named-source config CRUD, consumed by `tamias-cli` and `tamias-serve` |
 | `crates/tamias-publish` | author-side packing — payload dir + manifest → `.tgz` |
 | `crates/tamias-deploy` + `-local`/`-cf` | deploy port — provision a remote registry (`-cf` materializes Worker + wrangler config) / per-user service unit, systemd or launchd (`-local`) |
 | `crates/tamias-driver` | content-driver host — discovers `tamias-driver-<type>` on PATH/`<tamias-home>/drivers/`, dispatches install/deploy/uninstall, registers payload-bundled drivers (consent-gated): portable `drivers/<name>` files plus compiled `drivers/bin/<target-triple>/<name>` bins — only the host triple's dir is installed, a missing platform is a hard error |

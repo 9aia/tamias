@@ -17,9 +17,8 @@ use tamias_config_toml::TomlFormat;
 use tamias_config_yml::YmlFormat;
 use tamias_core::{payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord};
 use tamias_install::{Progress, Surface};
-use tamias_registry::{parse_registry_ref, Registry, RegistryRef};
-use tamias_registry_cf::HttpRegistry;
-use tamias_registry_local::{serve_http, serve_http_with_limits, LocalRegistry};
+use tamias_registry::Registry;
+use tamias_registry_local::{serve_http, serve_http_with_limits};
 use tamias_store_local::Store;
 
 /// Default fetch-cache eviction age for `cache clean` — 30 days.
@@ -433,20 +432,12 @@ impl Env {
 /// (overrides discovery, mirroring `--file`). Parse/read failures warn
 /// and yield `None`.
 fn cli_config() -> Option<tamias_config::Config> {
-    let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
-    let loaded = match std::env::var_os(CONFIG_ENV) {
-        Some(var) => {
-            let path = PathBuf::from(var);
-            if path.is_file() {
-                tamias_config::load_file(&path, &formats).map(|c| Some((path, c)))
-            } else {
-                Ok(None)
-            }
-        }
-        None => tamias_config::load_in(Path::new("."), &formats),
-    };
-    match loaded {
-        Ok(found) => found.map(|(_, c)| c),
+    // Resolution + the file precedence live in `tamias-registry-open`
+    // (shared with `tamias serve`); the CLI keeps its warn-and-ignore
+    // posture on top — a broken config warns and is ignored rather
+    // than failing every verb before it starts.
+    match tamias_registry_open::load_config(None) {
+        Ok(config) => Some(config),
         Err(e) => {
             eprintln!("tamias: warning — ignoring config file: {e}");
             None
@@ -618,208 +609,27 @@ fn sync_lock(record: &StoreRecord) -> Result<(), Error> {
     lock.save(&lock_path)
 }
 
-/// Open a registry: `value` is a `registries` config **name** first,
-/// then a raw dir/http ref (`parse_registry_ref`). `None` → the env /
-/// default local root. Callers resolve the routing defaults
-/// (`publish.default`/`search.default`, `TAMIAS_REGISTRY` env) into
-/// `value` before calling — env wins over config, flag over env.
-///
-/// `package` (the manifest name on publish) selects per-package limit
-/// overrides; the resolved [`tamias_config::EffectiveLimits`] are handed
-/// to the adapter (`with_max_upload`), which enforces them — the
-/// packed-tarball size probe runs post-pack/pre-upload inside
-/// `publish`, so an over-limit payload never reaches the wire or the
-/// index.
+/// Open a registry by name-or-ref — the shared resolution lives in
+/// `tamias-registry-open` (same code `tamias serve`'s `search`/`publish`
+/// ops use); this wrapper binds the CLI env's `registry_root`.
 fn open_registry(
     env: &Env,
     config: Option<&tamias_config::Config>,
     value: Option<&str>,
     package: Option<&str>,
 ) -> Result<Box<dyn Registry>, Error> {
-    let Some(value) = value else {
-        return Ok(Box::new(
-            LocalRegistry::new(&env.registry_root)
-                .with_max_upload(effective_limits(config, None, package).max_upload),
-        ));
-    };
-    if let Some(named) = config.and_then(|c| c.registries.get(value)) {
-        return open_named_registry(env, value, named, config, package);
-    }
-    let eff = effective_limits(config, Some(value), package);
-    Ok(match parse_registry_ref(value) {
-        RegistryRef::Local(path) => {
-            Box::new(LocalRegistry::new(path).with_max_upload(eff.max_upload))
-        }
-        RegistryRef::Http(base) => {
-            Box::new(http_registry(&base, None, value)?.with_max_upload(eff.max_upload))
-        }
-    })
+    tamias_registry_open::open_registry(&env.registry_root, config, value, package)
 }
 
-/// The effective limits for a publish/search target — `value` doubles
-/// as the registry name when it matches a `registries` key (raw
-/// dir/http refs simply miss the lookup and get global + package rules).
-fn effective_limits(
-    config: Option<&tamias_config::Config>,
-    value: Option<&str>,
-    package: Option<&str>,
-) -> tamias_config::EffectiveLimits {
-    config.map_or_else(
-        || tamias_config::Config::default().effective_limits(value, package),
-        |c| c.effective_limits(value, package),
-    )
-}
-
-/// Build the `Registry` impl for a `registries` entry — explicit
-/// `kind` wins, url-scheme inference is the fallback
-/// ([`tamias_config::Registry::effective_kind`]). `http`/`cf` share
-/// the `HttpRegistry` client; auth is `token_env` (an env var *name*)
-/// → `TAMIAS_REGISTRY_TOKEN` → none.
-fn open_named_registry(
-    env: &Env,
-    name: &str,
-    reg: &tamias_config::Registry,
-    config: Option<&tamias_config::Config>,
-    package: Option<&str>,
-) -> Result<Box<dyn Registry>, Error> {
-    let eff = effective_limits(config, Some(name), package);
-    match reg.effective_kind().as_str() {
-        "local" => {
-            let root = reg
-                .url
-                .clone()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| env.registry_root.clone());
-            Ok(Box::new(
-                LocalRegistry::new(root).with_max_upload(eff.max_upload),
-            ))
-        }
-        "http" | "cf" => {
-            let base = reg.url.clone().ok_or_else(|| {
-                Error::Failed(format!("registry '{name}': kind http/cf needs a url"))
-            })?;
-            http_registry(&base, reg.token_env.as_deref(), name)
-                .map(|r| Box::new(r.with_max_upload(eff.max_upload)) as Box<dyn Registry>)
-        }
-        other => {
-            eprintln!(
-                "tamias: warning — registry '{name}': unknown kind '{other}'; inferring from url"
-            );
-            match parse_registry_ref(reg.url.as_deref().unwrap_or_default()) {
-                RegistryRef::Local(path) => Ok(Box::new(
-                    LocalRegistry::new(path).with_max_upload(eff.max_upload),
-                )),
-                RegistryRef::Http(base) => http_registry(&base, reg.token_env.as_deref(), name)
-                    .map(|r| Box::new(r.with_max_upload(eff.max_upload)) as Box<dyn Registry>),
-            }
-        }
-    }
-}
-
-/// An http(s) registry with bearer auth — `token_env` names the env
-/// var holding the token (the var's *name* lives in config; the value
-/// is read at connect time, never stored). `TAMIAS_REGISTRY_TOKEN` is
-/// the fallback when `token_env` is unset or its var is empty.
-///
-/// Returns the concrete [`HttpRegistry`] (not the trait object) so
-/// callers can layer on the resolved upload cap.
-fn http_registry(base: &str, token_env: Option<&str>, name: &str) -> Result<HttpRegistry, Error> {
-    let base = base.trim_end_matches('/');
-    if !(base.starts_with("http://") || base.starts_with("https://")) {
-        return Err(Error::Failed(format!(
-            "registry '{name}': url '{base}' is not http(s)"
-        )));
-    }
-    let token = token_env
-        .and_then(|var| match std::env::var(var) {
-            Ok(value) if !value.is_empty() => Some(value),
-            _ => {
-                eprintln!("tamias: warning — registry '{name}': ${var} is unset; no token");
-                None
-            }
-        })
-        .or_else(|| {
-            std::env::var("TAMIAS_REGISTRY_TOKEN")
-                .ok()
-                .filter(|t| !t.is_empty())
-        });
-    let mut registry = HttpRegistry::new(base);
-    if let Some(token) = token {
-        registry = registry.with_token(token);
-    }
-    Ok(registry)
-}
-
-/// The `--registry` value `publish`/`search` resolve: explicit flag →
-/// `TAMIAS_REGISTRY` env (wins over config, mirroring the store/cache
-/// env-wins rule) → the config routing defaults, in order → `None`
-/// (the local default root). `config_defaults` is e.g.
-/// `[search.default, publish.default]` for `search`.
+/// The `--registry` value `publish`/`search` resolve — shared with
+/// `tamias serve`; kept as a wrapper so call sites read unchanged.
 fn registry_target(flag: Option<&str>, config_defaults: &[Option<&str>]) -> Option<String> {
-    flag.map(str::to_string)
-        .or_else(|| {
-            std::env::var("TAMIAS_REGISTRY")
-                .ok()
-                .filter(|v| !v.is_empty())
-        })
-        .or_else(|| {
-            config_defaults
-                .iter()
-                .flatten()
-                .next()
-                .map(|s| (*s).to_string())
-        })
+    tamias_registry_open::registry_target(flag, config_defaults)
 }
 
-/// The config file `registry` management verbs read/write — `--file`,
-/// then `TAMIAS_CONFIG`, then `./tamias.{yml,yaml,toml}` discovery. No
-/// file anywhere → `./tamias.yml` + defaults (created on write).
-fn config_target(file: Option<&Path>) -> Result<(PathBuf, tamias_config::Config), Error> {
-    let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
-    let explicit = file
-        .map(Path::to_path_buf)
-        .or_else(|| std::env::var_os(CONFIG_ENV).map(PathBuf::from));
-    if let Some(path) = explicit {
-        let config = if path.is_file() {
-            tamias_config::load_file(&path, &formats)?
-        } else {
-            tamias_config::Config::default()
-        };
-        return Ok((path, config));
-    }
-    Ok(match tamias_config::load_in(Path::new("."), &formats)? {
-        Some(found) => found,
-        None => (
-            PathBuf::from("tamias.yml"),
-            tamias_config::Config::default(),
-        ),
-    })
-}
-
-/// Render `config` back to `path`'s format and write it — the only
-/// write path for `registry add`/`remove`.
-fn write_config(path: &Path, config: &tamias_config::Config) -> Result<(), Error> {
-    let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
-    let format = tamias_config::format_for(path, &formats)
-        .ok_or_else(|| Error::Failed(format!("no config format for {}", path.display())))?;
-    let text = format.render(config)?;
-    std::fs::write(path, text).map_err(Error::io(format!("write {}", path.display())))
-}
-
-/// One `registries` entry as a JSON object.
-fn registry_json(name: &str, reg: &tamias_config::Registry) -> serde_json::Value {
-    serde_json::json!({
-        "name": name,
-        "kind": reg.kind,
-        "effective_kind": reg.effective_kind(),
-        "url": reg.url,
-        "token_env": reg.token_env,
-        "limits": reg.limits,
-    })
-}
-
-/// `registry add` — validate kind/url, refuse duplicates, render the
-/// config back through its own format.
+/// `registry add` — validate + write through the shared
+/// `tamias-registry-open` path (same code `tamias serve`'s
+/// `registry.add` op uses), then report.
 fn registry_add(
     file: Option<&Path>,
     name: String,
@@ -827,33 +637,7 @@ fn registry_add(
     url: String,
     token_env: Option<String>,
 ) -> Result<(), Error> {
-    // http/cf need an http(s) url; local takes a dir (or anything —
-    // the explicit kind wins over url-scheme inference at resolve time).
-    if kind != RegistryKind::Local {
-        match parse_registry_ref(&url) {
-            RegistryRef::Http(_) => {}
-            RegistryRef::Local(_) => {
-                return Err(Error::Failed(format!(
-                    "registry '{name}': kind {} needs an http(s) url, got '{url}'",
-                    kind.as_str()
-                )));
-            }
-        }
-    }
-    let (path, mut config) = config_target(file)?;
-    if config.registries.contains_key(&name) {
-        return Err(Error::Failed(format!("registry '{name}' already exists")));
-    }
-    config.registries.insert(
-        name.clone(),
-        tamias_config::Registry {
-            kind: Some(kind.as_str().to_string()),
-            url: Some(url),
-            token_env,
-            limits: Default::default(),
-        },
-    );
-    write_config(&path, &config)?;
+    let path = tamias_registry_open::add_registry(file, &name, kind.as_str(), &url, token_env)?;
     println!(
         "added registry {name} ({}) → {}",
         kind.as_str(),
@@ -862,26 +646,18 @@ fn registry_add(
     Ok(())
 }
 
-/// `registry remove` — drop a named registry; unknown names error.
+/// `registry remove` — shared write path; unknown names error.
 fn registry_remove(file: Option<&Path>, name: &str) -> Result<(), Error> {
-    let (path, mut config) = config_target(file)?;
-    if config.registries.remove(name).is_none() {
-        return Err(Error::Failed(format!("registry '{name}' not found")));
-    }
-    write_config(&path, &config)?;
+    let path = tamias_registry_open::remove_registry(file, name)?;
     println!("removed registry {name} → {}", path.display());
     Ok(())
 }
 
 /// `registry get` — one named registry, text or `--json`.
 fn registry_get(file: Option<&Path>, name: &str, json: bool) -> Result<(), Error> {
-    let (_path, config) = config_target(file)?;
-    let reg = config
-        .registries
-        .get(name)
-        .ok_or_else(|| Error::Failed(format!("registry '{name}' not found")))?;
+    let reg = tamias_registry_open::get_registry(file, name)?;
     if json {
-        print_json(&registry_json(name, reg))?;
+        print_json(&tamias_registry_open::registry_json(name, &reg))?;
     } else {
         println!("name:      {name}");
         println!("kind:      {}", reg.kind.as_deref().unwrap_or("(inferred)"));
@@ -905,12 +681,12 @@ fn registry_get(file: Option<&Path>, name: &str, json: bool) -> Result<(), Error
 
 /// `registry list` — every named registry, text table or `--json`.
 fn registry_list(file: Option<&Path>, json: bool) -> Result<(), Error> {
-    let (_path, config) = config_target(file)?;
+    let (_path, config) = tamias_registry_open::config_target(file)?;
     if json {
         let items: Vec<serde_json::Value> = config
             .registries
             .iter()
-            .map(|(name, reg)| registry_json(name, reg))
+            .map(|(name, reg)| tamias_registry_open::registry_json(name, reg))
             .collect();
         print_json(&serde_json::json!({ "registries": items }))?;
     } else if config.registries.is_empty() {
@@ -1124,6 +900,12 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             tamias_serve::serve(tamias_serve::Env {
                 store_root: env.store_root.clone(),
                 cache_root: env.cache_root.clone(),
+                registry_root: env.registry_root.clone(),
+                // `None` → the serve ops honor `TAMIAS_CONFIG` then
+                // `./tamias.{yml,yaml,toml}` discovery per request, so
+                // `registry.add` is visible to a later `search` in the
+                // same session.
+                config_file: None,
             })?;
         }
         Some(Command::Publish { dir, registry }) => {

@@ -1,0 +1,29 @@
+[package]
+name = "tamias-registry-open"
+description = "shared registry-source layer — name-or-ref resolution + named-source config CRUD"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+
+[dependencies]
+tamias-core.workspace = true
+tamias-config.workspace = true
+tamias-config-yml.workspace = true
+tamias-config-toml.workspace = true
+tamias-registry.workspace = true
+tamias-registry-local.workspace = true
+tamias-registry-cf.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

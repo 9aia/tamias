@@ -1576,8 +1576,8 @@ dependencies = [
  "tamias-install",
  "tamias-publish",
  "tamias-registry",
- "tamias-registry-cf",
  "tamias-registry-local",
+ "tamias-registry-open",
  "tamias-serve",
  "tamias-shell",
  "tamias-store-local",
@@ -1747,14 +1747,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "tamias-registry-open"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tamias-config",
+ "tamias-config-toml",
+ "tamias-config-yml",
+ "tamias-core",
+ "tamias-registry",
+ "tamias-registry-cf",
+ "tamias-registry-local",
+ "tempfile",
+]
+
+[[package]]
 name = "tamias-serve"
 version = "0.1.0"
 dependencies = [
  "serde_json",
  "tamias-cache-local",
+ "tamias-config",
  "tamias-core",
  "tamias-driver",
  "tamias-install",
+ "tamias-registry",
+ "tamias-registry-open",
  "tamias-store-local",
  "tempfile",
 ]

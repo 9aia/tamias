@@ -16,6 +16,7 @@ members = [
     "crates/tamias-publish",
     "crates/tamias-registry",
     "crates/tamias-registry-local",
+    "crates/tamias-registry-open",
     "crates/tamias-registry-cf",
     "crates/tamias-store-cf",
     "crates/tamias-cache-cf",
@@ -71,6 +72,7 @@ tamias-deploy-cf = { path = "crates/tamias-deploy-cf", version = "0.1.0" }
 tamias-publish = { path = "crates/tamias-publish", version = "0.1.0" }
 tamias-registry = { path = "crates/tamias-registry", version = "0.1.0" }
 tamias-registry-local = { path = "crates/tamias-registry-local", version = "0.1.0" }
+tamias-registry-open = { path = "crates/tamias-registry-open", version = "0.1.0" }
 tamias-registry-cf = { path = "crates/tamias-registry-cf", version = "0.1.0" }
 tamias-store-cf = { path = "crates/tamias-store-cf", version = "0.1.0" }
 tamias-cache-cf = { path = "crates/tamias-cache-cf", version = "0.1.0" }
