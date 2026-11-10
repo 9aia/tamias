@@ -1,7 +1,7 @@
 +++
 id = "P-005"
 title = "package verification + official badge; opt-in service consent hardening"
-status = "open"
+status = "done"
 created = "2026-11-10"
 owner = "devin"
 priority = "medium"
