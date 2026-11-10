@@ -182,6 +182,10 @@ enum Command {
         /// `signing.key_env`, `signing.key`, `~/.ssh/id_ed25519`.
         #[arg(long, requires = "sign")]
         key: Option<PathBuf>,
+        /// Ship the raw payload — don't flatten `include:` bases into
+        /// the packed tarball (default resolves them read-only).
+        #[arg(long)]
+        keep_includes: bool,
     },
     /// Search a registry's index.
     Search {
@@ -432,6 +436,10 @@ enum BundleCommand {
         /// Output `.tgz` (default `<name>-<version>.tgz`).
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Ship the raw payload — don't flatten `include:` bases into
+        /// the packed tarball (default resolves them read-only).
+        #[arg(long)]
+        keep_includes: bool,
     },
 }
 
@@ -540,6 +548,7 @@ fn progress_lines(progress: Progress) {
     match progress {
         Progress::Fetching { reference } => eprintln!("tamias: fetching {reference}"),
         Progress::Installing { label } => eprintln!("tamias: installing {label}"),
+        Progress::Including { base } => eprintln!("tamias: including {base}"),
         Progress::DriverAction { action } => println!("  {action}"),
         Progress::Done { label } => eprintln!("tamias: done — {label}"),
     }
@@ -1002,6 +1011,7 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             registry,
             sign,
             key,
+            keep_includes,
         }) => {
             let config = cli_config();
             // The shared publish resolution (`tamias-registry-open`) —
@@ -1013,6 +1023,8 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
                 config.as_ref(),
                 registry.as_deref(),
                 &[config.as_ref().and_then(|c| c.publish.default.as_deref())],
+                &env.store_root,
+                keep_includes,
                 &mut |_, _| {},
             )?;
             // `--sign` — ssh-keygen -Y over the provenance anchors
@@ -1081,8 +1093,17 @@ fn run(cli: Cli, env: Env) -> Result<(), Error> {
             }
         }
         Some(Command::Bundle { cmd }) => {
-            let BundleCommand::Pack { dir, out } = cmd;
-            let packed = tamias_publish::pack(&dir, out.as_deref())?;
+            let BundleCommand::Pack {
+                dir,
+                out,
+                keep_includes,
+            } = cmd;
+            let includes = if keep_includes {
+                tamias_publish::Includes::Keep
+            } else {
+                tamias_publish::Includes::Flatten
+            };
+            let packed = tamias_publish::pack(&dir, out.as_deref(), includes, &env.store_root)?;
             println!("packed → {}", packed.display());
         }
         Some(Command::Registry { file, cmd }) => match cmd {

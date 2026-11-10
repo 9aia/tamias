@@ -14,9 +14,10 @@ documentation.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
+tamias-source.workspace = true
+tamias-source-fs.workspace = true
+tamias-store-local.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true

@@ -295,12 +295,20 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
             // Same routing as `tamias publish`: flag → TAMIAS_REGISTRY →
             // publish.default → local default root — the shared
             // `publish_plan` resolution (`tamias-registry-open`).
+            // `"keep_includes":true` ships the raw payload — the
+            // default flattens `include:` bases read-only.
+            let keep_includes = req
+                .get("keep_includes")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             let plan = tamias_registry_open::publish_plan(
                 Path::new(dir),
                 &env.registry_root,
                 Some(&config),
                 flag,
                 &[config.publish.default.as_deref()],
+                &env.store_root,
+                keep_includes,
                 &mut |_, _| {},
             )?;
             // `"sign":true` — ssh-keygen -Y sign the provenance anchors;

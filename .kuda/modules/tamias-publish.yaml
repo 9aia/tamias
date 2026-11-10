@@ -2,40 +2,85 @@ name: tamias-publish
 path: crates/tamias-publish/Cargo.toml
 purpose: author side — pack + push
 api:
+- name: Composed
+  kind: type
+  file: crates/tamias-publish/src/lib.rs
+  line: 47
+  module: tamias-publish
 - name: ENV
   kind: const
   file: crates/tamias-publish/src/lib.rs
-  line: 33
+  line: 222
   module: tamias-publish
 - name: EnvGuard
   kind: type
   file: crates/tamias-publish/src/lib.rs
-  line: 38
+  line: 227
+  module: tamias-publish
+- name: Includes
+  kind: type
+  file: crates/tamias-publish/src/lib.rs
+  line: 34
+  module: tamias-publish
+- name: compose
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 62
   module: tamias-publish
 - name: drop
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 58
+  line: 247
   module: tamias-publish
 - name: new
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 45
+  line: 234
   module: tamias-publish
 - name: pack
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 13
+  line: 192
+  module: tamias-publish
+- name: pack_flattens_store_name_include
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 303
+  module: tamias-publish
+- name: pack_missing_base_fails_naming_it
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 352
+  module: tamias-publish
+- name: pack_resolves_fs_dir_and_installed_ref_bases
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 374
   module: tamias-publish
 - name: pack_without_version_uses_name
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 83
+  line: 288
   module: tamias-publish
 - name: packs_a_dir
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 72
+  line: 275
+  module: tamias-publish
+- name: pin_manifest
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 160
+  module: tamias-publish
+- name: resolve_base
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 88
+  module: tamias-publish
+- name: store_entry
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 260
   module: tamias-publish
 - name: tamias-publish
   kind: module
@@ -45,12 +90,33 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-publish/src/lib.rs
-  line: 25
+  line: 214
+  module: tamias-publish
+- name: tgz_files
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 415
+  module: tamias-publish
+- name: unresolvable
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 145
+  module: tamias-publish
+- name: untar_base
+  kind: function
+  file: crates/tamias-publish/src/lib.rs
+  line: 121
   module: tamias-publish
 deps:
 - tamias-core
+- tamias-source
+- tamias-source-fs
+- tamias-store-local
 - tempfile
 - tamias-core
+- tamias-source
+- tamias-source-fs
+- tamias-store-local
 notes: ''
 verify:
 - crates/tamias-publish/Cargo.toml
@@ -60,8 +126,8 @@ provenance:
   - crates/tamias-publish/Cargo.toml
   - crates/tamias-publish/src/lib.rs
   hashes:
-  - 9440703dd04a239939c9344b76f465db689a29ad
-  - f8ec058a24107fc6b8b281d5d5faabb5bf678e05
-  commit_sha: 24214a8628a32f7fe3c1175a78872d987476380e
-  generated_at: '1794329275'
+  - 628e0e9654aa2ca9ee3883a23cc7e509e290be45
+  - 1742696d8fad145f6fa013307f336a023fd71b71
+  commit_sha: faedaff9ebefacf629d7dac98eefa50674a2fd9c
+  generated_at: '1794333497'
   generator: kuda-template/0.1.2

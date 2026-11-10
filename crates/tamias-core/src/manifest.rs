@@ -51,10 +51,13 @@ pub struct Manifest {
     /// names or installable source refs. Local wins; earlier includes
     /// win over later ones.
     ///
-    /// **Parsed and surfaced, not yet applied:** no install path
-    /// resolves `include:` entries or runs the deep-merge
-    /// ([`crate::overlay::overlay`]); the field rides manifests and
-    /// views today. Reserved for payload composition.
+    /// Applied on install (`tamias-install` resolves each entry —
+    /// store name → that entry's payload dir, ref → a recursive
+    /// install — then [`crate::overlay::overlay`]s bases under the
+    /// local payload; the store record's digest covers the *composed*
+    /// tree and the manifest rides along unchanged for provenance) and
+    /// flattened at publish/pack time (`tamias-publish`, read-only —
+    /// `--keep-includes` ships the raw payload instead).
     pub include: Vec<String>,
     /// Direct dependencies — refs this project wants installed.
     /// Recorded by `tamias add` (and the TUI deps form) into the

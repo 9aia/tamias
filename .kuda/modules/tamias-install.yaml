@@ -5,7 +5,7 @@ api:
 - name: DRVENV
   kind: const
   file: crates/tamias-install/src/lib.rs
-  line: 367
+  line: 450
   module: tamias-install
 - name: DepOutcome
   kind: type
@@ -20,22 +20,32 @@ api:
 - name: Env
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 47
+  line: 48
   module: tamias-install
 - name: EnvGuard
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 372
+  line: 455
+  module: tamias-install
+- name: IncludeState
+  kind: type
+  file: crates/tamias-install/src/include.rs
+  line: 46
+  module: tamias-install
+- name: MAX_INCLUDE_DEPTH
+  kind: const
+  file: crates/tamias-install/src/include.rs
+  line: 41
   module: tamias-install
 - name: Progress
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 135
+  line: 136
   module: tamias-install
 - name: Surface
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 91
+  line: 92
   module: tamias-install
 - name: SyncOptions
   kind: type
@@ -50,7 +60,7 @@ api:
 - name: allow
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 531
+  line: 614
   module: tamias-install
 - name: as_str
   kind: function
@@ -60,32 +70,32 @@ api:
 - name: bad_ref_and_missing_manifest_fail
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 670
+  line: 966
   module: tamias-install
 - name: consent_gate_and_surface_hints
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 450
+  line: 533
   module: tamias-install
 - name: consent_refusal
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 103
+  line: 104
   module: tamias-install
 - name: drivers_hint
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 113
+  line: 114
   module: tamias-install
 - name: drop
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 392
+  line: 475
   module: tamias-install
 - name: env
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 405
+  line: 488
   module: tamias-install
 - name: env
   kind: function
@@ -100,42 +110,87 @@ api:
 - name: fetch_or_cached
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 326
+  line: 409
   module: tamias-install
 - name: for_config
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 73
+  line: 74
   module: tamias-install
 - name: free_addr
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 545
+  line: 628
   module: tamias-install
 - name: gen_key
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 519
+  line: 602
+  module: tamias-install
+- name: include
+  kind: module
+  file: crates/tamias-install/src/lib.rs
+  line: 42
+  module: tamias-install
+- name: include_cycle_errors
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 887
+  module: tamias-install
+- name: include_depth_cap_errors
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 939
+  module: tamias-install
+- name: include_missing_name_and_ref_errors
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 863
+  module: tamias-install
+- name: include_ordering_earlier_wins
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 812
+  module: tamias-install
+- name: include_ref_recurses_and_store_base_is_not_recomposed
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 837
+  module: tamias-install
+- name: include_self_via_store_name_cycles
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 914
+  module: tamias-install
+- name: include_store_name_composes_manifest_stays_provenance
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 772
   module: tamias-install
 - name: install
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 166
+  line: 174
+  module: tamias-install
+- name: install_inner
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 208
   module: tamias-install
 - name: install_reports_progress_and_commits
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 429
+  line: 512
   module: tamias-install
 - name: install_with_progress
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 178
+  line: 186
   module: tamias-install
 - name: is_driver_consent_refusal
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 127
+  line: 128
   module: tamias-install
 - name: is_ok
   kind: function
@@ -147,62 +202,7 @@ api:
   file: crates/tamias-install/src/sync.rs
   line: 110
   module: tamias-install
-- name: new
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 379
-  module: tamias-install
-- name: opts
-  kind: function
-  file: crates/tamias-install/src/sync.rs
-  line: 275
-  module: tamias-install
-- name: pkg
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 416
-  module: tamias-install
-- name: pkg
-  kind: function
-  file: crates/tamias-install/src/sync.rs
-  line: 242
-  module: tamias-install
-- name: project
-  kind: function
-  file: crates/tamias-install/src/sync.rs
-  line: 255
-  module: tamias-install
-- name: publish_served
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 554
-  module: tamias-install
-- name: record_matches
-  kind: function
-  file: crates/tamias-install/src/sync.rs
-  line: 126
-  module: tamias-install
-- name: refs
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 267
-  module: tamias-install
-- name: remove
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 304
-  module: tamias-install
-- name: required_rejects_unsigned_but_allows_signed
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 648
-  module: tamias-install
-- name: signed_cf_install_rejects_bad_and_missing_signers
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 625
-  module: tamias-install
-api_omitted: 16
+api_omitted: 33
 deps:
 - tamias-cache-local
 - tamias-config
@@ -215,33 +215,36 @@ deps:
 - tamias-source-git
 - tamias-source-http
 - tamias-store-local
+- tempfile
 - tracing
 - tamias-registry
 - tamias-registry-local
-- tempfile
 - tamias-core
+- tamias-source
+- tamias-source-fs
 - tamias-store-local
 - tamias-cache-local
-- tamias-source
 - tamias-source-cf
-- tamias-source-fs
 - tamias-source-git
 - tamias-source-http
 - sync
 notes: ''
 verify:
 - crates/tamias-install/Cargo.toml
+- crates/tamias-install/src/include.rs
 - crates/tamias-install/src/lib.rs
 - crates/tamias-install/src/sync.rs
 provenance:
   files:
   - crates/tamias-install/Cargo.toml
+  - crates/tamias-install/src/include.rs
   - crates/tamias-install/src/lib.rs
   - crates/tamias-install/src/sync.rs
   hashes:
-  - a62588143d4d876da318f7fa64944a8f9996240d
-  - 5b7e827922f4a599cca579959dc2aad5bb56cfdc
+  - 8abce97b239d751b389b905398c0dd393c62d3f4
+  - ef6f131d67e1de28e9b6c67afdb5e3cfe0bf94a5
+  - be6ec56dbc3ad87a42966647f03bde13e6077842
   - d4e0978851fbc6dd1c985f122c02f4639a9b621d
-  commit_sha: 326bebe44135c2e5e5b7bdd5e7c0a3d4bd1ef945
-  generated_at: '1794331999'
+  commit_sha: faedaff9ebefacf629d7dac98eefa50674a2fd9c
+  generated_at: '1794333497'
   generator: kuda-template/0.1.2

@@ -2760,6 +2760,9 @@ name = "tamias-publish"
 version = "0.1.0"
 dependencies = [
  "tamias-core",
+ "tamias-source",
+ "tamias-source-fs",
+ "tamias-store-local",
  "tempfile",
 ]
 
@@ -2804,6 +2807,7 @@ dependencies = [
  "tamias-config-toml",
  "tamias-config-yml",
  "tamias-core",
+ "tamias-publish",
  "tamias-registry",
  "tamias-registry-cf",
  "tamias-registry-local",

@@ -5,87 +5,152 @@ api:
 - name: DeployReport
   kind: type
   file: crates/tamias-provider/src/lib.rs
-  line: 92
+  line: 95
   module: tamias-provider
 - name: ExecSpec
   kind: type
   file: crates/tamias-provider/src/lib.rs
-  line: 76
+  line: 79
   module: tamias-provider
 - name: ProviderPackage
   kind: type
   file: crates/tamias-provider/src/lib.rs
-  line: 46
+  line: 49
   module: tamias-provider
 - name: ProviderView
   kind: type
   file: crates/tamias-provider/src/lib.rs
-  line: 57
+  line: 60
+  module: tamias-provider
+- name: ServiceBackend
+  kind: type
+  file: crates/tamias-provider/src/lib.rs
+  line: 122
   module: tamias-provider
 - name: ServiceRow
   kind: type
   file: crates/tamias-provider/src/lib.rs
-  line: 28
+  line: 31
   module: tamias-provider
 - name: UnitAction
   kind: type
   file: crates/tamias-provider/src/lib.rs
-  line: 101
+  line: 104
+  module: tamias-provider
+- name: daemon_reload
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 159
+  module: tamias-provider
+- name: default
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 289
   module: tamias-provider
 - name: deploy
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 290
+  line: 515
+  module: tamias-provider
+- name: disable
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 185
+  module: tamias-provider
+- name: enable
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 172
   module: tamias-provider
 - name: exec_spec
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 513
+  line: 738
   module: tamias-provider
 - name: exec_spec_rejects_missing_provider
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 676
+  line: 901
+  module: tamias-provider
+- name: install
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 146
   module: tamias-provider
 - name: list
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 200
+  line: 425
   module: tamias-provider
 - name: list_and_rows_empty_store
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 669
+  line: 894
+  module: tamias-provider
+- name: log_stream
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 262
+  module: tamias-provider
+- name: logs_with
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 248
+  module: tamias-provider
+- name: new
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 133
   module: tamias-provider
 - name: provider_base
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 129
+  line: 350
   module: tamias-provider
 - name: provider_of
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 117
+  line: 338
+  module: tamias-provider
+- name: restart
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 221
   module: tamias-provider
 - name: service_rows
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 243
+  line: 468
   module: tamias-provider
 - name: service_spec
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 152
+  line: 372
+  module: tamias-provider
+- name: start
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 197
+  module: tamias-provider
+- name: status
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 233
+  module: tamias-provider
+- name: stop
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 209
   module: tamias-provider
 - name: store_root
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 703
+  line: 928
   module: tamias-provider
 - name: surviving_units
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 352
+  line: 577
   module: tamias-provider
 - name: tamias-provider
   kind: module
@@ -95,56 +160,61 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-provider/src/lib.rs
-  line: 631
+  line: 856
   module: tamias-provider
 - name: uninstall
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 414
+  line: 280
+  module: tamias-provider
+- name: uninstall
+  kind: function
+  file: crates/tamias-provider/src/lib.rs
+  line: 639
   module: tamias-provider
 - name: unit_action
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 618
+  line: 843
   module: tamias-provider
 - name: unit_name
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 145
+  line: 366
   module: tamias-provider
 - name: unit_name_uses_provider_name_then_scope
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 637
+  line: 862
   module: tamias-provider
 - name: unit_state
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 180
+  line: 402
   module: tamias-provider
 - name: units_of
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 257
+  line: 482
   module: tamias-provider
 - name: unquote_env
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 493
+  line: 718
   module: tamias-provider
-- name: unquote_env_strips_matching_quotes
-  kind: function
-  file: crates/tamias-provider/src/lib.rs
-  line: 660
-  module: tamias-provider
+api_omitted: 3
 deps:
 - tamias-core
+- tamias-deploy
 - tamias-deploy-systemd
+- tamias-deploy-windows
 - tamias-driver
 - tamias-store-local
 - tempfile
 - tamias-core
+- tamias-deploy
 - tamias-deploy-systemd
+- tamias-deploy-windows
 - tamias-store-local
 notes: ''
 verify:
@@ -155,8 +225,8 @@ provenance:
   - crates/tamias-provider/Cargo.toml
   - crates/tamias-provider/src/lib.rs
   hashes:
-  - 89c1a8d918c3c5e5b485875e6304a887d4066a1b
-  - 2c31a8b05241e084e8e2499f441b250c738e0a10
-  commit_sha: 326bebe44135c2e5e5b7bdd5e7c0a3d4bd1ef945
-  generated_at: '1794331999'
+  - e2a94fc8d3b5cb2e4a66bb99479cdcfd5e718a99
+  - 1316af50dc5b9bd46016f9cbef5641e4d460c781
+  commit_sha: faedaff9ebefacf629d7dac98eefa50674a2fd9c
+  generated_at: '1794333497'
   generator: kuda-template/0.1.2

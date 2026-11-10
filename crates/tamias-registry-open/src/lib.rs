@@ -206,16 +206,26 @@ pub fn search(
 /// manifest, routed target, and opened registry (named-registry +
 /// per-package limits applied). Surfaces render their own progress
 /// around [`publish_plan`] and finish with [`PublishPlan::publish`].
+///
+/// When the manifest carries `include:` and `keep_includes` is false,
+/// [`publish_plan`] flattens bases read-only via
+/// [`tamias_publish::compose`] — `root` then points at the *composed*
+/// scratch payload (kept alive by `_composed`) so signing and packing
+/// both cover the flattened tree. The manifest is unchanged —
+/// `include:` stays as provenance.
 pub struct PublishPlan {
-    /// `payload_root(dir)` — the dir holding `tamias.yaml`.
+    /// `payload_root(dir)` — or the composed scratch dir when
+    /// `include:` was flattened. Holds `tamias.yaml` either way.
     pub root: PathBuf,
-    /// The validated package manifest.
+    /// The validated package manifest (unmodified — `include:` kept).
     pub manifest: Manifest,
     /// The opened registry — [`PublishPlan::publish`] goes through it.
     pub registry: Box<dyn Registry>,
     /// The resolved target (`--registry` flag → `TAMIAS_REGISTRY` →
     /// `config_defaults`); `None` → the local default root.
     pub target: Option<String>,
+    /// Keeps the flatten scratch dir alive for the plan's lifetime.
+    _composed: Option<tamias_publish::Composed>,
 }
 
 impl PublishPlan {
@@ -233,26 +243,41 @@ impl PublishPlan {
 
 /// `publish <dir> [registry]` resolution — the shared head of
 /// `tamias publish`, `tamias serve`'s `publish` op, and `tamias ui`'s
-/// Author pane: `payload_root` → `Manifest::load` → `registry_target`
-/// → `open_registry`. `report` fires after the manifest loads and the
-/// target resolves but *before* the registry opens, so each surface
-/// keeps its own "publishing …" line in its own position (the CLI
-/// prints post-open; the TUI logs pre-open).
+/// Author pane: `payload_root` → `Manifest::load` → `include:`
+/// flatten (unless `keep_includes`) → `registry_target` →
+/// `open_registry`. `store_root` is the install store the flatten
+/// resolves bases against — read-only, publish never installs.
+/// `report` fires after the manifest loads and the target resolves but
+/// *before* the registry opens, so each surface keeps its own
+/// "publishing …" line in its own position (the CLI prints post-open;
+/// the TUI logs pre-open).
 ///
 /// # Errors
-/// Fails on a missing/invalid manifest or registry resolution.
+/// Fails on a missing/invalid manifest, an unresolvable `include:`
+/// base, or registry resolution.
+#[allow(clippy::too_many_arguments)]
 pub fn publish_plan(
     dir: &Path,
     registry_root: &Path,
     config: Option<&Config>,
     flag: Option<&str>,
     config_defaults: &[Option<&str>],
+    store_root: &Path,
+    keep_includes: bool,
     report: &mut dyn FnMut(&Manifest, Option<&str>),
 ) -> Result<PublishPlan, Error> {
     let root = payload_root(dir)?;
     let manifest = Manifest::load(&root)?;
     let target = registry_target(flag, config_defaults);
     report(&manifest, target.as_deref());
+    // Flatten `include:` bases read-only — the composed payload is
+    // what gets signed and packed; `root` swaps to the scratch dir.
+    let (root, composed) = if keep_includes || manifest.include.is_empty() {
+        (root, None)
+    } else {
+        let composed = tamias_publish::compose(&root, store_root)?;
+        (composed.dir.clone(), Some(composed))
+    };
     let registry = open_registry(
         registry_root,
         config,
@@ -264,6 +289,7 @@ pub fn publish_plan(
         manifest,
         registry,
         target,
+        _composed: composed,
     })
 }
 

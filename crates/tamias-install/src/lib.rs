@@ -39,6 +39,7 @@ use tamias_source_git::{GitRefKind, GitSource};
 use tamias_source_http::{HttpRefKind, HttpSource};
 use tamias_store_local::Store;
 
+mod include;
 mod sync;
 pub use sync::{sync_project, DepOutcome, DepStatus, SyncOptions, SyncReport};
 
@@ -139,10 +140,17 @@ pub enum Progress {
         reference: String,
     },
     /// `tamias: installing {label}` — after the manifest loads, before
-    /// driver dispatch + the store commit.
+    /// `include:` composition, driver dispatch + the store commit.
     Installing {
         /// `@scope/name@version` (or the bare name when unversioned).
         label: String,
+    },
+    /// `tamias: including {base}` — an `include:` base resolved to a
+    /// store payload dir or an installable ref (which then streams its
+    /// own install events).
+    Including {
+        /// The resolved base — a store label or the ref verbatim.
+        base: String,
     },
     /// A bundled-driver registration action — the CLI prints it as
     /// `  {action}` on stdout.
@@ -182,6 +190,29 @@ pub fn install_with_progress(
     surface: Surface,
     report: &mut dyn FnMut(Progress),
 ) -> Result<StoreEntry, Error> {
+    install_inner(
+        env,
+        reference,
+        allow_drivers,
+        surface,
+        report,
+        &mut include::IncludeState::default(),
+    )
+}
+
+/// The pipeline body — [`install_with_progress`] with the caller's
+/// [`include::IncludeState`] threaded through so `include:` ref
+/// recursion shares the depth cap + cycle set. `pub(crate)` for
+/// [`include::resolve_base`].
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn install_inner(
+    env: &Env,
+    reference: &str,
+    allow_drivers: bool,
+    surface: Surface,
+    report: &mut dyn FnMut(Progress),
+    state: &mut include::IncludeState,
+) -> Result<StoreEntry, Error> {
     let span = tracing::info_span!("install", reference);
     let _enter = span.enter();
     let spec = refs().parse(reference)?;
@@ -201,11 +232,62 @@ pub fn install_with_progress(
         None => base,
     };
     report(Progress::Installing { label: installing });
+    // `include:` composition — resolve each base (store name → stored
+    // payload dir; ref → recursive install), overlay bases under the
+    // local payload into a scratch dir, and run *everything* below —
+    // signature gate, driver discovery/dispatch, store commit — on the
+    // COMPOSED tree. The store record's digest therefore covers the
+    // composed payload (`verify` recomputes honestly), while the
+    // fetch-cache entry stays the RAW fetched payload: composition is
+    // post-cache and deterministic from store state, so it is never
+    // cached. The composed manifest keeps `include:` verbatim for
+    // provenance ([`include::pin_manifest`]).
+    //
+    // Non-transitive on the store-name path: a base store entry's
+    // payload is whatever was committed at its own install — already
+    // composed if it had `include:` then; we never re-resolve it.
+    let mut compose_scratch = None;
+    let work_root = if manifest.include.is_empty() {
+        root.clone()
+    } else {
+        let label = include::pending_label(
+            &manifest.name,
+            manifest.scope.as_deref(),
+            manifest.version.as_deref(),
+            &resolved_id,
+        );
+        if !state.in_progress.insert(label.clone()) {
+            return Err(Error::Failed(format!(
+                "include cycle: {label} includes itself"
+            )));
+        }
+        let bases = include::resolve_bases(
+            env,
+            &manifest.include,
+            state,
+            allow_drivers,
+            surface,
+            report,
+        );
+        state.in_progress.remove(&label);
+        let bases = bases?;
+        let scratch =
+            tempfile::tempdir().map_err(Error::io("create include-compose scratch".to_string()))?;
+        let base_refs: Vec<&Path> = bases.iter().map(PathBuf::as_path).collect();
+        tamias_core::overlay(&base_refs, &root, scratch.path())?;
+        include::pin_manifest(&root, scratch.path())?;
+        let dir = scratch.path().to_path_buf();
+        compose_scratch = Some(scratch);
+        dir
+    };
+    let _compose_guard = compose_scratch;
     // Provenance gate: a source-carried signature (registry `cf:` refs)
     // must verify against `allowed_signers`, and `signing.required`
     // rejects unsigned installs — before any driver runs or the store
-    // commits (a refused install leaves no partial state).
-    let payload_digest = dir_digest(&root)?;
+    // commits (a refused install leaves no partial state). The digest
+    // covers the COMPOSED payload — publish flattens includes the same
+    // way, so a flattened+signed package verifies here.
+    let payload_digest = dir_digest(&work_root)?;
     tamias_sign::enforce_signature(
         &manifest.name,
         manifest.scope.as_deref(),
@@ -218,7 +300,7 @@ pub fn install_with_progress(
     // must never be registered or executed without explicit consent. Fail
     // *before* the store entry is written so a refused install leaves no
     // partial state (the fetch-cache entry is content-addressed and stays).
-    let shipped = tamias_driver::bundled_drivers(&root)?;
+    let shipped = tamias_driver::bundled_drivers(&work_root)?;
     if !shipped.is_empty() && !tamias_driver::drivers_allowed(allow_drivers) {
         return Err(Error::Failed(format!(
             "package ships bundled driver(s): {} — refusing to install + run them; \
@@ -242,10 +324,11 @@ pub fn install_with_progress(
     // driver fails the install with no committed entry (the fetch-cache
     // entry is content-addressed and stays).
     let kind = manifest.kind.as_deref().unwrap_or("files");
-    for action in tamias_driver::register_bundled_drivers(&root)? {
+    for action in tamias_driver::register_bundled_drivers(&work_root)? {
         report(Progress::DriverAction { action });
     }
-    if !tamias_driver::dispatch(kind, "install", &root, &record.name, None)? && kind != "files" {
+    if !tamias_driver::dispatch(kind, "install", &work_root, &record.name, None)? && kind != "files"
+    {
         return Err(Error::Failed(format!(
             "no driver for content type '{kind}' — install `tamias-driver-{kind}` on PATH \
              or ship one in the package's `drivers/` dir{}",
@@ -256,7 +339,7 @@ pub fn install_with_progress(
             }
         )));
     }
-    let entry = Store::new(&env.store_root).install(&root, record)?;
+    let entry = Store::new(&env.store_root).install(&work_root, record)?;
     report(Progress::Done {
         label: entry.label(),
     });
@@ -664,6 +747,219 @@ mod tests {
         // signed one installs fine under required
         let entry = install(&env, &signed_ref, false).unwrap();
         assert!(entry.record.signature.is_some());
+    }
+
+    /// A package dir whose manifest carries an `include:` list plus
+    /// extra payload files — `(dir, files…)` written verbatim.
+    fn pkg_with_include(dir: &std::path::Path, name: &str, includes: &[String]) -> PathBuf {
+        let pkg = dir.join(name);
+        std::fs::create_dir_all(&pkg).unwrap();
+        // single-quote every entry — `@scope/…` and paths are YAML
+        // indicators otherwise; `'` inside an entry doubles per YAML.
+        let list = includes
+            .iter()
+            .map(|i| format!("  - '{}'\n", i.replace('\'', "''")))
+            .collect::<String>();
+        std::fs::write(
+            pkg.join("tamias.yaml"),
+            format!("name: {name}\nversion: 1.0.0\ninclude:\n{list}"),
+        )
+        .unwrap();
+        pkg
+    }
+
+    #[test]
+    fn include_store_name_composes_manifest_stays_provenance() {
+        let (tmp, env) = env();
+        // base payload: a file + a mergeable yaml doc
+        let base = tmp.path().join("basepkg");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("tamias.yaml"), "name: base\nversion: 1.0.0\n").unwrap();
+        std::fs::write(base.join("base.txt"), "B").unwrap();
+        std::fs::write(base.join("cfg.yaml"), "k: base\nshared: b\n").unwrap();
+        install(&env, base.to_str().unwrap(), false).unwrap();
+        // top includes the store name `base`, overrides `k`, adds files
+        let top = pkg_with_include(tmp.path(), "top", &["base".to_string()]);
+        std::fs::write(top.join("top.txt"), "T").unwrap();
+        std::fs::write(top.join("cfg.yaml"), "k: top\nlocal: t\n").unwrap();
+        let mut events = Vec::new();
+        let entry =
+            install_with_progress(&env, top.to_str().unwrap(), false, Surface::Cli, &mut |p| {
+                events.push(p)
+            })
+            .unwrap();
+        assert_eq!(entry.record.name, "top");
+        // the composed payload is what got committed
+        let dir = Store::new(&env.store_root).find("top").unwrap().dir;
+        assert_eq!(std::fs::read_to_string(dir.join("base.txt")).unwrap(), "B");
+        assert_eq!(std::fs::read_to_string(dir.join("top.txt")).unwrap(), "T");
+        let cfg = std::fs::read_to_string(dir.join("cfg.yaml")).unwrap();
+        assert!(cfg.contains("k: top"), "{cfg}"); // local wins
+        assert!(cfg.contains("shared: b"), "{cfg}"); // base merged in
+                                                     // the manifest keeps include: for provenance, verbatim
+        let manifest = std::fs::read_to_string(dir.join("tamias.yaml")).unwrap();
+        assert!(manifest.contains("include:"), "{manifest}");
+        assert!(manifest.contains("- 'base'"), "{manifest}");
+        // verify recomputes the COMPOSED digest honestly
+        assert!(Store::new(&env.store_root).verify("top").unwrap().ok);
+        // progress surfaced the base resolution
+        assert!(events
+            .iter()
+            .any(|p| matches!(p, Progress::Including { base } if base == "base@1.0.0")));
+    }
+
+    #[test]
+    fn include_ordering_earlier_wins() {
+        let (tmp, env) = env();
+        for (name, k) in [("basea", "A"), ("baseb", "B")] {
+            let b = tmp.path().join(name);
+            std::fs::create_dir_all(&b).unwrap();
+            std::fs::write(
+                b.join("tamias.yaml"),
+                format!("name: {name}\nversion: 1.0.0\n"),
+            )
+            .unwrap();
+            std::fs::write(b.join("cfg.yaml"), format!("k: {k}\n")).unwrap();
+            install(&env, b.to_str().unwrap(), false).unwrap();
+        }
+        let top = pkg_with_include(tmp.path(), "top", &["basea".into(), "baseb".into()]);
+        std::fs::write(top.join("cfg.yaml"), "local: t\n").unwrap();
+        install(&env, top.to_str().unwrap(), false).unwrap();
+        let dir = Store::new(&env.store_root).find("top").unwrap().dir;
+        let cfg = std::fs::read_to_string(dir.join("cfg.yaml")).unwrap();
+        // earlier include (basea) outranks the later one (baseb)
+        assert!(cfg.contains("k: A"), "{cfg}");
+        assert!(!cfg.contains("k: B"), "{cfg}");
+        assert!(cfg.contains("local: t"), "{cfg}");
+    }
+
+    #[test]
+    fn include_ref_recurses_and_store_base_is_not_recomposed() {
+        let (tmp, env) = env();
+        // mid includes base BY REF (fs path) — recursion installs it
+        let base = tmp.path().join("basepkg");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("tamias.yaml"), "name: base\nversion: 1.0.0\n").unwrap();
+        std::fs::write(base.join("base.txt"), "B").unwrap();
+        let base_ref = base.display().to_string();
+        let mid = pkg_with_include(tmp.path(), "mid", &[base_ref]);
+        std::fs::write(mid.join("mid.txt"), "M").unwrap();
+        install(&env, mid.to_str().unwrap(), false).unwrap();
+        // top includes `mid` BY STORE NAME — mid's stored payload is
+        // already composed (base.txt rides inside); no re-resolution.
+        let top = pkg_with_include(tmp.path(), "top", &["mid".to_string()]);
+        std::fs::write(top.join("top.txt"), "T").unwrap();
+        install(&env, top.to_str().unwrap(), false).unwrap();
+        let dir = Store::new(&env.store_root).find("top").unwrap().dir;
+        for f in ["base.txt", "mid.txt", "top.txt"] {
+            assert!(dir.join(f).is_file(), "missing {f}");
+        }
+        // the transitive base's manifest did not leak into top's
+        let manifest = std::fs::read_to_string(dir.join("tamias.yaml")).unwrap();
+        assert!(manifest.contains("name: top"), "{manifest}");
+    }
+
+    #[test]
+    fn include_missing_name_and_ref_errors() {
+        let (tmp, env) = env();
+        for entry in ["ghost", "@acme/ghost"] {
+            let p = pkg_with_include(tmp.path(), "top", &[entry.to_string()]);
+            std::fs::write(p.join("a.txt"), "a").unwrap();
+            let err = install(&env, p.to_str().unwrap(), false)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("not installed"), "{err}");
+            assert!(err.contains("tamias install"), "{err}");
+        }
+        // a path-shaped include that doesn't exist fails the same way
+        let missing = tmp.path().join("no-such-dir");
+        let p = pkg_with_include(tmp.path(), "top2", &[missing.display().to_string()]);
+        std::fs::write(p.join("a.txt"), "a").unwrap();
+        let err = install(&env, p.to_str().unwrap(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not installed"), "{err}");
+        assert!(Store::new(&env.store_root).find("top").is_err());
+        assert!(Store::new(&env.store_root).find("top2").is_err());
+    }
+
+    #[test]
+    fn include_cycle_errors() {
+        let (tmp, env) = env();
+        // a ⇄ b via fs-path includes — recursion must not hang
+        let pa = pkg_with_include(tmp.path(), "ca", &[]);
+        let pb = pkg_with_include(tmp.path(), "cb", &[]);
+        // rewrite manifests with mutual includes (abs paths are fs refs)
+        let a_ref = pa.display().to_string();
+        let b_ref = pb.display().to_string();
+        std::fs::write(
+            pa.join("tamias.yaml"),
+            format!("name: ca\nversion: 1.0.0\ninclude:\n  - '{b_ref}'\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            pb.join("tamias.yaml"),
+            format!("name: cb\nversion: 1.0.0\ninclude:\n  - '{a_ref}'\n"),
+        )
+        .unwrap();
+        let err = install(&env, pa.to_str().unwrap(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("include cycle"), "{err}");
+        assert!(Store::new(&env.store_root).find("ca").is_err());
+        assert!(Store::new(&env.store_root).find("cb").is_err());
+    }
+
+    #[test]
+    fn include_self_via_store_name_cycles() {
+        let (tmp, env) = env();
+        // v1 of `me` installs plain; a same-identity payload that
+        // includes the store name `me` must fail as a cycle — the
+        // in-progress label equals the stored entry's label.
+        let v1 = tmp.path().join("mev1");
+        std::fs::create_dir_all(&v1).unwrap();
+        std::fs::write(v1.join("tamias.yaml"), "name: me\nversion: 1.0.0\n").unwrap();
+        std::fs::write(v1.join("a.txt"), "a").unwrap();
+        install(&env, v1.to_str().unwrap(), false).unwrap();
+        let v2 = pkg_with_include(tmp.path(), "mev2", &["me".to_string()]);
+        // same package identity (name+version), different payload dir
+        std::fs::write(
+            v2.join("tamias.yaml"),
+            "name: me\nversion: 1.0.0\ninclude:\n  - me\n",
+        )
+        .unwrap();
+        std::fs::write(v2.join("b.txt"), "b").unwrap();
+        let err = install(&env, v2.to_str().unwrap(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("include cycle"), "{err}");
+    }
+
+    #[test]
+    fn include_depth_cap_errors() {
+        let (tmp, env) = env();
+        // chain p0 → p1 → … → p8 → p9; p8's include resolves at depth 8
+        let mut dirs = Vec::new();
+        for i in 0..=9 {
+            let d = tmp.path().join(format!("p{i}"));
+            std::fs::create_dir_all(&d).unwrap();
+            dirs.push(d);
+        }
+        for i in 0..=8 {
+            let next = dirs[i + 1].display().to_string();
+            std::fs::write(
+                dirs[i].join("tamias.yaml"),
+                format!("name: p{i}\nversion: 1.0.0\ninclude:\n  - '{next}'\n"),
+            )
+            .unwrap();
+            std::fs::write(dirs[i].join("a.txt"), "a").unwrap();
+        }
+        std::fs::write(dirs[9].join("tamias.yaml"), "name: p9\nversion: 1.0.0\n").unwrap();
+        std::fs::write(dirs[9].join("a.txt"), "a").unwrap();
+        let err = install(&env, dirs[0].to_str().unwrap(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("nesting cap"), "{err}");
     }
 
     #[test]

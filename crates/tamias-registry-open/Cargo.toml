@@ -20,6 +20,7 @@ tamias-config-toml.workspace = true
 tamias-registry.workspace = true
 tamias-registry-local.workspace = true
 tamias-registry-cf.workspace = true
+tamias-publish.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

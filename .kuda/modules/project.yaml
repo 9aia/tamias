@@ -37,9 +37,11 @@ provenance:
   - project/plans/pl-0004-tamias-tui-phased-delivery.md
   - project/plans/pl-0005-registry-sources-configurable-limits-phased-delivery.md
   - project/plans/pl-0006-tamias-sync-phased-delivery.md
+  - project/plans/pl-0007-payload-composition-phased-delivery.md
   - project/proposals/proposal-0001-tamias-tui-interactive-package-manager-tamias-ui.md
   - project/proposals/proposal-0002-registry-sources-configurable-limits-named-registries-self-hosting-per-pkg-max-upload.md
   - project/proposals/proposal-0003-tamias-sync-install-a-project-s-dep-set-from-tamias-yaml-tamias-lock.md
+  - project/proposals/proposal-0004-payload-composition-include-overlay-on-install-publish-lock-only-install.md
   hashes:
   - a8d17ca6e86c1faa677ebf8bbe55112e6b79ddb9
   - 67c21ea961d34b2db8bfd4e3441dc6001de32b9e
@@ -60,10 +62,12 @@ provenance:
   - 13c1457a7cee4deca035fd7c572bc1ade9274a9e
   - 03b12d41126df13d00611a3fc698d4e40d3e1d4d
   - 60e7a5e2b8832a441294318e4e9e5ed43f24ca60
-  - 55530c95ef58034e43357fe0a0a69aa8035ec11e
+  - bd22e741a201d03d9180c97ee3adc078416dfb2e
+  - 0c569ec547b836f0e4c7c193021f7f8bc7e5d288
   - 35c5e480e4e99fb8f4e5c5e6ddb9fde060a95402
   - e2fc25e216d16449105fb4ab420bebf2f02d06d4
-  - 60094f7c8862cf7ca1cfa148c766d1eb0cd4d053
-  commit_sha: 326bebe44135c2e5e5b7bdd5e7c0a3d4bd1ef945
-  generated_at: '1794331999'
+  - 020c4f723e38d786392a98d87df67530e4fc1443
+  - 8c250bed25d6fee0958876bc236e50c1b87febfe
+  commit_sha: faedaff9ebefacf629d7dac98eefa50674a2fd9c
+  generated_at: '1794333497'
   generator: kuda-template/0.1.2

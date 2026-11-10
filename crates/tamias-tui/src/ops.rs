@@ -361,6 +361,7 @@ fn install_ref(
         &mut |p| match p {
             Progress::Fetching { reference } => log(format!("fetching {reference}")),
             Progress::Installing { label } => log(format!("installing {label}")),
+            Progress::Including { base } => log(format!("including {base}")),
             Progress::DriverAction { action } => log(format!("driver: {action}")),
             Progress::Done { label } => log(format!("done — {label}")),
         },
@@ -868,6 +869,7 @@ fn sync_deps(
         &mut |p| match p {
             Progress::Fetching { reference } => log(format!("fetching {reference}")),
             Progress::Installing { label } => log(format!("installing {label}")),
+            Progress::Including { base } => log(format!("including {base}")),
             Progress::DriverAction { action } => log(format!("driver: {action}")),
             Progress::Done { label } => log(format!("done — {label}")),
         },
@@ -888,9 +890,16 @@ fn sync_deps(
 }
 
 /// `tamias bundle pack <dir> [out]` — `tamias-publish`'s pack.
-fn pack(dir: &str, out: Option<&str>) -> Result<Outcome, Error> {
+fn pack(dir: &str, out: Option<&str>, ctx: &Ctx) -> Result<Outcome, Error> {
     let out_path = out.map(PathBuf::from);
-    let packed = tamias_publish::pack(Path::new(dir), out_path.as_deref())?;
+    // Default flatten — `include:` bases resolve read-only against the
+    // store; the TUI has no keep-includes toggle.
+    let packed = tamias_publish::pack(
+        Path::new(dir),
+        out_path.as_deref(),
+        tamias_publish::Includes::Flatten,
+        &ctx.store_root,
+    )?;
     Ok(Outcome::Text(format!("packed → {}", packed.display())))
 }
 
@@ -911,6 +920,8 @@ fn publish(
         Some(&config),
         registry,
         &[config.publish.default.as_deref()],
+        &ctx.store_root,
+        false,
         &mut |manifest, target| {
             log(format!(
                 "publishing {} → {}",
@@ -1112,7 +1123,7 @@ pub fn run(ctx: &Ctx, job: &Job, log: &mut dyn FnMut(String)) -> Result<Outcome,
             allow_drivers,
         } => set_dep(ctx, old, new, *allow_drivers, log),
         Job::Sync { allow_drivers } => sync_deps(ctx, *allow_drivers, log),
-        Job::Pack { dir, out } => pack(dir, out.as_deref()),
+        Job::Pack { dir, out } => pack(dir, out.as_deref(), ctx),
         Job::Publish { dir, registry } => publish(ctx, dir, registry.as_deref(), log),
         Job::Registries => registries(ctx),
     }

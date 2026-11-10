@@ -4,12 +4,13 @@
 //! `.json` files merge document-wise; other files resolve whole-file with
 //! the higher priority winning.
 //!
-//! **Reserved machinery:** [`overlay`] has no caller on the install
-//! path yet — `Manifest::include` is parsed and displayed but nothing
-//! resolves the base refs or composes layers. Kept (with its tests)
-//! because payload composition is designed-for; wiring it is a feature,
-//! not cleanup. [`payload_root`] *is* live — every install/publish
-//! path uses it to find the manifest dir.
+//! [`overlay`] composes resolved base dirs under a local payload —
+//! `tamias-install` runs it post-manifest/pre-driver on install (the
+//! store record's digest covers the *composed* tree) and `tamias-publish`
+//! runs it read-only when packing (flatten-by-default). [`payload_root`]
+//! finds the manifest dir inside a fetched tree; [`find_store_entry`]
+//! matches an `include:` entry against installed store entries — the
+//! name half of base resolution both surfaces share.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,7 +18,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::digest::payload_files;
-use crate::{Error, Manifest};
+use crate::{Error, Manifest, StoreEntry};
 
 /// The payload root inside a fetched dir — `dir` itself when it holds a
 /// manifest, else the single child dir it wraps everything under.
@@ -49,6 +50,42 @@ pub fn payload_root(dir: &Path) -> Result<PathBuf, Error> {
             "no tamias manifest under {}",
             dir.display()
         )));
+    }
+}
+
+/// Match an `include:` entry against installed store entries. An entry
+/// names a base three ways: the full label (`@scope/name@version` or
+/// `name@<sha12>`), the scoped name (`@scope/name`), or the bare name
+/// (`name` — scope-agnostic, so several installs sharing it is an
+/// ambiguity error, same rule as `Store::find`).
+///
+/// Returns `Ok(None)` on no match — the caller falls through to ref
+/// resolution (install) or fails naming the entry (publish).
+///
+/// # Errors
+/// Fails when a bare name matches several entries.
+pub fn find_store_entry(entries: &[StoreEntry], text: &str) -> Result<Option<StoreEntry>, Error> {
+    let scoped_name = |e: &StoreEntry| match &e.record.scope {
+        Some(scope) => format!("@{scope}/{}", e.record.name),
+        None => e.record.name.clone(),
+    };
+    let mut matches: Vec<StoreEntry> = Vec::new();
+    for e in entries {
+        let hit = e.label() == text || scoped_name(e) == text || e.record.name == text;
+        if hit && !matches.iter().any(|m| m.dir == e.dir) {
+            matches.push(e.clone());
+        }
+    }
+    match matches.len() {
+        0 => Ok(None),
+        1 => Ok(matches.pop()),
+        _ => {
+            let labels: Vec<String> = matches.iter().map(StoreEntry::label).collect();
+            Err(Error::Failed(format!(
+                "include '{text}' is ambiguous — several installs share the name: {}",
+                labels.join(", ")
+            )))
+        }
     }
 }
 
