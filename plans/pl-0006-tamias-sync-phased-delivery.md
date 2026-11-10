@@ -1,7 +1,7 @@
 +++
 id = "PL-006"
 title = "tamias sync — phased delivery"
-status = "claimed"
+status = "in-progress"
 created = "2026-11-10"
 owner = "devin"
 priority = "medium"
