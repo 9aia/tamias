@@ -79,6 +79,17 @@ Unit names are deterministic: `provider.name` wins, else the package
 name (scope-qualified — `@ci/gate` → `ci-gate-…`). Two packages claiming
 the same unit name resolve last-deploy-wins.
 
+A shared unit name is a feature, not just a collision: packages that
+declare the same `provider.name` + service name render **one** unit —
+the canonical shape is several content bundles joining a single host
+process (e.g. `peregrin-bundle`s whose `campaign` service runs
+`campaign serve <dir>` over a directory of generated configs — one
+bundle's deploy drops its config there, the host serves them all).
+Keep `exec` (and `env_file`/`workdir`) identical across declarers —
+last deploy wins the unit file. `uninstall` re-renders a still-shared
+unit from a surviving declarer instead of dropping it; only the last
+declarer's removal removes the unit.
+
 ## Deploy an installed package
 
 ```sh
@@ -103,9 +114,10 @@ described in [Security model](/explanation/security).
 
 If neither a driver nor `provider.services[]` applies, `deploy` reports
 `nothing to deploy (type …)` and succeeds. `uninstall` runs the driver's
-teardown, removes the declarative units (best-effort per unit), then
-drops the store entry; with no driver it warns that provider-side
-resources may remain. When the manifest declares `ingress[].hooks[]`,
+teardown, removes the declarative units (best-effort per unit — a unit
+another installed provider still declares is re-rendered from the
+survivor instead), then drops the store entry; with no driver it warns
+that provider-side resources may remain. When the manifest declares `ingress[].hooks[]`,
 `deploy` prints a hint pointing at `tamias driver exec <pkg> hooks
 register --dry-run` — hook registration stays explicit (the
 `public_url` fronts a tunnel the operator confirms first).
