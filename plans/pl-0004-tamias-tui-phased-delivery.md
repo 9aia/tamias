@@ -22,73 +22,73 @@ verb `tamias ui`, `tui` feature default-on, shared ops in widened
 > sequence them together.
 
 - [x] Resolve open questions (verb, gate, ops home) — see P-001 Decisions.
-- [ ] Add workspace deps: `ratatui = "0.30"`, `crossterm = "0.29"`,
+- [x] Add workspace deps: `ratatui = "0.30"`, `crossterm = "0.29"`,
       `notify = "8"`, `portable-pty = "0.9"` (dev-dep on tamias-tui).
-- [ ] Widen `tamias-serve`: `Env` gains registry + config context so ops
+- [x] Widen `tamias-serve`: `Env` gains registry + config context so ops
       cover `search`, `update`, `pin`, `cache clean` (in addition to
       existing install/list/info/verify/remove). CLI verbs and serve
       dispatch refactor onto it — scoped T-014 dedupe, no 4th copy.
-- [ ] Add serve/TUI-needed ops for later phases behind the same surface:
+- [x] Add serve/TUI-needed ops for later phases behind the same surface:
       `service list`, `run`, `logs`, `deploy`, `uninstall`,
       `manifest get/set-deps`, `bundle pack`, `publish` (can land
       per-phase instead — decide at extraction time).
 
 ## Phase 1 — skeleton + installed view (read-only)
 
-- [ ] `crates/tamias-tui`: `run(...)` mirroring `myco_tui::run` — alt
+- [x] `crates/tamias-tui`: `run(...)` mirroring `myco_tui::run` — alt
       screen, raw mode, panic hook, terminal Guard, crossterm loop,
       `notify` watcher on store root.
-- [ ] App model: installed entries via `tamias-store-local::Store`;
+- [x] App model: installed entries via `tamias-store-local::Store`;
       `/` client-side filter; `j/k`/arrows, `Tab`/`1`-`5` panes, `?`
       help, `:` palette, `q`/`Ctrl-C`, mouse.
-- [ ] `tamias ui` verb in tamias-cli behind `tui` feature; env from
+- [x] `tamias ui` verb in tamias-cli behind `tui` feature; env from
       `Env::from_env` + config.
-- [ ] PTY smoke test (`tests/pty.rs`): launch, draw, quit cleanly.
+- [x] PTY smoke test (`tests/pty.rs`): launch, draw, quit cleanly.
 
 ## Phase 2 — actions on installed packages
 
-- [ ] Detail pane: manifest, provenance, provider/services, drivers,
+- [x] Detail pane: manifest, provenance, provider/services, drivers,
       verify status.
-- [ ] `v` verify, `u` update, `p` pin, `c` cache clean, `d` doctor —
+- [x] `v` verify, `u` update, `p` pin, `c` cache clean, `d` doctor —
       confirm modals where mutating; errors to status line, never panic.
-- [ ] `r` remove — confirm modal + non-`files` driver-teardown warning
+- [x] `r` remove — confirm modal + non-`files` driver-teardown warning
       (same rule as serve's remove).
-- [ ] Worker-thread exec for blocking ops; spinner.
+- [x] Worker-thread exec for blocking ops; spinner.
 
 ## Phase 3 — registry search + install
 
-- [ ] Registry pane: debounced search-as-you-type; `i` installs selected
+- [x] Registry pane: debounced search-as-you-type; `i` installs selected
       ref.
-- [ ] `i` install-by-ref prompt with grammar hint.
-- [ ] Bundled-driver consent modal → `allow_drivers` (no env var).
-- [ ] Progress pane: streamed phases via channel.
+- [x] `i` install-by-ref prompt with grammar hint.
+- [x] Bundled-driver consent modal → `allow_drivers` (no env var).
+- [x] Progress pane: streamed phases via channel.
 
 ## Phase 4 — provider lifecycle
 
-- [ ] Services pane: `provider:` blocks + unit state table.
-- [ ] `run` exec — PTY pane or scrollback tail; `logs` follow view.
-- [ ] `deploy`/`uninstall` with confirms; extend tamias-serve ops as
+- [x] Services pane: `provider:` blocks + unit state table.
+- [x] `run` exec — PTY pane or scrollback tail; `logs` follow view.
+- [x] `deploy`/`uninstall` with confirms; extend tamias-serve ops as
       needed (or call tamias-deploy-local/-cf directly — pick at impl).
 
 ## Phase 5 — manifest editor (`tamias.yaml` deps form — the file `tamias add` writes)
 
-- [ ] Editable deps rows: add/remove/set-ref; commits through the same
+- [x] Editable deps rows: add/remove/set-ref; commits through the same
       manifest+lock write path as `tamias add` (which writes
       `tamias.yaml` — match that, don't invent a second filename).
-- [ ] Read-only render of the rest of the manifest (no free-form YAML
+- [x] Read-only render of the rest of the manifest (no free-form YAML
       editing).
 
 ## Phase 6 — authoring
 
-- [ ] `bundle pack <dir>` flow: dir prompt → progress → output path.
-- [ ] `publish <dir> --registry <ref>` flow: dir + registry prompts →
+- [x] `bundle pack <dir>` flow: dir prompt → progress → output path.
+- [x] `publish <dir> --registry <ref>` flow: dir + registry prompts →
       progress → result.
 
 ## Phase 7 — polish + ship
 
-- [ ] `R` reload + `notify` on store root and browsed registry index.
-- [ ] Help overlay + `:` palette cover every bound verb.
-- [ ] Docs: `docs/` how-to page; `gen-cli-docs` picks up `ui`;
+- [x] `R` reload + `notify` on store root and browsed registry index.
+- [x] Help overlay + `:` palette cover every bound verb.
+- [x] Docs: `docs/` how-to page; `gen-cli-docs` picks up `ui`;
       README mention.
-- [ ] `cargo xtask check` + `test` green; PTY tests cover terminal
+- [x] `cargo xtask check` + `test` green; PTY tests cover terminal
       restore on quit paths.
