@@ -5,92 +5,137 @@ api:
 - name: Store
   kind: type
   file: crates/tamias-store-local/src/lib.rs
-  line: 30
+  line: 33
   module: tamias-store-local
 - name: VerifyReport
   kind: type
   file: crates/tamias-store-local/src/lib.rs
-  line: 17
+  line: 20
   module: tamias-store-local
 - name: collect
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 174
+  line: 303
   module: tamias-store-local
 - name: collect_skips_non_dirs
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 288
+  line: 457
+  module: tamias-store-local
+- name: corrupt_record_is_skipped_not_fatal
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 468
   module: tamias-store-local
 - name: entries
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 51
+  line: 57
   module: tamias-store-local
 - name: entry_dir
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 153
+  line: 186
+  module: tamias-store-local
+- name: failed_reinstall_keeps_old_entry_and_cleans_staging
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 504
   module: tamias-store-local
 - name: find
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 66
+  line: 72
   module: tamias-store-local
 - name: install
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 95
+  line: 106
   module: tamias-store-local
 - name: install_find_verify_remove_and_ambiguity
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 226
+  line: 374
+  module: tamias-store-local
+- name: install_rejects_unsafe_record_fields
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 436
+  module: tamias-store-local
+- name: install_skips_symlinked_payload_entries
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 530
   module: tamias-store-local
 - name: io_error_arms
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 300
+  line: 550
   module: tamias-store-local
 - name: new
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 37
+  line: 40
+  module: tamias-store-local
+- name: old_dir
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 237
   module: tamias-store-local
 - name: payload
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 221
+  line: 369
   module: tamias-store-local
 - name: record
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 208
+  line: 356
   module: tamias-store-local
 - name: remove
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 115
+  line: 139
+  module: tamias-store-local
+- name: remove_leaves_no_litter
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 488
   module: tamias-store-local
 - name: retarget
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 141
+  line: 170
   module: tamias-store-local
 - name: root
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 43
+  line: 46
   module: tamias-store-local
 - name: root_accessor_and_sha_label
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 274
+  line: 422
   module: tamias-store-local
 - name: scope_recursion_replace_and_manifest
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 258
+  line: 406
+  module: tamias-store-local
+- name: staging_dir
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 228
+  module: tamias-store-local
+- name: swap_into_place
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 250
+  module: tamias-store-local
+- name: sweep_staging
+  kind: function
+  file: crates/tamias-store-local/src/lib.rs
+  line: 285
   module: tamias-store-local
 - name: tamias-store-local
   kind: module
@@ -100,27 +145,27 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-store-local/src/lib.rs
-  line: 203
+  line: 351
   module: tamias-store-local
 - name: unix_now
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 195
+  line: 343
   module: tamias-store-local
 - name: verify
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 126
+  line: 155
   module: tamias-store-local
 - name: verify_mismatch_and_missing
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 245
+  line: 393
   module: tamias-store-local
 - name: version_label
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 163
+  line: 215
   module: tamias-store-local
 deps:
 - serde_json
@@ -137,7 +182,7 @@ provenance:
   - crates/tamias-store-local/src/lib.rs
   hashes:
   - b72ecdfc35205627f0652e893fcaa0e5558afc3b
-  - 6d94d006c5e6813588ad694b946e34265aa097c6
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - c74bd684c8832fba2f5c098c326b26b67c762f4b
+  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
+  generated_at: '1794323780'
   generator: kuda-template/0.1.2

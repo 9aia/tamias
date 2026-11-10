@@ -31,6 +31,7 @@ provenance:
   - docs/how-to/manage-deps.md
   - docs/how-to/provision-a-service.md
   - docs/how-to/publish-to-a-registry.md
+  - docs/how-to/use-the-tui.md
   - docs/how-to/write-a-driver.md
   - docs/index.md
   - docs/package.json
@@ -44,7 +45,7 @@ provenance:
   - docs/tutorials/first-package.md
   hashes:
   - 3e2567532d755741f01fd8d843314a585c92065e
-  - e7a5b27e86ede1641b89d561ed23bca8fc735c2e
+  - 8362b8c9f476629c949b3abebd1ccab7c550d8e3
   - 6432ebc73538168a856545a3089e16068d41afe3
   - de14d9668d4a376b7f0a80a0dd63bdc6d16d3862
   - a56bd9d1ef950236c96312207d13599caf1a2a8f
@@ -57,17 +58,18 @@ provenance:
   - 49d57c20a411809e52f34496b5c49b1b68b64328
   - d9f8afde7b11bff953c5e330cedd41ccda2281df
   - f751585903be81f034fba3184564e756b4bab5b1
+  - fa23b74a1cc8e3436993f06f33abc29a13af00f1
   - 8604f01c01c8a7ec6d148b1d02f0f908d8b05c6e
   - fd49412c0b9f1eb1a8f342536cf16e08eb14e08f
   - bd4ad762a3f06738d714b9be6cb896675f371375
   - 175fa4f47aecdc02e902d243a1c29914eb2ee258
-  - 23ba912c5a1755122b99dfb86a2d97461b381fc3
-  - 785b99494fef71602ece080762fbb54fbf31f89d
-  - e7cc623cc6076637a459e8a2787c15fe32436cad
+  - 6ea83ee81ece6419446066afcae474fb743f234d
+  - dc9ebfa87c060b740e4e8c3315e0bd41abf9297a
+  - 2655d32b0775936f048c1666ee38d70b472fee6a
   - 6afbb96b91d86d5d786ed1d3c8ed879ec3ef9d6c
   - 93acf26fb9f20e34d422c784a3b175419eb1458c
   - 14eef8c49d4048ed590ec0e68017161637028eff
   - 8e907eb894a66ad710bacfe68ea6e64f9a3cc72b
-  commit_sha: 734215d892ec0edd19b970f53c1604a0c6514e63
-  generated_at: '1794293486'
+  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
+  generated_at: '1794323780'
   generator: kuda-template/0.1.2

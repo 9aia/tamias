@@ -2,95 +2,150 @@ name: tamias-cache-local
 path: crates/tamias-cache-local/Cargo.toml
 purpose: local cache impl — content-addressed fetch cache
 api:
+- name: EntryMeta
+  kind: type
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 31
+  module: tamias-cache-local
 - name: FetchCache
   kind: type
   file: crates/tamias-cache-local/src/lib.rs
-  line: 24
+  line: 40
+  module: tamias-cache-local
+- name: META_DIR
+  kind: const
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 27
+  module: tamias-cache-local
+- name: META_VERSION
+  kind: const
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 28
   module: tamias-cache-local
 - name: clean
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 123
+  line: 223
   module: tamias-cache-local
 - name: clean_all
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 143
+  line: 250
   module: tamias-cache-local
 - name: clean_by_age_and_hidden_excluded
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 183
+  line: 290
+  module: tamias-cache-local
+- name: clean_evicts_meta_with_entry
+  kind: function
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 400
   module: tamias-cache-local
 - name: commit
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 73
+  line: 115
   module: tamias-cache-local
 - name: commit_missing_scratch_errors
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 222
+  line: 329
+  module: tamias-cache-local
+- name: commit_replaces_corrupt_existing_entry
+  kind: function
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 383
   module: tamias-cache-local
 - name: discard
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 89
+  line: 150
   module: tamias-cache-local
 - name: entries
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 99
+  line: 199
   module: tamias-cache-local
 - name: entry
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 43
+  line: 59
+  module: tamias-cache-local
+- name: entry_intact
+  kind: function
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 164
+  module: tamias-cache-local
+- name: evict
+  kind: function
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 178
   module: tamias-cache-local
 - name: has
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 49
+  line: 66
+  module: tamias-cache-local
+- name: hit
+  kind: function
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 78
+  module: tamias-cache-local
+- name: hit_treats_legacy_and_missing_meta_as_miss
+  kind: function
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 358
+  module: tamias-cache-local
+- name: hit_verifies_and_evicts_corruption
+  kind: function
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 337
   module: tamias-cache-local
 - name: invalid_key_and_discard
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 170
+  line: 277
   module: tamias-cache-local
 - name: io_error_arms
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 231
+  line: 413
   module: tamias-cache-local
 - name: key_validation_and_existing_entry
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 195
+  line: 302
+  module: tamias-cache-local
+- name: meta_path
+  kind: function
+  file: crates/tamias-cache-local/src/lib.rs
+  line: 157
   module: tamias-cache-local
 - name: new
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 31
+  line: 47
   module: tamias-cache-local
 - name: root
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 37
+  line: 53
   module: tamias-cache-local
 - name: scratch
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 57
+  line: 94
   module: tamias-cache-local
 - name: scratch_commit_has_clean
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 156
+  line: 263
   module: tamias-cache-local
 - name: scratch_reuse_clears_stale
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 211
+  line: 318
   module: tamias-cache-local
 - name: tamias-cache-local
   kind: module
@@ -100,16 +155,19 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-cache-local/src/lib.rs
-  line: 150
+  line: 257
   module: tamias-cache-local
 - name: valid_key
   kind: function
   file: crates/tamias-cache-local/src/lib.rs
-  line: 14
+  line: 15
   module: tamias-cache-local
 deps:
+- serde
+- serde_json
 - tamias-core
 - tempfile
+- serde
 - tamias-core
 notes: ''
 verify:
@@ -120,8 +178,8 @@ provenance:
   - crates/tamias-cache-local/Cargo.toml
   - crates/tamias-cache-local/src/lib.rs
   hashes:
-  - 73bb965ca9ce52943f387dabc8f131403a583539
-  - 87eb935eded32c6a58fd7f213bdcea76fe88b905
-  commit_sha: b2ff6c568a728099ae6b72254450fb9223366061
-  generated_at: '1794170572'
+  - 5b9a61b04a88f684b5ffe12c51bd26d10effcc7a
+  - 296e522cb792ba60154783f2847bfc6a39bd6a97
+  commit_sha: fa1d985df76b362f567d83d1cdc4c27d688a8f42
+  generated_at: '1794323780'
   generator: kuda-template/0.1.2
