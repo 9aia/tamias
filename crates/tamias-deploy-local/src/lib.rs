@@ -175,10 +175,33 @@ impl LocalDeploy {
     /// [`Error::Failed`] on an invalid unit name; propagates the runner
     /// failure.
     pub fn logs(&self, name: &str) -> Result<(), Error> {
-        self.runner.run(
-            "journalctl",
-            &["--user", "-u", &unit(name)?, "-n", "200", "--no-pager"],
-        )
+        self.logs_with(&[name.to_string()], 200, false)
+    }
+
+    /// `journalctl --user -u <unit>… -n <lines>` over one or more units —
+    /// journalctl accepts repeated `-u` flags, so a package's several
+    /// provider units share one stream. `follow` adds `-f`.
+    ///
+    /// # Errors
+    /// [`Error::Failed`] on an invalid/empty unit list; propagates the
+    /// runner failure.
+    pub fn logs_with(&self, names: &[String], lines: u32, follow: bool) -> Result<(), Error> {
+        if names.is_empty() {
+            return Err(Error::Failed("logs: no units given".into()));
+        }
+        let mut args: Vec<String> = vec!["--user".into()];
+        for name in names {
+            args.push("-u".into());
+            args.push(unit(name)?);
+        }
+        args.push("-n".into());
+        args.push(lines.to_string());
+        args.push("--no-pager".into());
+        if follow {
+            args.push("-f".into());
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.runner.run("journalctl", &refs)
     }
 
     /// Disable (best-effort) + remove the unit file + daemon-reload
@@ -680,6 +703,10 @@ mod tests {
             LocalDeploy::with_default(dir.path().to_path_buf(), Box::new(Recorder::default()));
         rec.status("p").unwrap();
         rec.logs("p").unwrap();
+        // logs_with: repeated -u per unit, -n lines, -f when following
+        rec.logs_with(&["a".into(), "b".into()], 50, true).unwrap();
+        assert!(rec.logs_with(&[], 50, false).is_err());
+        assert!(rec.logs_with(&["bad/name".into()], 50, false).is_err());
         rec.disable("p").unwrap();
         rec.uninstall("missing").unwrap();
         assert_eq!(rec.unit_dir(), dir.path());

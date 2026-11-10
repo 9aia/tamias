@@ -1579,6 +1579,7 @@ dependencies = [
  "tamias-registry-cf",
  "tamias-registry-local",
  "tamias-serve",
+ "tamias-shell",
  "tamias-store-local",
  "tamias-telemetry",
  "tempfile",

@@ -109,24 +109,38 @@ fn lookup(name: &str) -> Option<PathBuf> {
 
 /// Whether `driver` reports handling `kind` (its `capabilities` `types`).
 fn driver_handles(driver: &Path, kind: &str) -> bool {
-    let mut cmd = std::process::Command::new(driver);
-    cmd.arg("capabilities");
-    let Ok(out) = output_with_timeout(&mut cmd, CAPABILITIES_TIMEOUT) else {
-        return false;
-    };
-    if !out.status.success() {
-        return false;
-    }
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
-        return false;
-    };
-    value
-        .get("types")
-        .and_then(|t| t.as_array())
+    capabilities(driver)
+        .ok()
+        .and_then(|value| value.get("types").cloned())
+        .and_then(|t| t.as_array().cloned())
         .is_some_and(|a| a.iter().any(|x| x.as_str() == Some(kind)))
 }
 
-/// Every discovered driver as `(type, path)` — for `doctor`.
+/// Run a driver's `capabilities` probe and return the JSON it prints —
+/// the same bounded call [`driver_handles`] makes, exposed for the
+/// `tamias drivers` listing. `Ok` only on a zero exit *and* parseable
+/// JSON; anything else is an [`Error`] the caller renders as "unreachable".
+///
+/// # Errors
+/// Propagates spawn/timeout/parse failures.
+pub fn capabilities(driver: &Path) -> Result<serde_json::Value, Error> {
+    let mut cmd = std::process::Command::new(driver);
+    cmd.arg("capabilities");
+    let out = output_with_timeout(&mut cmd, CAPABILITIES_TIMEOUT)
+        .map_err(|e| Error::Failed(format!("{} capabilities: {e}", driver.display())))?;
+    if !out.status.success() {
+        return Err(Error::Failed(format!(
+            "{} capabilities exited {}",
+            driver.display(),
+            out.status
+        )));
+    }
+    serde_json::from_slice(&out.stdout)
+        .map_err(|e| Error::Failed(format!("{} capabilities: bad JSON: {e}", driver.display())))
+}
+
+/// Every discovered driver as `(type, path)` — for `doctor` and
+/// `tamias drivers`.
 #[must_use]
 pub fn discovered_drivers() -> Vec<(String, PathBuf)> {
     let mut found: Vec<(String, PathBuf)> = Vec::new();
@@ -520,6 +534,14 @@ mod tests {
         );
         assert!(find_driver("thetype").is_some());
         // dispatch: driver exits 1 → Err
+        write_driver(&dd, "tamias-driver-bad", "#!/bin/sh\nexit 1\n");
+        assert!(dispatch("bad", "install", tmp.path(), "n", None).is_err());
+        // the public capabilities probe: json on success, Err otherwise
+        let caps = capabilities(&dd.join("tamias-driver-ok")).unwrap();
+        assert_eq!(caps["types"], serde_json::json!(["thetype"]));
+        assert!(capabilities(&dd.join("tamias-driver-junk")).is_err());
+        assert!(capabilities(&dd.join("tamias-driver-failcap")).is_err());
+        assert!(capabilities(&dd.join("tamias-driver-bad")).is_err());
         write_driver(&dd, "tamias-driver-boom", "#!/bin/sh\nexit 1\n");
         assert!(dispatch("boom", "install", tmp.path(), "n", None).is_err());
         assert!(discovered_drivers().iter().any(|(k, _)| k == "ok"));

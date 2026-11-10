@@ -35,6 +35,7 @@ tamias-publish.workspace = true
 tamias-config.workspace = true
 tamias-config-yml.workspace = true
 tamias-config-toml.workspace = true
+tamias-shell.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 serde_json.workspace = true
