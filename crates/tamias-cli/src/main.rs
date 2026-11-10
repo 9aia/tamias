@@ -1495,6 +1495,27 @@ fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
     let store = Store::new(&env.store_root);
     let entry = store.find(name)?;
     let kind = entry.record.kind.as_deref().unwrap_or("files");
+    // Capture the provider spec before teardown — the store entry is
+    // dropped below, and the manifest is needed both to remove this
+    // package's units and to tell whether a *surviving* provider still
+    // declares them (unit names can be shared: several packages may
+    // render the same `<provider>-<service>` unit, e.g. one campaign
+    // host spanning bundles).
+    let manifest = provider_of(&entry)?;
+    let unit_names: Vec<String> = manifest
+        .as_ref()
+        .map(|m| {
+            m.provider
+                .as_ref()
+                .map(|p| {
+                    p.services
+                        .iter()
+                        .map(|s| provider_unit_name(m, &s.name))
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
     // Teardown runs before the entry is dropped: a failing driver keeps the
     // store entry so the uninstall can be retried instead of leaking
     // provider-side resources under a false "uninstalled".
@@ -1503,23 +1524,110 @@ fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
     {
         eprintln!("tamias: warning — no driver for type '{kind}'; provider resources may remain");
     }
+    let record = store.remove(name)?;
     // Declarative provider services are tamias-native — remove their
-    // units too. Best-effort per unit: a unit that can't be removed
-    // warns but doesn't block dropping the store entry.
-    if let Some(manifest) = provider_of(&entry)? {
-        let deploy = tamias_deploy_local::LocalDeploy::new();
-        if let Some(provider) = &manifest.provider {
-            for service in &provider.services {
-                let unit = provider_unit_name(&manifest, &service.name);
-                if let Err(e) = deploy.uninstall(&unit) {
+    // units too, unless a surviving installed provider still declares
+    // the same unit name: that unit is re-rendered from the survivor's
+    // spec instead (shared units must declare identical `exec`; the
+    // survivor is the honest source once this package is gone). Units
+    // are best-effort per name: a failure warns but doesn't fail the
+    // uninstall — the store entry is already dropped.
+    let deploy = tamias_deploy_local::LocalDeploy::new();
+    let survivors = surviving_units(
+        &env.store_root,
+        &unit_names
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>(),
+    );
+    for unit in &unit_names {
+        match survivors.get(unit) {
+            Some(Some((spec, label))) => match deploy.install(spec) {
+                Ok(path) => println!(
+                    "unit {unit} is shared — re-rendered from {label} → {}",
+                    path.display()
+                ),
+                Err(e) => {
+                    eprintln!("tamias: warning — could not refresh shared unit {unit}: {e}")
+                }
+            },
+            Some(None) => eprintln!(
+                "tamias: warning — unit {unit} is still declared but its surviving spec is invalid; left untouched"
+            ),
+            None => {
+                if let Err(e) = deploy.uninstall(unit) {
                     eprintln!("tamias: warning — could not remove unit {unit}: {e}");
                 }
             }
         }
     }
-    let record = store.remove(name)?;
+    if !unit_names.is_empty() {
+        // Best-effort: a missing user bus must not fail the uninstall —
+        // the unit files are already written/removed.
+        let _ = deploy.daemon_reload();
+    }
     println!("uninstalled {}@{}", record.name, record.resolved);
     Ok(())
+}
+
+/// Of `names` (unit base names a just-uninstalled package declared),
+/// the ones *other* still-installed providers also declare — unit →
+/// `(spec, declaring package label)`, first declarer in sorted store
+/// order wins. A `None` spec means the survivor's `exec` won't parse:
+/// the unit is left untouched (warned by the caller's match arm can't
+/// see it — warned here instead). Store/manifest read failures degrade
+/// to "not declared" so a broken sibling never blocks an uninstall.
+fn surviving_units(
+    store_root: &Path,
+    names: &std::collections::BTreeSet<String>,
+) -> std::collections::BTreeMap<String, Option<(tamias_deploy_local::ServiceSpec, String)>> {
+    let mut out = std::collections::BTreeMap::new();
+    if names.is_empty() {
+        return out;
+    }
+    let entries = match Store::new(store_root).entries() {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!("tamias: warning — could not rescan store for shared units: {e}");
+            return out;
+        }
+    };
+    for entry in entries {
+        let manifest = match provider_of(&entry) {
+            Ok(Some(manifest)) => manifest,
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!(
+                    "tamias: warning — skipping {} in shared-unit scan: {e}",
+                    entry.label()
+                );
+                continue;
+            }
+        };
+        let Some(provider) = manifest.provider.as_ref() else {
+            continue;
+        };
+        for service in &provider.services {
+            let unit = provider_unit_name(&manifest, &service.name);
+            if !names.contains(&unit) || out.contains_key(&unit) {
+                continue;
+            }
+            match provider_service_spec(&entry, &manifest, service) {
+                Ok(spec) => {
+                    out.insert(unit, Some((spec, entry.label())));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "tamias: warning — {} service '{}': bad exec for shared unit {unit}: {e}",
+                        entry.label(),
+                        service.name
+                    );
+                    out.insert(unit, None);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// `service …` — the per-user unit (systemd) mechanism.
@@ -2877,6 +2985,70 @@ mod tests {
             .path()
             .join("cfg/systemd/user/gateprov-api.service")
             .is_file());
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    /// Write a `files` package dir whose manifest declares `provider:`
+    /// services — `services` is the YAML list body.
+    fn provider_pkg(root: &std::path::Path, name: &str, services: &str) -> std::path::PathBuf {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            format!(
+                "name: {name}\nversion: 1.0.0\nprovider:\n  name: shared\n  services:\n{services}"
+            ),
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        dir
+    }
+
+    #[test]
+    fn uninstall_keeps_unit_still_declared_by_a_survivor() {
+        let _g = DRVENV.lock().unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        std::env::set_var("XDG_CONFIG_HOME", tmp.path().join("cfg"));
+        // Two packages share `provider.name: shared` — their `web`
+        // services render ONE unit (`shared-web`); `a` also declares a
+        // private `solo` service (`shared-solo`).
+        let a = provider_pkg(
+            tmp.path(),
+            "a",
+            "    - name: web\n      exec: /bin/serve --shared\n    - name: solo\n      exec: /bin/solo\n",
+        );
+        let b = provider_pkg(
+            tmp.path(),
+            "b",
+            "    - name: web\n      exec: /bin/serve --shared\n",
+        );
+        for dir in [&a, &b] {
+            run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+            run_args(
+                e.clone(),
+                &[
+                    "tamias",
+                    "deploy",
+                    &dir.file_name().unwrap().to_string_lossy(),
+                ],
+            )
+            .unwrap();
+        }
+        let shared = tmp.path().join("cfg/systemd/user/shared-web.service");
+        let solo = tmp.path().join("cfg/systemd/user/shared-solo.service");
+        assert!(shared.is_file() && solo.is_file());
+        // Uninstalling `a` must not drop the unit `b` still declares —
+        // it is re-rendered from b's spec — while `a`'s private unit goes.
+        run_args(e.clone(), &["tamias", "uninstall", "a"]).unwrap();
+        assert!(shared.is_file(), "shared unit must survive");
+        assert!(std::fs::read_to_string(&shared)
+            .unwrap()
+            .contains("ExecStart=/bin/serve --shared"));
+        assert!(!solo.exists(), "unshared unit must be removed");
+        // Uninstalling the last declarer removes the shared unit.
+        run_args(e.clone(), &["tamias", "uninstall", "b"]).unwrap();
+        assert!(!shared.exists());
         std::env::remove_var("XDG_CONFIG_HOME");
     }
 
