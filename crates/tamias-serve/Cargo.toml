@@ -14,14 +14,8 @@ documentation.workspace = true
 
 [dependencies]
 tamias-core.workspace = true
-tamias-source.workspace = true
-tamias-source-fs.workspace = true
-tamias-source-http.workspace = true
-tamias-source-cf.workspace = true
-tamias-source-git.workspace = true
+tamias-install.workspace = true
 tamias-store-local.workspace = true
-tracing.workspace = true
-tamias-cache-local.workspace = true
 tamias-driver.workspace = true
 serde_json.workspace = true
 
@@ -29,4 +23,5 @@ serde_json.workspace = true
 workspace = true
 
 [dev-dependencies]
+tamias-cache-local.workspace = true
 tempfile.workspace = true

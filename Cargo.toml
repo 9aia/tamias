@@ -8,6 +8,7 @@ members = [
     "crates/tamias-config-yml",
     "crates/tamias-config-toml",
     "crates/tamias-driver",
+    "crates/tamias-install",
     "crates/tamias-core",
     "crates/tamias-deploy",
     "crates/tamias-deploy-local",
@@ -62,6 +63,7 @@ tamias-config = { path = "crates/tamias-config", version = "0.1.0" }
 tamias-config-yml = { path = "crates/tamias-config-yml", version = "0.1.0" }
 tamias-config-toml = { path = "crates/tamias-config-toml", version = "0.1.0" }
 tamias-driver = { path = "crates/tamias-driver", version = "0.1.0" }
+tamias-install = { path = "crates/tamias-install", version = "0.1.0" }
 tamias-core = { path = "crates/tamias-core", version = "0.1.0" }
 tamias-deploy = { path = "crates/tamias-deploy", version = "0.1.0" }
 tamias-deploy-local = { path = "crates/tamias-deploy-local", version = "0.1.0" }

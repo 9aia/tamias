@@ -4,7 +4,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -13,14 +12,10 @@ use tamias_config::{ConfigFormat, CONFIG_NAMES};
 use tamias_config_toml::TomlFormat;
 use tamias_config_yml::YmlFormat;
 use tamias_core::{payload_root, Error, Lock, LockEntry, Manifest, StoreEntry, StoreRecord};
+use tamias_install::{Progress, Surface};
 use tamias_registry::{parse_registry_ref, Registry, RegistryRef};
 use tamias_registry_cf::HttpRegistry;
 use tamias_registry_local::{serve_http, LocalRegistry};
-use tamias_source::{Planned, Refs, Sources};
-use tamias_source_cf::{CfRefKind, CfSource};
-use tamias_source_fs::{FsRefKind, FsSource};
-use tamias_source_git::{GitRefKind, GitSource};
-use tamias_source_http::{HttpRefKind, HttpSource};
 use tamias_store_local::Store;
 
 /// Default fetch-cache eviction age for `cache clean` — 30 days.
@@ -298,111 +293,25 @@ fn registry_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".tamias/registry"))
 }
 
-/// The ref grammar — kinds in claim order; the fs fallback (paths) is last.
-fn refs() -> Refs {
-    Refs::new()
-        .with(Arc::new(GitRefKind))
-        .with(Arc::new(CfRefKind))
-        .with(Arc::new(HttpRefKind))
-        .with(Arc::new(FsRefKind))
-}
-
-/// The source registry.
-fn sources() -> Sources {
-    Sources::new()
-        .with(Arc::new(GitSource::new()))
-        .with(Arc::new(CfSource::new()))
-        .with(Arc::new(HttpSource::new()))
-        .with(Arc::new(FsSource::new()))
-}
-
-/// plan → cache-hit or fetch+commit → `(payload_dir, resolved_id)`.
-fn fetch_or_cached(env: &Env, planned: &Planned) -> Result<(PathBuf, String), Error> {
-    let cache = FetchCache::new(&env.cache_root);
-    if let Some((key, resolved_id)) = planned.prefetch_identity() {
-        // Integrity-checked hit: `hit` evicts a tampered or pre-metadata
-        // entry and reports it as a miss, so a poisoned cache can never
-        // reach `Store::install` — the fetch below refetches instead.
-        if let Some(dir) = cache.hit(&key)? {
-            tracing::debug!(cache_key = %key, "fetch-cache hit");
-            return Ok((dir, resolved_id));
-        }
-    }
-    tracing::debug!("fetch-cache miss — fetching");
-    let scratch = cache.scratch()?;
-    let fetched = match planned.fetch(&scratch) {
-        Ok(fetched) => fetched,
-        Err(e) => {
-            cache.discard(&scratch);
-            return Err(e);
-        }
-    };
-    let committed = cache.commit(&scratch, &fetched.content_key)?;
-    tracing::debug!(content_key = %fetched.content_key, "fetched + cached");
-    Ok((committed, fetched.resolved))
-}
-
+/// `install`/`add`/`update` — the shared pipeline in `tamias-install`,
+/// rendered with the CLI's progress lines (`tamias:` → stderr, driver
+/// actions → stdout).
 fn install(env: &Env, reference: &str, allow_drivers: bool) -> Result<StoreEntry, Error> {
-    let span = tracing::info_span!("install", reference);
-    let _enter = span.enter();
-    let spec = refs().parse(reference)?;
-    let planned = sources().plan(&*spec)?;
-    eprintln!("tamias: fetching {reference}");
-    let (payload_dir, resolved_id) = fetch_or_cached(env, &planned)?;
-    let root = payload_root(&payload_dir)?;
-    let manifest = Manifest::load(&root)?;
-    let base = manifest.scope.as_ref().map_or_else(
-        || manifest.name.clone(),
-        |scope| format!("@{scope}/{}", manifest.name),
-    );
-    let installing = match &manifest.version {
-        Some(v) => format!("{base}@{v}"),
-        None => base,
-    };
-    eprintln!("tamias: installing {installing}");
-    // Bundled drivers are arbitrary code shipped inside the package — they
-    // must never be registered or executed without explicit consent. Fail
-    // *before* the store entry is written so a refused install leaves no
-    // partial state (the fetch-cache entry is content-addressed and stays).
-    let shipped = tamias_driver::bundled_drivers(&root)?;
-    if !shipped.is_empty() && !tamias_driver::drivers_allowed(allow_drivers) {
-        return Err(Error::Failed(format!(
-            "package ships bundled driver(s): {} — refusing to install + run them; \
-             re-run with --allow-drivers or TAMIAS_ALLOW_DRIVERS=1 to consent",
-            shipped.join(", ")
-        )));
-    }
-    let record = StoreRecord {
-        name: manifest.name.clone(),
-        scope: manifest.scope.clone(),
-        version: manifest.version.clone(),
-        kind: manifest.kind.clone(),
-        source_ref: reference.to_string(),
-        resolved: resolved_id,
-        digest: String::new(),
-        installed_at: 0,
-    };
-    // Driver work runs *before* the store commit: a missing or failing
-    // driver fails the install with no committed entry (the fetch-cache
-    // entry is content-addressed and stays).
-    let kind = manifest.kind.as_deref().unwrap_or("files");
-    for action in tamias_driver::register_bundled_drivers(&root)? {
-        println!("  {action}");
-    }
-    if !tamias_driver::dispatch(kind, "install", &root, &record.name, None)? && kind != "files" {
-        return Err(Error::Failed(format!(
-            "no driver for content type '{kind}' — install `tamias-driver-{kind}` on PATH \
-             or ship one in the package's `drivers/` dir{}",
-            if shipped.is_empty() {
-                String::new()
-            } else {
-                "; bundled drivers need --allow-drivers or TAMIAS_ALLOW_DRIVERS=1".to_string()
-            }
-        )));
-    }
-    let entry = Store::new(&env.store_root).install(&root, record)?;
-    eprintln!("tamias: done — {}", entry.label());
-    Ok(entry)
+    tamias_install::install_with_progress(
+        &tamias_install::Env {
+            store_root: env.store_root.clone(),
+            cache_root: env.cache_root.clone(),
+        },
+        reference,
+        allow_drivers,
+        Surface::Cli,
+        &mut |progress| match progress {
+            Progress::Fetching { reference } => eprintln!("tamias: fetching {reference}"),
+            Progress::Installing { label } => eprintln!("tamias: installing {label}"),
+            Progress::DriverAction { action } => println!("  {action}"),
+            Progress::Done { label } => eprintln!("tamias: done — {label}"),
+        },
+    )
 }
 
 fn short(digest: &str) -> &str {
@@ -1807,6 +1716,28 @@ mod tests {
         assert!(run_args(e.clone(), &["tamias", "update"]).is_err());
         // pin a ghost → error
         assert!(run_args(e.clone(), &["tamias", "pin", "ghost", "./x"]).is_err());
+    }
+
+    #[test]
+    fn schema_carries_the_provider_block() {
+        // `tamias schema` is `schemars::schema_for!(Manifest)` — the
+        // `provider:` block must surface with its nested fields.
+        let schema = serde_json::to_value(schemars::schema_for!(Manifest)).unwrap();
+        let text = schema.to_string();
+        for needle in [
+            "\"provider\"",
+            "\"services\"",
+            "\"ingress\"",
+            "\"hooks\"",
+            "\"env_file\"",
+            "\"public_url\"",
+            "\"workdir\"",
+            "\"restart\"",
+            "\"verbs\"",
+            "\"health\"",
+        ] {
+            assert!(text.contains(needle), "schema missing {needle}");
+        }
     }
 
     #[test]
