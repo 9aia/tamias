@@ -3,7 +3,7 @@ id = "ADR-0003"
 title = "binary distribution — release tarballs ride existing https refs; no new channel in v1"
 status = "done"
 created = "2026-11-10"
-priority = "medium"
+priority = "med"
 +++
 
 # binary distribution — release tarballs ride existing https refs; no new channel in v1

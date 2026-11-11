@@ -4,7 +4,7 @@ title = "tamias TUI — interactive package manager (`tamias ui`)"
 status = "done"
 created = "2026-11-10"
 owner = "devin"
-priority = "medium"
+priority = "med"
 labels = ["tui"]
 +++
 

@@ -4,7 +4,7 @@ title = "package verification + official badge; opt-in service consent hardening
 status = "done"
 created = "2026-11-10"
 owner = "devin"
-priority = "medium"
+priority = "med"
 labels = ["provenance", "security"]
 +++
 

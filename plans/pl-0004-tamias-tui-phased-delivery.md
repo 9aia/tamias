@@ -4,7 +4,7 @@ title = "tamias TUI — phased delivery"
 status = "done"
 created = "2026-11-10"
 owner = "devin"
-priority = "medium"
+priority = "med"
 links = ["P-001"]
 +++
 

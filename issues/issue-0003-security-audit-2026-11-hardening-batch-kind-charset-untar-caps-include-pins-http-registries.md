@@ -4,7 +4,7 @@ title = "security audit 2026-11: hardening batch (kind charset, untar caps, incl
 status = "done"
 created = "2026-11-10"
 owner = "devin"
-priority = "medium"
+priority = "med"
 labels = ["security"]
 links = ["P-005"]
 +++
