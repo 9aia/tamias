@@ -28,7 +28,10 @@ export default defineConfig({
       { text: "Getting Started", items: [{ text: "Install a package", link: "/getting-started" }] },
       {
         text: "Tutorials",
-        items: [{ text: "Your first package", link: "/tutorials/first-package" }],
+        items: [
+          { text: "Your first package", link: "/tutorials/first-package" },
+          { text: "Heal a failing PR with an agent", link: "/tutorials/pr-heal-workflow" },
+        ],
       },
       {
         text: "How-to",
