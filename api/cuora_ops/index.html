@@ -2,7 +2,7 @@
 <p><code>cuora-core</code> is pure domain; this crate is everything that touches
 the outside world: config loading + env/vault resolution
 (<code>--env</code>/<code>CUORA_ENV</code> → <code>[envs]</code> routing → a concrete
-<a href="../cuora_vault/trait.Vault.html" title="trait cuora_vault::Vault"><code>cuora_vault::Vault</code></a>), the env-pin override on refs, the verb
+[<code>cuora_vault::Vault</code>]), the env-pin override on refs, the verb
 operations the CLI calls, and the audit emission — ndjson on
 stderr plus OTLP span export when <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>
 is set. <code>cuora</code> (CLI) is a thin clap shell over this; front-ends

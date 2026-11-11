@@ -4,7 +4,7 @@ its WAL ops; SSH signing is stdlib tooling — Ed25519 under the
 hood, no new crypto deps).</p>
 <p><strong>What is signed.</strong> The canonical payload is the package’s
 provenance anchors — name, scope, version, and the <code>sha256:</code> digest
-of the <em>unpacked</em> payload tree (<a href="../tamias_core/digest/fn.dir_digest.html" title="fn tamias_core::digest::dir_digest"><code>tamias_core::dir_digest</code></a>):</p>
+of the <em>unpacked</em> payload tree ([<code>tamias_core::dir_digest</code>]):</p>
 <div class="example-wrap"><pre class="language-text"><code>tamias-package-v1
 name: &lt;bare name&gt;
 scope: &lt;scope | -&gt;
@@ -68,7 +68,7 @@ order, no trailing ambiguity; both sides build it from the same
 inputs so it can’t drift.</dd><dt><a class="fn" href="fn.trust_and_signer.html" title="fn tamias_sign::trust_and_signer">trust_<wbr>and_<wbr>signer</a></dt><dd><a href="fn.trust_tier.html" title="fn tamias_sign::trust_tier"><code>trust_tier</code></a> plus the verified signing principal in one pass —
 the <code>@scope/name</code> or bare <code>name</code> that checked out (official set
 preferred), <code>None</code> for unsigned/failed tiers. The install
-pipeline records both on the <a href="../tamias_core/records/struct.StoreRecord.html" title="struct tamias_core::records::StoreRecord"><code>StoreRecord</code></a>.</dd><dt><a class="fn" href="fn.trust_tier.html" title="fn tamias_sign::trust_tier">trust_<wbr>tier</a></dt><dd>The package’s <a href="enum.TrustTier.html" title="enum tamias_sign::TrustTier"><code>TrustTier</code></a> — <strong>reporting only</strong>; the install
+pipeline records both on the [<code>StoreRecord</code>].</dd><dt><a class="fn" href="fn.trust_tier.html" title="fn tamias_sign::trust_tier">trust_<wbr>tier</a></dt><dd>The package’s <a href="enum.TrustTier.html" title="enum tamias_sign::TrustTier"><code>TrustTier</code></a> — <strong>reporting only</strong>; the install
 gate stays <a href="fn.enforce_signature.html" title="fn tamias_sign::enforce_signature"><code>enforce_signature</code></a>. <code>source_ref</code> is the ref the
 install was invoked with (pin detection reads it verbatim);
 <code>digest</code> is the payload digest the signature bound.</dd><dt><a class="fn" href="fn.verify.html" title="fn tamias_sign::verify">verify</a></dt><dd>Verify <code>signature</code> (armored PEM) over <code>bytes</code> against the

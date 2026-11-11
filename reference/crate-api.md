@@ -13,6 +13,7 @@ documented at source (doc comments).
 * [tamias-registry](/tamias/api/tamias_registry/index.html) — port
 * [tamias-source](/tamias/api/tamias_source/index.html) — port
 * [tamias-store](/tamias/api/tamias_store/index.html) — port
+* [tamias-bin](/tamias/api/tamias_bin/index.html) — adapter
 * [tamias-cache-cf](/tamias/api/tamias_cache_cf/index.html) — adapter
 * [tamias-cache-local](/tamias/api/tamias_cache_local/index.html) — adapter
 * [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter

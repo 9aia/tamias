@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["job","plane"]};
+window.SIDEBAR_ITEMS = {"mod":["job","plane"],"struct":["WatchedRepo"]};

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Cmd"],"fn":["audit_fallback","cmd_op","cmd_rref","dispatch","fail","json_out","load","main","manifest","norm_rref","out","parse_pairs","parse_ref","read_secret","record_json","run_cmd","schema_json","sh_escape"],"struct":["Cli"]};
+window.SIDEBAR_ITEMS = {"fn":["command","dispatch","parse","parse_from","run","run_from"],"struct":["Cli"]};

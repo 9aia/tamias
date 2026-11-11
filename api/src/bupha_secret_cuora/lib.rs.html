@@ -95,10 +95,10 @@
 <a href=#95 id=95 data-nosnippet>95</a>        <span class="kw">if </span>status.success() {
 <a href=#96 id=96 data-nosnippet>96</a>            <span class="prelude-val">Ok</span>(())
 <a href=#97 id=97 data-nosnippet>97</a>        } <span class="kw">else </span>{
-<a href=#98 id=98 data-nosnippet>98</a>            <span class="prelude-val">Err</span>(std::io::Error::new(
-<a href=#99 id=99 data-nosnippet>99</a>                std::io::ErrorKind::Other,
-<a href=#100 id=100 data-nosnippet>100</a>                <span class="macro">format!</span>(<span class="string">"cuora put {} exited {status}"</span>, rref(name)),
-<a href=#101 id=101 data-nosnippet>101</a>            ))
+<a href=#98 id=98 data-nosnippet>98</a>            <span class="prelude-val">Err</span>(std::io::Error::other(<span class="macro">format!</span>(
+<a href=#99 id=99 data-nosnippet>99</a>                <span class="string">"cuora put {} exited {status}"</span>,
+<a href=#100 id=100 data-nosnippet>100</a>                rref(name)
+<a href=#101 id=101 data-nosnippet>101</a>            )))
 <a href=#102 id=102 data-nosnippet>102</a>        }
 <a href=#103 id=103 data-nosnippet>103</a>    }
 <a href=#104 id=104 data-nosnippet>104</a>}

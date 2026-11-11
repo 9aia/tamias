@@ -8,10 +8,17 @@ Install tamias, then point it at a package.
 ## Install
 
 ```sh
+cargo install tamias
+# or from source:
 cargo install --git https://github.com/9aia/tamias tamias
 # or, from a checkout:
 cargo xtask install
 ```
+
+`tamias` is a native binary — it stays `cargo install`-able because
+every `bins[]` shim in the org execs `tamias bin exec` (bootstrap).
+Product CLIs (`myco`, `cuora`, `kuda`, …) are *not* cargo-installable:
+they ship as tamias packs — `tamias install 9aia:<name>@<version>`.
 
 ## Install a package
 
@@ -1001,7 +1008,7 @@ Commands:
   update           Re-resolve + re-install a package from its recorded ref
   pin              Retarget an installed package's recorded source ref
   self-upgrade     Update the tamias package this binary belongs to
-  bin              Link a package's `bin/` payload into the bin dir so bare binary names run — provider `services[].exec` and shells resolve them
+  bin              Manage a package's executable surfaces — the declared `bins[]` (generated `cli` shims + `tools/bin/<triple>/` payloads) and `bin/` payload files — on the bin dir (`$TAMIAS_BIN_DIR` → `XDG_BIN_HOME` → `~/.local/bin`)
   cache            Fetch-cache maintenance
   version          Print the tamias version
   manifest         Print the machine-readable capability manifest
@@ -1392,6 +1399,7 @@ documented at source (doc comments).
 * [tamias-registry](/tamias/api/tamias_registry/index.html) — port
 * [tamias-source](/tamias/api/tamias_source/index.html) — port
 * [tamias-store](/tamias/api/tamias_store/index.html) — port
+* [tamias-bin](/tamias/api/tamias_bin/index.html) — adapter
 * [tamias-cache-cf](/tamias/api/tamias_cache_cf/index.html) — adapter
 * [tamias-cache-local](/tamias/api/tamias_cache_local/index.html) — adapter
 * [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
@@ -1459,6 +1467,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-registry` | port | registry port — index + publish |
 | `tamias-source` | port | source port — turn a ref into bytes |
 | `tamias-store` | port | store port — content-addressed blobs |
+| `tamias-bin` | adapter | Declared bins\[] lifecycle — tools/bin/\<triple> payloads, bin-dir deploy/destroy/list |
 | `tamias-cache-cf` | adapter | Cloudflare adapter (P6) |
 | `tamias-cache-local` | adapter | local cache impl — content-addressed fetch cache |
 | `tamias-config-toml` | adapter | TOML config impl |

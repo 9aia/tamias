@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["DELEGATE_TEMPLATE","MODULE_REF"],"enum":["Cmd","DeploySub","DestroySub","ServiceSub"],"fn":["check","cmd_agent","cmd_deploy","cmd_deploy_release","cmd_destroy","cmd_doctor","cmd_explain","cmd_import","cmd_init","cmd_log","cmd_run","cmd_runs","cmd_service","cmd_worker","deploy_check","dispatch_cmd","history_path","main","ureq_probe"],"mod":["campaign_import"],"struct":["Cli","DocOut"]};
+window.SIDEBAR_ITEMS = {"fn":["command","parse","parse_from","run","run_from"],"struct":["Cli"]};

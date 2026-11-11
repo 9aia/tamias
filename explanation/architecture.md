@@ -32,6 +32,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-registry` | port | registry port — index + publish |
 | `tamias-source` | port | source port — turn a ref into bytes |
 | `tamias-store` | port | store port — content-addressed blobs |
+| `tamias-bin` | adapter | Declared bins\[] lifecycle — tools/bin/\<triple> payloads, bin-dir deploy/destroy/list |
 | `tamias-cache-cf` | adapter | Cloudflare adapter (P6) |
 | `tamias-cache-local` | adapter | local cache impl — content-addressed fetch cache |
 | `tamias-config-toml` | adapter | TOML config impl |

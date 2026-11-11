@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["CiJobPlane","Fault"]};
+window.SIDEBAR_ITEMS = {"struct":["CiJobPlane","Fault","RehydrateReport"]};

@@ -25,13 +25,15 @@
 <a href=#25 id=25 data-nosnippet>25</a>//!
 <a href=#26 id=26 data-nosnippet>26</a>//! Queue semantics stay in `bupha-core` (`is_valid_*`,
 <a href=#27 id=27 data-nosnippet>27</a>//! `MAX_PENDING`, `Queue`/`QueuePolicy` — the spec this plane
-<a href=#28 id=28 data-nosnippet>28</a>//! mirrors); distributed queue state is the entity plane itself per
-<a href=#29 id=29 data-nosnippet>29</a>//! the crate-scope audit (P-002 §5: `bupha-queue-{redb,redis}` and
-<a href=#30 id=30 data-nosnippet>30</a>//! `bupha-queue-lease` migrate/die in T-049).
-<a href=#31 id=31 data-nosnippet>31</a>
-<a href=#32 id=32 data-nosnippet>32</a></span><span class="kw">pub mod </span>job;
-<a href=#33 id=33 data-nosnippet>33</a><span class="kw">pub mod </span>plane;
-<a href=#34 id=34 data-nosnippet>34</a>
-<a href=#35 id=35 data-nosnippet>35</a><span class="kw">pub use </span>job::{CiJob, JobState, CI_JOB_KIND, DEFAULT_LEASE_SECS, MAX_ATTEMPTS, SNAPSHOT_FORMAT};
-<a href=#36 id=36 data-nosnippet>36</a><span class="kw">pub use </span>plane::CiJobPlane;
+<a href=#28 id=28 data-nosnippet>28</a>//! mirrors); distributed queue state is the entity plane itself —
+<a href=#29 id=29 data-nosnippet>29</a>//! T-049 retired `bupha-queue-{redb,redis}` and `bupha-queue-lease`;
+<a href=#30 id=30 data-nosnippet>30</a>//! the dev watcher keeps `bupha-queue`'s port + `JsonQueueStore` +
+<a href=#31 id=31 data-nosnippet>31</a>//! single-box `TryClaim`/`LocalClaim`.
+<a href=#32 id=32 data-nosnippet>32</a>
+<a href=#33 id=33 data-nosnippet>33</a></span><span class="kw">pub mod </span>job;
+<a href=#34 id=34 data-nosnippet>34</a><span class="kw">pub mod </span>plane;
+<a href=#35 id=35 data-nosnippet>35</a>
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">pub use </span>bupha_core::WatchedRepo;
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">pub use </span>job::{CiJob, JobState, CI_JOB_KIND, DEFAULT_LEASE_SECS, MAX_ATTEMPTS, SNAPSHOT_FORMAT};
+<a href=#38 id=38 data-nosnippet>38</a><span class="kw">pub use </span>plane::{CiJobPlane, RehydrateReport};
 </code></pre></div></section></main></body></html>
