@@ -205,7 +205,14 @@ pub fn specs() -> Vec<ViewSpec> {
 pub fn manifest() -> DriverManifest {
     let mut m = kit::Manifest::new("tamias", "Tamias")
         .version(env!("CARGO_PKG_VERSION"))
-        .icon("🐿");
+        .icon("🐿")
+        // argv verbs beyond the `manifest`/`serve` defaults:
+        // `capabilities` probe, `ops` manifest, `run`/`cli`
+        // engine passthroughs (ops.rs).
+        .verb("capabilities")
+        .verb("ops")
+        .verb("run")
+        .verb("cli");
     for spec in specs() {
         m = m.view(spec);
     }

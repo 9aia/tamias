@@ -46,6 +46,6 @@ provenance:
   hashes:
   - cf266e216f76188736f30f53afcff0fdf41e03bd
   - 2386b09a4430c7cf9901318850444238b9575cea
-  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
-  generated_at: '1794355185'
-  generator: kuda-template/0.1.2
+  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
+  generated_at: '1794424824'
+  generator: kuda-template/0.1.4

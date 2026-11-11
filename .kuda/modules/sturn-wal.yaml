@@ -1,0 +1,73 @@
+name: sturn-wal
+path: refs/sturn/wal/9aia
+purpose: sturn coordination WAL — claims, writes, snaps, review events in refs/sturn/*
+api: []
+deps: []
+notes: ''
+verify:
+- refs/sturn/wal/9aia
+- refs/sturn/wal/devin
+- refs/sturn/wal/devin-audit
+- refs/sturn/wal/devin-ci-bupha
+- refs/sturn/wal/devin-driver-conformance
+- refs/sturn/wal/devin-lockonly
+- refs/sturn/wal/devin-payload
+- refs/sturn/wal/devin-plt004
+- refs/sturn/wal/devin-plt004b
+- refs/sturn/wal/devin-plt004c
+provenance:
+  files:
+  - refs/sturn/wal/9aia
+  - refs/sturn/wal/devin
+  - refs/sturn/wal/devin-audit
+  - refs/sturn/wal/devin-ci-bupha
+  - refs/sturn/wal/devin-driver-conformance
+  - refs/sturn/wal/devin-lockonly
+  - refs/sturn/wal/devin-payload
+  - refs/sturn/wal/devin-plt004
+  - refs/sturn/wal/devin-plt004b
+  - refs/sturn/wal/devin-plt004c
+  - refs/sturn/wal/devin-plt005
+  - refs/sturn/wal/devin-plt005b
+  - refs/sturn/wal/devin-plt005c
+  - refs/sturn/wal/devin-sync
+  - refs/sturn/wal/devin-t013
+  - refs/sturn/wal/devin-t014
+  - refs/sturn/wal/devin-t015
+  - refs/sturn/wal/devin-t016
+  - refs/sturn/wal/devin-win
+  - refs/sturn/wal/main
+  - refs/sturn/wal/t8-3-cli-surface
+  - refs/sturn/wal/t8-6-binary-distribution
+  - refs/sturn/wal/tamias
+  - refs/sturn/wal/tamias-io002
+  - refs/sturn/wal/tamias-xtask-test-fix
+  hashes:
+  - 55b49bccd69d5f3daecf408f3ef9c92fe09cbb7f
+  - 0344c258b0392072e82f3282d9e2108f4e18ae4c
+  - 562b74c23d96c90f85afa280f596136ddae80db7
+  - b604086ddeb2869a43a2d09815cc3b5f45aec0e8
+  - febcf0121191ae432ee83dfb3faa3a82ea7de134
+  - fbe0a1d1d55b6407821c2f0c6d9546c4915d8100
+  - dd946052c51178c9cb6a12651917bb357a7c7dc2
+  - c7ce7e6a3c5d7e8f93748b76a85e4b0d90a6830f
+  - 8f6f7f42cdbd8274def59a236d3f1365680d54bf
+  - 57f22eaf226b96d5f1db4b50324662927d364ef4
+  - ea9393c6a4fe94a501f44f04ae4449b66d646dd9
+  - b8f3de4e92da7a58b3871a10dec28c8569062055
+  - af7e127000c66f52593c202ba594b204a5635b56
+  - 335b10b31d2104afef60bf324996d6aef0a5461a
+  - a467a87498e8d52d6e928872081e8e40664b8c26
+  - 4433bc83362d4678aba7e294a90d175d6aa6b394
+  - 47c2e07bcfe8165f725770b81e901fb8e564052c
+  - 30581d221283a217218d85e486460adf764d1b8e
+  - b6113648eb6b4227be70caf1beeb3528ce96035d
+  - aa4d83ebcc3b1716c31ea5c5b337937d9cfe2782
+  - 556695b9190378fc2a0061057b38f31dd8a988d1
+  - 96a9778feccc8eacea586ede09ca8a9bd1c4557b
+  - c4032bac491086426cbe683a052e6373587b203b
+  - 21c92171c34188115ddaa88ece5a724392948a1f
+  - 75f581ed6829529e4b83898232e45f343da79f52
+  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
+  generated_at: '1794424824'
+  generator: kuda-template/0.1.4

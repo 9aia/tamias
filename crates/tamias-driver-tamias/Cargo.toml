@@ -20,6 +20,13 @@ path = "src/main.rs"
 
 [dependencies]
 tamias-core = { path = "../tamias-core" }
+# The engine lib — the ops surface (`ops` manifest + `cli.<verb>`
+# wire queries) derives from `tamias::command()` and re-execs
+# `tamias::run_from` in `run`/`cli` children. `default-features =
+# false` keeps the `tui` feature (and tamias-tui) out of the driver:
+# `tamias ui` stays a native-only surface.
+tamias = { path = "../tamias-cli", default-features = false }
+clap = "4"
 tamias-store-local = { path = "../tamias-store-local" }
 tamias-cache-local = { path = "../tamias-cache-local" }
 tamias-registry = { path = "../tamias-registry" }

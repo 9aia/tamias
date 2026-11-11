@@ -4,48 +4,48 @@ purpose: '*Package & content manager for the agent factory — fetch, store,'
 api:
 - name: BinCommand
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 379
+  file: crates/tamias-cli/src/lib.rs
+  line: 394
   module: tamias
 - name: BinStatus
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 1793
+  file: crates/tamias-cli/src/lib.rs
+  line: 1808
   module: tamias
 - name: BundleCommand
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 591
+  file: crates/tamias-cli/src/lib.rs
+  line: 606
   module: tamias
 - name: CACHE_MAX_AGE_DAYS
   kind: const
-  file: crates/tamias-cli/src/main.rs
-  line: 26
+  file: crates/tamias-cli/src/lib.rs
+  line: 41
   module: tamias
 - name: CacheCommand
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 575
+  file: crates/tamias-cli/src/lib.rs
+  line: 590
   module: tamias
 - name: Cli
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 34
+  file: crates/tamias-cli/src/lib.rs
+  line: 49
   module: tamias
 - name: Command
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 40
+  file: crates/tamias-cli/src/lib.rs
+  line: 55
   module: tamias
 - name: DriverCommand
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 439
+  file: crates/tamias-cli/src/lib.rs
+  line: 454
   module: tamias
 - name: Env
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 609
+  file: crates/tamias-cli/src/lib.rs
+  line: 624
   module: tamias
 - name: ONCE
   kind: const
@@ -54,48 +54,48 @@ api:
   module: tamias
 - name: PROC
   kind: const
-  file: crates/tamias-cli/src/main.rs
-  line: 3173
+  file: crates/tamias-cli/src/lib.rs
+  line: 3215
   module: tamias
 - name: ProcGuard
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 3180
+  file: crates/tamias-cli/src/lib.rs
+  line: 3222
   module: tamias
 - name: ProviderCommand
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 481
+  file: crates/tamias-cli/src/lib.rs
+  line: 496
   module: tamias
 - name: RegistryCommand
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 495
+  file: crates/tamias-cli/src/lib.rs
+  line: 510
   module: tamias
 - name: RegistryKind
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 555
+  file: crates/tamias-cli/src/lib.rs
+  line: 570
   module: tamias
 - name: SelfTarget
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 2049
+  file: crates/tamias-cli/src/lib.rs
+  line: 2064
   module: tamias
 - name: ServiceCommand
   kind: type
-  file: crates/tamias-cli/src/main.rs
-  line: 1711
+  file: crates/tamias-cli/src/lib.rs
+  line: 1726
   module: tamias
 - name: add_records_manifest_and_lock
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 3861
+  file: crates/tamias-cli/src/lib.rs
+  line: 3903
   module: tamias
 - name: add_with_existing_manifest_and_service_verbs
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 4281
+  file: crates/tamias-cli/src/lib.rs
+  line: 4323
   module: tamias
 - name: add_writes_manifest_and_lock
   kind: function
@@ -104,13 +104,13 @@ api:
   module: tamias
 - name: alias_rel
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 1943
+  file: crates/tamias-cli/src/lib.rs
+  line: 1958
   module: tamias
 - name: as_str
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 565
+  file: crates/tamias-cli/src/lib.rs
+  line: 580
   module: tamias
 - name: bare_tamias_prints_help
   kind: function
@@ -119,63 +119,63 @@ api:
   module: tamias
 - name: bin_alias
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 1951
+  file: crates/tamias-cli/src/lib.rs
+  line: 1966
   module: tamias
 - name: bin_alias_of
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 3320
+  file: crates/tamias-cli/src/lib.rs
+  line: 3362
   module: tamias
 - name: bin_alias_retinits_on_upgrade_and_unlink_survives_ambiguity
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 3405
+  file: crates/tamias-cli/src/lib.rs
+  line: 3447
   module: tamias
 - name: bin_alias_root
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 1937
+  file: crates/tamias-cli/src/lib.rs
+  line: 1952
   module: tamias
 - name: bin_cleanup_after_remove
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 2580
+  file: crates/tamias-cli/src/lib.rs
+  line: 2595
   module: tamias
 - name: bin_command
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 1804
+  file: crates/tamias-cli/src/lib.rs
+  line: 1819
   module: tamias
 - name: bin_conflict
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 2305
+  file: crates/tamias-cli/src/lib.rs
+  line: 2320
   module: tamias
 - name: bin_deploy
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 2388
+  file: crates/tamias-cli/src/lib.rs
+  line: 2403
   module: tamias
 - name: bin_destroy
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 2443
+  file: crates/tamias-cli/src/lib.rs
+  line: 2458
   module: tamias
 - name: bin_dir
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 709
+  file: crates/tamias-cli/src/lib.rs
+  line: 724
   module: tamias
 - name: bin_exec
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 2523
+  file: crates/tamias-cli/src/lib.rs
+  line: 2538
   module: tamias
 - name: bin_exec_dispatches_help_flags_to_driver
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 3704
+  file: crates/tamias-cli/src/lib.rs
+  line: 3746
   module: tamias
 - name: bin_links_payload_into_bin_dir
   kind: function
@@ -184,25 +184,25 @@ api:
   module: tamias
 - name: bin_links_unlinks_and_refuses_conflicts
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 3325
+  file: crates/tamias-cli/src/lib.rs
+  line: 3367
   module: tamias
 - name: bin_list
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 1819
+  file: crates/tamias-cli/src/lib.rs
+  line: 1834
   module: tamias
 - name: bin_pkg
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 3305
+  file: crates/tamias-cli/src/lib.rs
+  line: 3347
   module: tamias
 - name: bin_unlink
   kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 2561
+  file: crates/tamias-cli/src/lib.rs
+  line: 2576
   module: tamias
-api_omitted: 142
+api_omitted: 145
 deps:
 - clap
 - clap_complete
@@ -249,12 +249,12 @@ verify:
 - .claude/skills/skill-creator/scripts/__init__.py
 - Cargo.toml
 - crates/tamias-cli/Cargo.toml
+- crates/tamias-cli/src/lib.rs
 - crates/tamias-cli/src/main.rs
 - .agents/skills/skill-creator/eval-viewer/generate_review.py
 - .agents/skills/skill-creator/scripts/aggregate_benchmark.py
 - .agents/skills/skill-creator/scripts/generate_report.py
 - .agents/skills/skill-creator/scripts/improve_description.py
-- .agents/skills/skill-creator/scripts/package_skill.py
 provenance:
   files:
   - .agents/skills/skill-creator/eval-viewer/generate_review.py
@@ -279,6 +279,7 @@ provenance:
   - .claude/skills/skill-creator/scripts/utils.py
   - Cargo.toml
   - crates/tamias-cli/Cargo.toml
+  - crates/tamias-cli/src/lib.rs
   - crates/tamias-cli/src/main.rs
   - crates/tamias-cli/tests/e2e.rs
   hashes:
@@ -304,8 +305,9 @@ provenance:
   - 51b6a07dd57174197a937034b7eecebd5768ff8a
   - 451d8a8b20871d1b94e1e4088af254d125171ba5
   - 19e4a60b6d5de61a4bec7eefca04503cb1847ed1
-  - 17f57b55ce42e4e7f11d3405239c215479909e2a
+  - 01f665ec8cbc96f3e0e3e76149c330e218ff4def
+  - d72bfcba607a865a6725fefc72523dc8cedfb13d
   - 2486e673dfd7afcd8d43ad035b2d5061cb32d773
-  commit_sha: ad841f582ffc2e246335502f98f56431499e2635
-  generated_at: '1794423077'
-  generator: kuda-template/0.1.2
+  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
+  generated_at: '1794424824'
+  generator: kuda-template/0.1.4

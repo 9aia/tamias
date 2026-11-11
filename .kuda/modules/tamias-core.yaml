@@ -10,12 +10,12 @@ api:
 - name: DEFAULT_MAX_ENTRIES
   kind: const
   file: crates/tamias-core/src/archive.rs
-  line: 69
+  line: 74
   module: tamias-core
 - name: DEFAULT_MAX_UNPACK_BYTES
   kind: const
   file: crates/tamias-core/src/archive.rs
-  line: 65
+  line: 70
   module: tamias-core
 - name: DocFormat
   kind: type
@@ -125,7 +125,7 @@ api:
 - name: archive_tests
   kind: module
   file: crates/tamias-core/src/archive.rs
-  line: 257
+  line: 262
   module: tamias-core
 - name: atomic
   kind: module
@@ -202,7 +202,7 @@ api:
   file: crates/tamias-core/src/digest.rs
   line: 103
   module: tamias-core
-api_omitted: 129
+api_omitted: 130
 deps:
 - flate2
 - hex
@@ -261,7 +261,7 @@ provenance:
   - crates/tamias-core/tests/props.rs
   hashes:
   - dfb23283d56f62f7d7feaea9529d555171c83383
-  - cea8a7d5f6176f6597363fb04509f1f6cf8727eb
+  - 8c21b2230abe2a97d97d039fb95804bba2072723
   - 0d7a6cf52913cb69facccecc985a743277960ff6
   - bf42b5dcc0b30109a2bcee497b675ba447cab7f0
   - 3050b521008bf72751d6ffcab5f7dcbeced1d9f6
@@ -273,6 +273,6 @@ provenance:
   - 5b009cd1135bfa3db0f3b4be137c80398503c410
   - 2a50fa7f36f1fb3af8946ca611ef14520a706243
   - 1d8f69e21ec4d6bb45e702432caa1d56e02c97d8
-  commit_sha: ad841f582ffc2e246335502f98f56431499e2635
-  generated_at: '1794423077'
-  generator: kuda-template/0.1.2
+  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
+  generated_at: '1794424824'
+  generator: kuda-template/0.1.4
