@@ -92,6 +92,23 @@ where `tamias bin` copies rather than symlinks — the running exe file
 can be locked; self-upgrade warns before attempting and you may need
 to close other tamias processes and retry.
 
+## Producing the tamias self-package
+
+The tarball in the example above is built by the repo itself:
+
+```sh
+cargo xtask pack-self          # release-build → target/pack-self/tamias-<ver>.tgz
+cargo xtask pack-self --skip-build --out /tmp/pkg   # reuse target/release/tamias
+```
+
+The verb release-builds `tamias`, stages a `type: files` package
+(`tamias.yaml` + `bin/tamias`, version read from
+`crates/tamias-cli/Cargo.toml`), and packs it through the same
+`tamias-publish` path as `tamias bundle pack`. It prints the tgz's
+sha256 and a ready-to-paste pinned install ref — host the tgz
+somewhere (e.g. `tamias.9aia.com`) or drop it into a registry payload
+dir for `tamias publish`.
+
 ## Errors you'll see
 
 * `package 'x' is not installed` — install it first (`tamias install`).

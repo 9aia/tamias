@@ -27,7 +27,13 @@ swept into the verb’s commit. Returns whether a commit was made.</dd><dt><a cl
 detached <code>project/</code> worktree is the failure mode that costs the
 most: every write lands, no branch records it, and the audit
 trail is gone the moment the worktree moves. <code>check</code> reports and
-repairs it; every write path refuses it first.</dd><dt><a class="fn" href="fn.history_list.html" title="fn myco::ops::history_list">history_<wbr>list</a></dt><dd>The redoable stack, next-redo first — backs <code>myco undo --list</code>.</dd><dt><a class="fn" href="fn.index_template.html" title="fn myco::ops::index_template">index_<wbr>template</a></dt><dd>Default <code>index.md</code> — a human map of the ledger.</dd><dt><a class="fn" href="fn.lock_shared.html" title="fn myco::ops::lock_shared">lock_<wbr>shared</a></dt><dd>The shared read lock — concurrent readers don’t block each
+repairs it; every write path refuses it first.</dd><dt><a class="fn" href="fn.ensure_synced.html" title="fn myco::ops::ensure_synced">ensure_<wbr>synced</a></dt><dd>Refuse a mutation while the ledger branch is behind its
+tracked remote — every verb commit would deepen the divergence
+<code>myco sync</code> exists to close. Uses the last-fetched
+<code>refs/remotes/origin/&lt;branch&gt;</code> (no network): stale refs can
+only <em>under</em>-report, and <code>myco sync</code> does the real fetch.
+Untracked branches (never pushed, no remote) pass — pushing is
+a repo-level choice, not this verb’s business.</dd><dt><a class="fn" href="fn.history_list.html" title="fn myco::ops::history_list">history_<wbr>list</a></dt><dd>The redoable stack, next-redo first — backs <code>myco undo --list</code>.</dd><dt><a class="fn" href="fn.index_template.html" title="fn myco::ops::index_template">index_<wbr>template</a></dt><dd>Default <code>index.md</code> — a human map of the ledger.</dd><dt><a class="fn" href="fn.lock_shared.html" title="fn myco::ops::lock_shared">lock_<wbr>shared</a></dt><dd>The shared read lock — concurrent readers don’t block each
 other, but a reader contending with a writer fails fast
 rather than rendering a mid-verb ledger.</dd><dt><a class="fn" href="fn.lock_worktree.html" title="fn myco::ops::lock_worktree">lock_<wbr>worktree</a></dt><dd>The exclusive mutation lock — every load→mutate→save→commit
 verb holds it for the verb’s whole life (including the
@@ -40,7 +46,7 @@ unspawnable pager all fall back to <code>println!</code>.</dd><dt><a class="fn" 
 journal is empty or its top anchor no longer matches HEAD.</dd><dt><a class="fn" href="fn.redo_last.html" title="fn myco::ops::redo_last">redo_<wbr>last</a></dt><dd><code>myco redo</code> — restore the commit the last undo moved away
 from: pop the top of the undo journal
 (<code>&lt;git-common-dir&gt;/myco-history.json</code>, see
-<a href="../../myco_ops/history/index.html" title="mod myco_ops::history"><code>crate::history</code></a>) and <code>git reset --hard</code> to its target.
+[<code>crate::history</code>]) and <code>git reset --hard</code> to its target.
 Repeatable — each pop exposes the next-older undone commit,
 which is the redo stack single-step reflog tricks can’t
 express.</dd><dt><a class="fn" href="fn.scaffold.html" title="fn myco::ops::scaffold">scaffold</a></dt><dd>Create every missing scaffold piece in the worktree; existing

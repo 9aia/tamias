@@ -15,7 +15,7 @@ the same crates that write them — is the stable read path.</p>
 <ol>
 <li>Request params — <code>base</code> (a <code>worktree.base</code> path) or <code>config</code>
 (a <code>bupha.toml</code>/<code>bupha.yaml</code> path, like the CLI’s <code>--config</code>).</li>
-<li>Config discovery via [<code>FileSource</code>]: <code>$BUPHA_CONFIG</code>, then
+<li>Config discovery via <a href="../../bupha_config_file/struct.FileSource.html" title="struct bupha_config_file::FileSource"><code>FileSource</code></a>: <code>$BUPHA_CONFIG</code>, then
 <code>./bupha.{yaml,yml,toml}</code>, then <code>~/.config/bupha/bupha.*</code> —
 the watcher’s own resolution order.</li>
 <li>The compiled default <code>/tmp/bupha</code> (<code>default_wt_base</code>).</li>
@@ -29,7 +29,7 @@ Missing/unreadable file or corrupt lines degrade to fewer (or
 zero) records — history is observability, not correctness
 (<code>bupha-history</code>’s own contract).</dd><dt><a class="fn" href="fn.param_str.html" title="fn bupha_driver::data::param_str">param_<wbr>str</a></dt><dd>String param lookup — <code>base</code>, <code>config</code>, <code>repo</code>, … arrive as JSON
 strings in the request’s <code>params</code> object.</dd><dt><a class="fn" href="fn.param_u64.html" title="fn bupha_driver::data::param_u64">param_<wbr>u64</a></dt><dd><code>limit</code>-style numeric param.</dd><dt><a class="fn" href="fn.pending_total.html" title="fn bupha_driver::data::pending_total">pending_<wbr>total</a></dt><dd>Total pending shas across queue entries — for the status digest.</dd><dt><a class="fn" href="fn.queue_entries.html" title="fn bupha_driver::data::queue_entries">queue_<wbr>entries</a></dt><dd>Queue entries from <code>&lt;base&gt;/queue.redb</code> via the same
-[<code>RedbQueueStore</code>] the watcher persists through — read through a
+<a href="../../bupha_queue_redb/struct.RedbQueueStore.html" title="struct bupha_queue_redb::RedbQueueStore"><code>RedbQueueStore</code></a> the watcher persists through — read through a
 <strong>temp snapshot copy</strong>, never the live file. The watcher holds
 the database lock for its whole lifetime (<code>Database already open. Cannot acquire lock.</code> on a second <code>Database::create</code>), and
 even a successful direct open can run recovery writes; this

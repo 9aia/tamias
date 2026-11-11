@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["config_schema","deploy","health","hooks","install","logs","parse_flags","run","status","uninstall"],"struct":["Flags"]};
+window.SIDEBAR_ITEMS = {"fn":["config_schema","deploy","health","hooks","host","install","logs","parse_flags","run","status","uninstall","worker"],"struct":["Flags"]};

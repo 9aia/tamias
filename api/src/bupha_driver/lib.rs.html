@@ -15,7 +15,7 @@
 <a href=#15 id=15 data-nosnippet>15</a>//!
 <a href=#16 id=16 data-nosnippet>16</a>//! Read path: bupha keeps no serve wire — its state is files under
 <a href=#17 id=17 data-nosnippet>17</a>//! `worktree.base` (`history.jsonl`, `queue.redb`, plus the systemd
-<a href=#18 id=18 data-nosnippet>18</a>//! user units `bupha service status` probes). The driver reads those
+<a href=#18 id=18 data-nosnippet>18</a>//! user units the watcher manages). The driver reads those
 <a href=#19 id=19 data-nosnippet>19</a>//! directly through the same crates the watcher uses
 <a href=#20 id=20 data-nosnippet>20</a>//! (`bupha-config-file` for config resolution, `bupha-queue-redb`
 <a href=#21 id=21 data-nosnippet>21</a>//! for the queue store, `bupha-systemd` for unit state) — the most
@@ -57,68 +57,70 @@
 <a href=#57 id=57 data-nosnippet>57</a>        <span class="string">"health"</span>,
 <a href=#58 id=58 data-nosnippet>58</a>        <span class="string">"status"</span>,
 <a href=#59 id=59 data-nosnippet>59</a>        <span class="string">"logs"</span>,
-<a href=#60 id=60 data-nosnippet>60</a>        <span class="string">"config-schema"</span>,
-<a href=#61 id=61 data-nosnippet>61</a>    ] {
-<a href=#62 id=62 data-nosnippet>62</a>        <span class="kw">if </span>!verbs.iter().any(|x| x.as_str() == <span class="prelude-val">Some</span>(extra)) {
-<a href=#63 id=63 data-nosnippet>63</a>            verbs.push(<span class="macro">serde_json::json!</span>(extra));
-<a href=#64 id=64 data-nosnippet>64</a>        }
-<a href=#65 id=65 data-nosnippet>65</a>    }
-<a href=#66 id=66 data-nosnippet>66</a>    v[<span class="string">"verbs"</span>] = Value::Array(verbs);
-<a href=#67 id=67 data-nosnippet>67</a>    v
-<a href=#68 id=68 data-nosnippet>68</a>}
-<a href=#69 id=69 data-nosnippet>69</a>
-<a href=#70 id=70 data-nosnippet>70</a><span class="doccomment">/// Dispatch one parsed request to its response.
-<a href=#71 id=71 data-nosnippet>71</a></span><span class="kw">pub fn </span>dispatch(req: <span class="kw-2">&amp;</span>Request) -&gt; Response {
-<a href=#72 id=72 data-nosnippet>72</a>    <span class="kw">match </span>req {
-<a href=#73 id=73 data-nosnippet>73</a>        Request::Manifest =&gt; Response::ok_typed(<span class="kw-2">&amp;</span>views::manifest()),
-<a href=#74 id=74 data-nosnippet>74</a>        Request::Views =&gt; {
-<a href=#75 id=75 data-nosnippet>75</a>            <span class="kw">let </span>summaries: Vec&lt;ViewSummary&gt; =
-<a href=#76 id=76 data-nosnippet>76</a>                views::specs().iter().map(ViewSummary::from).collect();
-<a href=#77 id=77 data-nosnippet>77</a>            Response::ok_typed(<span class="kw-2">&amp;</span>summaries)
-<a href=#78 id=78 data-nosnippet>78</a>        }
-<a href=#79 id=79 data-nosnippet>79</a>        Request::View { view, params } =&gt; <span class="kw">match </span>views::view_result(view, params) {
-<a href=#80 id=80 data-nosnippet>80</a>            <span class="prelude-val">Ok</span>(result) =&gt; Response::ok_typed(<span class="kw-2">&amp;</span>result),
-<a href=#81 id=81 data-nosnippet>81</a>            <span class="prelude-val">Err</span>(e) =&gt; Response::err(e),
-<a href=#82 id=82 data-nosnippet>82</a>        },
-<a href=#83 id=83 data-nosnippet>83</a>        Request::Query { query, params } =&gt; {
-<a href=#84 id=84 data-nosnippet>84</a>            <span class="comment">// Unknown names fail the op; everything else answers
-<a href=#85 id=85 data-nosnippet>85</a>            // `ok:true` — degraded reads travel as `{"error": …}` /
-<a href=#86 id=86 data-nosnippet>86</a>            // `{"note": …}` data payloads, matching the sibling
-<a href=#87 id=87 data-nosnippet>87</a>            // drivers' contract.
-<a href=#88 id=88 data-nosnippet>88</a>            </span><span class="kw">if </span>!views::known_query(query) {
-<a href=#89 id=89 data-nosnippet>89</a>                <span class="kw">return </span>Response::err(<span class="macro">format!</span>(<span class="string">"unknown query: {query}"</span>));
-<a href=#90 id=90 data-nosnippet>90</a>            }
-<a href=#91 id=91 data-nosnippet>91</a>            <span class="kw">let </span>payload = views::query_data(query, params);
-<a href=#92 id=92 data-nosnippet>92</a>            Response::ok_typed(<span class="kw-2">&amp;</span>wire::QueryResult {
-<a href=#93 id=93 data-nosnippet>93</a>                query: query.clone(),
-<a href=#94 id=94 data-nosnippet>94</a>                data: payload,
-<a href=#95 id=95 data-nosnippet>95</a>            })
-<a href=#96 id=96 data-nosnippet>96</a>        }
-<a href=#97 id=97 data-nosnippet>97</a>        <span class="comment">// `render`/`submit` — this driver ships no renderer plugins
-<a href=#98 id=98 data-nosnippet>98</a>        // and no forms; the manifest claims neither, so answering an
-<a href=#99 id=99 data-nosnippet>99</a>        // explicit error keeps the wire honest.
-<a href=#100 id=100 data-nosnippet>100</a>        </span>Request::Render { kind, .. } =&gt; Response::err(<span class="macro">format!</span>(
-<a href=#101 id=101 data-nosnippet>101</a>            <span class="string">"tamias-driver-bupha claims no renderers (kind '{kind}')"
-<a href=#102 id=102 data-nosnippet>102</a>        </span>)),
-<a href=#103 id=103 data-nosnippet>103</a>        Request::Submit { .. } =&gt; {
-<a href=#104 id=104 data-nosnippet>104</a>            Response::err(<span class="string">"tamias-driver-bupha is read-only and implements no forms"</span>)
-<a href=#105 id=105 data-nosnippet>105</a>        }
-<a href=#106 id=106 data-nosnippet>106</a>        <span class="comment">// Optional platform feeds — the manifest declares neither
-<a href=#107 id=107 data-nosnippet>107</a>        // `contributes.jobs` nor `contributes.notifications`, so per
-<a href=#108 id=108 data-nosnippet>108</a>        // convention the ops answer `ok:false` ("no feed").
-<a href=#109 id=109 data-nosnippet>109</a>        </span>Request::Jobs =&gt; Response::err(<span class="string">"tamias-driver-bupha has no job feed"</span>),
-<a href=#110 id=110 data-nosnippet>110</a>        Request::Notifications =&gt; Response::err(<span class="string">"tamias-driver-bupha has no notification feed"</span>),
-<a href=#111 id=111 data-nosnippet>111</a>    }
-<a href=#112 id=112 data-nosnippet>112</a>}
-<a href=#113 id=113 data-nosnippet>113</a>
-<a href=#114 id=114 data-nosnippet>114</a><span class="doccomment">/// The `serve` verb — ndjson JSON-RPC on stdio until EOF or a
-<a href=#115 id=115 data-nosnippet>115</a>/// broken pipe, via pavo-driver-kit's loop (same semantics as the
-<a href=#116 id=116 data-nosnippet>116</a>/// hand-rolled loop this replaces: blank lines skip, parse failures
-<a href=#117 id=117 data-nosnippet>117</a>/// answer `ok:false`, a dead client exits quietly).
-<a href=#118 id=118 data-nosnippet>118</a></span><span class="kw">pub fn </span>serve() -&gt; i32 {
-<a href=#119 id=119 data-nosnippet>119</a>    <span class="comment">// The kit reports only unexpected I/O errors; the historical
-<a href=#120 id=120 data-nosnippet>120</a>    // contract is exit 0 on EOF/EPIPE either way.
-<a href=#121 id=121 data-nosnippet>121</a>    </span><span class="kw">let _ </span>= kit::serve_stdio(dispatch);
-<a href=#122 id=122 data-nosnippet>122</a>    <span class="number">0
-<a href=#123 id=123 data-nosnippet>123</a></span>}
+<a href=#60 id=60 data-nosnippet>60</a>        <span class="string">"host"</span>,
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="string">"worker"</span>,
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="string">"config-schema"</span>,
+<a href=#63 id=63 data-nosnippet>63</a>    ] {
+<a href=#64 id=64 data-nosnippet>64</a>        <span class="kw">if </span>!verbs.iter().any(|x| x.as_str() == <span class="prelude-val">Some</span>(extra)) {
+<a href=#65 id=65 data-nosnippet>65</a>            verbs.push(<span class="macro">serde_json::json!</span>(extra));
+<a href=#66 id=66 data-nosnippet>66</a>        }
+<a href=#67 id=67 data-nosnippet>67</a>    }
+<a href=#68 id=68 data-nosnippet>68</a>    v[<span class="string">"verbs"</span>] = Value::Array(verbs);
+<a href=#69 id=69 data-nosnippet>69</a>    v
+<a href=#70 id=70 data-nosnippet>70</a>}
+<a href=#71 id=71 data-nosnippet>71</a>
+<a href=#72 id=72 data-nosnippet>72</a><span class="doccomment">/// Dispatch one parsed request to its response.
+<a href=#73 id=73 data-nosnippet>73</a></span><span class="kw">pub fn </span>dispatch(req: <span class="kw-2">&amp;</span>Request) -&gt; Response {
+<a href=#74 id=74 data-nosnippet>74</a>    <span class="kw">match </span>req {
+<a href=#75 id=75 data-nosnippet>75</a>        Request::Manifest =&gt; Response::ok_typed(<span class="kw-2">&amp;</span>views::manifest()),
+<a href=#76 id=76 data-nosnippet>76</a>        Request::Views =&gt; {
+<a href=#77 id=77 data-nosnippet>77</a>            <span class="kw">let </span>summaries: Vec&lt;ViewSummary&gt; =
+<a href=#78 id=78 data-nosnippet>78</a>                views::specs().iter().map(ViewSummary::from).collect();
+<a href=#79 id=79 data-nosnippet>79</a>            Response::ok_typed(<span class="kw-2">&amp;</span>summaries)
+<a href=#80 id=80 data-nosnippet>80</a>        }
+<a href=#81 id=81 data-nosnippet>81</a>        Request::View { view, params } =&gt; <span class="kw">match </span>views::view_result(view, params) {
+<a href=#82 id=82 data-nosnippet>82</a>            <span class="prelude-val">Ok</span>(result) =&gt; Response::ok_typed(<span class="kw-2">&amp;</span>result),
+<a href=#83 id=83 data-nosnippet>83</a>            <span class="prelude-val">Err</span>(e) =&gt; Response::err(e),
+<a href=#84 id=84 data-nosnippet>84</a>        },
+<a href=#85 id=85 data-nosnippet>85</a>        Request::Query { query, params } =&gt; {
+<a href=#86 id=86 data-nosnippet>86</a>            <span class="comment">// Unknown names fail the op; everything else answers
+<a href=#87 id=87 data-nosnippet>87</a>            // `ok:true` — degraded reads travel as `{"error": …}` /
+<a href=#88 id=88 data-nosnippet>88</a>            // `{"note": …}` data payloads, matching the sibling
+<a href=#89 id=89 data-nosnippet>89</a>            // drivers' contract.
+<a href=#90 id=90 data-nosnippet>90</a>            </span><span class="kw">if </span>!views::known_query(query) {
+<a href=#91 id=91 data-nosnippet>91</a>                <span class="kw">return </span>Response::err(<span class="macro">format!</span>(<span class="string">"unknown query: {query}"</span>));
+<a href=#92 id=92 data-nosnippet>92</a>            }
+<a href=#93 id=93 data-nosnippet>93</a>            <span class="kw">let </span>payload = views::query_data(query, params);
+<a href=#94 id=94 data-nosnippet>94</a>            Response::ok_typed(<span class="kw-2">&amp;</span>wire::QueryResult {
+<a href=#95 id=95 data-nosnippet>95</a>                query: query.clone(),
+<a href=#96 id=96 data-nosnippet>96</a>                data: payload,
+<a href=#97 id=97 data-nosnippet>97</a>            })
+<a href=#98 id=98 data-nosnippet>98</a>        }
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="comment">// `render`/`submit` — this driver ships no renderer plugins
+<a href=#100 id=100 data-nosnippet>100</a>        // and no forms; the manifest claims neither, so answering an
+<a href=#101 id=101 data-nosnippet>101</a>        // explicit error keeps the wire honest.
+<a href=#102 id=102 data-nosnippet>102</a>        </span>Request::Render { kind, .. } =&gt; Response::err(<span class="macro">format!</span>(
+<a href=#103 id=103 data-nosnippet>103</a>            <span class="string">"tamias-driver-bupha claims no renderers (kind '{kind}')"
+<a href=#104 id=104 data-nosnippet>104</a>        </span>)),
+<a href=#105 id=105 data-nosnippet>105</a>        Request::Submit { .. } =&gt; {
+<a href=#106 id=106 data-nosnippet>106</a>            Response::err(<span class="string">"tamias-driver-bupha is read-only and implements no forms"</span>)
+<a href=#107 id=107 data-nosnippet>107</a>        }
+<a href=#108 id=108 data-nosnippet>108</a>        <span class="comment">// Optional platform feeds — the manifest declares neither
+<a href=#109 id=109 data-nosnippet>109</a>        // `contributes.jobs` nor `contributes.notifications`, so per
+<a href=#110 id=110 data-nosnippet>110</a>        // convention the ops answer `ok:false` ("no feed").
+<a href=#111 id=111 data-nosnippet>111</a>        </span>Request::Jobs =&gt; Response::err(<span class="string">"tamias-driver-bupha has no job feed"</span>),
+<a href=#112 id=112 data-nosnippet>112</a>        Request::Notifications =&gt; Response::err(<span class="string">"tamias-driver-bupha has no notification feed"</span>),
+<a href=#113 id=113 data-nosnippet>113</a>    }
+<a href=#114 id=114 data-nosnippet>114</a>}
+<a href=#115 id=115 data-nosnippet>115</a>
+<a href=#116 id=116 data-nosnippet>116</a><span class="doccomment">/// The `serve` verb — ndjson JSON-RPC on stdio until EOF or a
+<a href=#117 id=117 data-nosnippet>117</a>/// broken pipe, via pavo-driver-kit's loop (same semantics as the
+<a href=#118 id=118 data-nosnippet>118</a>/// hand-rolled loop this replaces: blank lines skip, parse failures
+<a href=#119 id=119 data-nosnippet>119</a>/// answer `ok:false`, a dead client exits quietly).
+<a href=#120 id=120 data-nosnippet>120</a></span><span class="kw">pub fn </span>serve() -&gt; i32 {
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="comment">// The kit reports only unexpected I/O errors; the historical
+<a href=#122 id=122 data-nosnippet>122</a>    // contract is exit 0 on EOF/EPIPE either way.
+<a href=#123 id=123 data-nosnippet>123</a>    </span><span class="kw">let _ </span>= kit::serve_stdio(dispatch);
+<a href=#124 id=124 data-nosnippet>124</a>    <span class="number">0
+<a href=#125 id=125 data-nosnippet>125</a></span>}
 </code></pre></div></section></main></body></html>
