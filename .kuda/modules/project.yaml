@@ -46,8 +46,8 @@ provenance:
   - project/proposals/proposal-0005-package-verification-official-badge-opt-in-service-consent-hardening.md
   hashes:
   - a8d17ca6e86c1faa677ebf8bbe55112e6b79ddb9
-  - 7841c9b5a4e2effccd3d7de6d14ee30f7681eaf5
-  - 0d37e262ad53f23e15c42c0c354c3c7f8f3dcc6c
+  - 70388804cc00a3ecec9918d49c30fabb458ef786
+  - 36ac2ea8fe35e4b83cff5a0f4bda798d1ea09360
   - 19a31a3ecdddb5e163a6ce4dc8d5303c8ce74004
   - 6d84ca6eeec801f5cb5415f9a9bb30f9b0f02f07
   - 2d2a62dd3e84a0b397b2a24b67ed1301c831e67b
@@ -72,6 +72,6 @@ provenance:
   - 78681634bda1973a368dfcfa325759f622410294
   - 8fcedfde5dcf4d5a61b0dbdd9942dbeec0fd0d53
   - acc048aa4451baae4addc01f57cccddba9f8365b
-  commit_sha: f8e740550f8e066814c28a8966b85227e46ea4ef
-  generated_at: '1794366695'
+  commit_sha: ad841f582ffc2e246335502f98f56431499e2635
+  generated_at: '1794423077'
   generator: kuda-template/0.1.2

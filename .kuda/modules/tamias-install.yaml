@@ -20,7 +20,7 @@ api:
 - name: DRVENV
   kind: const
   file: crates/tamias-install/src/lib.rs
-  line: 782
+  line: 891
   module: tamias-install
 - name: DepOutcome
   kind: type
@@ -35,12 +35,12 @@ api:
 - name: Env
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 51
+  line: 53
   module: tamias-install
 - name: EnvGuard
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 791
+  line: 900
   module: tamias-install
 - name: FILE_NAME
   kind: const
@@ -50,12 +50,12 @@ api:
 - name: IncludePlan
   kind: type
   file: crates/tamias-install/src/include.rs
-  line: 224
+  line: 235
   module: tamias-install
 - name: IncludeResolution
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 508
+  line: 565
   module: tamias-install
 - name: IncludeState
   kind: type
@@ -65,37 +65,47 @@ api:
 - name: InstallPlan
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 546
+  line: 603
+  module: tamias-install
+- name: MAX_EXTENDS_DEPTH
+  kind: const
+  file: crates/tamias-install/src/extends.rs
+  line: 50
   module: tamias-install
 - name: MAX_INCLUDE_DEPTH
   kind: const
   file: crates/tamias-install/src/include.rs
   line: 43
   module: tamias-install
+- name: PARENT_DIR
+  kind: const
+  file: crates/tamias-install/src/extends.rs
+  line: 54
+  module: tamias-install
 - name: PlanManifest
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 494
+  line: 551
   module: tamias-install
 - name: PlannedInclude
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 523
+  line: 580
   module: tamias-install
 - name: PlannedService
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 533
+  line: 590
   module: tamias-install
 - name: Progress
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 139
+  line: 141
   module: tamias-install
 - name: Surface
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 95
+  line: 97
   module: tamias-install
 - name: SyncOptions
   kind: type
@@ -115,7 +125,7 @@ api:
 - name: allow
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1047
+  line: 1156
   module: tamias-install
 - name: as_str
   kind: function
@@ -125,27 +135,27 @@ api:
 - name: bad_ref_and_missing_manifest_fail
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1413
+  line: 1662
   module: tamias-install
 - name: consent
   kind: module
   file: crates/tamias-install/src/lib.rs
-  line: 44
+  line: 45
   module: tamias-install
 - name: consent_env
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 932
+  line: 1041
   module: tamias-install
 - name: consent_gate_and_surface_hints
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 873
+  line: 982
   module: tamias-install
 - name: consent_memory_skips_reprompt_for_identical_bytes
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 942
+  line: 1051
   module: tamias-install
 - name: consent_path
   kind: function
@@ -160,7 +170,7 @@ api:
 - name: consent_refusal
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 107
+  line: 109
   module: tamias-install
 - name: consent_round_trip_and_digest_binding
   kind: function
@@ -180,32 +190,24 @@ api:
 - name: corrupt_consent_file_means_no_consent
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 979
+  line: 1088
   module: tamias-install
 - name: drivers_hint
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 117
+  line: 119
   module: tamias-install
 - name: drop
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 811
+  line: 920
   module: tamias-install
-- name: env
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 824
-  module: tamias-install
-- name: env
-  kind: function
-  file: crates/tamias-install/src/sync.rs
-  line: 394
-  module: tamias-install
-api_omitted: 76
+api_omitted: 92
 deps:
 - serde
 - serde_json
+- serde_yaml_ng
+- tamias-bin
 - tamias-cache-local
 - tamias-config
 - tamias-core
@@ -219,6 +221,7 @@ deps:
 - tamias-source-registry
 - tamias-store-local
 - tempfile
+- toml
 - tracing
 - tamias-registry
 - tamias-registry-local
@@ -237,6 +240,7 @@ notes: ''
 verify:
 - crates/tamias-install/Cargo.toml
 - crates/tamias-install/src/consent.rs
+- crates/tamias-install/src/extends.rs
 - crates/tamias-install/src/include.rs
 - crates/tamias-install/src/lib.rs
 - crates/tamias-install/src/sync.rs
@@ -244,15 +248,17 @@ provenance:
   files:
   - crates/tamias-install/Cargo.toml
   - crates/tamias-install/src/consent.rs
+  - crates/tamias-install/src/extends.rs
   - crates/tamias-install/src/include.rs
   - crates/tamias-install/src/lib.rs
   - crates/tamias-install/src/sync.rs
   hashes:
-  - 972e344f7d62e475c6be8b3c3ed490de7c73a4c1
+  - 8162f54710e782799c63f837f0390b5d09514c95
   - ee8d6763ab4fc04a6bdd00a690e31db67bba55e9
-  - e925dbcec065152ea5f89e15e861c2407aedaea0
-  - 501fe15e3781870609e5a5229d9026d22fafaa56
+  - 97ee9b90f1acc41875049b718dbe0759e9634664
+  - 7838ecba0294bdc9b39b3273102cd21d9a9dd36e
+  - c52791087a24f79d8604a1d1ff8354f1b97cebe2
   - c17f6b8edb459d412e238eb3e1f3cbcdc6fe8028
-  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
-  generated_at: '1794355185'
+  commit_sha: ad841f582ffc2e246335502f98f56431499e2635
+  generated_at: '1794423077'
   generator: kuda-template/0.1.2

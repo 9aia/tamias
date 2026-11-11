@@ -2,6 +2,11 @@ name: tamias-core
 path: crates/tamias-core/Cargo.toml
 purpose: Pure domain — package identity (@scope/name@semver), refs, manifests, records, digests (no I/O)
 api:
+- name: BinDecl
+  kind: type
+  file: crates/tamias-core/src/manifest.rs
+  line: 117
+  module: tamias-core
 - name: DEFAULT_MAX_ENTRIES
   kind: const
   file: crates/tamias-core/src/archive.rs
@@ -60,27 +65,27 @@ api:
 - name: Provider
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 95
+  line: 137
   module: tamias-core
 - name: ProviderHealth
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 160
+  line: 202
   module: tamias-core
 - name: ProviderHook
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 148
+  line: 190
   module: tamias-core
 - name: ProviderIngress
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 134
+  line: 176
   module: tamias-core
 - name: ProviderService
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 113
+  line: 155
   module: tamias-core
 - name: RECORD_FILE
   kind: const
@@ -127,6 +132,11 @@ api:
   file: crates/tamias-core/src/lib.rs
   line: 13
   module: tamias-core
+- name: bins_parse_and_validate
+  kind: function
+  file: crates/tamias-core/src/manifest.rs
+  line: 882
+  module: tamias-core
 - name: chatty_child_does_not_deadlock
   kind: function
   file: crates/tamias-core/src/process.rs
@@ -135,17 +145,27 @@ api:
 - name: check
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 195
+  line: 263
   module: tamias-core
 - name: check
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 366
+  line: 434
+  module: tamias-core
+- name: check_bin_payload_path
+  kind: function
+  file: crates/tamias-core/src/manifest.rs
+  line: 223
+  module: tamias-core
+- name: check_bins
+  kind: function
+  file: crates/tamias-core/src/manifest.rs
+  line: 476
   module: tamias-core
 - name: check_single_line
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 179
+  line: 247
   module: tamias-core
 - name: content_digest
   kind: function
@@ -182,27 +202,7 @@ api:
   file: crates/tamias-core/src/digest.rs
   line: 103
   module: tamias-core
-- name: dir_digest_order_independent_and_stable
-  kind: function
-  file: crates/tamias-core/src/digest.rs
-  line: 145
-  module: tamias-core
-- name: dir_size
-  kind: function
-  file: crates/tamias-core/src/digest.rs
-  line: 118
-  module: tamias-core
-- name: doc_format
-  kind: function
-  file: crates/tamias-core/src/overlay.rs
-  line: 113
-  module: tamias-core
-- name: drain_stderr
-  kind: function
-  file: crates/tamias-core/src/process.rs
-  line: 83
-  module: tamias-core
-api_omitted: 125
+api_omitted: 129
 deps:
 - flate2
 - hex
@@ -266,13 +266,13 @@ provenance:
   - bf42b5dcc0b30109a2bcee497b675ba447cab7f0
   - 3050b521008bf72751d6ffcab5f7dcbeced1d9f6
   - ea8ff165afcdccfccd8aad76171a031df45b4c05
-  - 24f827cb8ae8dc05fee255cc8b181b111a902dda
-  - aa1504117c4e73dc21b93d56e903e561f7ed2b63
+  - 12ab04d7318ad37937c0962dd013e7cba8e06e5f
+  - 07261b7ab18abeb7b3ca3f192a4a8ea1632f94da
   - 44f44be9271b9c03955c2a269d2e56a4bddc6f9e
   - d6ce3df521f4d85fdde031717f0a7345b0152098
   - 5b009cd1135bfa3db0f3b4be137c80398503c410
   - 2a50fa7f36f1fb3af8946ca611ef14520a706243
   - 1d8f69e21ec4d6bb45e702432caa1d56e02c97d8
-  commit_sha: f8e740550f8e066814c28a8966b85227e46ea4ef
-  generated_at: '1794366695'
+  commit_sha: ad841f582ffc2e246335502f98f56431499e2635
+  generated_at: '1794423077'
   generator: kuda-template/0.1.2

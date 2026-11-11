@@ -416,7 +416,13 @@ enum BinCommand {
     /// driver and runs `<driver> cli --dir <entry> --name <pkg>
     /// [args…]` with inherited stdio. Generated shim scripts call this;
     /// not a user verb.
-    #[command(hide = true)]
+    ///
+    /// `disable_help_flag`/`disable_version_flag`: this subcommand's own
+    /// help/version flags are unreachable anyway — clap would
+    /// intercept a leading `--help`/`--version` before the trailing
+    /// passthrough could see it, and shims need `cuora --help` to reach
+    /// the *engine's* help. Every argv after `<name>` forwards verbatim.
+    #[command(hide = true, disable_help_flag = true, disable_version_flag = true)]
     Exec {
         /// The store entry label the shim was deployed for
         /// (`@scope/name@version` — pins the exact install).
@@ -438,6 +444,11 @@ enum DriverCommand {
     /// lists each driver's declared verbs; `tamias run` stays the
     /// local service-exec surface — provider-specific ops (hook
     /// registration, health probes, unit status) live here.
+    ///
+    /// `disable_help_flag`/`disable_version_flag`: same passthrough
+    /// contract as `bin exec` — a verb's own `--help`/`--version` must
+    /// reach the driver, not clap.
+    #[command(disable_help_flag = true, disable_version_flag = true)]
     Exec {
         /// `@scope/name` or `name` — the installed package.
         name: String,
@@ -3632,6 +3643,117 @@ mod tests {
         assert_eq!(name, "pkg");
         assert_eq!(verb, "hooks");
         assert_eq!(args, ["register", "--dry-run", "--api-base", "http://x"]);
+    }
+
+    #[test]
+    fn exec_passthrough_keeps_help_and_version_in_argv() {
+        // `bin exec`/`driver exec` forward EVERYTHING after the positionals
+        // — clap must not intercept `--help`/`-h`/`--version` (T-017: shim
+        // `cuora --help` printed tamias's help instead of the engine's).
+        let cli = Cli::try_parse_from(["tamias", "bin", "exec", "pkg@1.0.0", "pkg-cli", "--help"])
+            .unwrap();
+        let Some(Command::Bin {
+            cmd: BinCommand::Exec { args, .. },
+        }) = cli.command
+        else {
+            panic!("expected bin exec");
+        };
+        assert_eq!(args, ["--help"]);
+
+        let cli = Cli::try_parse_from([
+            "tamias",
+            "bin",
+            "exec",
+            "pkg@1.0.0",
+            "pkg-cli",
+            "-h",
+            "--version",
+            "--json",
+            "sub",
+            "--flag=value",
+        ])
+        .unwrap();
+        let Some(Command::Bin {
+            cmd: BinCommand::Exec { args, .. },
+        }) = cli.command
+        else {
+            panic!("expected bin exec");
+        };
+        assert_eq!(args, ["-h", "--version", "--json", "sub", "--flag=value"]);
+
+        let cli = Cli::try_parse_from([
+            "tamias",
+            "driver",
+            "exec",
+            "pkg",
+            "health",
+            "--help",
+            "--version",
+        ])
+        .unwrap();
+        let Some(Command::Driver {
+            cmd: DriverCommand::Exec { args, .. },
+        }) = cli.command
+        else {
+            panic!("expected driver exec");
+        };
+        assert_eq!(args, ["--help", "--version"]);
+    }
+
+    #[test]
+    fn bin_exec_dispatches_help_flags_to_driver() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("th"));
+        let dd = tmp.path().join("th/drivers");
+        std::fs::create_dir_all(&dd).unwrap();
+        let driver = dd.join("tamias-driver-binx");
+        std::fs::write(
+            &driver,
+            "#!/bin/sh\nif [ \"$1\" = capabilities ]; then\n  echo '{\"types\":[\"binx\"],\"verbs\":[\"cli\"]}'\n  exit 0\nfi\necho \"$@\" >> \"$TAMIAS_HOME/seen\"\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let dir = tmp.path().join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            "name: bx\nversion: 1.0.0\ntype: binx\nbins:\n  \
+             - name: bx-cli\n    shim: cli\n    driver: binx\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        // The shim's `bx-cli --help` lands here as `bin exec <label>
+        // bx-cli --help` — every flag must reach the driver verbatim.
+        run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "bin",
+                "exec",
+                "bx",
+                "bx-cli",
+                "--help",
+                "-h",
+                "--version",
+                "--json",
+            ],
+        )
+        .unwrap();
+        let seen = std::fs::read_to_string(tmp.path().join("th/seen")).unwrap();
+        for flag in ["--help", "-h", "--version", "--json"] {
+            assert!(
+                seen.contains(flag),
+                "{flag} missing from driver argv: {seen}"
+            );
+        }
+        std::env::remove_var("TAMIAS_HOME");
     }
 
     #[test]
