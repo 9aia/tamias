@@ -1,1 +1,1 @@
-{"id":"","ws":"tamias","actor":"luis","ts":1794424247,"op":{"op":"claim","glob":"crates/tamias-driver-tamias/**","ttl_secs":3600}}
+{"id":"","ws":"tamias","actor":"luis","ts":1794424883,"op":{"op":"presence","status":"left"}}
