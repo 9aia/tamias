@@ -12,6 +12,11 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+tamias-core.workspace = true
+tamias-publish.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

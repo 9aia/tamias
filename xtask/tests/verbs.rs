@@ -142,6 +142,55 @@ fn site_needs_the_docs_worktree() {
 }
 
 #[test]
+fn pack_self_stages_and_packs() {
+    let dir = scratch("packself");
+    // a stand-in release binary — --bin skips the cargo build entirely
+    let bin = dir.join("bin/tamias-real");
+    std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+    let out = dir.join("out");
+    let args = [
+        "pack-self",
+        "--version",
+        "9.9.9",
+        "--bin",
+        bin.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ];
+    let o = xtask(&dir, &args, &[]);
+    assert_eq!(code(&o), 0, "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(out.join("tamias-9.9.9.tgz").is_file());
+    assert!(out.join("stage/tamias.yaml").is_file());
+    assert!(out.join("stage/bin/tamias").is_file());
+    let stdout = String::from_utf8_lossy(&o.stdout);
+    assert!(stdout.contains("tamias install"), "{stdout}");
+    assert!(stdout.contains("tamias-9.9.9.tgz"), "{stdout}");
+}
+
+#[test]
+fn pack_self_bad_args_and_missing_bin() {
+    let dir = scratch("packself-bad");
+    let o = xtask(&dir, &["pack-self", "--bogus"], &[]);
+    assert_eq!(code(&o), 2);
+    // --skip-build with no target/release/tamias under the scratch cwd
+    let o = xtask(&dir, &["pack-self", "--skip-build"], &[]);
+    assert_eq!(code(&o), 1);
+    // --bin pointing nowhere fails cleanly
+    let o = xtask(
+        &dir,
+        &[
+            "pack-self",
+            "--version",
+            "1.0.0",
+            "--bin",
+            dir.join("nope").to_str().unwrap(),
+        ],
+        &[],
+    );
+    assert_eq!(code(&o), 1);
+}
+
+#[test]
 fn unknown_and_empty_verbs_print_usage() {
     let dir = scratch("usage");
     let o = xtask(&dir, &["bogus"], &[]);

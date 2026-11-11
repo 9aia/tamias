@@ -82,8 +82,8 @@ provenance:
   - crates/tamias-deploy-cf/Cargo.toml
   - crates/tamias-deploy-cf/src/lib.rs
   hashes:
-  - 1bb89b67605f598c9a5fb1f2eb04d4eda1093f50
+  - 72aa2b27a661b9a7975ef7b068b6679e54934239
   - 0b36cc769e8e7779c2624ab875ff4965f12a67b5
-  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
-  generated_at: '1794355185'
+  commit_sha: f8e740550f8e066814c28a8966b85227e46ea4ef
+  generated_at: '1794366695'
   generator: kuda-template/0.1.2

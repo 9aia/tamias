@@ -2988,6 +2988,11 @@ dependencies = [
 [[package]]
 name = "tamias-xtask"
 version = "0.1.4"
+dependencies = [
+ "tamias-core",
+ "tamias-publish",
+ "tempfile",
+]
 
 [[package]]
 name = "tar"

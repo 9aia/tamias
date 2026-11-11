@@ -10,22 +10,32 @@ api:
 - name: DRIVER_TAMIAS_MANIFEST
   kind: const
   file: xtask/src/main.rs
-  line: 62
+  line: 64
   module: tamias-xtask
 - name: OK_STUB
   kind: const
   file: xtask/tests/verbs.rs
   line: 41
   module: tamias-xtask
+- name: PackSelfArgs
+  kind: type
+  file: xtask/src/main.rs
+  line: 193
+  module: tamias-xtask
 - name: check
   kind: function
   file: xtask/src/main.rs
-  line: 68
+  line: 70
   module: tamias-xtask
 - name: check_runs_fmt_and_clippy
   kind: function
   file: xtask/tests/verbs.rs
   line: 77
+  module: tamias-xtask
+- name: cli_manifest
+  kind: function
+  file: xtask/src/main.rs
+  line: 280
   module: tamias-xtask
 - name: code
   kind: function
@@ -35,7 +45,7 @@ api:
 - name: coverage
   kind: function
   file: xtask/src/main.rs
-  line: 132
+  line: 134
   module: tamias-xtask
 - name: coverage_needs_llvm_cov
   kind: function
@@ -45,22 +55,22 @@ api:
 - name: driver_tamias_available
   kind: function
   file: xtask/src/main.rs
-  line: 64
+  line: 66
   module: tamias-xtask
 - name: have
   kind: function
   file: xtask/src/main.rs
-  line: 38
+  line: 40
   module: tamias-xtask
 - name: have_cargo_sub
   kind: function
   file: xtask/src/main.rs
-  line: 48
+  line: 50
   module: tamias-xtask
 - name: install
   kind: function
   file: xtask/src/main.rs
-  line: 152
+  line: 154
   module: tamias-xtask
 - name: install_delegates_to_cargo_install
   kind: function
@@ -70,22 +80,57 @@ api:
 - name: main
   kind: function
   file: xtask/src/main.rs
-  line: 199
+  line: 437
+  module: tamias-xtask
+- name: pack_self
+  kind: function
+  file: xtask/src/main.rs
+  line: 327
+  module: tamias-xtask
+- name: pack_self_bad_args_and_missing_bin
+  kind: function
+  file: xtask/tests/verbs.rs
+  line: 171
+  module: tamias-xtask
+- name: pack_self_stages_and_packs
+  kind: function
+  file: xtask/tests/verbs.rs
+  line: 145
   module: tamias-xtask
 - name: package
   kind: function
   file: xtask/src/main.rs
-  line: 161
+  line: 163
+  module: tamias-xtask
+- name: package_fields
+  kind: function
+  file: xtask/src/main.rs
+  line: 246
+  module: tamias-xtask
+- name: package_fields_reads_version_and_description
+  kind: function
+  file: xtask/src/main.rs
+  line: 468
+  module: tamias-xtask
+- name: package_fields_rejects_workspace_version
+  kind: function
+  file: xtask/src/main.rs
+  line: 482
+  module: tamias-xtask
+- name: parse_pack_self
+  kind: function
+  file: xtask/src/main.rs
+  line: 205
   module: tamias-xtask
 - name: run
   kind: function
   file: xtask/src/main.rs
-  line: 16
+  line: 18
   module: tamias-xtask
 - name: run_in
   kind: function
   file: xtask/src/main.rs
-  line: 25
+  line: 27
   module: tamias-xtask
 - name: scratch
   kind: function
@@ -95,7 +140,7 @@ api:
 - name: site
   kind: function
   file: xtask/src/main.rs
-  line: 187
+  line: 425
   module: tamias-xtask
 - name: site_needs_the_docs_worktree
   kind: function
@@ -105,7 +150,17 @@ api:
 - name: smoke
   kind: function
   file: xtask/src/main.rs
-  line: 172
+  line: 174
+  module: tamias-xtask
+- name: stage_package
+  kind: function
+  file: xtask/src/main.rs
+  line: 291
+  module: tamias-xtask
+- name: stage_package_writes_manifest_and_bin
+  kind: function
+  file: xtask/src/main.rs
+  line: 494
   module: tamias-xtask
 - name: stub
   kind: function
@@ -120,17 +175,22 @@ api:
 - name: test
   kind: function
   file: xtask/src/main.rs
-  line: 108
+  line: 110
   module: tamias-xtask
 - name: test_prefers_nextest_then_falls_back
   kind: function
   file: xtask/tests/verbs.rs
   line: 89
   module: tamias-xtask
+- name: tests
+  kind: module
+  file: xtask/src/main.rs
+  line: 462
+  module: tamias-xtask
 - name: unknown_and_empty_verbs_print_usage
   kind: function
   file: xtask/tests/verbs.rs
-  line: 145
+  line: 194
   module: tamias-xtask
 - name: xtask
   kind: function
@@ -142,7 +202,10 @@ api:
   file: xtask/tests/verbs.rs
   line: 49
   module: tamias-xtask
-deps: []
+deps:
+- tamias-core
+- tamias-publish
+- tempfile
 notes: ''
 verify:
 - xtask/Cargo.toml
@@ -154,9 +217,9 @@ provenance:
   - xtask/src/main.rs
   - xtask/tests/verbs.rs
   hashes:
-  - b082fd52c6693e2e905507a9e7605d68880524fe
-  - 1f42dea9acb90351e9f46d8f081d831a6961e825
-  - b57b0b9d54f534999adc20d6ba7cea547f39a8ad
-  commit_sha: 36c5d5a631bf7c9adb67c8a797582fa819d938f4
-  generated_at: '1794334084'
+  - f62c8bf5f2849fe1b7c68c4d37121f63802e4ec1
+  - 306303139068d8317fe0f32ae1cf90b553f12b0f
+  - cc03101c7bf834be77cdf9cb1086d6b3013d9dcd
+  commit_sha: f8e740550f8e066814c28a8966b85227e46ea4ef
+  generated_at: '1794366695'
   generator: kuda-template/0.1.2
