@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use tamias_core::{
     dir_digest, is_valid_name, is_valid_version, pack_tgz_atomic, write_atomic, Error, Manifest,
 };
-use tamias_registry::{Registry, RegistryEntry};
+use tamias_registry::{apply_retention, PublishOutcome, Registry, RegistryEntry};
 
 /// A dir-backed registry.
 #[derive(Clone, Debug)]
@@ -25,6 +25,11 @@ pub struct LocalRegistry {
     /// `None` (the default) leaves direct dir writes uncapped; the
     /// `registry serve` HTTP surface enforces its own cap regardless.
     max_upload: Option<u64>,
+    /// Index retention (P-024) — `Some(keep)` prunes the published
+    /// package's older index entries beyond the `keep` most recent
+    /// semver versions on every publish. `None` (the default) keeps
+    /// every version. Payload blobs are never pruned.
+    retention: Option<u64>,
 }
 
 impl LocalRegistry {
@@ -34,6 +39,7 @@ impl LocalRegistry {
         Self {
             root: root.into(),
             max_upload: None,
+            retention: None,
         }
     }
 
@@ -41,6 +47,15 @@ impl LocalRegistry {
     #[must_use]
     pub fn with_max_upload(mut self, bytes: u64) -> Self {
         self.max_upload = Some(bytes);
+        self
+    }
+
+    /// Retain only the `keep` most recent semver versions per package
+    /// in the index (P-024) — `None` disables pruning. The resolved
+    /// `retention.keep` from config (or `publish --keep`).
+    #[must_use]
+    pub fn with_retention(mut self, keep: Option<u64>) -> Self {
+        self.retention = keep;
         self
     }
 
@@ -72,7 +87,7 @@ impl Registry for LocalRegistry {
         payload_root: &Path,
         manifest: &Manifest,
         signature: Option<&str>,
-    ) -> Result<RegistryEntry, Error> {
+    ) -> Result<PublishOutcome, Error> {
         // The manifest may not have been validated upstream — every field
         // embedded in the blob path must be a single safe component.
         if !is_valid_name(&manifest.name) {
@@ -142,10 +157,22 @@ impl Registry for LocalRegistry {
         entries.push(entry.clone());
         entries
             .sort_by(|a, b| (&a.scope, &a.name, &a.version).cmp(&(&b.scope, &b.name, &b.version)));
+        // Retention (P-024) — index-entry prune only; the `.tgz`
+        // blobs of pruned versions stay on disk.
+        let pruned = self
+            .retention
+            .map(|keep| {
+                apply_retention(
+                    &mut entries,
+                    usize::try_from(keep).unwrap_or(usize::MAX),
+                    &entry,
+                )
+            })
+            .unwrap_or_default();
         let text = serde_json::to_string_pretty(&entries)
             .map_err(|e| Error::Failed(format!("serialize index: {e}")))?;
         write_atomic(&self.index_path(), text.as_bytes())?;
-        Ok(entry)
+        Ok(PublishOutcome { entry, pruned })
     }
 }
 
@@ -464,6 +491,51 @@ mod tests {
         let _ = registry.publish(src.path(), &manifest, None).unwrap();
         assert_eq!(registry.entries().unwrap().len(), 1);
         assert!(registry.root().is_dir());
+    }
+
+    #[test]
+    fn publish_with_retention_prunes_index_not_payloads() {
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry = LocalRegistry::new(reg_dir.path()).with_retention(Some(2));
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a.txt"), "a").unwrap();
+        let manifest_path = src.path().join("tamias.yaml");
+        let mut last_pruned = Vec::new();
+        for v in ["1.0.0", "2.0.0", "3.0.0"] {
+            std::fs::write(&manifest_path, format!("name: n\nversion: {v}\n")).unwrap();
+            let manifest = Manifest::load(src.path()).unwrap();
+            last_pruned = registry
+                .publish(src.path(), &manifest, None)
+                .unwrap()
+                .pruned;
+        }
+        // keep=2 → only 2.0.0 + 3.0.0 remain indexed; 1.0.0 was pruned
+        // by the 3.0.0 publish and reported.
+        assert_eq!(last_pruned, vec!["n@1.0.0"]);
+        let versions: Vec<String> = registry
+            .entries()
+            .unwrap()
+            .iter()
+            .map(|e| e.version.clone().unwrap())
+            .collect();
+        assert_eq!(versions, vec!["2.0.0", "3.0.0"]);
+        // index-entry prune only — every payload blob is still there.
+        for v in ["1.0.0", "2.0.0", "3.0.0"] {
+            assert!(reg_dir.path().join(format!("n/{v}.tgz")).is_file(), "{v}");
+        }
+        // without retention nothing is ever pruned
+        let plain_dir = tempfile::tempdir().unwrap();
+        let plain = LocalRegistry::new(plain_dir.path());
+        for v in ["1.0.0", "2.0.0", "3.0.0"] {
+            std::fs::write(&manifest_path, format!("name: n\nversion: {v}\n")).unwrap();
+            let manifest = Manifest::load(src.path()).unwrap();
+            assert!(plain
+                .publish(src.path(), &manifest, None)
+                .unwrap()
+                .pruned
+                .is_empty());
+        }
+        assert_eq!(plain.entries().unwrap().len(), 3);
     }
 
     fn raw(addr: &str, req: &[u8]) -> String {

@@ -2787,6 +2787,7 @@ name = "tamias-registry"
 version = "0.1.4"
 dependencies = [
  "proptest",
+ "semver",
  "serde",
  "serde_json",
  "tamias-core",

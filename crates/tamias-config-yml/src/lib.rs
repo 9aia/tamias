@@ -37,7 +37,7 @@ mod tests {
         assert_eq!(f.extensions(), &["yml", "yaml"]);
         let cfg = f
             .parse(
-                "store:\n  kind: local\npublish:\n  default: cloud\nsearch:\n  default: mirror\nregistries:\n  cloud:\n    kind: cf\n    url: https://x\n    token_env: T\n    limits:\n      max_upload: 256MiB\nlimits:\n  max_download: 1GiB\n  packages:\n    \"kuda-*\":\n      max_upload: 2GiB\n",
+                "store:\n  kind: local\npublish:\n  default: cloud\nsearch:\n  default: mirror\nregistries:\n  cloud:\n    kind: cf\n    url: https://x\n    token_env: T\n    limits:\n      max_upload: 256MiB\n    retention:\n      keep: 3\nlimits:\n  max_download: 1GiB\n  packages:\n    \"kuda-*\":\n      max_upload: 2GiB\nretention:\n  keep: 10\n  packages:\n    \"big-*\":\n      keep: 50\n",
             )
             .unwrap();
         assert_eq!(cfg.store.kind.as_deref(), Some("local"));
@@ -47,6 +47,9 @@ mod tests {
         assert_eq!(cfg.registries["cloud"].limits.max_upload, Some(256 << 20));
         assert_eq!(cfg.limits.max_download, Some(1 << 30));
         assert_eq!(cfg.limits.packages["kuda-*"].max_upload, Some(2 << 30));
+        assert_eq!(cfg.retention.keep, Some(10));
+        assert_eq!(cfg.retention.packages["big-*"].keep, Some(50));
+        assert_eq!(cfg.registries["cloud"].retention.keep, Some(3));
         assert!(f.parse("[store]\nkind = \"local\"").is_err());
         // render round-trips
         let text = f.render(&cfg).unwrap();

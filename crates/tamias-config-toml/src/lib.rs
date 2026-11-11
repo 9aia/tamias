@@ -35,7 +35,7 @@ mod tests {
         assert_eq!(f.extensions(), &["toml"]);
         let cfg = f
             .parse(
-                "[store]\nkind = \"local\"\n[publish]\ndefault = \"cloud\"\n[search]\ndefault = \"mirror\"\n[registries.cloud]\nkind = \"http\"\nurl = \"https://x\"\ntoken_env = \"T\"\n[registries.cloud.limits]\nmax_upload = \"256MiB\"\n[limits]\nmax_download = 1073741824\n[limits.packages.\"kuda-*\"]\nmax_upload = \"2GiB\"\n",
+                "[store]\nkind = \"local\"\n[publish]\ndefault = \"cloud\"\n[search]\ndefault = \"mirror\"\n[registries.cloud]\nkind = \"http\"\nurl = \"https://x\"\ntoken_env = \"T\"\n[registries.cloud.limits]\nmax_upload = \"256MiB\"\n[registries.cloud.retention]\nkeep = 3\n[limits]\nmax_download = 1073741824\n[limits.packages.\"kuda-*\"]\nmax_upload = \"2GiB\"\n[retention]\nkeep = 10\n[retention.packages.\"big-*\"]\nkeep = 50\n",
             )
             .unwrap();
         assert_eq!(cfg.store.kind.as_deref(), Some("local"));
@@ -45,6 +45,9 @@ mod tests {
         assert_eq!(cfg.registries["cloud"].limits.max_upload, Some(256 << 20));
         assert_eq!(cfg.limits.max_download, Some(1 << 30));
         assert_eq!(cfg.limits.packages["kuda-*"].max_upload, Some(2 << 30));
+        assert_eq!(cfg.retention.keep, Some(10));
+        assert_eq!(cfg.retention.packages["big-*"].keep, Some(50));
+        assert_eq!(cfg.registries["cloud"].retention.keep, Some(3));
         assert!(f.parse("name: x").is_err());
         // render round-trips
         let text = f.render(&cfg).unwrap();

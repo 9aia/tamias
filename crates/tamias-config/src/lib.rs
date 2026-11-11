@@ -74,6 +74,10 @@ pub struct Registry {
     /// Per-registry limit overrides (values + package rules).
     #[serde(default, skip_serializing_if = "Limits::is_empty")]
     pub limits: Limits,
+    /// Per-registry retention overrides — how many of a package's
+    /// most recent versions stay indexed after publish (P-024).
+    #[serde(default, skip_serializing_if = "Retention::is_empty")]
+    pub retention: Retention,
 }
 
 impl Registry {
@@ -109,6 +113,54 @@ impl Registry {
             self.token_env = upper.token_env.clone();
         }
         self.limits.overlay(&upper.limits);
+        self.retention.overlay(&upper.retention);
+    }
+}
+
+/// Registry retention (P-024) — how many of a package's most recent
+/// versions stay in the registry index after each publish. `keep`
+/// unset → no pruning (the default — pruning is opt-in).
+///
+/// `keep` counts *all* indexed versions of the package in semver
+/// order — prereleases included (`1.0.0-rc.1` sorts below `1.0.0`),
+/// publish order irrelevant. Versions that aren't semver can't be
+/// ordered and are never pruned. The version being published is
+/// always kept, even when it sorts outside the window. Payload blobs
+/// are never touched — v1 prunes index entries only.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Retention {
+    /// Versions kept per package — `0` keeps only the just-published
+    /// version. `None` inherits the next level / disables pruning.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keep: Option<u64>,
+    /// Per-package overrides — exact name or `*` glob → retention.
+    /// Lives on the global `retention` (and may appear under a
+    /// registry's `retention`); `packages` nested inside a package
+    /// entry is ignored — overrides are one level deep.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub packages: BTreeMap<String, Retention>,
+}
+
+impl Retention {
+    /// True when nothing is set — used to skip empty `retention:`
+    /// blocks on render.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.keep.is_none() && self.packages.is_empty()
+    }
+
+    /// Overlay `upper` — its set fields win; `packages` merges per key.
+    pub fn overlay(&mut self, upper: &Self) {
+        if upper.keep.is_some() {
+            self.keep = upper.keep;
+        }
+        for (name, retention) in &upper.packages {
+            self.packages
+                .entry(name.clone())
+                .or_default()
+                .overlay(retention);
+        }
     }
 }
 
@@ -385,6 +437,19 @@ fn package_limits<'a>(limits: &'a Limits, package: &str) -> Option<&'a Limits> {
         .map(|(_, found)| found)
 }
 
+/// The override for `package` in `retention.packages` — same exact-
+/// then-glob rule as [`package_limits`].
+fn package_retention<'a>(retention: &'a Retention, package: &str) -> Option<&'a Retention> {
+    if let Some(found) = retention.packages.get(package) {
+        return Some(found);
+    }
+    retention
+        .packages
+        .iter()
+        .find(|(pattern, _)| glob_match(pattern, package))
+        .map(|(_, found)| found)
+}
+
 /// The tamias config — discovered as `./tamias.{yml,yaml,toml}` (or
 /// `TAMIAS_CONFIG`/`--file`). `store`/`cache` roots feed the CLI's
 /// `Env` (env vars win); `registries`/`publish`/`search` route the
@@ -410,6 +475,10 @@ pub struct Config {
     /// Global byte limits + per-package overrides.
     #[serde(default, skip_serializing_if = "Limits::is_empty")]
     pub limits: Limits,
+    /// Global retention policy — versions kept per package after
+    /// publish (P-024). Unset → no pruning.
+    #[serde(default, skip_serializing_if = "Retention::is_empty")]
+    pub retention: Retention,
     /// Package signing policy — `publish --sign` key resolution and
     /// install/verify `allowed_signers`/`official_signers` enforcement
     /// and trust-tier reporting (`tamias-sign`).
@@ -447,6 +516,31 @@ impl Config {
         }
     }
 
+    /// Resolve the retention `keep` count for `package` on `registry`
+    /// (a `registries` key, or `None` for the unnamed/default
+    /// registry). `None` → pruning disabled.
+    ///
+    /// First set wins, mirroring [`Config::effective_limits`]:
+    /// package override — the registry's own `retention.packages`
+    /// first, then the global `retention.packages` (exact name, else
+    /// `*` glob) → per-registry `retention.keep` → global
+    /// `retention.keep`.
+    #[must_use]
+    pub fn effective_retention(
+        &self,
+        registry: Option<&str>,
+        package: Option<&str>,
+    ) -> Option<u64> {
+        let reg = registry.and_then(|name| self.registries.get(name));
+        let pkg = package.and_then(|p| {
+            reg.and_then(|r| package_retention(&r.retention, p))
+                .or_else(|| package_retention(&self.retention, p))
+        });
+        pkg.and_then(|r| r.keep)
+            .or_else(|| reg.and_then(|r| r.retention.keep))
+            .or(self.retention.keep)
+    }
+
     /// Overlay `upper` onto `self` — the layered-config merge: the
     /// user-level config (`~/.config/tamias/`) is the base, a project
     /// `tamias.*` file overlays it. Every set field in `upper` wins;
@@ -469,6 +563,7 @@ impl Config {
             self.search.default = upper.search.default.clone();
         }
         self.limits.overlay(&upper.limits);
+        self.retention.overlay(&upper.retention);
         self.signing.overlay(&upper.signing);
     }
 }
@@ -696,6 +791,78 @@ mod tests {
         // unknown registry name → treated as unnamed
         let eff = config.effective_limits(Some("ghost"), Some("w"));
         assert_eq!(eff.max_upload, 8192);
+    }
+
+    #[test]
+    fn effective_retention_resolution_order() {
+        let mut config = Config::default();
+        // unset everywhere → pruning disabled
+        assert_eq!(config.effective_retention(None, Some("w")), None);
+
+        // global keep applies to every package/registry
+        config.retention.keep = Some(5);
+        assert_eq!(config.effective_retention(None, Some("w")), Some(5));
+        assert_eq!(config.effective_retention(Some("ghost"), None), Some(5));
+
+        // per-registry beats global
+        config.registries.insert(
+            "r".into(),
+            Registry {
+                retention: Retention {
+                    keep: Some(9),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        assert_eq!(config.effective_retention(Some("r"), Some("w")), Some(9));
+        assert_eq!(
+            config.effective_retention(Some("ghost"), Some("w")),
+            Some(5)
+        );
+
+        // global package override (exact, then glob) beats registry keep
+        config.retention.packages.insert(
+            "w".into(),
+            Retention {
+                keep: Some(3),
+                ..Default::default()
+            },
+        );
+        config.retention.packages.insert(
+            "kuda-*".into(),
+            Retention {
+                keep: Some(7),
+                ..Default::default()
+            },
+        );
+        assert_eq!(config.effective_retention(Some("r"), Some("w")), Some(3));
+        assert_eq!(
+            config.effective_retention(None, Some("kuda-domain")),
+            Some(7)
+        );
+        // a package rule without `keep` doesn't shadow the registry keep
+        config
+            .retention
+            .packages
+            .insert("v".into(), Retention::default());
+        assert_eq!(config.effective_retention(Some("r"), Some("v")), Some(9));
+
+        // the registry's own package rule beats the global one
+        let mut reg = config.registries.get("r").unwrap().clone();
+        reg.retention.packages.insert(
+            "w".into(),
+            Retention {
+                keep: Some(2),
+                ..Default::default()
+            },
+        );
+        config.registries.insert("r".into(), reg);
+        assert_eq!(config.effective_retention(Some("r"), Some("w")), Some(2));
+        // keep = 0 is a real value ("only the published version"),
+        // not "unset"
+        config.retention.keep = Some(0);
+        assert_eq!(config.effective_retention(None, None), Some(0));
     }
 
     #[test]

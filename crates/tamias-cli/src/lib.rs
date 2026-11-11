@@ -290,6 +290,13 @@ enum Command {
         /// the packed tarball (default resolves them read-only).
         #[arg(long)]
         keep_includes: bool,
+        /// Keep only the N most recent indexed versions of the package
+        /// — overrides `retention.keep` config for this publish.
+        #[arg(long)]
+        keep: Option<u64>,
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
     },
     /// Search a registry's index.
     Search {
@@ -1019,7 +1026,7 @@ fn open_registry(
     value: Option<&str>,
     package: Option<&str>,
 ) -> Result<Box<dyn Registry>, Error> {
-    tamias_registry_open::open_registry(&env.registry_root, config, value, package)
+    tamias_registry_open::open_registry(&env.registry_root, config, value, package, None)
 }
 
 /// `registry add` — validate + write through the shared
@@ -1446,6 +1453,8 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
             sign,
             key,
             keep_includes,
+            keep,
+            json,
         }) => {
             let config = cli_config();
             // The shared publish resolution (`tamias-registry-open`) —
@@ -1459,6 +1468,7 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                 &[config.as_ref().and_then(|c| c.publish.default.as_deref())],
                 &env.store_root,
                 keep_includes,
+                keep,
                 &mut |_, _| {},
             )?;
             // `--sign` — ssh-keygen -Y over the provenance anchors
@@ -1479,16 +1489,34 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                 None
             };
             eprintln!("tamias: publishing {}", plan.manifest.name);
-            let entry = plan.publish(signature.as_deref())?;
-            println!(
-                "published {} ({})",
-                entry.label(),
-                if entry.signature.is_some() {
-                    "signed"
-                } else {
-                    "unsigned"
+            let outcome = plan.publish(signature.as_deref())?;
+            if json {
+                print_json(&serde_json::json!({
+                    "label": outcome.label(),
+                    "name": outcome.name,
+                    "scope": outcome.scope,
+                    "version": outcome.version,
+                    "kind": outcome.kind,
+                    "digest": outcome.digest,
+                    "signed": outcome.signature.is_some(),
+                    "publisher": outcome.publisher,
+                    "file": outcome.file,
+                    "pruned": outcome.pruned,
+                }))?;
+            } else {
+                println!(
+                    "published {} ({})",
+                    outcome.label(),
+                    if outcome.signature.is_some() {
+                        "signed"
+                    } else {
+                        "unsigned"
+                    }
+                );
+                if !outcome.pruned.is_empty() {
+                    println!("pruned (retention): {}", outcome.pruned.join(", "));
                 }
-            );
+            }
         }
         Some(Command::Search {
             query,
@@ -5654,6 +5682,67 @@ mod tests {
         // both successful publishes landed in their respective roots
         assert!(e.registry_root.join("index.json").is_file());
         assert!(named_reg.join("index.json").is_file());
+    }
+
+    #[test]
+    fn publish_retention_prunes_old_index_entries() {
+        let _pg = ProcGuard::new();
+        let saved_cfg = std::env::var_os(CONFIG_ENV);
+        let saved_reg = std::env::var_os("TAMIAS_REGISTRY");
+        std::env::remove_var(CONFIG_ENV);
+        std::env::remove_var("TAMIAS_REGISTRY");
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        // keep=2 via config; `--keep` overrides per publish.
+        std::fs::write(proj.join("tamias.yml"), "retention:\n  keep: 2\n").unwrap();
+        let dir = pkg(tmp.path());
+        let manifest = dir.join("tamias.yaml");
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&proj).unwrap();
+        let publish_v = |e: &Env, v: &str, extra: &[&str]| {
+            std::fs::write(&manifest, format!("name: w\nversion: {v}\n")).unwrap();
+            let mut args = vec!["tamias", "publish", dir.to_str().unwrap()];
+            args.extend_from_slice(extra);
+            run_args(e.clone(), &args)
+        };
+        let index_versions = || -> Vec<String> {
+            let text = std::fs::read_to_string(e.registry_root.join("index.json")).unwrap();
+            let entries: Vec<serde_json::Value> = serde_json::from_str(&text).unwrap();
+            entries
+                .iter()
+                .filter(|en| en["name"] == "w")
+                .map(|en| en["version"].as_str().unwrap().to_string())
+                .collect()
+        };
+        publish_v(&e, "1.0.0", &[]).unwrap();
+        publish_v(&e, "2.0.0", &[]).unwrap();
+        publish_v(&e, "3.0.0", &[]).unwrap();
+        // keep=2 → 1.0.0 pruned from the index…
+        let mut vs = index_versions();
+        vs.sort();
+        assert_eq!(vs, vec!["2.0.0", "3.0.0"]);
+        // …but its payload blob stays (index-entry prune only, P-024).
+        assert!(e.registry_root.join("w/1.0.0.tgz").is_file());
+        // --keep 1 overrides the config for this publish.
+        publish_v(&e, "4.0.0", &["--keep", "1"]).unwrap();
+        assert_eq!(index_versions(), vec!["4.0.0"]);
+        // --json publishes fine; --keep 3 keeps both survivors (3.0.0
+        // was already pruned by the keep=1 publish above).
+        publish_v(&e, "5.0.0", &["--keep", "3", "--json"]).unwrap();
+        let mut vs = index_versions();
+        vs.sort();
+        assert_eq!(vs, vec!["4.0.0", "5.0.0"]);
+        std::env::set_current_dir(&prev).unwrap();
+        match saved_cfg {
+            Some(v) => std::env::set_var(CONFIG_ENV, v),
+            None => std::env::remove_var(CONFIG_ENV),
+        }
+        match saved_reg {
+            Some(v) => std::env::set_var("TAMIAS_REGISTRY", v),
+            None => std::env::remove_var("TAMIAS_REGISTRY"),
+        }
     }
 
     #[test]

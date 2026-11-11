@@ -361,6 +361,9 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 .get("keep_includes")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
+            // `"keep":<n>` — per-invocation retention override (P-024);
+            // absent → `retention.keep` config.
+            let keep = req.get("keep").and_then(Value::as_u64);
             let plan = tamias_registry_open::publish_plan(
                 Path::new(dir),
                 &env.registry_root,
@@ -369,6 +372,7 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 &[config.publish.default.as_deref()],
                 &env.store_root,
                 keep_includes,
+                keep,
                 &mut |_, _| {},
             )?;
             // `"sign":true` — ssh-keygen -Y sign the provenance anchors;
@@ -385,8 +389,12 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
             } else {
                 None
             };
-            let entry = plan.publish(signature.as_deref())?;
-            Ok(registry_entry_json(&entry))
+            let outcome = plan.publish(signature.as_deref())?;
+            // `pruned` — index entries the retention policy dropped
+            // (P-024); payloads stay.
+            let mut out = registry_entry_json(&outcome.entry);
+            out["pruned"] = json!(outcome.pruned);
+            Ok(out)
         }
         other => Err(Error::Failed(format!("unknown op '{other}'"))),
     }

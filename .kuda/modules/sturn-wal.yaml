@@ -11,10 +11,10 @@ verify:
 - refs/sturn/wal/devin-ci-bupha
 - refs/sturn/wal/devin-driver-conformance
 - refs/sturn/wal/devin-lockonly
+- refs/sturn/wal/devin-p024
 - refs/sturn/wal/devin-payload
 - refs/sturn/wal/devin-plt004
 - refs/sturn/wal/devin-plt004b
-- refs/sturn/wal/devin-plt004c
 provenance:
   files:
   - refs/sturn/wal/9aia
@@ -23,6 +23,7 @@ provenance:
   - refs/sturn/wal/devin-ci-bupha
   - refs/sturn/wal/devin-driver-conformance
   - refs/sturn/wal/devin-lockonly
+  - refs/sturn/wal/devin-p024
   - refs/sturn/wal/devin-payload
   - refs/sturn/wal/devin-plt004
   - refs/sturn/wal/devin-plt004b
@@ -36,12 +37,14 @@ provenance:
   - refs/sturn/wal/devin-t015
   - refs/sturn/wal/devin-t016
   - refs/sturn/wal/devin-win
+  - refs/sturn/wal/docs-sweep
   - refs/sturn/wal/main
   - refs/sturn/wal/t8-3-cli-surface
   - refs/sturn/wal/t8-6-binary-distribution
   - refs/sturn/wal/tamias
   - refs/sturn/wal/tamias-io002
   - refs/sturn/wal/tamias-xtask-test-fix
+  - refs/sturn/ws/devin-p024
   hashes:
   - 55b49bccd69d5f3daecf408f3ef9c92fe09cbb7f
   - 0344c258b0392072e82f3282d9e2108f4e18ae4c
@@ -49,6 +52,7 @@ provenance:
   - b604086ddeb2869a43a2d09815cc3b5f45aec0e8
   - febcf0121191ae432ee83dfb3faa3a82ea7de134
   - fbe0a1d1d55b6407821c2f0c6d9546c4915d8100
+  - 9fcccecee73b3c6e29ed700ebe232382a6822fe8
   - dd946052c51178c9cb6a12651917bb357a7c7dc2
   - c7ce7e6a3c5d7e8f93748b76a85e4b0d90a6830f
   - 8f6f7f42cdbd8274def59a236d3f1365680d54bf
@@ -62,12 +66,14 @@ provenance:
   - 47c2e07bcfe8165f725770b81e901fb8e564052c
   - 30581d221283a217218d85e486460adf764d1b8e
   - b6113648eb6b4227be70caf1beeb3528ce96035d
+  - 2a50ca710ab33958560976c5bcda2f5bc7c00d52
   - aa4d83ebcc3b1716c31ea5c5b337937d9cfe2782
   - 556695b9190378fc2a0061057b38f31dd8a988d1
   - 96a9778feccc8eacea586ede09ca8a9bd1c4557b
-  - c4032bac491086426cbe683a052e6373587b203b
+  - 76049379953e403d61a45a08f1feac4cf48664c3
   - 21c92171c34188115ddaa88ece5a724392948a1f
   - 75f581ed6829529e4b83898232e45f343da79f52
-  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
-  generated_at: '1794424824'
+  - 6485ef1cbb9ac691cfd02df9c73938110af699f6
+  commit_sha: 6485ef1cbb9ac691cfd02df9c73938110af699f6
+  generated_at: '1794428713'
   generator: kuda-template/0.1.4

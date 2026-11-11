@@ -26,3 +26,15 @@ registries:
 # Publish-target routing — `tamias publish --registry cloud`.
 # publish:
 #   default: local
+
+# Retention (P-024) — on every publish, index entries for versions
+# older than the `keep` most recent (semver order, prereleases
+# included) are pruned per package. Payload blobs are never removed.
+# Unset = keep everything. `tamias publish --keep N` overrides per
+# invocation; `packages:` globs give per-package rules, and a
+# `retention:` block under `registries.<name>` overrides per registry.
+# retention:
+#   keep: 10
+#   packages:
+#     "big-*":
+#       keep: 50

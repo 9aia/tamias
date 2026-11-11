@@ -1582,6 +1582,7 @@ dependencies = [
 name = "tamias-registry"
 version = "0.1.4"
 dependencies = [
+ "semver",
  "serde",
  "serde_json",
  "tamias-core",

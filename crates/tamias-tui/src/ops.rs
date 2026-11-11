@@ -552,8 +552,14 @@ fn doctor(ctx: &Ctx) -> Result<Outcome, Error> {
             config.publish.default.as_deref(),
         ],
     );
-    match ro::open_registry(&ctx.registry_root, Some(&config), target.as_deref(), None)
-        .and_then(|r| r.entries())
+    match ro::open_registry(
+        &ctx.registry_root,
+        Some(&config),
+        target.as_deref(),
+        None,
+        None,
+    )
+    .and_then(|r| r.entries())
     {
         Ok(entries) => check(
             "registry",
@@ -953,6 +959,7 @@ fn publish(
         &[config.publish.default.as_deref()],
         &ctx.store_root,
         false,
+        None,
         &mut |manifest, target| {
             log(format!(
                 "publishing {} → {}",
@@ -963,13 +970,18 @@ fn publish(
     )?;
     let target = plan.target.clone();
     // The TUI publish path stays unsigned — `publish --sign` is a CLI/
-    // serve surface (key resolution is interactive-by-flag).
-    let entry = plan.publish(None)?;
-    Ok(Outcome::Text(format!(
+    // serve surface (key resolution is interactive-by-flag). Retention
+    // resolves from config (`publish --keep` is a CLI/serve flag).
+    let outcome = plan.publish(None)?;
+    let mut text = format!(
         "published {} → {}",
-        entry.label(),
+        outcome.label(),
         target.as_deref().unwrap_or("default")
-    )))
+    );
+    if !outcome.pruned.is_empty() {
+        text.push_str(&format!("; pruned: {}", outcome.pruned.join(", ")));
+    }
+    Ok(Outcome::Text(text))
 }
 
 /// The configured `registries` as `(name, kind)` pairs plus the

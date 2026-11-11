@@ -15,7 +15,7 @@ use tamias_config::{Config, ConfigFormat, Registry as ConfigRegistry, CONFIG_ENV
 use tamias_config_toml::TomlFormat;
 use tamias_config_yml::YmlFormat;
 use tamias_core::{payload_root, Error, Manifest};
-use tamias_registry::{parse_registry_ref, Registry, RegistryEntry, RegistryRef};
+use tamias_registry::{parse_registry_ref, PublishOutcome, Registry, RegistryEntry, RegistryRef};
 use tamias_registry_cf::HttpRegistry;
 use tamias_registry_local::LocalRegistry;
 
@@ -33,6 +33,20 @@ pub fn effective_limits(
         || Config::default().effective_limits(value, package),
         |c| c.effective_limits(value, package),
     )
+}
+
+/// The retention `keep` count for a publish/search target — same
+/// name-or-ref resolution as [`effective_limits`]. `keep_override`
+/// (e.g. `publish --keep`) wins over the config chain; the result is
+/// `None` when nothing sets it → pruning disabled.
+#[must_use]
+pub fn effective_retention(
+    config: Option<&Config>,
+    value: Option<&str>,
+    package: Option<&str>,
+    keep_override: Option<u64>,
+) -> Option<u64> {
+    keep_override.or_else(|| config.and_then(|c| c.effective_retention(value, package)))
 }
 
 /// The `--registry`/`"registry"` value `publish`/`search` resolve:
@@ -70,28 +84,41 @@ pub fn registry_target(flag: Option<&str>, config_defaults: &[Option<&str>]) -> 
 /// packed-tarball size probe runs post-pack/pre-upload inside
 /// `publish`, so an over-limit payload never reaches the wire or the
 /// index.
+/// `keep` is the per-invocation retention override (`publish --keep`)
+/// — `None` resolves `retention.keep` from config (global →
+/// per-registry → per-package, see [`effective_retention`]). It only
+/// matters on the publish path; search-built registries carry it
+/// inertly.
 pub fn open_registry(
     registry_root: &Path,
     config: Option<&Config>,
     value: Option<&str>,
     package: Option<&str>,
+    keep: Option<u64>,
 ) -> Result<Box<dyn Registry>, Error> {
     let Some(value) = value else {
-        return Ok(Box::new(LocalRegistry::new(registry_root).with_max_upload(
-            effective_limits(config, None, package).max_upload,
-        )));
+        return Ok(Box::new(
+            LocalRegistry::new(registry_root)
+                .with_max_upload(effective_limits(config, None, package).max_upload)
+                .with_retention(effective_retention(config, None, package, keep)),
+        ));
     };
     if let Some(named) = config.and_then(|c| c.registries.get(value)) {
-        return open_named_registry(registry_root, value, named, config, package);
+        return open_named_registry(registry_root, value, named, config, package, keep);
     }
     let eff = effective_limits(config, Some(value), package);
+    let retention = effective_retention(config, Some(value), package, keep);
     Ok(match parse_registry_ref(value) {
-        RegistryRef::Local(path) => {
-            Box::new(LocalRegistry::new(path).with_max_upload(eff.max_upload))
-        }
-        RegistryRef::Http(base) => {
-            Box::new(http_registry(&base, None, value)?.with_max_upload(eff.max_upload))
-        }
+        RegistryRef::Local(path) => Box::new(
+            LocalRegistry::new(path)
+                .with_max_upload(eff.max_upload)
+                .with_retention(retention),
+        ),
+        RegistryRef::Http(base) => Box::new(
+            http_registry(&base, None, value)?
+                .with_max_upload(eff.max_upload)
+                .with_retention(retention),
+        ),
     })
 }
 
@@ -106,8 +133,10 @@ fn open_named_registry(
     reg: &ConfigRegistry,
     config: Option<&Config>,
     package: Option<&str>,
+    keep: Option<u64>,
 ) -> Result<Box<dyn Registry>, Error> {
     let eff = effective_limits(config, Some(name), package);
+    let retention = effective_retention(config, Some(name), package, keep);
     match reg.effective_kind().as_str() {
         "local" => {
             let root = reg
@@ -116,15 +145,19 @@ fn open_named_registry(
                 .map(PathBuf::from)
                 .unwrap_or_else(|| registry_root.to_path_buf());
             Ok(Box::new(
-                LocalRegistry::new(root).with_max_upload(eff.max_upload),
+                LocalRegistry::new(root)
+                    .with_max_upload(eff.max_upload)
+                    .with_retention(retention),
             ))
         }
         "http" | "cf" => {
             let base = reg.url.clone().ok_or_else(|| {
                 Error::Failed(format!("registry '{name}': kind http/cf needs a url"))
             })?;
-            http_registry(&base, reg.token_env.as_deref(), name)
-                .map(|r| Box::new(r.with_max_upload(eff.max_upload)) as Box<dyn Registry>)
+            http_registry(&base, reg.token_env.as_deref(), name).map(|r| {
+                Box::new(r.with_max_upload(eff.max_upload).with_retention(retention))
+                    as Box<dyn Registry>
+            })
         }
         other => {
             eprintln!(
@@ -132,10 +165,15 @@ fn open_named_registry(
             );
             match parse_registry_ref(reg.url.as_deref().unwrap_or_default()) {
                 RegistryRef::Local(path) => Ok(Box::new(
-                    LocalRegistry::new(path).with_max_upload(eff.max_upload),
+                    LocalRegistry::new(path)
+                        .with_max_upload(eff.max_upload)
+                        .with_retention(retention),
                 )),
                 RegistryRef::Http(base) => http_registry(&base, reg.token_env.as_deref(), name)
-                    .map(|r| Box::new(r.with_max_upload(eff.max_upload)) as Box<dyn Registry>),
+                    .map(|r| {
+                        Box::new(r.with_max_upload(eff.max_upload).with_retention(retention))
+                            as Box<dyn Registry>
+                    }),
             }
         }
     }
@@ -197,7 +235,7 @@ pub fn search(
             config.and_then(|c| c.publish.default.as_deref()),
         ],
     );
-    let registry = open_registry(registry_root, config, target.as_deref(), None)?;
+    let registry = open_registry(registry_root, config, target.as_deref(), None, None)?;
     let results = registry.search(query)?;
     Ok((results, target))
 }
@@ -232,11 +270,13 @@ impl PublishPlan {
     /// Upload the packed payload — `registry.publish(&root, &manifest,
     /// signature)`. `signature` is the armored `ssh-keygen -Y` signature
     /// over the payload's provenance anchors (`tamias publish --sign`);
-    /// `None` publishes unsigned.
+    /// `None` publishes unsigned. Returns the [`PublishOutcome`] —
+    /// `pruned` lists the older versions the retention policy dropped
+    /// from the index (P-024).
     ///
     /// # Errors
     /// Propagates pack/publish failures from the registry impl.
-    pub fn publish(&self, signature: Option<&str>) -> Result<RegistryEntry, Error> {
+    pub fn publish(&self, signature: Option<&str>) -> Result<PublishOutcome, Error> {
         self.registry.publish(&self.root, &self.manifest, signature)
     }
 }
@@ -252,6 +292,10 @@ impl PublishPlan {
 /// "publishing …" line in its own position (the CLI prints post-open;
 /// the TUI logs pre-open).
 ///
+/// `keep` is the per-invocation retention override (`publish --keep`,
+/// serve's `"keep"` param) — `None` resolves `retention.keep` from
+/// config inside [`open_registry`].
+///
 /// # Errors
 /// Fails on a missing/invalid manifest, an unresolvable `include:`
 /// base, or registry resolution.
@@ -264,6 +308,7 @@ pub fn publish_plan(
     config_defaults: &[Option<&str>],
     store_root: &Path,
     keep_includes: bool,
+    keep: Option<u64>,
     report: &mut dyn FnMut(&Manifest, Option<&str>),
 ) -> Result<PublishPlan, Error> {
     let root = payload_root(dir)?;
@@ -283,6 +328,7 @@ pub fn publish_plan(
         config,
         target.as_deref(),
         Some(&manifest.name),
+        keep,
     )?;
     Ok(PublishPlan {
         root,
@@ -408,6 +454,7 @@ pub fn registry_json(name: &str, reg: &ConfigRegistry) -> serde_json::Value {
         "url": reg.url,
         "token_env": reg.token_env,
         "limits": reg.limits,
+        "retention": reg.retention,
     })
 }
 
@@ -494,6 +541,7 @@ pub fn add_registry(
             url: Some(url.to_string()),
             token_env,
             limits: Default::default(),
+            retention: Default::default(),
         },
     );
     write_config(&path, &config)?;
@@ -639,18 +687,25 @@ mod tests {
             },
         );
         // by name
-        let r = open_registry(&reg_root, Some(&config), Some("mine"), None).unwrap();
+        let r = open_registry(&reg_root, Some(&config), Some("mine"), None, None).unwrap();
         assert!(r.entries().unwrap().is_empty());
         // raw local ref
         let raw = reg_root.display().to_string();
-        let r = open_registry(&reg_root, Some(&config), Some(&raw), None).unwrap();
+        let r = open_registry(&reg_root, Some(&config), Some(&raw), None, None).unwrap();
         assert!(r.entries().unwrap().is_empty());
         // unknown name falls through to raw-ref parse → local dir
-        let r = open_registry(&reg_root, Some(&config), Some("/nonexistent-xyz"), None).unwrap();
+        let r = open_registry(
+            &reg_root,
+            Some(&config),
+            Some("/nonexistent-xyz"),
+            None,
+            None,
+        )
+        .unwrap();
         // entries() on a missing dir errors or is empty — either way open succeeded
         let _ = r.entries();
         // None → default root
-        let r = open_registry(&reg_root, None, None, None).unwrap();
+        let r = open_registry(&reg_root, None, None, None, None).unwrap();
         let _ = r.entries();
     }
 

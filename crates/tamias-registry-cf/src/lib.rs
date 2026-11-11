@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tamias_core::{dir_digest, is_valid_name, is_valid_version, pack_tgz, Error, Manifest};
-use tamias_registry::{Registry, RegistryEntry};
+use tamias_registry::{apply_retention, PublishOutcome, Registry, RegistryEntry};
 
 /// Largest `.tgz` blob a publish will PUT by default — mirrors
 /// `tamias-config`'s `DEFAULT_MAX_UPLOAD` (512 MiB);
@@ -39,6 +39,13 @@ pub struct HttpRegistry {
     /// the configured `limits.max_upload` when the caller threads it
     /// through. The server stays authoritative regardless.
     max_upload: u64,
+    /// Index retention (P-024) — `Some(keep)` prunes the published
+    /// package's older index entries beyond the `keep` most recent
+    /// semver versions on every publish (client-side: this client owns
+    /// the index read-modify-write; the Worker is a dumb blob store).
+    /// `None` (the default) keeps every version. Payload blobs are
+    /// never pruned.
+    retention: Option<u64>,
 }
 
 impl HttpRegistry {
@@ -56,6 +63,7 @@ impl HttpRegistry {
             ),
             token: None,
             max_upload: DEFAULT_MAX_UPLOAD,
+            retention: None,
         }
     }
 
@@ -71,6 +79,15 @@ impl HttpRegistry {
     #[must_use]
     pub fn with_max_upload(mut self, bytes: u64) -> Self {
         self.max_upload = bytes;
+        self
+    }
+
+    /// Retain only the `keep` most recent semver versions per package
+    /// in the index (P-024) — `None` disables pruning. The resolved
+    /// `retention.keep` from config (or `publish --keep`).
+    #[must_use]
+    pub fn with_retention(mut self, keep: Option<u64>) -> Self {
+        self.retention = keep;
         self
     }
 
@@ -195,7 +212,7 @@ impl Registry for HttpRegistry {
         payload_root: &Path,
         manifest: &Manifest,
         signature: Option<&str>,
-    ) -> Result<RegistryEntry, Error> {
+    ) -> Result<PublishOutcome, Error> {
         // The manifest may not have been validated upstream — every field
         // embedded in the blob key/URL must be a single safe component.
         if !is_valid_name(&manifest.name) {
@@ -264,10 +281,22 @@ impl Registry for HttpRegistry {
         entries.push(entry.clone());
         entries
             .sort_by(|a, b| (&a.scope, &a.name, &a.version).cmp(&(&b.scope, &b.name, &b.version)));
+        // Retention (P-024) — index-entry prune only; pruned `.tgz`
+        // blobs stay in the store.
+        let pruned = self
+            .retention
+            .map(|keep| {
+                apply_retention(
+                    &mut entries,
+                    usize::try_from(keep).unwrap_or(usize::MAX),
+                    &entry,
+                )
+            })
+            .unwrap_or_default();
         let index = serde_json::to_vec_pretty(&entries)
             .map_err(|e| Error::Failed(format!("serialize index: {e}")))?;
         self.put("index.json", &index)?;
-        Ok(entry)
+        Ok(PublishOutcome { entry, pruned })
     }
 }
 

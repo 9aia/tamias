@@ -15,7 +15,7 @@ api:
 - name: Base
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 651
+  line: 657
   module: tamias-tui
 - name: CACHE_MAX_AGE
   kind: const
@@ -65,7 +65,7 @@ api:
 - name: LOG_LINES
   kind: const
   file: crates/tamias-tui/src/ops.rs
-  line: 1017
+  line: 1029
   module: tamias-tui
 - name: MUTED
   kind: const
@@ -145,7 +145,7 @@ api:
 - name: add_dep
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 785
+  line: 791
   module: tamias-tui
 - name: app
   kind: module
@@ -195,7 +195,7 @@ api:
 - name: ctx
   kind: function
   file: crates/tamias-tui/src/ops.rs
-  line: 1184
+  line: 1196
   module: tamias-tui
 - name: ctx_from_env_resolves_roots
   kind: function
@@ -253,9 +253,9 @@ provenance:
   - 1f76706680dcf171f467dcae52131c8da4f4ff6d
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - 1ce996807f771b61e847966ec2a74b108f468aa2
+  - 3f4fc83144b188bf851a8bdccf5d17e445b1b3b5
   - 3ad22909943db81c2550d1e968bc077eecddf114
   - 7c33e3b53797f14b73b0d7fcfefca0f11f1ac8c2
-  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
-  generated_at: '1794424824'
+  commit_sha: 6485ef1cbb9ac691cfd02df9c73938110af699f6
+  generated_at: '1794428713'
   generator: kuda-template/0.1.4
