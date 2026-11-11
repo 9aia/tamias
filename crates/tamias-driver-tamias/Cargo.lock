@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-cache-local"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-core"
-version = "0.1.1"
+version = "0.1.3"
 dependencies = [
  "flate2",
  "hex",
@@ -461,7 +461,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-driver"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "serde_json",
  "tamias-core",
@@ -486,7 +486,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-registry"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -495,7 +495,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-registry-local"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "serde_json",
  "tamias-core",
@@ -504,7 +504,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-store-local"
-version = "0.1.0"
+version = "0.1.4"
 dependencies = [
  "serde_json",
  "tamias-core",
