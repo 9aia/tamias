@@ -126,9 +126,16 @@ cutover complete. Remaining: P10c product drivers (T-010).
 ## Install
 
 ```sh
-cargo install --git https://github.com/9aia/tamias tamias
+cargo install tamias        # crates.io
+cargo install --git https://github.com/9aia/tamias tamias   # from source
 cargo xtask install        # from a checkout → ~/.cargo/bin
 ```
+
+`tamias` itself stays a native cargo binary — every `bins[]` shim in
+the org execs `tamias bin exec`, so it can't retire into a shim. The
+product CLIs (`myco`, `cuora`, `kuda`, `sepia`, `lasius`, `bupha`,
+`cicada`, `peregrin`) are **not** cargo-installable: they ship as tamias
+packs — `tamias install 9aia:<name>@<version>`.
 
 ## Docs
 

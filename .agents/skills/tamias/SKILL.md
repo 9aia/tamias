@@ -15,8 +15,10 @@ fetches, stores, and (via a content type) installs it.
 ## Bootstrap
 
 ```bash
-command -v tamias   # missing? install from the repo:
-cargo install --git https://github.com/9aia/tamias tamias
+command -v tamias   # missing? install:
+cargo install tamias   # crates.io (or --git https://github.com/9aia/tamias tamias)
+# Note: product CLIs (myco/cuora/kuda/…) are tamias packs, not cargo bins —
+# `tamias install 9aia:<name>@<version>`, not `cargo install`.
 ```
 
 ## Discovery — prefer asking the CLI over reading docs
