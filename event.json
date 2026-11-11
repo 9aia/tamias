@@ -1,1 +1,1 @@
-{"id":"","ws":"docs-sweep","actor":"luis","ts":1794428032,"op":{"op":"claim","glob":"README.md","ttl_secs":3600}}
+{"id":"","ws":"docs-sweep","actor":"luis","ts":1794428033,"op":{"op":"claim","glob":".agents/skills/tamias/**","ttl_secs":3600}}
