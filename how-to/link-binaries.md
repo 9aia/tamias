@@ -3,68 +3,82 @@ url: /tamias/how-to/link-binaries.md
 ---
 # How to put a package's binaries on your PATH
 
-A package payload may ship a `bin/` directory of executables — release
-tarballs installed from `https://…#sha256:…` refs use this layout (see
-the binary-distribution ADR). `install` unpacks the payload into the
-store; **`tamias bin`** is the verb that makes those executables
-runnable by bare name — for your shell and for provider
-`services[].exec`.
+A package declares its executable surfaces in the manifest — `bins[]`
+entries — or ships a `bin/` payload dir of executables (the layout
+release tarballs use). `install` deploys them into the bin dir **by
+default**; `tamias bin` is the verb group for inspecting and managing
+them explicitly.
 
-## Link a package's binaries
+## Declare `bins[]` in the manifest
 
-```sh
-tamias install "https://github.com/9aia/tamias/releases/download/v0.1.2/tamias-x86_64-unknown-linux-gnu.tar.gz#sha256:…"
-tamias bin tamias
+```yaml
+name: mycli
+version: 1.0.0
+type: mycli
+bins:
+  - name: mycli              # command name on PATH
+    shim: cli                # generated front-end
+    driver: mycli            # dispatches to tamias-driver-mycli's `cli` verb
+  - name: mytool
+    payload: tools/bin/x86_64-unknown-linux-gnu/mytool
 ```
 
-`tamias bin <name>` accepts `@scope/name` or a bare `name`, and links
-every regular file directly under the package's `bin/` (dotfiles and
-nested dirs are skipped) into the bin dir:
+Two declaration kinds (exactly one of `shim`/`payload` per entry):
 
-* `$TAMIAS_BIN_DIR`, else `$XDG_BIN_HOME`, else `~/.local/bin`.
+* **`shim: cli` + `driver: <kind>`** — tamias writes a tiny shell
+  script into the bin dir that execs `tamias bin exec <pkg> <name>
+  "$@"`. `tamias` itself is the helper binary, so driver resolution
+  stays dynamic — the shim follows `tamias-driver-<kind>` on `PATH` or
+  in `<tamias-home>/drivers/` (including drivers the package itself
+  just installed). This is how product CLIs ship: the `peregrin`
+  pack's `bins: [{name: peregrin, shim: cli, driver: peregrin}]`.
+* **`payload: tools/bin/<triple>/<file>`** — a real binary in the
+  payload. Only the host triple's file deploys; declaring any triple's
+  path resolves to the host's dir at deploy time, and a payload whose
+  `tools/bin/` ships platform dirs but none for this host **fails the
+  install**. A path without a triple dir (`tools/bin/<file>`) is a
+  portable payload bin.
 
-Each link prints as it is made; `--json` emits the same data as JSON.
+A package may also ship an undeclared `bin/` dir — every regular file
+directly under it is linked too (legacy surface, same alias
+machinery).
+
+## Deploy, inspect, remove
+
+```sh
+tamias install ./mycli            # bins[] deploy automatically
+tamias install ./mycli --no-bins  # opt out
+
+tamias bin list                   # every package's bins + deploy state,
+                                  # collisions flagged (--json too)
+tamias bin deploy mycli           # materialize now (the retry path)
+tamias bin deploy mycli --force   # take over conflicting bin paths
+tamias bin destroy mycli          # remove this package's bins; pack stays
+```
+
+The bin dir is `$TAMIAS_BIN_DIR` → `$XDG_BIN_HOME` → `~/.local/bin`.
+Name collisions **warn and last-deploy wins** — never a hard error —
+and `bin list` shows which package owns each name. `destroy` (and
+`remove`/`uninstall` after dropping the store entry) removes only
+artifacts the package owns: shim scripts carry a `# tamias-bin: <label>` marker, payload bins are proven by their link target;
+`--force` also clears foreign files at the bin paths.
 
 ## Why links survive upgrades
 
 Store entry dirs are versioned (`name@<version>` or a sha label) and a
 new version installs to a *new* dir — a link aimed at the raw entry dir
-would dangle after `tamias update`. Instead `tamias bin` keeps a stable
-per-name **alias** — `bin-alias/<name>` as a sibling of the store root
-(`~/.local/share/tamias/bin-alias` by default, `$TAMIAS_HOME/bin-alias`
-under `TAMIAS_HOME`) pointing at the current entry dir — and links
-`<bin>/<file>` → `<alias>/bin/<file>`. Installs and updates retarget
-the alias automatically when it exists, so existing links keep
-resolving. Re-run `tamias bin <name>` after an upgrade that *adds* or
-*renames* binaries — the alias follows, but new payload files need a
-fresh link pass.
+would dangle after `tamias update`. Instead payload bins link through a
+stable per-package **alias** — `bin-alias/<name>` as a sibling of the
+store root (`$TAMIAS_HOME/bin-alias`) pointing at the current entry
+dir — so `<bin>/<file>` → `<alias>/…` keeps resolving across upgrades;
+installs and updates retarget the alias automatically. Re-run
+`tamias bin deploy` after an upgrade that *adds* or *renames* binaries
+— the alias follows, but new payload files need a fresh deploy pass.
 
 On Unix the links are symlinks. On Windows — where symlink creation
 needs privileges — the payload file is **copied** instead; re-run
-`tamias bin` after upgrades to refresh stale copies (`--force` also
-works).
-
-## Conflicts and removal
-
-`tamias bin` refuses to overwrite anything already at a link path —
-a foreign file, a foreign symlink, even a directory — unless `--force`
-is passed. A link `tamias bin` already made is idempotent: re-running
-reports `already linked` and changes nothing.
-
-```sh
-tamias bin tamias --unlink   # remove this package's links + alias
-tamias bin tamias --force    # take over conflicting paths
-```
-
-`--unlink` removes the bin-dir entries the package owns — links into
-its alias, plus byte-identical copies on copy platforms — and drops
-the alias itself. It never touches files that don't belong to the
-package. `tamias remove` and `tamias uninstall` run the same cleanup
-automatically once the store entry is dropped, so links don't dangle;
-`--unlink` remains the verb for unlinking while the package stays
-installed. Provider services that named the bare binary keep working
-until the links go away; after that, update their `exec:` to a full
-path or reinstall the binaries.
+`tamias bin deploy` after upgrades to refresh stale copies (`--force`
+also works).
 
 ## Upgrading the binary you're running
 
@@ -86,15 +100,15 @@ tamias self-upgrade           # update + retarget the alias
 ```
 
 A release install pinned to a `#sha256:` ref re-fetches exactly those
-bytes; a moving ref (branch, `latest`) re-resolves. `--allow-drivers`
-and `--json` behave as they do for `install`/`update`. On Windows —
-where `tamias bin` copies rather than symlinks — the running exe file
-can be locked; self-upgrade warns before attempting and you may need
-to close other tamias processes and retry.
+bytes; a moving ref (branch, `latest`) re-resolves. `--allow-drivers`,
+`--no-bins`, and `--json` behave as they do for `install`/`update`. On
+Windows — where payload bins are copied rather than symlinked — the
+running exe file can be locked; self-upgrade warns before attempting
+and you may need to close other tamias processes and retry.
 
 ## Producing the tamias self-package
 
-The tarball in the example above is built by the repo itself:
+The tarball a self-upgrade consumes is built by the repo itself:
 
 ```sh
 cargo xtask pack-self          # release-build → target/pack-self/tamias-<ver>.tgz
@@ -112,10 +126,10 @@ dir for `tamias publish`.
 ## Errors you'll see
 
 * `package 'x' is not installed` — install it first (`tamias install`).
-* `<label>: no bin/ payload — nothing to link` — the package ships no
-  `bin/` directory (or it's empty); nothing to do.
+* `<label>: nothing to deploy — no bins[] and no bin/ payload` — the
+  package ships no executable surfaces; nothing to do.
 * `<path> already exists — refusing to overwrite (use --force)` —
-  something else owns the link path.
+  something else owns the bin path. `bin list` shows the current owner.
 * `… is not a tamias-managed binary` (`self-upgrade`) — the running
   exe wasn't installed via tamias; use your package manager or
   `cargo install` instead.

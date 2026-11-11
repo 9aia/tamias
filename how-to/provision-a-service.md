@@ -10,10 +10,15 @@ url: /tamias/how-to/provision-a-service.md
 * the manifest's declarative **`provider:` block** — tamias-native
   service/runtime spec that `tamias deploy` materializes itself.
 
-`provider.services[]` renders one **systemd user unit** per entry — no
-driver needed, for any content type (including `files`). launchd is
-documented but not yet implemented: the local deploy adapter is
-systemd-only today.
+`provider.services[]` renders one **per-user service** per entry — no
+driver needed, for any content type (including `files`). The backend
+is picked by platform (`tamias_provider::ServiceBackend`): **systemd
+user units** on Linux, **launchd LaunchAgents** on macOS
+(`~/Library/LaunchAgents`, `gui/<uid>` domain), and **Task Scheduler
+tasks** on Windows (`schtasks`, `%LOCALAPPDATA%\tamias\tasks`). All
+three render the same `ServiceSpec`; each backend documents its honest
+gaps (e.g. Task Scheduler caps restart count, launchd has no
+`Description=`/env-file keys — a wrapper script covers `env_file`).
 
 ## Declare the provider in the manifest
 
@@ -24,7 +29,8 @@ type: peregrin-bundle
 provider:
   name: ci-gate                  # unit-name prefix; defaults to the package name
   services:
-    - name: ci-gate              # unit suffix → unit <provider>-<service>.service
+    - name: ci-gate              # service suffix → <provider>-<service>
+                                 # (.service on systemd; label/task elsewhere)
       exec: "peregrin campaign serve /srv/ci --port '2917 3'"  # argv string
       env_file: "~/.config/peregrin/env"   # EnvironmentFile=- (optional)
       env: {PORT: "29173"}                 # inline env — secrets stay in env_file/keyring
@@ -64,10 +70,15 @@ exec: "/usr/bin/gate serve --name 'two words' --flag=\"a b\""
 
 An unterminated quote or an empty argv fails the deploy.
 
-### Unit rendering
+### Unit rendering (systemd — the Linux backend)
 
-Each `provider.services[]` entry becomes `<provider.name-or-package>-<service>.service`
-under `~/.config/systemd/user` (`$XDG_CONFIG_HOME/systemd/user`):
+On Linux each `provider.services[]` entry becomes
+`<provider.name-or-package>-<service>.service` under
+`~/.config/systemd/user` (`$XDG_CONFIG_HOME/systemd/user`). The macOS
+and Windows backends render the same fields into a launchd plist
+(+ optional `.sh` env-file wrapper) and a Task Scheduler `.cmd`/`.xml`
+pair respectively — see each `tamias-deploy-*` crate's docs for the
+per-field mapping.
 
 * `After=`/`Wants=network-online.target`;
 * `Type=simple`, `Restart=` (default `on-failure`), `RestartSec=5`;
@@ -102,13 +113,17 @@ tamias deploy ci-gate --config ./node.yaml   # operator params ride a config fil
 ```
 
 `deploy` runs the kind driver's `deploy` verb *and* writes every
-`provider.services[]` unit (then `systemctl --user daemon-reload`,
-best-effort). Units are **not enabled** — activation stays explicit:
+`provider.services[]` service through the platform backend (then a
+best-effort reload — `systemctl --user daemon-reload` on systemd, a
+no-op elsewhere). Services are **not enabled** — activation stays
+explicit:
 
 ```sh
-tamias service enable ci-gate-ci-gate
-tamias service status ci-gate-ci-gate
-tamias service logs   ci-gate-ci-gate
+tamias service enable ci-gate-ci-gate   # systemd: enable --now; launchd:
+                                        # bootstrap; Windows: schtasks /change
+tamias service status ci-gate-ci-gate    # per-backend status probe
+tamias service logs   ci-gate-ci-gate   # journalctl / launchd log tail /
+                                        # schtasks snapshot, per backend
 ```
 
 A package that ships its own `drivers/` needs `--allow-drivers` at
@@ -160,14 +175,15 @@ tamias provider list --all    # include packages without a provider:
 tamias provider list --json   # machine-readable
 ```
 
-Each service row shows its rendered unit name (`<provider>-<service>.service`)
-and a best-effort `systemctl --user is-enabled` state (`-` when systemd
-can't answer). Ingress rows carry the `public_url` (+ `listen`/`path`).
+Each service row shows its rendered unit name (`<provider>-<service>`
+— `.service` on systemd, a launchd label or task name elsewhere) and a
+best-effort enable-state probe (`-` when the backend can't answer).
+Ingress rows carry the `public_url` (+ `listen`/`path`).
 
-## Run a service without systemd
+## Run a service without a service manager
 
 `tamias run` execs a provider service's `exec` argv **in the foreground** —
-the same argv/env the rendered unit would get, minus systemd:
+the same argv/env the rendered unit would get, minus the backend:
 
 ```sh
 tamias run ci-gate            # sole service → runs it
@@ -180,25 +196,28 @@ see [Security model](/explanation/security)): the service's `env` plus
 its `env_file` parsed as `K=V` lines (inline `env` wins, matching
 systemd's `EnvironmentFile` → `Environment=` order). `workdir` (`~`
 expands) is the cwd, else the payload dir. A non-zero exit fails the
-command. This is the dev/no-systemd counterpart of `service enable` —
-`provider.health.cmd` probes and richer verbs are still on the roadmap.
+command. This is the dev/no-service-manager counterpart of
+`service enable` — `provider.health.cmd` probes and richer verbs are
+still on the roadmap.
 
 ## Follow a service's logs
 
 ```sh
-tamias logs ci-gate            # journalctl over ALL the package's units
+tamias logs ci-gate            # ALL the package's units, one stream
+                               # (journalctl / launchd log tail / schtasks)
 tamias logs ci-gate --lines 50 -f
 tamias logs ci-gate-ci-gate    # or a bare unit name
-tamias service logs ci-gate-ci-gate   # unit-level, same journalctl
+tamias service logs ci-gate-ci-gate   # unit-level, same backend stream
 ```
 
 A package name resolves to every `provider.services[]` unit in one
-journal stream; anything that isn't an installed package is treated as
-a unit base name.
+stream; anything that isn't an installed package is treated as a unit
+base name.
 
-## Manage an ad-hoc service unit
+## Manage an ad-hoc service
 
-The per-user **systemd** mechanism also works without a package:
+The per-user service mechanism also works without a package — same
+verbs, same platform backend:
 
 ```sh
 tamias service install --unit ci-gate \

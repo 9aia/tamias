@@ -18,7 +18,7 @@ distribution; every content *meaning* is an adapter.
 | `store` | put/get/verify an installed package | `-local`, `-cf` |
 | `cache` | content-addressed fetch cache | `-local`, `-cf` |
 | `registry` | index + publish | `-local`, `-cf` (Worker + R2 + D1/KV) |
-| `deploy` | service unit + teardown | `-local` (systemd) |
+| `deploy` | service unit + teardown | `-systemd` (Linux), `-launchd` (macOS), `-windows` (Task Scheduler), `-cf` (registry Worker) |
 | `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, argv) |
 
 ## Crate map
@@ -80,6 +80,14 @@ flatten includes by default (`--keep-includes` ships the raw payload).
 addressed cache can be hit *before* fetching. The fetch→unpack split is
 what makes repeat installs and air-gapped nodes free.
 
+Declared `bins[]` (P-023) ride the same commit: `install` deploys them
+into the bin dir by default (`--no-bins` opts out) — `shim: cli`
+entries become generated scripts exec'ing `tamias bin exec`, and
+`payload: tools/bin/<triple>/…` entries link real binaries through a
+per-package `bin-alias/` so upgrades don't break them. `bin/`
+payload files link the same way (legacy, undeclared). See
+[Put a package's binaries on your PATH](/how-to/link-binaries).
+
 ## Stores
 
 * **install store** — `<name>@<version>/` with a record (source ref,
@@ -105,6 +113,12 @@ a persistent handle instead of one-shot CLI calls. Registry name-or-ref
 resolution and config writes go through `tamias-registry-open`, the same
 code the CLI verbs use. The protocol is specified in
 [serve reference](/reference/serve).
+
+A second embedding surface targets **generated** clients:
+`tamias-driver-tamias` exposes the engine's clap tree as a pavo ops
+manifest (`cli.<verb>` wire queries), so pavo's CLI/MCP renderers drive
+the same verbs without a hand-written client — see
+[Scripting tamias](/reference/scripting#the-engine-as-an-ops-manifest).
 
 ## Observability
 

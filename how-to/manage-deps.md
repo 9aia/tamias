@@ -73,6 +73,12 @@ project-scoped, so extraneous packages are `tamias remove`'s job. A
 dep that ships `drivers/` needs `--allow-drivers` (or
 `TAMIAS_ALLOW_DRIVERS=1`) like `install`/`add`.
 
+Note: `sync` installs through the shared pipeline but skips the
+`bins[]` deploy pass that `install`/`add`/`update` run — a synced pack
+with declared bins lands in the store without its commands on `PATH`.
+Run `tamias bin deploy <pkg>` (or `tamias bin list` to see what's
+missing) afterwards.
+
 `--locked` is the reproducible-install mode: every dep must already be
 `current` per `tamias.lock` + the store. Drift, a missing store entry,
 or a dep with no lock entry fails that dep instead of installing or

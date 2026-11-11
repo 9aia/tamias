@@ -24,6 +24,7 @@ they ship as tamias packs — `tamias install 9aia:<name>@<version>`.
 
 ```sh
 tamias install git:9aia/bupha//libraries/ci-gate#main
+tamias install 9aia:ci-gate@0.2.0    # named registry — <registry>:<pkg>@<ver>
 tamias list
 tamias info ci-gate
 tamias verify ci-gate        # recompute the payload digest
@@ -450,6 +451,12 @@ project-scoped, so extraneous packages are `tamias remove`'s job. A
 dep that ships `drivers/` needs `--allow-drivers` (or
 `TAMIAS_ALLOW_DRIVERS=1`) like `install`/`add`.
 
+Note: `sync` installs through the shared pipeline but skips the
+`bins[]` deploy pass that `install`/`add`/`update` run — a synced pack
+with declared bins lands in the store without its commands on `PATH`.
+Run `tamias bin deploy <pkg>` (or `tamias bin list` to see what's
+missing) afterwards.
+
 `--locked` is the reproducible-install mode: every dep must already be
 `current` per `tamias.lock` + the store. Drift, a missing store entry,
 or a dep with no lock entry fails that dep instead of installing or
@@ -493,68 +500,82 @@ url: /tamias/how-to/link-binaries.md
 ---
 # How to put a package's binaries on your PATH
 
-A package payload may ship a `bin/` directory of executables — release
-tarballs installed from `https://…#sha256:…` refs use this layout (see
-the binary-distribution ADR). `install` unpacks the payload into the
-store; **`tamias bin`** is the verb that makes those executables
-runnable by bare name — for your shell and for provider
-`services[].exec`.
+A package declares its executable surfaces in the manifest — `bins[]`
+entries — or ships a `bin/` payload dir of executables (the layout
+release tarballs use). `install` deploys them into the bin dir **by
+default**; `tamias bin` is the verb group for inspecting and managing
+them explicitly.
 
-## Link a package's binaries
+## Declare `bins[]` in the manifest
 
-```sh
-tamias install "https://github.com/9aia/tamias/releases/download/v0.1.2/tamias-x86_64-unknown-linux-gnu.tar.gz#sha256:…"
-tamias bin tamias
+```yaml
+name: mycli
+version: 1.0.0
+type: mycli
+bins:
+  - name: mycli              # command name on PATH
+    shim: cli                # generated front-end
+    driver: mycli            # dispatches to tamias-driver-mycli's `cli` verb
+  - name: mytool
+    payload: tools/bin/x86_64-unknown-linux-gnu/mytool
 ```
 
-`tamias bin <name>` accepts `@scope/name` or a bare `name`, and links
-every regular file directly under the package's `bin/` (dotfiles and
-nested dirs are skipped) into the bin dir:
+Two declaration kinds (exactly one of `shim`/`payload` per entry):
 
-* `$TAMIAS_BIN_DIR`, else `$XDG_BIN_HOME`, else `~/.local/bin`.
+* **`shim: cli` + `driver: <kind>`** — tamias writes a tiny shell
+  script into the bin dir that execs `tamias bin exec <pkg> <name>
+  "$@"`. `tamias` itself is the helper binary, so driver resolution
+  stays dynamic — the shim follows `tamias-driver-<kind>` on `PATH` or
+  in `<tamias-home>/drivers/` (including drivers the package itself
+  just installed). This is how product CLIs ship: the `peregrin`
+  pack's `bins: [{name: peregrin, shim: cli, driver: peregrin}]`.
+* **`payload: tools/bin/<triple>/<file>`** — a real binary in the
+  payload. Only the host triple's file deploys; declaring any triple's
+  path resolves to the host's dir at deploy time, and a payload whose
+  `tools/bin/` ships platform dirs but none for this host **fails the
+  install**. A path without a triple dir (`tools/bin/<file>`) is a
+  portable payload bin.
 
-Each link prints as it is made; `--json` emits the same data as JSON.
+A package may also ship an undeclared `bin/` dir — every regular file
+directly under it is linked too (legacy surface, same alias
+machinery).
+
+## Deploy, inspect, remove
+
+```sh
+tamias install ./mycli            # bins[] deploy automatically
+tamias install ./mycli --no-bins  # opt out
+
+tamias bin list                   # every package's bins + deploy state,
+                                  # collisions flagged (--json too)
+tamias bin deploy mycli           # materialize now (the retry path)
+tamias bin deploy mycli --force   # take over conflicting bin paths
+tamias bin destroy mycli          # remove this package's bins; pack stays
+```
+
+The bin dir is `$TAMIAS_BIN_DIR` → `$XDG_BIN_HOME` → `~/.local/bin`.
+Name collisions **warn and last-deploy wins** — never a hard error —
+and `bin list` shows which package owns each name. `destroy` (and
+`remove`/`uninstall` after dropping the store entry) removes only
+artifacts the package owns: shim scripts carry a `# tamias-bin: <label>` marker, payload bins are proven by their link target;
+`--force` also clears foreign files at the bin paths.
 
 ## Why links survive upgrades
 
 Store entry dirs are versioned (`name@<version>` or a sha label) and a
 new version installs to a *new* dir — a link aimed at the raw entry dir
-would dangle after `tamias update`. Instead `tamias bin` keeps a stable
-per-name **alias** — `bin-alias/<name>` as a sibling of the store root
-(`~/.local/share/tamias/bin-alias` by default, `$TAMIAS_HOME/bin-alias`
-under `TAMIAS_HOME`) pointing at the current entry dir — and links
-`<bin>/<file>` → `<alias>/bin/<file>`. Installs and updates retarget
-the alias automatically when it exists, so existing links keep
-resolving. Re-run `tamias bin <name>` after an upgrade that *adds* or
-*renames* binaries — the alias follows, but new payload files need a
-fresh link pass.
+would dangle after `tamias update`. Instead payload bins link through a
+stable per-package **alias** — `bin-alias/<name>` as a sibling of the
+store root (`$TAMIAS_HOME/bin-alias`) pointing at the current entry
+dir — so `<bin>/<file>` → `<alias>/…` keeps resolving across upgrades;
+installs and updates retarget the alias automatically. Re-run
+`tamias bin deploy` after an upgrade that *adds* or *renames* binaries
+— the alias follows, but new payload files need a fresh deploy pass.
 
 On Unix the links are symlinks. On Windows — where symlink creation
 needs privileges — the payload file is **copied** instead; re-run
-`tamias bin` after upgrades to refresh stale copies (`--force` also
-works).
-
-## Conflicts and removal
-
-`tamias bin` refuses to overwrite anything already at a link path —
-a foreign file, a foreign symlink, even a directory — unless `--force`
-is passed. A link `tamias bin` already made is idempotent: re-running
-reports `already linked` and changes nothing.
-
-```sh
-tamias bin tamias --unlink   # remove this package's links + alias
-tamias bin tamias --force    # take over conflicting paths
-```
-
-`--unlink` removes the bin-dir entries the package owns — links into
-its alias, plus byte-identical copies on copy platforms — and drops
-the alias itself. It never touches files that don't belong to the
-package. `tamias remove` and `tamias uninstall` run the same cleanup
-automatically once the store entry is dropped, so links don't dangle;
-`--unlink` remains the verb for unlinking while the package stays
-installed. Provider services that named the bare binary keep working
-until the links go away; after that, update their `exec:` to a full
-path or reinstall the binaries.
+`tamias bin deploy` after upgrades to refresh stale copies (`--force`
+also works).
 
 ## Upgrading the binary you're running
 
@@ -576,15 +597,15 @@ tamias self-upgrade           # update + retarget the alias
 ```
 
 A release install pinned to a `#sha256:` ref re-fetches exactly those
-bytes; a moving ref (branch, `latest`) re-resolves. `--allow-drivers`
-and `--json` behave as they do for `install`/`update`. On Windows —
-where `tamias bin` copies rather than symlinks — the running exe file
-can be locked; self-upgrade warns before attempting and you may need
-to close other tamias processes and retry.
+bytes; a moving ref (branch, `latest`) re-resolves. `--allow-drivers`,
+`--no-bins`, and `--json` behave as they do for `install`/`update`. On
+Windows — where payload bins are copied rather than symlinked — the
+running exe file can be locked; self-upgrade warns before attempting
+and you may need to close other tamias processes and retry.
 
 ## Producing the tamias self-package
 
-The tarball in the example above is built by the repo itself:
+The tarball a self-upgrade consumes is built by the repo itself:
 
 ```sh
 cargo xtask pack-self          # release-build → target/pack-self/tamias-<ver>.tgz
@@ -602,10 +623,10 @@ dir for `tamias publish`.
 ## Errors you'll see
 
 * `package 'x' is not installed` — install it first (`tamias install`).
-* `<label>: no bin/ payload — nothing to link` — the package ships no
-  `bin/` directory (or it's empty); nothing to do.
+* `<label>: nothing to deploy — no bins[] and no bin/ payload` — the
+  package ships no executable surfaces; nothing to do.
 * `<path> already exists — refusing to overwrite (use --force)` —
-  something else owns the link path.
+  something else owns the bin path. `bin list` shows the current owner.
 * `… is not a tamias-managed binary` (`self-upgrade`) — the running
   exe wasn't installed via tamias; use your package manager or
   `cargo install` instead.
@@ -662,7 +683,7 @@ Vim-style, same conventions as `myco ui`:
 | `/` | filter (Installed) / query (Registry) |
 | `i` | install-by-ref prompt (Installed) / install result (Registry) |
 | `v` `u` `U` `p` `r` `c` `C` `d` | verify · update · update-all · pin · remove · cache clean (>30d) · cache clean all · doctor |
-| `:` | command line — `:install <ref>`, `:remove <name>`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:deploy`, `:manifest`, `:sync`, `:registries`, `:reload`, `:q` |
+| `:` | command line — `:install <ref>`, `:remove`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:services`, `:deploy`, `:manifest`, `:sync [--from-lock]`, `:pack`, `:publish`, `:registries`, `:clean`, `:doctor`, `:reload`, `:help`, `:q` |
 | `?` | help overlay |
 | `R` | reload |
 | `q` / `Ctrl-C` | quit (kills any live service stream) |
@@ -822,10 +843,15 @@ url: /tamias/how-to/provision-a-service.md
 * the manifest's declarative **`provider:` block** — tamias-native
   service/runtime spec that `tamias deploy` materializes itself.
 
-`provider.services[]` renders one **systemd user unit** per entry — no
-driver needed, for any content type (including `files`). launchd is
-documented but not yet implemented: the local deploy adapter is
-systemd-only today.
+`provider.services[]` renders one **per-user service** per entry — no
+driver needed, for any content type (including `files`). The backend
+is picked by platform (`tamias_provider::ServiceBackend`): **systemd
+user units** on Linux, **launchd LaunchAgents** on macOS
+(`~/Library/LaunchAgents`, `gui/<uid>` domain), and **Task Scheduler
+tasks** on Windows (`schtasks`, `%LOCALAPPDATA%\tamias\tasks`). All
+three render the same `ServiceSpec`; each backend documents its honest
+gaps (e.g. Task Scheduler caps restart count, launchd has no
+`Description=`/env-file keys — a wrapper script covers `env_file`).
 
 ## Declare the provider in the manifest
 
@@ -836,7 +862,8 @@ type: peregrin-bundle
 provider:
   name: ci-gate                  # unit-name prefix; defaults to the package name
   services:
-    - name: ci-gate              # unit suffix → unit <provider>-<service>.service
+    - name: ci-gate              # service suffix → <provider>-<service>
+                                 # (.service on systemd; label/task elsewhere)
       exec: "peregrin campaign serve /srv/ci --port '2917 3'"  # argv string
       env_file: "~/.config/peregrin/env"   # EnvironmentFile=- (optional)
       env: {PORT: "29173"}                 # inline env — secrets stay in env_file/keyring
@@ -876,10 +903,15 @@ exec: "/usr/bin/gate serve --name 'two words' --flag=\"a b\""
 
 An unterminated quote or an empty argv fails the deploy.
 
-### Unit rendering
+### Unit rendering (systemd — the Linux backend)
 
-Each `provider.services[]` entry becomes `<provider.name-or-package>-<service>.service`
-under `~/.config/systemd/user` (`$XDG_CONFIG_HOME/systemd/user`):
+On Linux each `provider.services[]` entry becomes
+`<provider.name-or-package>-<service>.service` under
+`~/.config/systemd/user` (`$XDG_CONFIG_HOME/systemd/user`). The macOS
+and Windows backends render the same fields into a launchd plist
+(+ optional `.sh` env-file wrapper) and a Task Scheduler `.cmd`/`.xml`
+pair respectively — see each `tamias-deploy-*` crate's docs for the
+per-field mapping.
 
 * `After=`/`Wants=network-online.target`;
 * `Type=simple`, `Restart=` (default `on-failure`), `RestartSec=5`;
@@ -914,13 +946,17 @@ tamias deploy ci-gate --config ./node.yaml   # operator params ride a config fil
 ```
 
 `deploy` runs the kind driver's `deploy` verb *and* writes every
-`provider.services[]` unit (then `systemctl --user daemon-reload`,
-best-effort). Units are **not enabled** — activation stays explicit:
+`provider.services[]` service through the platform backend (then a
+best-effort reload — `systemctl --user daemon-reload` on systemd, a
+no-op elsewhere). Services are **not enabled** — activation stays
+explicit:
 
 ```sh
-tamias service enable ci-gate-ci-gate
-tamias service status ci-gate-ci-gate
-tamias service logs   ci-gate-ci-gate
+tamias service enable ci-gate-ci-gate   # systemd: enable --now; launchd:
+                                        # bootstrap; Windows: schtasks /change
+tamias service status ci-gate-ci-gate    # per-backend status probe
+tamias service logs   ci-gate-ci-gate   # journalctl / launchd log tail /
+                                        # schtasks snapshot, per backend
 ```
 
 A package that ships its own `drivers/` needs `--allow-drivers` at
@@ -972,14 +1008,15 @@ tamias provider list --all    # include packages without a provider:
 tamias provider list --json   # machine-readable
 ```
 
-Each service row shows its rendered unit name (`<provider>-<service>.service`)
-and a best-effort `systemctl --user is-enabled` state (`-` when systemd
-can't answer). Ingress rows carry the `public_url` (+ `listen`/`path`).
+Each service row shows its rendered unit name (`<provider>-<service>`
+— `.service` on systemd, a launchd label or task name elsewhere) and a
+best-effort enable-state probe (`-` when the backend can't answer).
+Ingress rows carry the `public_url` (+ `listen`/`path`).
 
-## Run a service without systemd
+## Run a service without a service manager
 
 `tamias run` execs a provider service's `exec` argv **in the foreground** —
-the same argv/env the rendered unit would get, minus systemd:
+the same argv/env the rendered unit would get, minus the backend:
 
 ```sh
 tamias run ci-gate            # sole service → runs it
@@ -992,25 +1029,28 @@ see [Security model](/explanation/security)): the service's `env` plus
 its `env_file` parsed as `K=V` lines (inline `env` wins, matching
 systemd's `EnvironmentFile` → `Environment=` order). `workdir` (`~`
 expands) is the cwd, else the payload dir. A non-zero exit fails the
-command. This is the dev/no-systemd counterpart of `service enable` —
-`provider.health.cmd` probes and richer verbs are still on the roadmap.
+command. This is the dev/no-service-manager counterpart of
+`service enable` — `provider.health.cmd` probes and richer verbs are
+still on the roadmap.
 
 ## Follow a service's logs
 
 ```sh
-tamias logs ci-gate            # journalctl over ALL the package's units
+tamias logs ci-gate            # ALL the package's units, one stream
+                               # (journalctl / launchd log tail / schtasks)
 tamias logs ci-gate --lines 50 -f
 tamias logs ci-gate-ci-gate    # or a bare unit name
-tamias service logs ci-gate-ci-gate   # unit-level, same journalctl
+tamias service logs ci-gate-ci-gate   # unit-level, same backend stream
 ```
 
 A package name resolves to every `provider.services[]` unit in one
-journal stream; anything that isn't an installed package is treated as
-a unit base name.
+stream; anything that isn't an installed package is treated as a unit
+base name.
 
-## Manage an ad-hoc service unit
+## Manage an ad-hoc service
 
-The per-user **systemd** mechanism also works without a package:
+The per-user service mechanism also works without a package — same
+verbs, same platform backend:
 
 ```sh
 tamias service install --unit ci-gate \
@@ -1113,9 +1153,19 @@ fi
 
 ## Ship it with the payload
 
-Drop the binary under `drivers/` in your payload — but know that this
-makes the package **self-modifying**: a bundled driver is arbitrary code
-that runs on the installer's machine. tamias therefore gates it:
+Drop the driver under `drivers/` in your payload — two forms:
+
+* `drivers/<name>` — a portable file (an interpreted script like
+  `#!/usr/bin/env python3` ships as source);
+* `drivers/bin/<target-triple>/<name>` — a compiled driver, one dir
+  per rustc target triple (`x86_64-unknown-linux-gnu`, …). Only the
+  host triple's file installs; a package that ships platform dirs but
+  none for this host **fails the install** rather than silently
+  dropping the driver.
+
+Either way this makes the package **self-modifying**: a bundled driver
+is arbitrary code that runs on the installer's machine. tamias
+therefore gates it:
 
 ```sh
 tamias install --allow-drivers <ref>
@@ -1170,6 +1220,21 @@ tamias drivers          # every discovered driver + its capabilities
 tamias drivers --json   # same, machine-readable
 tamias doctor --json    # lists discovered drivers among the health checks
 ```
+
+## Beyond the lifecycle: pavo surfaces
+
+The lifecycle three plus `capabilities` are the *tamias* contract.
+Drivers built on `pavo-driver-kit` additionally answer the **pavo**
+surface — `manifest`, `serve` (ndjson views/queries), `ops` (an ops
+manifest of bounded verbs), and `run`/`cli` passthroughs — which is how
+product CLIs become generatable surfaces: `tamias-driver-tamias`
+itself exposes the whole `tamias` engine this way (`cli.<verb>` ops
+derived from the clap tree; unbounded verbs like `serve`/`ui` are
+`surfaces`, never ops — see
+[Scripting tamias](/reference/scripting#the-engine-as-an-ops-manifest)).
+A `capabilities` answer of `{"capabilities": ["pavo"], …}` marks a
+driver as pavo-capable; `types: []` keeps it from claiming content
+types it doesn't handle.
 
 ## See also
 
@@ -1446,11 +1511,11 @@ These verbs emit JSON with `--json`:
 | --- | --- |
 | `list` | `{"packages": [entry…]}` — record fields + `label`, `size`, `dir` |
 | `info <name>` | one entry object (same fields) |
-| `verify <name>` | `{name, recorded, computed, ok}` — non-zero exit on mismatch |
+| `verify <name>` | `{name, recorded, computed, ok, signature, trust, signer}` — non-zero exit on mismatch |
 | `update [name]` | `{"updated": [label…]}` (with `--all` or a name) |
 | `doctor` | per-check report — store, cache, git, registry, drivers |
 | `config` | `{file, search, config}` — the effective config |
-| `search <q>` | `{"results": [{label, name, scope, version, kind, digest, file}]}` |
+| `search <q>` | `{"results": [{label, name, scope, version, kind, digest, signed, publisher, file}]}` |
 | `cache clean` | `{evicted, entries}` |
 
 Without `--json` the same verbs print aligned text.
@@ -1472,21 +1537,52 @@ each run.
 For stateful, interactive use, `tamias serve` speaks ndjson JSON-RPC
 over stdio — see [the serve reference](/reference/serve).
 
+## The engine as an ops manifest
+
+`tamias-driver-tamias` (installed with tamias, discovered like any
+driver) exposes the whole `tamias` CLI as a **pavo ops manifest** —
+every bounded verb as a `cli.<verb>` wire query derived from the
+engine's own clap tree, so generated surfaces (pavo's CLI/MCP
+renderers) can't drift from the real verbs. Unbounded surfaces
+(`serve`, `ui`, `registry serve`, `run`) are listed as `surfaces`,
+never ops. Drive it over the driver's `serve` wire:
+
+```sh
+tamias-driver-tamias serve <<'EOF'
+{"op":"query","query":"ops"}
+{"op":"query","query":"cli.list","params":{}}
+EOF
+```
+
+`query:"cli.<verb>"` params map by kind — `arg` = positional,
+`opt` = `--name <v>`, `flag` = `--name`. `tamias-driver-tamias run <argv…>` is the raw passthrough (`run list` ≡ `tamias list`). Secret
+params should ride stdin, not argv — generated CLIs accept
+`--params-stdin` (a JSON object merged over the flags) so tokens stay
+out of shell history.
+
 ## Environment
 
 | var | effect |
 | --- | --- |
 | `TAMIAS_HOME` | store + `drivers/` root (default `~/.local/share/tamias`) |
 | `TAMIAS_CACHE` | fetch-cache root (default `~/.cache/tamias/fetch`) |
+| `TAMIAS_BIN_DIR` | bin dir for `tamias bin` deploys (default `$XDG_BIN_HOME` → `~/.local/bin`) |
 | `TAMIAS_REGISTRY` | default registry root for `publish`/`search` |
+| `TAMIAS_CONFIG` | explicit config file — replaces discovery for that invocation |
 | `TAMIAS_ALLOW_DRIVERS` | `=1` consents to bundled `drivers/` (same as `--allow-drivers`) |
+| `TAMIAS_CONSENT_FILE` | override the per-package driver-consent memory path |
 | `TAMIAS_REGISTRY_TOKEN` | bearer token for http(s) registries |
 | `TAMIAS_REGISTRY_SERVE_TOKEN` | require auth on `tamias registry serve` |
+| `TAMIAS_SIGNING_KEY` / `TAMIAS_ALLOWED_SIGNERS` / `TAMIAS_OFFICIAL_SIGNERS` | `publish --sign` key + signature-trust files (names, never values inline) |
 | `TAMIAS_OTEL_*` / `OTEL_*` | opt-in telemetry — see [Architecture](/explanation/architecture#observability) |
 
-`tamias config --file <path>` overrides discovery for that invocation;
-without it, `tamias config` reads the first of `./tamias.yml`,
-`./tamias.yaml`, `./tamias.toml` it finds.
+Config discovery is **layered**: the user-level
+`~/.config/tamias/tamias.{yml,yaml,toml}` is the base and a
+`./tamias.{yml,yaml,toml}` in the cwd overlays it per-field — project
+wins, global fills the gaps. `--file`/`TAMIAS_CONFIG` replaces
+discovery with that one file. Registry *writes* (`tamias registry
+add|remove`) stay file-scoped — they edit the project `tamias.*` (or
+`--file` target), never the user layer implicitly.
 
 ## Exit codes
 
@@ -1518,21 +1614,29 @@ service exits when stdin closes.
 
 | op | fields | result |
 | --- | --- | --- |
-| `install` | `ref`, `allow_drivers?` | `{label, resolved, digest}` |
+| `install` | `ref`, `allow_drivers?` | `{label, resolved, digest, signed}` |
 | `plan` | `ref`, `allow_drivers?` | the `tamias install --plan` report — manifest, cache hit, payload digest, classified `include:`s, bundled drivers + consent need, kind driver, provider services, `trust`/`signer`/`signature_status`, `problems`. Dry-run: nothing is committed or dispatched |
-| `sync` | `locked?`, `allow_drivers?`, `dir?` | `{deps: [{dep, status, detail}], failed}` — reconciles the project manifest's `deps:` against the store + `tamias.lock` (`dir` defaults to the server's cwd) |
+| `sync` | `locked?`, `from_lock?`, `allow_drivers?`, `dir?` | `{deps: [{dep, status, detail}], failed}` — reconciles the project manifest's `deps:` against the store + `tamias.lock` (`dir` defaults to the server's cwd; `from_lock: true` makes `tamias.lock` itself the spec, like `tamias sync --from-lock`) |
 | `list` | — | `[{label, source_ref, digest}]` |
 | `info` | `name` | `{label, resolved, digest, size}` |
 | `verify` | `name` | `{name, ok, signature, trust, signer}` — `trust`/`signer` are re-derived live, same rule as `tamias verify` |
 | `remove` | `name` | `{name}` — runs driver teardown first, like `tamias uninstall` |
-| `search` | `query`, `registry?` | `{results: [{label, name, scope, version, kind, digest, file}]}` |
-| `publish` | `dir`, `registry?` | `{label, name, scope, version, kind, digest, file}` |
-| `registry.list` | — | `{registries: [{name, kind, effective_kind, url, token_env, limits}]}` |
+| `search` | `query`, `registry?` | `{results: [{label, name, scope, version, kind, digest, signed, publisher, file}]}` |
+| `publish` | `dir`, `registry?`, `keep_includes?`, `keep?`, `sign?` | `{label, name, scope, version, kind, digest, signed, publisher, file, pruned}` — `keep` is the per-invocation retention override (P-024), `sign: true` attaches an ssh signature (`publish --sign`) |
+| `registry.list` | — | `{registries: [{name, id, kind, effective_kind, url, token_env, limits, retention}]}` |
 | `registry.get` | `name` | one registry object (same shape as `registry.list` items) |
-| `registry.add` | `name`, `kind`, `url`, `token_env?` | `{name, config}` — writes the config file |
+| `registry.add` | `name`, `kind`, `url`, `token_env?`, `id?` | `{name, config}` — writes the config file |
 | `registry.remove` | `name` | `{name, config}` |
 
 `name` accepts `@scope/name` or bare `name`, same as the CLI.
+
+`install` does **not** deploy `bins[]` — bin deployment is a
+CLI-side post-commit step (`tamias install`'s default pass /
+`tamias bin deploy`) that the serve ops don't run. A serve-driven
+install of a bins\[] pack leaves the store entry committed but the
+commands undeployed until something calls `tamias bin deploy <pkg>`.
+(The `sync` op shares this — and so does the CLI's own `tamias sync`,
+which installs through `tamias-install` without the bin pass.)
 
 `search`/`publish` take `registry` as a **name or raw ref** — identical
 resolution to `--registry` on the CLI verbs: config `registries` name →
@@ -1653,7 +1757,7 @@ distribution; every content *meaning* is an adapter.
 | `store` | put/get/verify an installed package | `-local`, `-cf` |
 | `cache` | content-addressed fetch cache | `-local`, `-cf` |
 | `registry` | index + publish | `-local`, `-cf` (Worker + R2 + D1/KV) |
-| `deploy` | service unit + teardown | `-local` (systemd) |
+| `deploy` | service unit + teardown | `-systemd` (Linux), `-launchd` (macOS), `-windows` (Task Scheduler), `-cf` (registry Worker) |
 | `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, argv) |
 
 ## Crate map
@@ -1715,6 +1819,14 @@ flatten includes by default (`--keep-includes` ships the raw payload).
 addressed cache can be hit *before* fetching. The fetch→unpack split is
 what makes repeat installs and air-gapped nodes free.
 
+Declared `bins[]` (P-023) ride the same commit: `install` deploys them
+into the bin dir by default (`--no-bins` opts out) — `shim: cli`
+entries become generated scripts exec'ing `tamias bin exec`, and
+`payload: tools/bin/<triple>/…` entries link real binaries through a
+per-package `bin-alias/` so upgrades don't break them. `bin/`
+payload files link the same way (legacy, undeclared). See
+[Put a package's binaries on your PATH](/how-to/link-binaries).
+
 ## Stores
 
 * **install store** — `<name>@<version>/` with a record (source ref,
@@ -1740,6 +1852,12 @@ a persistent handle instead of one-shot CLI calls. Registry name-or-ref
 resolution and config writes go through `tamias-registry-open`, the same
 code the CLI verbs use. The protocol is specified in
 [serve reference](/reference/serve).
+
+A second embedding surface targets **generated** clients:
+`tamias-driver-tamias` exposes the engine's clap tree as a pavo ops
+manifest (`cli.<verb>` wire queries), so pavo's CLI/MCP renderers drive
+the same verbs without a hand-written client — see
+[Scripting tamias](/reference/scripting#the-engine-as-an-ops-manifest).
 
 ## Observability
 
@@ -1801,7 +1919,11 @@ tamias-driver-<type> capabilities            # → {"types":[…]}
 ```
 
 The driver owns the product's schema — where it materializes, what
-"deployed" means, how to tear down. tamias never learns it.
+"deployed" means, how to tear down. tamias never learns it. Drivers
+built on `pavo-driver-kit` additionally answer the pavo surface
+(`manifest`/`serve`/`ops`/`run`) — views plus an ops manifest of bounded
+verbs for generated clients; see
+[Write a driver](/how-to/write-a-driver#beyond-the-lifecycle-pavo-surfaces).
 
 A package can **ship its own driver** under `drivers/` in the payload;
 installing registers it into `<tamias-home>/drivers/`. Because that's
@@ -1984,6 +2106,15 @@ all write the same file.
 
 Without consent the install **fails before anything is registered or
 run** — no partial store entry, no copied driver.
+
+**Executable surfaces are a separate, ungated channel.** A package's
+`bins[]` (`payload:` entries under `tools/bin/`) and legacy `bin/`
+files deploy real binaries onto your `PATH` at install time with **no
+consent prompt** — the `--allow-drivers` gate covers `drivers/` only.
+A `shim: cli` entry is safe by construction (a generated script that
+execs `tamias bin exec`), but treat any pack that declares payload
+bins like you would a driver: inspect before installing
+(`tamias install --plan` lists declared bins).
 
 ## Missing drivers fail closed
 

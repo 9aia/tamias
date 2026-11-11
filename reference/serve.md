@@ -20,21 +20,29 @@ service exits when stdin closes.
 
 | op | fields | result |
 | --- | --- | --- |
-| `install` | `ref`, `allow_drivers?` | `{label, resolved, digest}` |
+| `install` | `ref`, `allow_drivers?` | `{label, resolved, digest, signed}` |
 | `plan` | `ref`, `allow_drivers?` | the `tamias install --plan` report — manifest, cache hit, payload digest, classified `include:`s, bundled drivers + consent need, kind driver, provider services, `trust`/`signer`/`signature_status`, `problems`. Dry-run: nothing is committed or dispatched |
-| `sync` | `locked?`, `allow_drivers?`, `dir?` | `{deps: [{dep, status, detail}], failed}` — reconciles the project manifest's `deps:` against the store + `tamias.lock` (`dir` defaults to the server's cwd) |
+| `sync` | `locked?`, `from_lock?`, `allow_drivers?`, `dir?` | `{deps: [{dep, status, detail}], failed}` — reconciles the project manifest's `deps:` against the store + `tamias.lock` (`dir` defaults to the server's cwd; `from_lock: true` makes `tamias.lock` itself the spec, like `tamias sync --from-lock`) |
 | `list` | — | `[{label, source_ref, digest}]` |
 | `info` | `name` | `{label, resolved, digest, size}` |
 | `verify` | `name` | `{name, ok, signature, trust, signer}` — `trust`/`signer` are re-derived live, same rule as `tamias verify` |
 | `remove` | `name` | `{name}` — runs driver teardown first, like `tamias uninstall` |
-| `search` | `query`, `registry?` | `{results: [{label, name, scope, version, kind, digest, file}]}` |
-| `publish` | `dir`, `registry?` | `{label, name, scope, version, kind, digest, file}` |
-| `registry.list` | — | `{registries: [{name, kind, effective_kind, url, token_env, limits}]}` |
+| `search` | `query`, `registry?` | `{results: [{label, name, scope, version, kind, digest, signed, publisher, file}]}` |
+| `publish` | `dir`, `registry?`, `keep_includes?`, `keep?`, `sign?` | `{label, name, scope, version, kind, digest, signed, publisher, file, pruned}` — `keep` is the per-invocation retention override (P-024), `sign: true` attaches an ssh signature (`publish --sign`) |
+| `registry.list` | — | `{registries: [{name, id, kind, effective_kind, url, token_env, limits, retention}]}` |
 | `registry.get` | `name` | one registry object (same shape as `registry.list` items) |
-| `registry.add` | `name`, `kind`, `url`, `token_env?` | `{name, config}` — writes the config file |
+| `registry.add` | `name`, `kind`, `url`, `token_env?`, `id?` | `{name, config}` — writes the config file |
 | `registry.remove` | `name` | `{name, config}` |
 
 `name` accepts `@scope/name` or bare `name`, same as the CLI.
+
+`install` does **not** deploy `bins[]` — bin deployment is a
+CLI-side post-commit step (`tamias install`'s default pass /
+`tamias bin deploy`) that the serve ops don't run. A serve-driven
+install of a bins\[] pack leaves the store entry committed but the
+commands undeployed until something calls `tamias bin deploy <pkg>`.
+(The `sync` op shares this — and so does the CLI's own `tamias sync`,
+which installs through `tamias-install` without the bin pass.)
 
 `search`/`publish` take `registry` as a **name or raw ref** — identical
 resolution to `--registry` on the CLI verbs: config `registries` name →
