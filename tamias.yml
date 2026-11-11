@@ -12,13 +12,16 @@ cache:
   kind: local
   # root: ~/.cache/tamias/fetch
 
-# A Cloudflare registry (Worker + R2 + D1/KV).
-# registries:
-#   cloud:
-#     kind: cf
-#     url: https://tamias-registry.you.workers.dev
-#     token_env: TAMIAS_CF_TOKEN      # env var NAME — never the token
+# The org registry — Cloudflare Worker + R2 at tamias.9aia.com
+# (`tamias deploy-registry` materializes it; bearer token via
+# TAMIAS_REGISTRY_TOKEN, value lives in cuora as
+# cuora://tamias/registry-token — inject with `cuora run -s …`).
+registries:
+  nine:
+    kind: cf
+    url: https://tamias.9aia.com
+    token_env: TAMIAS_REGISTRY_TOKEN
 
-# Publish-target routing — `tamias publish --registry cloud`.
+# Publish-target routing — `tamias publish --registry nine`.
 # publish:
 #   default: local
