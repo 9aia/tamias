@@ -160,6 +160,15 @@ all write the same file.
 Without consent the install **fails before anything is registered or
 run** — no partial store entry, no copied driver.
 
+**Executable surfaces are a separate, ungated channel.** A package's
+`bins[]` (`payload:` entries under `tools/bin/`) and legacy `bin/`
+files deploy real binaries onto your `PATH` at install time with **no
+consent prompt** — the `--allow-drivers` gate covers `drivers/` only.
+A `shim: cli` entry is safe by construction (a generated script that
+execs `tamias bin exec`), but treat any pack that declares payload
+bins like you would a driver: inspect before installing
+(`tamias install --plan` lists declared bins).
+
 ## Missing drivers fail closed
 
 Installing a package whose `type` has **no** discoverable driver fails
