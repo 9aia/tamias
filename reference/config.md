@@ -19,6 +19,7 @@ url: /tamias/reference/config.md
 | `url` | `string` | optional | Base URL (http) or root dir. |
 | `token_env` | `string` | optional | Env var **name** holding the bearer token — never the token. |
 | `limits` | `Limits` | optional | Per-registry limit overrides (values + package rules). |
+| `retention` | `Retention` | optional | Per-registry retention overrides — how many of a package's most recent versions stay indexed after publish (P-024). |
 
 ## `[publish]` — publish routing
 
@@ -37,6 +38,13 @@ url: /tamias/reference/config.md
 | `required` | `bool` | optional | Every install must carry a valid signature. Only registry (`cf:`) refs can supply one — see `tamias-sign`'s docs. |
 | `namespace` | `string` | optional | `ssh-keygen -Y` namespace (default `tamias-package`). |
 
+## `[retention]` — publish retention (P-024)
+
+| field | type | required | notes |
+|---|---|---|---|
+| `keep` | `int` | optional | Versions kept per package — `0` keeps only the just-published version. `None` inherits the next level / disables pruning. |
+| `packages` | `BTreeMap<String, Retention>` | required | Per-package overrides — exact name or `*` glob → retention. Lives on the global `retention` (and may appear under a registry's `retention`); `packages` nested inside a package entry is ignored — overrides are one level deep. |
+
 ## Top level
 
 | field | type | required | notes |
@@ -47,6 +55,7 @@ url: /tamias/reference/config.md
 | `publish` | `Publish` | optional | Publish routing. |
 | `search` | `Search` | optional | Search routing. |
 | `limits` | `Limits` | optional | Global byte limits + per-package overrides. |
+| `retention` | `Retention` | optional | Global retention policy — versions kept per package after publish (P-024). Unset → no pruning. |
 | `signing` | `Signing` | optional | Package signing policy — `publish --sign` key resolution and install/verify `allowed_signers`/`official_signers` enforcement and trust-tier reporting (`tamias-sign`). |
 
 ## format trait (parse/render)

@@ -13,6 +13,7 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 ### Tutorials
 
 - [Tutorial: your first package](/tamias/tutorials/first-package.md)
+- [Tutorial: heal a failing PR with an agent](/tamias/tutorials/pr-heal-workflow.md)
 
 ### How-to
 

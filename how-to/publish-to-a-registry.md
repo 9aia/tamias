@@ -88,6 +88,36 @@ of `index.json`; the server is a token-guarded blob store (`GET`/`PUT
 the env var that carries it; clients honor `token_env` (falling back
 to `TAMIAS_REGISTRY_TOKEN`). Never inline a token.
 
+## Retention — pruning old versions
+
+Every publish can prune the package's older **index** entries so a
+registry doesn't accumulate versions forever (P-024). Configure it in
+`tamias.yml`:
+
+```yaml
+retention:
+  keep: 10                      # versions kept per package
+  packages:                     # optional per-package overrides
+    "big-*":
+      keep: 50
+```
+
+`keep` counts versions in **semver order** (prereleases included —
+`1.0.0-rc.1` sorts below `1.0.0`), not publish order, and applies per
+`(scope, name)`. The version being published is never pruned, and
+versions that aren't semver are never pruned either. A `retention:`
+block under `registries.<name>` overrides the global policy for that
+registry. `tamias publish --keep N` overrides per invocation, and
+`tamias publish --json` reports the pruned labels.
+
+Pruning is **index-entry only**: the `.tgz` payload blobs stay in the
+registry, but a pruned version no longer resolves through the index —
+`search` won't list it and `cf:<name>@<version>` installs can't resolve
+it (the `cf:` source reads `index.json`). A direct fetch of the blob
+URL still works, and installed copies on consumer machines are
+untouched — `verify` recomputes the payload digest locally. Unset
+`keep` = keep everything (the default).
+
 ## See also
 
 * [Config reference](/reference/config)

@@ -7,7 +7,7 @@ probe; never touches repo state).</li>
 <li><code>capabilities</code> — <code>{"capabilities": ["pavo"], "verbs": […]}</code>.</li>
 <li><code>ops</code> — the engine ops manifest: every <code>sturn</code> CLI verb as a
 <code>cli.&lt;verb&gt;</code> wire query, derived from the engine’s own clap
-tree ([<code>sturn::command</code>]).</li>
+tree (<a href="../sturn/fn.command.html" title="fn sturn::command"><code>sturn::command</code></a>).</li>
 <li><code>run &lt;argv&gt;</code> — engine passthrough: <code>tamias-driver-sturn run claims</code> ≡ <code>sturn claims</code>. Also the child side of <code>cli.*</code> wire
 queries (<code>ops::run_verb</code> re-execs this same verb so engine
 output never touches the serve stream).</li>
@@ -21,7 +21,7 @@ runs the engine op.</li>
 <p>Optional surfaces: features <code>cli</code>/<code>mcp</code> embed
 pavo-driver-kit’s surface layer — <code>cli &lt;op&gt; [args]</code> is a
 generated CLI over the ops manifest (<code>daemon</code>/<code>sub</code>/<code>bridge</code>/
-<code>mcp</code>/<code>mount</code> ride as streaming subcommands), <code>mcp</code> serves the
+<code>mount</code> ride as streaming subcommands), <code>mcp</code> serves the
 ops as MCP tools on stdio. Both are equivalent to the standalone
 <code>tamias-driver-cli</code>/<code>tamias-driver-mcp</code> surface drivers, minus
 the PATH/discovery hop.</p>

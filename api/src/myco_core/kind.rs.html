@@ -15,12 +15,12 @@
 <a href=#15 id=15 data-nosnippet>15</a>//! would reinterpret every existing id. New names must not
 <a href=#16 id=16 data-nosnippet>16</a>//! collide on name or prefix.
 <a href=#17 id=17 data-nosnippet>17</a>
-<a href=#18 id=18 data-nosnippet>18</a></span><span class="kw">use </span>serde::Deserialize;
+<a href=#18 id=18 data-nosnippet>18</a></span><span class="kw">use </span>serde::{Deserialize, Serialize};
 <a href=#19 id=19 data-nosnippet>19</a>
 <a href=#20 id=20 data-nosnippet>20</a><span class="kw">use crate</span>::{is_valid_label, ItemKind, Status};
 <a href=#21 id=21 data-nosnippet>21</a>
 <a href=#22 id=22 data-nosnippet>22</a><span class="doccomment">/// How a kind's items persist.
-<a href=#23 id=23 data-nosnippet>23</a></span><span class="attr">#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+<a href=#23 id=23 data-nosnippet>23</a></span><span class="attr">#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 <a href=#24 id=24 data-nosnippet>24</a>#[cfg_attr(feature = <span class="string">"schema"</span>, derive(schemars::JsonSchema))]
 <a href=#25 id=25 data-nosnippet>25</a>#[serde(rename_all = <span class="string">"lowercase"</span>)]
 <a href=#26 id=26 data-nosnippet>26</a></span><span class="kw">pub enum </span>Storage {
@@ -39,7 +39,7 @@
 <a href=#39 id=39 data-nosnippet>39</a>}
 <a href=#40 id=40 data-nosnippet>40</a>
 <a href=#41 id=41 data-nosnippet>41</a><span class="doccomment">/// One `[[kinds]]` entry — or one prelude row.
-<a href=#42 id=42 data-nosnippet>42</a></span><span class="attr">#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+<a href=#42 id=42 data-nosnippet>42</a></span><span class="attr">#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 <a href=#43 id=43 data-nosnippet>43</a>#[cfg_attr(feature = <span class="string">"schema"</span>, derive(schemars::JsonSchema))]
 <a href=#44 id=44 data-nosnippet>44</a>#[serde(deny_unknown_fields)]
 <a href=#45 id=45 data-nosnippet>45</a></span><span class="kw">pub struct </span>KindSpec {

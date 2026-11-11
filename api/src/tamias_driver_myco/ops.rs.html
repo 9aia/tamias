@@ -196,7 +196,7 @@
 <a href=#196 id=196 data-nosnippet>196</a>/// status (e.g. a `check` finding), honest data. The bare-name
 <a href=#197 id=197 data-nosnippet>197</a>/// entry the embedded surfaces use (`OpSpec.name` is
 <a href=#198 id=198 data-nosnippet>198</a>/// `cli.`-stripped); the wire path goes `op_of` → `run_verb`.
-<a href=#199 id=199 data-nosnippet>199</a></span><span class="attr">#[cfg(any(feature = <span class="string">"cli"</span>, feature = <span class="string">"mcp"</span>))]
+<a href=#199 id=199 data-nosnippet>199</a></span><span class="attr">#[cfg(feature = <span class="string">"mcp"</span>)]
 <a href=#200 id=200 data-nosnippet>200</a></span><span class="kw">pub fn </span>run_op(op: <span class="kw-2">&amp;</span>str, params: <span class="kw-2">&amp;</span>Map&lt;String, Value&gt;) -&gt; Response {
 <a href=#201 id=201 data-nosnippet>201</a>    <span class="kw">let </span><span class="prelude-val">Some</span>(v) = op_of(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">"cli.{}"</span>, op.strip_prefix(<span class="string">"cli."</span>).unwrap_or(op))) <span class="kw">else </span>{
 <a href=#202 id=202 data-nosnippet>202</a>        <span class="kw">return </span>Response::err(<span class="macro">format!</span>(<span class="string">"unknown op: {op}"</span>));

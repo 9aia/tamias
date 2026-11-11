@@ -3,20 +3,25 @@
 <a href=#3 id=3 data-nosnippet>3</a>//! `myco-core` is pure domain (ledger doc surgery, state-machine
 <a href=#4 id=4 data-nosnippet>4</a>//! walks, item metadata); this crate is everything that touches the
 <a href=#5 id=5 data-nosnippet>5</a>//! outside world: `discover` resolves the `project/` worktree via
-<a href=#6 id=6 data-nosnippet>6</a>//! git, `config` is the loader seam (path policy here, file format
-<a href=#7 id=7 data-nosnippet>7</a>//! injected), `ops` owns the scaffold + commit-per-mutation machinery, and
-<a href=#8 id=8 data-nosnippet>8</a>//! `items` is store open/save + the verbs' shared mutation/output
-<a href=#9 id=9 data-nosnippet>9</a>//! tail — re-exporting the core symbols so call sites read
-<a href=#10 id=10 data-nosnippet>10</a>//! `items::X` for either. `myco` (CLI) is a thin clap shell over
-<a href=#11 id=11 data-nosnippet>11</a>//! this; `myco-driver` (the pavo view driver) reads through the
-<a href=#12 id=12 data-nosnippet>12</a>//! same functions, so every front-end sees identical state.
-<a href=#13 id=13 data-nosnippet>13</a>
-<a href=#14 id=14 data-nosnippet>14</a></span><span class="kw">pub mod </span>config;
-<a href=#15 id=15 data-nosnippet>15</a><span class="kw">pub mod </span>discover;
-<a href=#16 id=16 data-nosnippet>16</a><span class="kw">pub mod </span>history;
-<a href=#17 id=17 data-nosnippet>17</a><span class="kw">pub mod </span>items;
-<a href=#18 id=18 data-nosnippet>18</a><span class="kw">pub mod </span>links;
-<a href=#19 id=19 data-nosnippet>19</a><span class="kw">pub mod </span>ops;
-<a href=#20 id=20 data-nosnippet>20</a><span class="kw">pub mod </span>verb;
-<a href=#21 id=21 data-nosnippet>21</a><span class="kw">pub mod </span>view;
+<a href=#6 id=6 data-nosnippet>6</a>//! git, `config` owns the `myco.toml` loader (`TOML` — scarab
+<a href=#7 id=7 data-nosnippet>7</a>//! parsing + myco's two-layer merge policy), `universe` resolves
+<a href=#8 id=8 data-nosnippet>8</a>//! the index universe (lasius clones ∪ `repos.toml`), `ops` owns
+<a href=#9 id=9 data-nosnippet>9</a>//! the scaffold + commit-per-mutation machinery, `vcs` routes every
+<a href=#10 id=10 data-nosnippet>10</a>//! git call through the shared `lasius-vcs` port, and
+<a href=#11 id=11 data-nosnippet>11</a>//! `items` is store open/save + the verbs' shared mutation/output
+<a href=#12 id=12 data-nosnippet>12</a>//! tail — re-exporting the core symbols so call sites read
+<a href=#13 id=13 data-nosnippet>13</a>//! `items::X` for either. `myco` (CLI) is a thin clap shell over
+<a href=#14 id=14 data-nosnippet>14</a>//! this; `myco-driver` (the pavo view driver) reads through the
+<a href=#15 id=15 data-nosnippet>15</a>//! same functions, so every front-end sees identical state.
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a></span><span class="kw">pub mod </span>config;
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">pub mod </span>discover;
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">pub mod </span>history;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">pub mod </span>items;
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">pub mod </span>links;
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">pub mod </span>ops;
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">pub mod </span>universe;
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">pub mod </span>vcs;
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">pub mod </span>verb;
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">pub mod </span>view;
 </code></pre></div></section></main></body></html>

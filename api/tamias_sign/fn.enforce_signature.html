@@ -5,7 +5,7 @@
     payload_digest: &amp;<a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.str.html">str</a>,
     signature: <a class="enum" href="https://doc.rust-lang.org/1.99.1/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;&amp;<a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.str.html">str</a>&gt;,
     policy: &amp;<a class="struct" href="struct.SigningPolicy.html" title="struct tamias_sign::SigningPolicy">SigningPolicy</a>,
-) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.99.1/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.unit.html">()</a>, Error&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The install-pipeline gate — call after the payload manifest loads,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.99.1/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.unit.html">()</a>, <a class="enum" href="../tamias_core/error/enum.Error.html" title="enum tamias_core::error::Error">Error</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The install-pipeline gate — call after the payload manifest loads,
 before driver dispatch and the store commit. <code>signature</code> is what
 the source carried (registry index entries today); <code>payload_digest</code>
 is <code>dir_digest</code> of the payload root.</p>

@@ -16,21 +16,9 @@
 <a href=#16 id=16 data-nosnippet>16</a>    <span class="prelude-val">Ok</span>(myco_store_md::MdStore::with_kinds(root, kinds.clone()))
 <a href=#17 id=17 data-nosnippet>17</a>}
 <a href=#18 id=18 data-nosnippet>18</a>
-<a href=#19 id=19 data-nosnippet>19</a><span class="doccomment">/// Layered TOML — `Some(path)` pins the repo layer, `None` runs
-<a href=#20 id=20 data-nosnippet>20</a>/// the impl's default search. `myco-ops` keeps the *which path*
-<a href=#21 id=21 data-nosnippet>21</a>/// policy; this only names the format.
-<a href=#22 id=22 data-nosnippet>22</a></span><span class="kw">fn </span>config_layered(path: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>std::path::Path&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;myco_core::Config, String&gt; {
-<a href=#23 id=23 data-nosnippet>23</a>    <span class="kw">use </span>myco_config::ConfigSource;
-<a href=#24 id=24 data-nosnippet>24</a>    myco_config_toml::TomlSource {
-<a href=#25 id=25 data-nosnippet>25</a>        path: path.map(|p| p.to_string_lossy().into_owned()),
-<a href=#26 id=26 data-nosnippet>26</a>    }
-<a href=#27 id=27 data-nosnippet>27</a>    .load()
-<a href=#28 id=28 data-nosnippet>28</a>}
-<a href=#29 id=29 data-nosnippet>29</a>
-<a href=#30 id=30 data-nosnippet>30</a><span class="doccomment">/// The config impl ops verbs share — cli-local like `store_at`:
-<a href=#31 id=31 data-nosnippet>31</a>/// the composition root names it, ops stays impl-free.
-<a href=#32 id=32 data-nosnippet>32</a></span><span class="kw">pub const </span>CONFIG: myco_ops::config::ConfigLoader = myco_ops::config::ConfigLoader {
-<a href=#33 id=33 data-nosnippet>33</a>    layered: config_layered,
-<a href=#34 id=34 data-nosnippet>34</a>    file: myco_config_toml::load_file,
-<a href=#35 id=35 data-nosnippet>35</a>};
+<a href=#19 id=19 data-nosnippet>19</a><span class="doccomment">/// The config impl ops verbs share — the scarab-backed TOML
+<a href=#20 id=20 data-nosnippet>20</a>/// loader `myco-ops` owns (the per-repo `myco-config*` crates are
+<a href=#21 id=21 data-nosnippet>21</a>/// gone); cli-local like `store_at`: the composition root names
+<a href=#22 id=22 data-nosnippet>22</a>/// it, ops stays format-free.
+<a href=#23 id=23 data-nosnippet>23</a></span><span class="kw">pub const </span>CONFIG: myco_ops::config::ConfigLoader = myco_ops::config::TOML;
 </code></pre></div></section></main></body></html>
