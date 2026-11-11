@@ -17,6 +17,7 @@ SRCS = {
         "Registry": "`registries.NAME` — a named registry",
         "Publish": "`[publish]` — publish routing",
         "Signing": "`[signing]` — package signing policy",
+        "Retention": "`[retention]` — publish retention (P-024)",
         "Config": "Top level",
         "ConfigFormat": "format trait (parse/render)",
     },
