@@ -10,3 +10,4 @@
 - T-019 tamias bin — link a package's bin/ payload into ~/.local/bin (ADR-0003) · created:2026-11-10
 - T-020 tamias self-upgrade — staged atomic rename of own exe from published pinned ref (ADR-0003) · created:2026-11-10
 - T-021 registry-scoped install refs \<registry>:\<pkg>\[@\<ver>] + layered user/project config (committed 4e65c39, 1564bb0) · created:2026-11-11
+- T-022 tamias self-package — bundle pack bin/tamias + manifest → .tgz, publish to registry/https (ADR-0003 dogfood) · created:2026-11-11
