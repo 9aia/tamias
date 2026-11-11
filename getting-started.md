@@ -5,10 +5,17 @@ Install tamias, then point it at a package.
 ## Install
 
 ```sh
+cargo install tamias
+# or from source:
 cargo install --git https://github.com/9aia/tamias tamias
 # or, from a checkout:
 cargo xtask install
 ```
+
+`tamias` is a native binary — it stays `cargo install`-able because
+every `bins[]` shim in the org execs `tamias bin exec` (bootstrap).
+Product CLIs (`myco`, `cuora`, `kuda`, …) are *not* cargo-installable:
+they ship as tamias packs — `tamias install 9aia:<name>@<version>`.
 
 ## Install a package
 
