@@ -21,6 +21,11 @@ pub fn pack_tgz(src_dir: &Path, out: &Path) -> Result<PathBuf, Error> {
     let file = fs::File::create(out).map_err(Error::io(format!("create {}", out.display())))?;
     let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
     let mut builder = Builder::new(encoder);
+    // Never emit GNUSparse entries: the unpacker only accepts
+    // Regular/Directory/Symlink, and a release binary with holes
+    // (kuda/bupha drivers) would pack sparse and fail to install.
+    // Sparse detection is a tar-Builder default — opt out.
+    builder.sparse(false);
     for rel in payload_files(src_dir)? {
         builder
             .append_path_with_name(src_dir.join(&rel), &rel)
@@ -290,6 +295,32 @@ mod archive_tests {
         // repack over the existing blob replaces it
         pack_tgz_atomic(src.path(), &tgz).unwrap();
         assert!(tgz.is_file());
+    }
+
+    #[test]
+    fn pack_tgz_sparse_file_roundtrips_as_regular_entries() {
+        let src = tempfile::tempdir().unwrap();
+        // A file with a hole — SEEK_HOLE reports it sparse on
+        // supporting filesystems; tar's Builder would emit a
+        // GNUSparse entry the unpacker rejects. pack_tgz must write
+        // it as a plain Regular entry instead.
+        let holey = src.path().join("holey.bin");
+        {
+            use std::io::{Seek, SeekFrom, Write};
+            let mut f = std::fs::File::create(&holey).unwrap();
+            f.write_all(b"head").unwrap();
+            f.seek(SeekFrom::Start(1 << 20)).unwrap();
+            f.write_all(b"tail").unwrap();
+        }
+        let out = tempfile::tempdir().unwrap();
+        let tgz = out.path().join("x.tgz");
+        pack_tgz(src.path(), &tgz).unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        untar_gz(std::fs::File::open(&tgz).unwrap(), dest.path()).unwrap();
+        let got = std::fs::read(dest.path().join("holey.bin")).unwrap();
+        assert_eq!(&got[..4], b"head");
+        assert_eq!(&got[got.len() - 4..], b"tail");
+        assert_eq!(got.len(), (1 << 20) + 4);
     }
 
     #[test]
