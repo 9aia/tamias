@@ -1,7 +1,9 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-deploy-systemd — the `deploy` port's systemd adapter (Linux):
-//! manage a **per-user service unit** via systemd. Future launchd /
-//! windows backends are sibling crates. tamias owns the host-service
+//! manage a **per-user service unit** via systemd. The launchd
+//! (`tamias-deploy-launchd`) and Windows (`tamias-deploy-windows`)
+//! backends are sibling crates rendering the same [`ServiceSpec`].
+//! tamias owns the host-service
 //! *mechanism*; a package's
 //! `provider.services[]` manifest block supplies the domain spec
 //! (ExecStart argv, env, workdir), and `tamias deploy` renders it here.

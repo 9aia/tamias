@@ -12,7 +12,8 @@
 //! operator surface for the provider model: `drivers` (discovery +
 //! capabilities), `provider list` (installed `provider:` blocks),
 //! `run`/`logs` (foreground exec + journal over provider services), and
-//! `service`/`deploy`/`uninstall` for the systemd units they render.
+//! `service`/`deploy`/`uninstall` for the per-user units/tasks/agents
+//! they render (systemd / launchd / Task Scheduler by platform).
 //!
 //! Unlike the sibling engines (myco/lasius/sepia), the `tamias` bin
 //! itself is **not** a `bins[]` shim target: every shim in the org

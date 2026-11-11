@@ -38,7 +38,7 @@ transport, store, and cache; **content types** own the meaning:
 | `myco-config` | `[[kinds]]`, `[views]`, `[verbs]`, templates | `myco.toml` / a seeded `project/` |
 | `kuda-domain` | `data/domains/*.toml` | `.kuda/domains/` |
 | `mimus-rules` | `rules/*.toml` | `rules/` |
-| `files` | anything | `install.into` (escape hatch) |
+| `files` | anything | the store entry (no driver — the escape hatch) |
 
 ## Ref grammar
 
@@ -47,23 +47,32 @@ transport, store, and cache; **content types** own the meaning:
 git:9aia/peregrin//libraries/ci-gate#v0.2.0   git + in-repo subdir + ref
 https://…/ci-gate-0.2.0.tgz#sha256:<hex>        tarball (+ digest pin)
 cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry (P6)
+9aia:<name>@<ver>                              named registry (config)
 ```
 
 ## Verbs
 
 | Verb | What it does |
 | --- | --- |
-| `tamias install <ref>` | resolve → fetch → store (content-type install) |
+| `tamias install <ref>` | resolve → fetch → store (content-type install); deploys declared `bins[]` unless `--no-bins` |
 | `tamias add <ref>` | record in `tamias.yaml` + install |
+| `tamias sync` | reconcile the project's `deps:`/`tamias.lock` against the store (`--locked`, `--from-lock`) |
 | `tamias remove <name>` | drop the store entry (cache untouched) |
-| `tamias list` / `info` | installed packages, refs, digests |
+| `tamias uninstall <name>` | provider teardown + units + drop the store entry |
+| `tamias list` / `info` | installed packages, refs, digests (`--type`, `--json`) |
 | `tamias update` / `pin` | re-resolve a moving ref / retarget the ref |
 | `tamias verify <name>` | digest-check the store vs the record |
+| `tamias bin list/deploy/destroy` | manage declared `bins[]` + `bin/` payload bins on the bin dir |
+| `tamias self-upgrade` | update the tamias-managed binary you're running |
+| `tamias deploy` / `service` / `run` / `logs` | provider services — per-user units (systemd/launchd/Task Scheduler), foreground exec, journals |
+| `tamias driver exec` / `drivers` | dispatch provider ops verbs / list discovered drivers |
+| `tamias provider list` | installed packages' `provider:` blocks + unit state |
 | `tamias cache clean` | evict the fetch cache (age policy / `--all`) |
 | `tamias search <query>` | query a (local \| Cloudflare) registry |
-| `tamias publish <dir>` | push a package to a registry |
+| `tamias publish <dir>` | push a package to a registry (`--sign`, `--keep`) |
 | `tamias registry serve` | serve a local registry (dev / air-gap) |
 | `tamias bundle pack` | dir + manifest → `.tgz` |
+| `tamias ui` | interactive TUI (ratatui) |
 | `tamias doctor` | store / cache / registry / content-type diagnostics |
 | `tamias config [--file f] [--json]` | show the effective config (YAML standard, TOML alt) |
 
@@ -87,19 +96,26 @@ domain (no I/O); ports are traits, impls are separate crates;
 
 | Crate | Role |
 | --- | --- |
-| `tamias-core` | package identity, manifest, lock, records, digest — pure, transport-free |
-| `tamias-source` + `-fs,-git,-http,-cf` | ref-grammar + source ports (`RefKind`/`Source`) + per-kind impls |
+| `tamias-core` | package identity, manifest (`bins[]`, `provider:`), lock, records, digest — pure, transport-free |
+| `tamias-source` + `-fs,-git,-http,-cf,-registry` | ref-grammar + source ports (`RefKind`/`Source`) + per-kind impls (`-registry` = named-registry refs) |
 | `tamias-store` + `-local,-cf` | install store port + impls |
 | `tamias-cache` + `-local,-cf` | content-addressed fetch cache |
+| `tamias-registry` + `-local,-cf` + `-open` | index + publish port + impls + shared name-or-ref resolution |
+| `tamias-publish` | author-side packing |
+| `tamias-install` | the one install pipeline — ref → plan → fetch/cache → manifest → driver dispatch → store commit |
+| `tamias-bin` | declared `bins[]` lifecycle — shims, `tools/bin/<triple>/` payloads, bin dir deploy/destroy/list |
 | `tamias-driver` | discoverable content drivers (`tamias-driver-<type>`, JSON over stdio) |
-| `tamias-deploy` + `-systemd,-cf` | the service / deploy port + impls |
-| `tamias-registry` + `-local,-cf` | index + publish port + impls |
-| `tamias-registry-open` | shared registry-source layer — name-or-ref resolution + named-source config CRUD (CLI + `serve`) |
-| `tamias-publish` | author-side orchestration |
+| `tamias-driver-tamias` | pavo view driver over the tamias store + the engine ops surface (`cli.<verb>` manifest, `run`/`cli` passthroughs) |
+| `tamias-provider` | provider lifecycle — `provider:` blocks → units, deploy/uninstall, `run`/`logs` |
+| `tamias-deploy` + `-systemd,-launchd,-windows,-cf` | deploy port — per-user services (picked by `cfg!`) + remote registry provisioning |
+| `tamias-sign` | optional package signing (`ssh-keygen -Y`, sturn-style) |
 | `tamias-config` + `-yml,-toml` | config model + file formats (YAML standard, TOML alt) |
+| `tamias-serve` | ndjson JSON-RPC over stdio — the embedding surface |
+| `tamias-tui` | `tamias ui` — ratatui package-manager TUI |
+| `tamias-shell` / `tamias-telemetry` | exec helper / opt-in OTLP layer |
 | `tamias-testkit` | fixtures + impl conformance (scaffold — empty, reserved) |
-| `tamias-cli` | the `tamias` binary |
-| `xtask` | check / test / coverage / install / site |
+| `tamias` (`tamias-cli`) | the engine lib (`command()`/`run()`) + the `tamias` compat bin — stays native: every `bins[]` shim execs `tamias bin exec` |
+| `xtask` | check / test / coverage / install / package / smoke / site |
 
 ## Position in the stack
 
@@ -114,14 +130,19 @@ updates).
 
 ## Status
 
-Working v0.1 — `install` · `add` · `remove` · `list [--type]` · `info` ·
-`verify` · `update` · `pin` · `cache` · `publish` · `search` · `bundle
-pack` · `registry serve` · `deploy-registry` · `deploy` · `uninstall` ·
-`service` · `doctor` · `schema` · `gen-cli-docs` · `serve` over fs/git/http
-sources, a content-addressed fetch cache, a local **and Cloudflare**
-store / registry / deploy, a discoverable **driver** system
-(`tamias-driver-<type>`, JSON over stdio) with the peregrin provider
-cutover complete. Remaining: P10c product drivers (T-010).
+Working v0.1 — `install` · `add` · `sync` · `remove` · `uninstall` ·
+`list [--type]` · `info` · `verify` · `update` · `pin` · `self-upgrade`
+· `bin list/deploy/destroy` · `cache` · `publish` (`--sign`, `--keep`
+retention) · `search` · `bundle pack` · `registry serve|add|remove` ·
+`deploy-registry` · `deploy` · `service` · `run` · `logs` · `driver
+exec` · `provider list` · `ui` · `doctor` · `schema` · `gen-cli-docs` ·
+`serve` over fs/git/http/named-registry sources, a content-addressed
+fetch cache, a local **and Cloudflare** store / registry / deploy, a
+discoverable **driver** system (`tamias-driver-<type>`, JSON over stdio)
+with the peregrin provider cutover complete, declared `bins[]` packs
+(product CLIs ship as `shim: cli` + `tools/bin/<triple>/` payloads),
+optional ssh package signing, and a pavo ops surface on
+`tamias-driver-tamias`. Remaining: P10c product drivers (T-010).
 
 ## Install
 

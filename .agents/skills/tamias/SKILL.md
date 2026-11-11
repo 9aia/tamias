@@ -39,25 +39,34 @@ on stderr with a non-zero exit.
 git:9aia/peregrin//libraries/ci-gate#v0.2.0   git + in-repo subdir + ref
 https://…/ci-gate-0.2.0.tgz#sha256:<hex>        tarball (+ digest pin)
 cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry
+9aia:<name>@<ver>                              named registry (config)
 ```
 
 `//subdir` splits repo from in-repo path; `#ref` is branch/tag/sha (the
-version pin). A pinned digest/sha is verified on fetch.
+version pin). A pinned digest/sha is verified on fetch. `<label>:` refs
+resolve against `registries` in `tamias.yml` (user-level
+`~/.config/tamias/tamias.*` base + project overlay).
 
 ## Verb cheat sheet — by intent
 
 | Intent | Command |
 | --- | --- |
-| Install a package | `tamias install <ref>` |
+| Install a package | `tamias install <ref>` (deploys `bins[]`; `--no-bins` opts out, `--plan` dry-runs) |
 | Add to the project manifest | `tamias add <ref>` |
+| Reconcile project deps | `tamias sync` (`--locked`, `--from-lock`) |
 | List / inspect | `tamias list` · `tamias info <name>` |
 | Update / pin a moving ref | `tamias update <name>` · `tamias pin <name> <ref>` |
 | Verify integrity | `tamias verify <name>` — recomputes the payload digest |
-| Remove (cache stays) | `tamias remove <name>` |
-| Author + publish | `tamias bundle pack <dir>` · `tamias publish <dir> [--registry <ref>]` |
+| Remove (cache stays) | `tamias remove <name>` · `tamias uninstall <name>` (provider teardown) |
+| Package binaries on PATH | `tamias bin list` · `tamias bin deploy <pkg>` · `tamias bin destroy <pkg>` |
+| Self-upgrade a tamias-installed tamias | `tamias self-upgrade` |
+| Provider services | `tamias deploy <pkg>` · `tamias service …` · `tamias run` · `tamias logs` · `tamias provider list` |
+| Driver ops verbs | `tamias drivers` · `tamias driver exec <pkg> <verb>` |
+| Author + publish | `tamias bundle pack <dir>` · `tamias publish <dir> [--registry <ref>] [--sign] [--keep N]` |
 | Serve a local registry | `tamias registry serve [--dir .]` |
+| Named registries | `tamias registry add/list/remove/get` |
 | Search a registry | `tamias search <query>` |
-| Housekeeping | `tamias cache clean [--all]` · `tamias doctor` |
+| Housekeeping | `tamias cache clean [--all]` · `tamias doctor` · `tamias ui` |
 
 ## Content types
 
@@ -69,7 +78,7 @@ decides *where* and *how* it installs. You usually don't pick it —
 - `myco-config` → merged into `myco.toml` / a seeded `project/`
 - `kuda-domain` → `.kuda/domains/`
 - `mimus-rules` → `rules/`
-- `files` → copied to `install.into`
+- `files` → the store entry (no driver — the escape hatch)
 
 ## The one rule for provenance
 
