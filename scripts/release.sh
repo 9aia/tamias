@@ -20,14 +20,18 @@ fi
 changed="$(git diff --name-only "${last}..HEAD")"
 
 # Publish order — dependencies first (dir names; the cli dir is
-# tamias-cli but its package is `tamias`).
-order="tamias-core tamias-deploy tamias-deploy-cf tamias-deploy-systemd \
-       tamias-driver tamias-publish tamias-registry tamias-registry-local \
-       tamias-shell tamias-source tamias-source-fs tamias-source-git \
-       tamias-source-http tamias-store tamias-store-cf tamias-store-local \
-       tamias-telemetry tamias-testkit tamias-cache tamias-cache-cf \
-       tamias-cache-local tamias-config tamias-config-toml tamias-config-yml \
-       tamias-registry-cf tamias-source-cf tamias-serve tamias-cli"
+# tamias-cli but its package is `tamias`). Keep in sync with the
+# workspace dep graph: every crate's tamias-* deps must precede it.
+order="tamias-core tamias-registry tamias-config tamias-registry-local \
+       tamias-registry-cf tamias-source tamias-source-http tamias-source-cf \
+       tamias-config-toml tamias-config-yml tamias-store-local \
+       tamias-source-fs tamias-publish tamias-registry-open \
+       tamias-source-registry tamias-source-git tamias-cache-local \
+       tamias-sign tamias-driver tamias-install tamias-shell tamias-deploy \
+       tamias-deploy-launchd tamias-deploy-windows tamias-deploy-systemd \
+       tamias-provider tamias-tui tamias-deploy-cf tamias-serve \
+       tamias-telemetry tamias-cli tamias-cache tamias-cache-cf \
+       tamias-store tamias-store-cf tamias-testkit"
 
 touched=""
 for c in $order; do
@@ -67,7 +71,9 @@ ver="$(grep -m1 '^version' crates/tamias-cli/Cargo.toml | cut -d'"' -f2)"
 git push -q origin HEAD:main --tags
 
 # binaries: local dist build (host arch) → GitHub Release.
-if command -v dist >/dev/null && command -v gh >/dev/null; then
+# Opt-in: set TAMIAS_RELEASE_DIST=1 — dist/gh artifacts are not part of
+# every release.
+if [ "${TAMIAS_RELEASE_DIST:-0}" = "1" ] && command -v dist >/dev/null && command -v gh >/dev/null; then
     dist build --tag="tamias-v${ver}" --output-format=json > /tmp/dist-manifest.json 2>&1 || true
     gh release create "tamias-v${ver}" --generate-notes \
         --title "tamias ${ver}" 2>/dev/null || true
