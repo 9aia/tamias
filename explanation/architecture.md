@@ -55,6 +55,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-source-fs` | adapter | fs source impl — local dirs and tarballs |
 | `tamias-source-git` | adapter | git source impl — clone URL //subdir #rev |
 | `tamias-source-http` | adapter | http source impl — .tgz GET + optional sha256 pin |
+| `tamias-source-registry` | adapter | Registry-scoped install refs — the `&lt;registry&gt;:&lt;name&gt;[@&lt;version&gt;]` ref arm |
 | `tamias-store-cf` | adapter | Cloudflare adapter (P6) |
 | `tamias-store-local` | adapter | local store impl — a directory |
 | `tamias-telemetry` | adapter | Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation |

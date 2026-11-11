@@ -30,6 +30,18 @@ tamias install https://host/hello-0.1.0.tgz#sha256:<hex>
 
 Digest-pin the tarball (`#sha256:<hex>`) when you have the bytes.
 
+With a **named registry** in config (`tamias registry add`, see below),
+install by name — `<registry>:<package>@<version>`:
+
+```sh
+tamias install 9aia:hello@0.1.0
+tamias install 9aia:@acme/scoped@2.0.0    # scoped package
+```
+
+The label matches the registry's `id` (`registry add --id`) first,
+then its name; `@<version>` is required. The same refs work in a
+project `tamias.yaml`'s `deps:` for `tamias sync`.
+
 ## Cloudflare registry
 
 1. Write the Worker + config:
@@ -73,8 +85,8 @@ Digest-pin the tarball (`#sha256:<hex>`) when you have the bytes.
 The protocol is the same either way: the client does a read-modify-write
 of `index.json`; the server is a token-guarded blob store (`GET`/`PUT
 /<key>`). Auth is a bearer token — the config `token_env` field names
-the env var that carries it; in practice the http client reads
-`TAMIAS_REGISTRY_TOKEN`. Never inline a token.
+the env var that carries it; clients honor `token_env` (falling back
+to `TAMIAS_REGISTRY_TOKEN`). Never inline a token.
 
 ## See also
 

@@ -530,6 +530,18 @@ tamias install https://host/hello-0.1.0.tgz#sha256:<hex>
 
 Digest-pin the tarball (`#sha256:<hex>`) when you have the bytes.
 
+With a **named registry** in config (`tamias registry add`, see below),
+install by name — `<registry>:<package>@<version>`:
+
+```sh
+tamias install 9aia:hello@0.1.0
+tamias install 9aia:@acme/scoped@2.0.0    # scoped package
+```
+
+The label matches the registry's `id` (`registry add --id`) first,
+then its name; `@<version>` is required. The same refs work in a
+project `tamias.yaml`'s `deps:` for `tamias sync`.
+
 ## Cloudflare registry
 
 1. Write the Worker + config:
@@ -573,8 +585,8 @@ Digest-pin the tarball (`#sha256:<hex>`) when you have the bytes.
 The protocol is the same either way: the client does a read-modify-write
 of `index.json`; the server is a token-guarded blob store (`GET`/`PUT
 /<key>`). Auth is a bearer token — the config `token_env` field names
-the env var that carries it; in practice the http client reads
-`TAMIAS_REGISTRY_TOKEN`. Never inline a token.
+the env var that carries it; clients honor `token_env` (falling back
+to `TAMIAS_REGISTRY_TOKEN`). Never inline a token.
 
 ## See also
 
@@ -1022,6 +1034,8 @@ sources; the impl is picked by shape.
 git:9aia/bupha//libraries/ci-gate#main   git + in-repo subdir + ref
 https://…/ci-gate-0.2.0.tgz#sha256:<hex>        tarball (+ digest pin)
 cf:<account>/<bucket>/<name>@<ver>             Cloudflare registry
+9aia:<name>@<ver>                              named registry (config)
+9aia:@scope/<name>@<ver>                        named registry, scoped
 ```
 
 ## Git
@@ -1072,6 +1086,41 @@ payload fails the install. Note the digest covers the payload *dir*, not
 the tarball bytes, so it can't be checked at transport (see
 [Security model](/explanation/security)).
 
+## Named registry
+
+```
+<label>:<name>@<version>
+<label>:@scope/<name>@<version>
+```
+
+`<label>` resolves against the *effective* config's `registries` map —
+the user-level `~/.config/tamias/tamias.*` base overlaid by the cwd
+`tamias.*` (same layering as `publish`/`search`). An entry's `id`
+(uuid or slug-safe string, `registry add --id`) matches **before** the
+map key, so refs can pin a stable id across renames. Only `http`/`cf`
+kind registries are installable — a `local` (unserved dir) registry
+errors with a pointer at `tamias registry serve`. An unknown label is
+a hard error (`unknown registry '<label>'`), never a silent path
+fallback.
+
+```
+tamias install 9aia:cicada-demo@0.1.0
+tamias install 018f3c2e-…:@acme/scoped@2.0.0
+```
+
+`@<version>` is required — there is no "latest" resolution. Fetching
+goes through the same path as `cf:` (index lookup → payload-digest +
+signature verification → tarball fetch), and the store record keeps
+the verbatim `<label>:…` ref as provenance. Bearer auth uses the
+registry's `token_env` (env var *name*, falling back to
+`TAMIAS_REGISTRY_TOKEN`). A `<label>:` that matches a reserved kind
+prefix (`git:`, `cf:`, `http(s):`, `ssh:`, `fs:`, `file:`) is never a
+registry ref, and single-letter labels are excluded so Windows drive
+letters (`C:\…`) can't false-positive.
+
+The same refs work in a project manifest's `deps:` — `tamias sync`
+reconciles them like any other ref.
+
 ## Local
 
 * `./x`, `../x`, `~/x`, `/x`, or a bare path.
@@ -1094,6 +1143,7 @@ url: /tamias/reference/config.md
 
 | field | type | required | notes |
 |---|---|---|---|
+| `id` | `string` | optional | Stable identifier (typically a uuid) — registry-scoped install refs (`&lt;label&gt;:&lt;name&gt;@&lt;version&gt;`) match `id` before the map key (`name`), so an entry can be renamed without breaking refs that pin the id. Must be ref-label-safe (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`) to be usable in a ref. |
 | `kind` | `string` | optional | Explicit kind — `local` | `http` | `cf`. Unset → inferred from `url` (http(s) → `http`, anything else → `local`), so configs written before kinds were explicit keep working. |
 | `url` | `string` | optional | Base URL (http) or root dir. |
 | `token_env` | `string` | optional | Env var **name** holding the bearer token — never the token. |
@@ -1122,7 +1172,7 @@ url: /tamias/reference/config.md
 |---|---|---|---|
 | `store` | `Location` | optional | Install store location — `root` applies when `kind` is `local`/unset and `TAMIAS_HOME`/XDG env is unset (env wins). |
 | `cache` | `Location` | optional | Fetch-cache location — same resolution rule as `store`. |
-| `registries` | `BTreeMap<String, Registry>` | optional | Named registries — `publish`/`search --registry &lt;name&gt;` and the `publish.default`/`search.default` routing resolve through these. |
+| `registries` | `BTreeMap<String, Registry>` | optional | Named registries — `publish`/`search --registry &lt;name&gt;` and the `publish.default`/`search.default` routing resolve through these; registry-scoped install refs (`&lt;label&gt;:&lt;name&gt;@&lt;version&gt;`) match an entry's `id` first, then its map key. |
 | `publish` | `Publish` | optional | Publish routing. |
 | `search` | `Search` | optional | Search routing. |
 | `limits` | `Limits` | optional | Global byte limits + per-package overrides. |
@@ -1348,6 +1398,7 @@ documented at source (doc comments).
 * [tamias-source-fs](/tamias/api/tamias_source_fs/index.html) — adapter
 * [tamias-source-git](/tamias/api/tamias_source_git/index.html) — adapter
 * [tamias-source-http](/tamias/api/tamias_source_http/index.html) — adapter
+* [tamias-source-registry](/tamias/api/tamias_source_registry/index.html) — adapter
 * [tamias-store-cf](/tamias/api/tamias_store_cf/index.html) — adapter
 * [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
 * [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
@@ -1414,6 +1465,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-source-fs` | adapter | fs source impl — local dirs and tarballs |
 | `tamias-source-git` | adapter | git source impl — clone URL //subdir #rev |
 | `tamias-source-http` | adapter | http source impl — .tgz GET + optional sha256 pin |
+| `tamias-source-registry` | adapter | Registry-scoped install refs — the `&lt;registry&gt;:&lt;name&gt;[@&lt;version&gt;]` ref arm |
 | `tamias-store-cf` | adapter | Cloudflare adapter (P6) |
 | `tamias-store-local` | adapter | local store impl — a directory |
 | `tamias-telemetry` | adapter | Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation |

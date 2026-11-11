@@ -36,6 +36,7 @@ documented at source (doc comments).
 * [tamias-source-fs](/tamias/api/tamias_source_fs/index.html) — adapter
 * [tamias-source-git](/tamias/api/tamias_source_git/index.html) — adapter
 * [tamias-source-http](/tamias/api/tamias_source_http/index.html) — adapter
+* [tamias-source-registry](/tamias/api/tamias_source_registry/index.html) — adapter
 * [tamias-store-cf](/tamias/api/tamias_store_cf/index.html) — adapter
 * [tamias-store-local](/tamias/api/tamias_store_local/index.html) — adapter
 * [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter

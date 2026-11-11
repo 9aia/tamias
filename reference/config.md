@@ -14,6 +14,7 @@ url: /tamias/reference/config.md
 
 | field | type | required | notes |
 |---|---|---|---|
+| `id` | `string` | optional | Stable identifier (typically a uuid) — registry-scoped install refs (`&lt;label&gt;:&lt;name&gt;@&lt;version&gt;`) match `id` before the map key (`name`), so an entry can be renamed without breaking refs that pin the id. Must be ref-label-safe (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`) to be usable in a ref. |
 | `kind` | `string` | optional | Explicit kind — `local` | `http` | `cf`. Unset → inferred from `url` (http(s) → `http`, anything else → `local`), so configs written before kinds were explicit keep working. |
 | `url` | `string` | optional | Base URL (http) or root dir. |
 | `token_env` | `string` | optional | Env var **name** holding the bearer token — never the token. |
@@ -42,7 +43,7 @@ url: /tamias/reference/config.md
 |---|---|---|---|
 | `store` | `Location` | optional | Install store location — `root` applies when `kind` is `local`/unset and `TAMIAS_HOME`/XDG env is unset (env wins). |
 | `cache` | `Location` | optional | Fetch-cache location — same resolution rule as `store`. |
-| `registries` | `BTreeMap<String, Registry>` | optional | Named registries — `publish`/`search --registry &lt;name&gt;` and the `publish.default`/`search.default` routing resolve through these. |
+| `registries` | `BTreeMap<String, Registry>` | optional | Named registries — `publish`/`search --registry &lt;name&gt;` and the `publish.default`/`search.default` routing resolve through these; registry-scoped install refs (`&lt;label&gt;:&lt;name&gt;@&lt;version&gt;`) match an entry's `id` first, then its map key. |
 | `publish` | `Publish` | optional | Publish routing. |
 | `search` | `Search` | optional | Search routing. |
 | `limits` | `Limits` | optional | Global byte limits + per-package overrides. |

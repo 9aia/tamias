@@ -47,11 +47,11 @@ platform bins under <code>drivers/bin/&lt;triple&gt;/</code> (reported as
 platforms, which are still bundled executable content.</dd><dt><a class="fn" href="fn.capabilities.html" title="fn tamias_driver::capabilities">capabilities</a></dt><dd>Run a driver’s <code>capabilities</code> probe and return the JSON it prints —
 the same bounded call [<code>driver_handles</code>] makes, exposed for the
 <code>tamias drivers</code> listing. <code>Ok</code> only on a zero exit <em>and</em> parseable
-JSON; anything else is an [<code>Error</code>] the caller renders as “unreachable”.</dd><dt><a class="fn" href="fn.config_schema.html" title="fn tamias_driver::config_schema">config_<wbr>schema</a></dt><dd>Fetch a kind driver’s <code>config-schema</code> — the reserved verb that
+JSON; anything else is an <a href="../tamias_core/error/enum.Error.html" title="enum tamias_core::error::Error"><code>Error</code></a> the caller renders as “unreachable”.</dd><dt><a class="fn" href="fn.config_schema.html" title="fn tamias_driver::config_schema">config_<wbr>schema</a></dt><dd>Fetch a kind driver’s <code>config-schema</code> — the reserved verb that
 prints a JSON Schema (draft 2020-12) describing the <code>--config</code> file
 the driver consumes. Bounded like <code>capabilities</code> (a probe, not a
 lifecycle verb). <code>Ok(None)</code> = no driver found; a driver that doesn’t
-implement the verb exits non-zero and surfaces as [<code>Error</code>] with its
+implement the verb exits non-zero and surfaces as <a href="../tamias_core/error/enum.Error.html" title="enum tamias_core::error::Error"><code>Error</code></a> with its
 stderr — “unsupported” is a normal outcome, not a crash.</dd><dt><a class="fn" href="fn.discovered_drivers.html" title="fn tamias_driver::discovered_drivers">discovered_<wbr>drivers</a></dt><dd>Every discovered driver as <code>(type, path)</code> — for <code>doctor</code> and
 <code>tamias drivers</code>.</dd><dt><a class="fn" href="fn.dispatch.html" title="fn tamias_driver::dispatch">dispatch</a></dt><dd>Dispatch a verb to the content type’s driver. Returns whether a driver
 ran (<code>false</code> = nothing to do — a <code>files</code> package, or no driver present).</dd><dt><a class="fn" href="fn.dispatch_with_args.html" title="fn tamias_driver::dispatch_with_args">dispatch_<wbr>with_<wbr>args</a></dt><dd><a href="fn.dispatch.html" title="fn tamias_driver::dispatch"><code>dispatch</code></a> plus arbitrary trailing argv — the <code>tamias driver exec</code>
@@ -63,7 +63,7 @@ answer with status JSON the operator needs to see. <code>Ok(None)</code> = no
 driver found (same <code>false</code> as <a href="fn.dispatch.html" title="fn tamias_driver::dispatch"><code>dispatch</code></a>).</dd><dt><a class="fn" href="fn.drivers_allowed.html" title="fn tamias_driver::drivers_allowed">drivers_<wbr>allowed</a></dt><dd>Consent for registering + running payload-shipped drivers: the caller’s
 <code>--allow-drivers</code> flag, or <code>TAMIAS_ALLOW_DRIVERS=1</code> in the environment.</dd><dt><a class="fn" href="fn.drivers_dir.html" title="fn tamias_driver::drivers_dir">drivers_<wbr>dir</a></dt><dd>The <code>&lt;tamias-home&gt;/drivers</code> dir.</dd><dt><a class="fn" href="fn.find_driver.html" title="fn tamias_driver::find_driver">find_<wbr>driver</a></dt><dd>Find the driver for a content type — <code>tamias-driver-&lt;kind&gt;</code> on <code>PATH</code>,
 then <code>&lt;tamias-home&gt;/drivers/</code>. Kinds outside the manifest charset
-([<code>tamias_core::is_valid_kind</code>]) never resolve — a hand-built store
+(<a href="../tamias_core/manifest/fn.is_valid_kind.html" title="fn tamias_core::manifest::is_valid_kind"><code>tamias_core::is_valid_kind</code></a>) never resolve — a hand-built store
 record can’t smuggle <code>../</code> into the driver-name join.</dd><dt><a class="fn" href="fn.register_bundled_drivers.html" title="fn tamias_driver::register_bundled_drivers">register_<wbr>bundled_<wbr>drivers</a></dt><dd>Copy any bundled drivers a payload ships into <code>&lt;tamias-home&gt;/drivers/</code>
 so tamias discovers them: top-level <code>drivers/&lt;name&gt;</code> files as-is, plus
 the <code>drivers/bin/&lt;target-triple&gt;/</code> dir matching this host (see
