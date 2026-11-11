@@ -15,7 +15,7 @@ distribution; every content *meaning* is an adapter.
 | `store` | put/get/verify an installed package | `-local`, `-cf` |
 | `cache` | content-addressed fetch cache | `-local`, `-cf` |
 | `registry` | index + publish | `-local`, `-cf` (Worker + R2 + D1/KV) |
-| `deploy` | service unit + teardown | `-local` (systemd) |
+| `deploy` | service unit + teardown | `-systemd` (Linux), `-launchd` (macOS), `-windows` (Task Scheduler), `-cf` (registry Worker) |
 | `driver` | how a content *type* installs/deploys | `tamias-driver-<type>` (subprocess, argv) |
 
 ## Crate map
@@ -30,12 +30,15 @@ distribution; every content *meaning* is an adapter.
 | `tamias-registry` | port | registry port — index + publish |
 | `tamias-source` | port | source port — turn a ref into bytes |
 | `tamias-store` | port | store port — content-addressed blobs |
+| `tamias-bin` | adapter | Declared bins[] lifecycle — tools/bin/&lt;triple&gt; payloads, bin-dir deploy/destroy/list |
 | `tamias-cache-cf` | adapter | Cloudflare adapter (P6) |
 | `tamias-cache-local` | adapter | local cache impl — content-addressed fetch cache |
 | `tamias-config-toml` | adapter | TOML config impl |
 | `tamias-config-yml` | adapter | YAML config impl (the standard) — tamias.yml / tamias.yaml |
 | `tamias-deploy-cf` | adapter | Cloudflare deploy impl — the registry Worker + wrangler config |
-| `tamias-deploy-local` | adapter | local deploy impl — manage a per-user service unit (systemd/launchd) |
+| `tamias-deploy-launchd` | adapter | macos deploy impl — manage a per-user launchd agent (LaunchAgents plist + launchctl) |
+| `tamias-deploy-systemd` | adapter | systemd deploy impl — manage a per-user service unit (Linux) |
+| `tamias-deploy-windows` | adapter | windows deploy impl — manage a per-user scheduled task (Task Scheduler via schtasks.exe) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-&lt;type&gt; (no product knowledge) |
 | `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
 | `tamias-install` | adapter | The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit |
@@ -46,10 +49,12 @@ distribution; every content *meaning* is an adapter.
 | `tamias-registry-open` | adapter | shared registry-source layer — name-or-ref resolution + named-source config CRUD |
 | `tamias-serve` | adapter | ndjson JSON-RPC over stdio — the embedding surface |
 | `tamias-shell` | adapter | Run a command in a working directory via bash -c — the generic shell-out helper |
+| `tamias-sign` | adapter | Package signing — ssh-keygen -Y sign/verify (namespace tamias-package) over the provenance anchors |
 | `tamias-source-cf` | adapter | Cloudflare registry source impl — the `cf:` ref arm |
 | `tamias-source-fs` | adapter | fs source impl — local dirs and tarballs |
 | `tamias-source-git` | adapter | git source impl — clone URL //subdir #rev |
 | `tamias-source-http` | adapter | http source impl — .tgz GET + optional sha256 pin |
+| `tamias-source-registry` | adapter | Registry-scoped install refs — the `&lt;registry&gt;:&lt;name&gt;[@&lt;version&gt;]` ref arm |
 | `tamias-store-cf` | adapter | Cloudflare adapter (P6) |
 | `tamias-store-local` | adapter | local store impl — a directory |
 | `tamias-telemetry` | adapter | Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation |
@@ -72,6 +77,14 @@ flatten includes by default (`--keep-includes` ships the raw payload).
 `resolve` pins git refs to a commit sha up front, so the content-
 addressed cache can be hit *before* fetching. The fetch→unpack split is
 what makes repeat installs and air-gapped nodes free.
+
+Declared `bins[]` (P-023) ride the same commit: `install` deploys them
+into the bin dir by default (`--no-bins` opts out) — `shim: cli`
+entries become generated scripts exec'ing `tamias bin exec`, and
+`payload: tools/bin/<triple>/…` entries link real binaries through a
+per-package `bin-alias/` so upgrades don't break them. `bin/`
+payload files link the same way (legacy, undeclared). See
+[Put a package's binaries on your PATH](/how-to/link-binaries).
 
 ## Stores
 
@@ -98,6 +111,12 @@ a persistent handle instead of one-shot CLI calls. Registry name-or-ref
 resolution and config writes go through `tamias-registry-open`, the same
 code the CLI verbs use. The protocol is specified in
 [serve reference](/reference/serve).
+
+A second embedding surface targets **generated** clients:
+`tamias-driver-tamias` exposes the engine's clap tree as a pavo ops
+manifest (`cli.<verb>` wire queries), so pavo's CLI/MCP renderers drive
+the same verbs without a hand-written client — see
+[Scripting tamias](/reference/scripting#the-engine-as-an-ops-manifest).
 
 ## Observability
 

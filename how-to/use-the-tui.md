@@ -45,7 +45,7 @@ Vim-style, same conventions as `myco ui`:
 | `/` | filter (Installed) / query (Registry) |
 | `i` | install-by-ref prompt (Installed) / install result (Registry) |
 | `v` `u` `U` `p` `r` `c` `C` `d` | verify · update · update-all · pin · remove · cache clean (>30d) · cache clean all · doctor |
-| `:` | command line — `:install <ref>`, `:remove <name>`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:deploy`, `:manifest`, `:sync`, `:registries`, `:reload`, `:q` |
+| `:` | command line — `:install <ref>`, `:remove`, `:verify`, `:update`, `:pin`, `:search <q>`, `:registry`, `:run`, `:logs`, `:service`, `:services`, `:deploy`, `:manifest`, `:sync [--from-lock]`, `:pack`, `:publish`, `:registries`, `:clean`, `:doctor`, `:reload`, `:help`, `:q` |
 | `?` | help overlay |
 | `R` | reload |
 | `q` / `Ctrl-C` | quit (kills any live service stream) |

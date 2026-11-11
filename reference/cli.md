@@ -16,7 +16,7 @@ Commands:
   update           Re-resolve + re-install a package from its recorded ref
   pin              Retarget an installed package's recorded source ref
   self-upgrade     Update the tamias package this binary belongs to
-  bin              Link a package's `bin/` payload into the bin dir so bare binary names run — provider `services[].exec` and shells resolve them
+  bin              Manage a package's executable surfaces — the declared `bins[]` (generated `cli` shims + `tools/bin/<triple>/` payloads) and `bin/` payload files — on the bin dir (`$TAMIAS_BIN_DIR` → `XDG_BIN_HOME` → `~/.local/bin`)
   cache            Fetch-cache maintenance
   version          Print the tamias version
   manifest         Print the machine-readable capability manifest

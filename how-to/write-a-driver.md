@@ -65,9 +65,19 @@ fi
 
 ## Ship it with the payload
 
-Drop the binary under `drivers/` in your payload — but know that this
-makes the package **self-modifying**: a bundled driver is arbitrary code
-that runs on the installer's machine. tamias therefore gates it:
+Drop the driver under `drivers/` in your payload — two forms:
+
+- `drivers/<name>` — a portable file (an interpreted script like
+  `#!/usr/bin/env python3` ships as source);
+- `drivers/bin/<target-triple>/<name>` — a compiled driver, one dir
+  per rustc target triple (`x86_64-unknown-linux-gnu`, …). Only the
+  host triple's file installs; a package that ships platform dirs but
+  none for this host **fails the install** rather than silently
+  dropping the driver.
+
+Either way this makes the package **self-modifying**: a bundled driver
+is arbitrary code that runs on the installer's machine. tamias
+therefore gates it:
 
 ```sh
 tamias install --allow-drivers <ref>
@@ -122,6 +132,21 @@ tamias drivers          # every discovered driver + its capabilities
 tamias drivers --json   # same, machine-readable
 tamias doctor --json    # lists discovered drivers among the health checks
 ```
+
+## Beyond the lifecycle: pavo surfaces
+
+The lifecycle three plus `capabilities` are the *tamias* contract.
+Drivers built on `pavo-driver-kit` additionally answer the **pavo**
+surface — `manifest`, `serve` (ndjson views/queries), `ops` (an ops
+manifest of bounded verbs), and `run`/`cli` passthroughs — which is how
+product CLIs become generatable surfaces: `tamias-driver-tamias`
+itself exposes the whole `tamias` engine this way (`cli.<verb>` ops
+derived from the clap tree; unbounded verbs like `serve`/`ui` are
+`surfaces`, never ops — see
+[Scripting tamias](/reference/scripting#the-engine-as-an-ops-manifest)).
+A `capabilities` answer of `{"capabilities": ["pavo"], …}` marks a
+driver as pavo-capable; `types: []` keeps it from claiming content
+types it doesn't handle.
 
 ## See also
 

@@ -21,6 +21,7 @@ they ship as tamias packs — `tamias install 9aia:<name>@<version>`.
 
 ```sh
 tamias install git:9aia/bupha//libraries/ci-gate#main
+tamias install 9aia:ci-gate@0.2.0    # named registry — <registry>:<pkg>@<ver>
 tamias list
 tamias info ci-gate
 tamias verify ci-gate        # recompute the payload digest

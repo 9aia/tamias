@@ -41,7 +41,11 @@ tamias-driver-<type> capabilities            # → {"types":[…]}
 ```
 
 The driver owns the product's schema — where it materializes, what
-"deployed" means, how to tear down. tamias never learns it.
+"deployed" means, how to tear down. tamias never learns it. Drivers
+built on `pavo-driver-kit` additionally answer the pavo surface
+(`manifest`/`serve`/`ops`/`run`) — views plus an ops manifest of bounded
+verbs for generated clients; see
+[Write a driver](/how-to/write-a-driver#beyond-the-lifecycle-pavo-surfaces).
 
 A package can **ship its own driver** under `drivers/` in the payload;
 installing registers it into `<tamias-home>/drivers/`. Because that's
