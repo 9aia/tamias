@@ -132,14 +132,13 @@ impl Default for CfSource {
     }
 }
 
-/// The index client — `token_env` names the env var holding the bearer
-/// token (registry-scoped refs carry the named registry's `token_env`;
-/// `cf:` refs pass `None`). An unset/empty named var warns and falls
-/// back to `TAMIAS_REGISTRY_TOKEN`, preserving the `cf:` behavior.
-/// Only env var *names* live in specs — values resolve here, at plan
-/// time.
-fn http_client(base: &str, token_env: Option<&str>) -> HttpRegistry {
-    let token = token_env
+/// Resolve the bearer token — `token_env` names the env var holding it
+/// (registry-scoped refs carry the named registry's `token_env`; `cf:`
+/// refs pass `None`). An unset/empty named var warns and falls back to
+/// `TAMIAS_REGISTRY_TOKEN`, preserving the `cf:` behavior. Only env var
+/// *names* live in specs — values resolve here, at plan time.
+fn resolve_token(token_env: Option<&str>) -> Option<String> {
+    token_env
         .and_then(|var| match std::env::var(var) {
             Ok(value) if !value.is_empty() => Some(value),
             _ => {
@@ -151,7 +150,11 @@ fn http_client(base: &str, token_env: Option<&str>) -> HttpRegistry {
             std::env::var("TAMIAS_REGISTRY_TOKEN")
                 .ok()
                 .filter(|t| !t.is_empty())
-        });
+        })
+}
+
+/// The index client for `base`, authenticated with `token` when set.
+fn http_client(base: &str, token: Option<String>) -> HttpRegistry {
     let mut registry = HttpRegistry::new(base);
     if let Some(token) = token {
         registry = registry.with_token(token);
@@ -170,6 +173,10 @@ struct CfPlan {
     /// when present — handed to the install pipeline via
     /// [`Fetched::signature`](tamias_source::Fetched::signature).
     signature: Option<String>,
+    /// The bearer token resolved at plan time — the tarball fetch is a
+    /// plain HTTP GET, so auth must ride the plan (token-guarded
+    /// registries 401 the blob without it).
+    token: Option<String>,
 }
 
 impl Plan for CfPlan {}
@@ -191,7 +198,8 @@ impl Source for CfSource {
             .downcast_ref::<CfSpec>()
             .ok_or_else(|| Error::Failed("CfSource only plans cf refs".to_string()))?;
         let base = base_url.trim_end_matches('/').to_string();
-        let entries = http_client(&base, token_env.as_deref()).entries()?;
+        let token = resolve_token(token_env.as_deref());
+        let entries = http_client(&base, token.clone()).entries()?;
         let entry = entries
             .into_iter()
             .find(|e| {
@@ -204,6 +212,7 @@ impl Source for CfSource {
             url: format!("{base}/{}", entry.file),
             digest: entry.digest,
             signature: entry.signature,
+            token,
         }))
     }
 
@@ -213,12 +222,16 @@ impl Source for CfSource {
             url,
             digest,
             signature,
+            token,
         } = plan
             .downcast_ref::<CfPlan>()
             .ok_or_else(|| Error::Failed("CfSource only fetches cf plans".to_string()))?;
         let mut fetched = HttpSource::new()
             .with_max_download(self.max_download)
-            .fetch(&HttpPlan::new(url.clone(), None), dest_dir)?;
+            .fetch(
+                &HttpPlan::new(url.clone(), None).with_token(token.clone()),
+                dest_dir,
+            )?;
         // Verify the unpacked payload against the digest the registry
         // index recorded at publish — a swapped or truncated tarball
         // fails here instead of installing under the right name@version.

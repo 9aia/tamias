@@ -133,6 +133,10 @@ impl Default for HttpSource {
 pub struct HttpPlan {
     url: String,
     digest: Option<String>,
+    /// Bearer token for authenticated registries (`cf:`/`registry:`
+    /// refs) — resolved by the planning source, never parsed from the
+    /// ref itself.
+    token: Option<String>,
 }
 
 impl HttpPlan {
@@ -142,7 +146,15 @@ impl HttpPlan {
         Self {
             url: url.into(),
             digest,
+            token: None,
         }
+    }
+
+    /// Attach `Authorization: Bearer <token>` to the fetch.
+    #[must_use]
+    pub fn with_token(mut self, token: Option<String>) -> Self {
+        self.token = token;
+        self
     }
 }
 
@@ -166,11 +178,12 @@ impl Source for HttpSource {
         Ok(Box::new(HttpPlan {
             url: url.clone(),
             digest: digest.clone(),
+            token: None,
         }))
     }
 
     fn fetch(&self, plan: &dyn Plan, dest_dir: &Path) -> Result<Fetched, Error> {
-        let HttpPlan { url, digest } = plan
+        let HttpPlan { url, digest, token } = plan
             .downcast_ref::<HttpPlan>()
             .ok_or_else(|| Error::Failed("HttpSource only fetches http plans".to_string()))?;
         // Cleartext + unauthenticated + (usually) unpinned — worth a loud
@@ -184,9 +197,11 @@ impl Source for HttpSource {
         }
         fs::create_dir_all(dest_dir)
             .map_err(Error::io(format!("create {}", dest_dir.display())))?;
-        let mut response = self
-            .agent
-            .get(url)
+        let mut req = self.agent.get(url);
+        if let Some(token) = token {
+            req = req.header("authorization", &format!("Bearer {token}"));
+        }
+        let mut response = req
             .call()
             .map_err(|e| Error::Failed(format!("GET {url}: {e}")))?;
         if !response.status().is_success() {
@@ -342,6 +357,39 @@ mod tests {
         assert!(HttpPlan::new("http://x/y.tgz", None)
             .prefetch_identity()
             .is_none());
+    }
+
+    #[test]
+    fn token_header_is_sent() {
+        let seen = Arc::new(std::sync::Mutex::new(String::new()));
+        let capture = seen.clone();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let bytes = tarball();
+        std::thread::spawn(move || {
+            if let Ok((mut s, _)) = listener.accept() {
+                let mut buf = [0u8; 8192];
+                let n = s.read(&mut buf).unwrap_or(0);
+                *capture.lock().unwrap() = String::from_utf8_lossy(&buf[..n]).to_string();
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    bytes.len()
+                );
+                let _ = s.write_all(head.as_bytes());
+                let _ = s.write_all(&bytes);
+                let _ = s.flush();
+            }
+        });
+        let source = HttpSource::new();
+        let plan = HttpPlan::new(format!("http://127.0.0.1:{port}/x.tgz"), None)
+            .with_token(Some("sekret".to_string()));
+        let dest = tempfile::tempdir().unwrap();
+        assert!(source.fetch(&plan, dest.path()).is_ok());
+        assert!(seen
+            .lock()
+            .unwrap()
+            .to_lowercase()
+            .contains("authorization: bearer sekret"));
     }
 
     #[test]

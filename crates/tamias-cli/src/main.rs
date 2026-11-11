@@ -3781,7 +3781,6 @@ mod tests {
                 "A=1",
             ],
         );
-        std::env::remove_var("XDG_CONFIG_HOME");
         r.unwrap();
         assert!(tmp.path().join("cfg/systemd/user/ufx.service").is_file());
         let _ = run_args(e.clone(), &["tamias", "cache", "clean"]);
@@ -3821,7 +3820,6 @@ mod tests {
         // uninstall drops the declarative unit too
         run_args(e.clone(), &["tamias", "uninstall", "gate"]).unwrap();
         assert!(!unit.exists());
-        std::env::remove_var("XDG_CONFIG_HOME");
     }
 
     #[test]
@@ -3845,7 +3843,6 @@ mod tests {
             .path()
             .join("cfg/systemd/user/gateprov-api.service")
             .is_file());
-        std::env::remove_var("XDG_CONFIG_HOME");
     }
 
     /// Write a `files` package dir whose manifest declares `provider:`
@@ -3909,7 +3906,6 @@ mod tests {
         // Uninstalling the last declarer removes the shared unit.
         run_args(e.clone(), &["tamias", "uninstall", "b"]).unwrap();
         assert!(!shared.exists());
-        std::env::remove_var("XDG_CONFIG_HOME");
     }
 
     #[test]

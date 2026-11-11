@@ -42,6 +42,11 @@ api:
   file: crates/tamias-cli/src/main.rs
   line: 540
   module: tamias
+- name: ONCE
+  kind: const
+  file: crates/tamias-cli/tests/e2e.rs
+  line: 15
+  module: tamias
 - name: PROC
   kind: const
   file: crates/tamias-cli/src/main.rs
@@ -90,12 +95,12 @@ api:
 - name: add_with_existing_manifest_and_service_verbs
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 3916
+  line: 3912
   module: tamias
 - name: add_writes_manifest_and_lock
   kind: function
   file: crates/tamias-cli/tests/e2e.rs
-  line: 185
+  line: 201
   module: tamias
 - name: alias_rel
   kind: function
@@ -110,7 +115,7 @@ api:
 - name: bare_tamias_prints_help
   kind: function
   file: crates/tamias-cli/tests/e2e.rs
-  line: 736
+  line: 752
   module: tamias
 - name: bin_alias
   kind: function
@@ -160,7 +165,7 @@ api:
 - name: bin_links_payload_into_bin_dir
   kind: function
   file: crates/tamias-cli/tests/e2e.rs
-  line: 1297
+  line: 1313
   module: tamias
 - name: bin_links_unlinks_and_refuses_conflicts
   kind: function
@@ -185,7 +190,7 @@ api:
 - name: cache_clean_all_conflicts_with_days
   kind: function
   file: crates/tamias-cli/src/main.rs
-  line: 4448
+  line: 4444
   module: tamias
 - name: cache_hit_fetch_error_and_scoped_info
   kind: function
@@ -197,12 +202,7 @@ api:
   file: crates/tamias-cli/src/main.rs
   line: 613
   module: tamias
-- name: canon
-  kind: function
-  file: crates/tamias-cli/src/main.rs
-  line: 1852
-  module: tamias
-api_omitted: 131
+api_omitted: 133
 deps:
 - clap
 - clap_complete
@@ -303,8 +303,8 @@ provenance:
   - 51b6a07dd57174197a937034b7eecebd5768ff8a
   - 002dfed3bf5c6d6be0902d763e1d19a1062c72e5
   - e018591237ffdcd5d419b3e224d40901ce1e6fb8
-  - 7b9c31b42c6961be227325574f9a3c4b08541bfd
-  - c699fd23a849f54eadb482b1558eea6af50a7cd5
-  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
-  generated_at: '1794355185'
+  - 1deec6f67cee452bb19c0dbf8d1f8394676d2046
+  - fec6021aa9748f49d3f8b4a4752a0a77cc93eb34
+  commit_sha: 45fa11d4e055dee4d6e57e5e08f7ec14412b44af
+  generated_at: '1794357267'
   generator: kuda-template/0.1.2

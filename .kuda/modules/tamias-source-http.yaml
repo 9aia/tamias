@@ -15,7 +15,7 @@ api:
 - name: ForeignPlan
   kind: type
   file: crates/tamias-source-http/src/lib.rs
-  line: 231
+  line: 246
   module: tamias-source-http
 - name: HttpPlan
   kind: type
@@ -45,7 +45,7 @@ api:
 - name: accepts
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 158
+  line: 170
   module: tamias-source-http
 - name: claims
   kind: function
@@ -60,7 +60,7 @@ api:
 - name: cleartext_unpinned_predicate
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 363
+  line: 411
   module: tamias-source-http
 - name: default
   kind: function
@@ -70,12 +70,12 @@ api:
 - name: fetch
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 172
+  line: 185
   module: tamias-source-http
 - name: max_download_caps_fetch_bodies
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 348
+  line: 396
   module: tamias-source-http
 - name: new
   kind: function
@@ -85,7 +85,7 @@ api:
 - name: new
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 141
+  line: 145
   module: tamias-source-http
 - name: parse
   kind: function
@@ -95,22 +95,22 @@ api:
 - name: parse_plan_fetch_and_errors
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 265
+  line: 280
   module: tamias-source-http
 - name: plan
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 162
+  line: 174
   module: tamias-source-http
 - name: prefetch_identity
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 150
+  line: 162
   module: tamias-source-http
 - name: serve
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 235
+  line: 250
   module: tamias-source-http
 - name: tamias-source-http
   kind: module
@@ -120,12 +120,17 @@ api:
 - name: tarball
   kind: function
   file: crates/tamias-source-http/src/lib.rs
-  line: 255
+  line: 270
   module: tamias-source-http
 - name: tests
   kind: module
   file: crates/tamias-source-http/src/lib.rs
-  line: 222
+  line: 237
+  module: tamias-source-http
+- name: token_header_is_sent
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 363
   module: tamias-source-http
 - name: with_agent
   kind: function
@@ -136,6 +141,11 @@ api:
   kind: function
   file: crates/tamias-source-http/src/lib.rs
   line: 120
+  module: tamias-source-http
+- name: with_token
+  kind: function
+  file: crates/tamias-source-http/src/lib.rs
+  line: 155
   module: tamias-source-http
 deps:
 - tamias-core
@@ -157,8 +167,8 @@ provenance:
   - crates/tamias-source-http/tests/props.rs
   hashes:
   - 59ec68e1f9512a030552d9b51e0e59cef86fce9d
-  - 5eb7505a28ed1d4b8d542046eb5f34d18fb96f34
+  - 9a51b4858e7cd5fc41486453d5e3dca1cd26cbca
   - 32ad9146c1e60127c9418e6b92325cf32e42357b
-  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
-  generated_at: '1794355185'
+  commit_sha: 45fa11d4e055dee4d6e57e5e08f7ec14412b44af
+  generated_at: '1794357267'
   generator: kuda-template/0.1.2

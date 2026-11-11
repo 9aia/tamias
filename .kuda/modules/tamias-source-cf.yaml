@@ -5,7 +5,7 @@ api:
 - name: CfPlan
   kind: type
   file: crates/tamias-source-cf/src/lib.rs
-  line: 162
+  line: 165
   module: tamias-source-cf
 - name: CfRefKind
   kind: type
@@ -25,12 +25,12 @@ api:
 - name: ForeignPlan
   kind: type
   file: crates/tamias-source-cf/src/lib.rs
-  line: 246
+  line: 259
   module: tamias-source-cf
 - name: accepts
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 178
+  line: 185
   module: tamias-source-cf
 - name: cf_base_url
   kind: function
@@ -50,22 +50,22 @@ api:
 - name: fetch
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 210
+  line: 219
   module: tamias-source-cf
 - name: fetch_rejects_payload_digest_mismatch
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 335
+  line: 348
   module: tamias-source-cf
 - name: grammar_plan_fetch_and_errors
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 281
+  line: 294
   module: tamias-source-cf
 - name: http_client
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 141
+  line: 157
   module: tamias-source-cf
 - name: new
   kind: function
@@ -85,12 +85,17 @@ api:
 - name: plan
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 182
+  line: 189
+  module: tamias-source-cf
+- name: resolve_token
+  kind: function
+  file: crates/tamias-source-cf/src/lib.rs
+  line: 140
   module: tamias-source-cf
 - name: serve_registry
   kind: function
   file: crates/tamias-source-cf/src/lib.rs
-  line: 251
+  line: 264
   module: tamias-source-cf
 - name: tamias-source-cf
   kind: module
@@ -100,7 +105,7 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-source-cf/src/lib.rs
-  line: 240
+  line: 253
   module: tamias-source-cf
 - name: with_max_download
   kind: function
@@ -134,8 +139,8 @@ provenance:
   - crates/tamias-source-cf/tests/props.rs
   hashes:
   - 1455812a4c18d352c6d58bbc8102e69502d7e09e
-  - 3365703919f6e281ff1fd71375e3b9aae99d4e90
+  - 1629a5607751b9551eed4597fb840b5e7070a758
   - 32215f5222a96dc1a54fe876d70b722b8adf36d1
-  commit_sha: 4e65c3938cd719e5bd96b30aa219ca837033ff22
-  generated_at: '1794355185'
+  commit_sha: 45fa11d4e055dee4d6e57e5e08f7ec14412b44af
+  generated_at: '1794357267'
   generator: kuda-template/0.1.2

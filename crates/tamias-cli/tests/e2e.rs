@@ -5,12 +5,28 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+/// Point `XDG_CONFIG_HOME` at a per-process tempdir so spawned `tamias`
+/// binaries never read the developer's real `~/.config/tamias/` — the
+/// user-level config layer (registries, publish/search defaults) would
+/// otherwise leak ambient state into every test. Called from
+/// [`tamias_bin`], which every spawn goes through; the env mutation is
+/// process-wide so later spawns inherit it.
+fn isolate_user_config() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let dir = std::env::temp_dir().join(format!("tamias-e2e-xdg-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        std::env::set_var("XDG_CONFIG_HOME", dir);
+    });
+}
+
 /// Path to the `tamias` binary under test. `env!("CARGO_BIN_EXE_…")`
 /// is baked at compile time — a stale or shared `target/` (repo moved,
 /// `CARGO_TARGET_DIR` reuse across checkouts) can leave it pointing at
 /// a path that no longer exists. Fall back to the bin next to this
 /// test executable: `target/<profile>/deps/<test>` → `target/<profile>/`.
 fn tamias_bin() -> PathBuf {
+    isolate_user_config();
     let baked = PathBuf::from(env!("CARGO_BIN_EXE_tamias"));
     if baked.exists() {
         return baked;
