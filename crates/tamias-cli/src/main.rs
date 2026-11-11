@@ -761,6 +761,19 @@ fn print_plan(plan: &tamias_install::InstallPlan) {
             }
         }
     }
+    if let Some(e) = &plan.template_extends {
+        match &e.resolves_to {
+            IncludeResolution::StoreLabel(label) => {
+                println!("template.extends: {} → store {}", e.entry, label);
+            }
+            IncludeResolution::WouldInstall => {
+                println!("template.extends: {} → would install (recursive)", e.entry);
+            }
+            IncludeResolution::Missing => {
+                println!("template.extends: {} → missing", e.entry);
+            }
+        }
+    }
     println!("drivers:");
     if plan.bundled_drivers.is_empty() {
         println!("  bundled: (none)");

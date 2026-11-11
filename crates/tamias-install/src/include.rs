@@ -55,6 +55,15 @@ pub(crate) struct IncludeState {
     /// Current include-recursion depth — `0` at the top-level install,
     /// incremented around each ref-include's recursive install.
     pub depth: usize,
+    /// Labels of packages whose `template.extends` parent resolution
+    /// is in progress — the ancestor chain for extends-cycle
+    /// detection ([`crate::extends`]). Separate from `in_progress`:
+    /// include composition finishes before extends materializes, so
+    /// the two windows never overlap.
+    pub extends_in_progress: HashSet<String>,
+    /// Current extends-recursion depth — incremented around each
+    /// ref-parent's recursive install.
+    pub extends_depth: usize,
 }
 
 /// The store-entry label for a not-yet-committed package — same rule
@@ -151,10 +160,12 @@ fn resolve_base(
     // `@scope/name` is a *name*, never a path — a missing one errors
     // here instead of falling through to fs-ref resolution.
     if text.starts_with('@') {
-        return Err(missing_base(text));
+        return Err(missing_base(text, "include"));
     }
     // 2. Installable ref — recurse through the full pipeline.
-    let spec = crate::refs().parse(text).map_err(|_| missing_base(text))?;
+    let spec = crate::refs()
+        .parse(text)
+        .map_err(|_| missing_base(text, "include"))?;
     // A remote include base is a transitive pull under this install's
     // consent flags — warn when the ref isn't pinned so the operator
     // knows provenance rides on "whatever the remote serves now".
@@ -167,7 +178,7 @@ fn resolve_base(
         // `FsSpec.path` is `expand_path(input)` — recompute it rather
         // than downcasting the opaque spec.
         if !expand_path(Path::new(text)).exists() {
-            return Err(missing_base(text));
+            return Err(missing_base(text, "include"));
         }
     }
     if state.depth >= MAX_INCLUDE_DEPTH {
@@ -196,7 +207,7 @@ fn resolve_base(
 ///   clones (`/`, `.`, `~`, `file://`) aren't remote pulls → no warn.
 /// - `cf:` is registry-pinned (name@version + index payload digest) →
 ///   no warn; fs paths and store names never reach here as remote.
-fn unpinned_remote_ref(spec: &Spec) -> Option<&'static str> {
+pub(crate) fn unpinned_remote_ref(spec: &Spec) -> Option<&'static str> {
     if let Some(http) = spec.downcast_ref::<HttpSpec>() {
         return (http.digest.is_none()).then_some("http ref has no #sha256: digest pin");
     }
@@ -238,6 +249,12 @@ pub(crate) enum IncludePlan {
 /// [`find_store_entry`] first, `@`-prefixed names never fall through
 /// to ref resolution, fs paths must exist on disk.
 pub(crate) fn plan_include(entries: &[StoreEntry], text: &str) -> IncludePlan {
+    plan_base(entries, text, "include")
+}
+
+/// [`plan_include`] generalized — `noun` names the manifest field in
+/// error text (`include`, `template.extends`).
+pub(crate) fn plan_base(entries: &[StoreEntry], text: &str, noun: &str) -> IncludePlan {
     match find_store_entry(entries, text) {
         Ok(Some(entry)) => return IncludePlan::Store(entry.label()),
         Ok(None) => {}
@@ -246,27 +263,27 @@ pub(crate) fn plan_include(entries: &[StoreEntry], text: &str) -> IncludePlan {
         Err(e) => return IncludePlan::Missing(e.to_string()),
     }
     if text.starts_with('@') {
-        return IncludePlan::Missing(missing_base(text).to_string());
+        return IncludePlan::Missing(missing_base(text, noun).to_string());
     }
     match crate::refs().parse(text) {
         Ok(spec) => {
             // `FsSpec.path` is `expand_path(input)` — same existence
             // check `resolve_base` makes before recursing.
             if spec.is::<FsSpec>() && !expand_path(Path::new(text)).exists() {
-                IncludePlan::Missing(missing_base(text).to_string())
+                IncludePlan::Missing(missing_base(text, noun).to_string())
             } else {
                 IncludePlan::WouldInstall
             }
         }
-        Err(_) => IncludePlan::Missing(missing_base(text).to_string()),
+        Err(_) => IncludePlan::Missing(missing_base(text, noun).to_string()),
     }
 }
 
-/// The hard error for an include entry that is neither an installed
+/// The hard error for a base entry that is neither an installed
 /// store name nor a resolvable ref.
-fn missing_base(text: &str) -> Error {
+fn missing_base(text: &str, noun: &str) -> Error {
     Error::Failed(format!(
-        "include '{text}' is not installed — store names must already be in the store; \
+        "{noun} '{text}' is not installed — store names must already be in the store; \
          use an installable ref (path, git:, cf:, http:) or `tamias install {text}` first"
     ))
 }

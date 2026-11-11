@@ -6,6 +6,7 @@
 //! ```text
 //! ref → parse → plan → fetch-cache hit or fetch+commit
 //!     → payload manifest → bundled-driver consent gate
+//!     → `template.extends` parent materialization (`.scarab-parent/`)
 //!     → register bundled drivers → driver `install` dispatch
 //!     → store commit
 //! ```
@@ -42,6 +43,7 @@ use tamias_source_registry::RegistryRefKind;
 use tamias_store_local::Store;
 
 mod consent;
+mod extends;
 mod include;
 mod sync;
 pub use sync::{sync_project, DepOutcome, DepStatus, SyncOptions, SyncReport, SyncSource};
@@ -353,14 +355,49 @@ pub(crate) fn install_inner(
         trust: Some(trust.as_str().to_string()),
         installed_at: 0,
     };
+    // `template.extends:` — materialize the parent's payload at
+    // `.scarab-parent/` inside the tree the driver *and* the store
+    // commit see, so the `install` dispatch below and later
+    // `deploy`/`uninstall` verbs (which read the committed store
+    // payload) all get the whole ancestor chain. Runs AFTER the
+    // signature/trust/consent gates above: those digests cover the
+    // package's own (include-composed) bytes — publish doesn't
+    // flatten `extends`, so a signed parent-extending pack still
+    // verifies — while `Store::install` digests the final tree
+    // including `.scarab-parent/` (`verify` stays honest).
+    let mut extends_scratch = None;
+    let mut driver_root = work_root.clone();
+    if let Some(parent_ref) = extends::extends_ref(&work_root)? {
+        if driver_root == root {
+            // `work_root` aliases the content-addressed fetch cache —
+            // it must never be written into; stage a private copy.
+            let scratch = tempfile::tempdir()
+                .map_err(Error::io("create extends-compose scratch".to_string()))?;
+            tamias_core::copy_tree(&work_root, scratch.path())?;
+            driver_root = scratch.path().to_path_buf();
+            extends_scratch = Some(scratch);
+        }
+        extends::materialize(
+            env,
+            &driver_root,
+            &consent_label,
+            &parent_ref,
+            state,
+            allow_drivers,
+            surface,
+            report,
+        )?;
+    }
+    let _extends_guard = extends_scratch;
     // Driver work runs *before* the store commit: a missing or failing
     // driver fails the install with no committed entry (the fetch-cache
     // entry is content-addressed and stays).
     let kind = manifest.kind.as_deref().unwrap_or("files");
-    for action in tamias_driver::register_bundled_drivers(&work_root)? {
+    for action in tamias_driver::register_bundled_drivers(&driver_root)? {
         report(Progress::DriverAction { action });
     }
-    if !tamias_driver::dispatch(kind, "install", &work_root, &record.name, None)? && kind != "files"
+    if !tamias_driver::dispatch(kind, "install", &driver_root, &record.name, None)?
+        && kind != "files"
     {
         return Err(Error::Failed(format!(
             "no driver for content type '{kind}' — install `tamias-driver-{kind}` on PATH \
@@ -372,7 +409,7 @@ pub(crate) fn install_inner(
             }
         )));
     }
-    let entry = Store::new(&env.store_root).install(&work_root, record)?;
+    let entry = Store::new(&env.store_root).install(&driver_root, record)?;
     // Record per-package consent *after* the commit — a failed install
     // must not leave consent for bytes that never landed. Advisory: a
     // consent-file write failure doesn't fail the install (the operator
@@ -560,6 +597,12 @@ pub struct InstallPlan {
     pub has_includes: bool,
     /// `include:` entries classified without recursing installs.
     pub includes: Vec<PlannedInclude>,
+    /// `template.extends:` classified the same way (store name →
+    /// stored payload; ref → a real install would recursively install
+    /// the parent, then materialize it at `.scarab-parent/`). `None`
+    /// = the manifest declares no parent. A malformed `extends`
+    /// (non-string/empty) lands in [`Self::problems`].
+    pub template_extends: Option<PlannedInclude>,
     /// Driver files the payload ships under `drivers/` (portable files
     /// plus `bin/<triple>/` payloads, reported as `bin/<triple>/<name>`).
     pub bundled_drivers: Vec<String>,
@@ -646,6 +689,32 @@ pub fn plan_install(env: &Env, reference: &str, allow_drivers: bool) -> Result<I
             resolves_to,
         });
     }
+
+    // `template.extends:` — same store-name-then-ref classification as
+    // `include:`; a real install materializes the parent payload at
+    // `.scarab-parent/` inside the composed tree. A malformed value is
+    // a would-be install failure → problems, not a hard error.
+    let template_extends = match extends::extends_ref(&root) {
+        Ok(Some(text)) => {
+            let resolves_to = match include::plan_base(&entries, &text, "template.extends") {
+                include::IncludePlan::Store(label) => IncludeResolution::StoreLabel(label),
+                include::IncludePlan::WouldInstall => IncludeResolution::WouldInstall,
+                include::IncludePlan::Missing(reason) => {
+                    problems.push(format!("{reason} — install would fail"));
+                    IncludeResolution::Missing
+                }
+            };
+            Some(PlannedInclude {
+                entry: text,
+                resolves_to,
+            })
+        }
+        Ok(None) => None,
+        Err(e) => {
+            problems.push(format!("template.extends: {e} — install would fail"));
+            None
+        }
+    };
 
     // The RAW payload digest — see `payload_digest`/`has_includes` on
     // [`InstallPlan`] for the composed-tree caveat.
@@ -754,6 +823,7 @@ pub fn plan_install(env: &Env, reference: &str, allow_drivers: bool) -> Result<I
         payload_digest,
         has_includes: !includes.is_empty(),
         includes,
+        template_extends,
         bundled_drivers: shipped,
         consent_required,
         driver,
@@ -1407,6 +1477,146 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("nesting cap"), "{err}");
+    }
+
+    /// A package dir whose manifest declares `template.extends:` —
+    /// `(dir, parent_ref)` written verbatim (single-quoted YAML).
+    fn pkg_with_extends(dir: &std::path::Path, name: &str, parent_ref: &str) -> PathBuf {
+        let pkg = dir.join(name);
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(
+            pkg.join("tamias.yaml"),
+            format!(
+                "name: {name}\nversion: 1.0.0\ntemplate:\n  extends: '{}'\n",
+                parent_ref.replace('\'', "''")
+            ),
+        )
+        .unwrap();
+        pkg
+    }
+
+    /// A plain payload dir (no `template:` table) — the extends parent.
+    fn plain_pkg(dir: &std::path::Path, name: &str) -> PathBuf {
+        let pkg = dir.join(name);
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(
+            pkg.join("tamias.yaml"),
+            format!("name: {name}\nversion: 1.0.0\n"),
+        )
+        .unwrap();
+        pkg
+    }
+
+    #[test]
+    fn extends_materializes_parent_into_store_payload() {
+        let _g = EnvGuard::new();
+        let (tmp, env) = env();
+        let parent = plain_pkg(tmp.path(), "base");
+        std::fs::write(parent.join("base.txt"), "B").unwrap();
+        let child = pkg_with_extends(tmp.path(), "child", &parent.display().to_string());
+        std::fs::write(child.join("child.txt"), "C").unwrap();
+        install(&env, child.to_str().unwrap(), false).unwrap();
+        let dir = Store::new(&env.store_root).find("child").unwrap().dir;
+        // the parent payload landed at .scarab-parent/, child files
+        // stayed at the root — and the fetch cache was never written
+        assert!(dir.join("child.txt").is_file());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".scarab-parent/base.txt")).unwrap(),
+            "B"
+        );
+        // the parent's own install committed too (ref resolution runs
+        // the full pipeline)
+        assert!(Store::new(&env.store_root).find("base").is_ok());
+        // --plan classifies the extends ref without installing it
+        let (tmp2, env2) = self::env();
+        let child2 = pkg_with_extends(tmp2.path(), "child2", &parent.display().to_string());
+        std::fs::write(child2.join("c.txt"), "c").unwrap();
+        let plan = plan_install(&env2, child2.to_str().unwrap(), false).unwrap();
+        assert!(matches!(
+            plan.template_extends.as_ref().map(|e| &e.resolves_to),
+            Some(IncludeResolution::WouldInstall)
+        ));
+        assert!(plan.problems.is_empty(), "{:?}", plan.problems);
+        assert!(Store::new(&env2.store_root).entries().unwrap().is_empty());
+    }
+
+    #[test]
+    fn extends_nests_grandparent_and_store_name_parent() {
+        let _g = EnvGuard::new();
+        let (tmp, env) = env();
+        // gp ← mid (extends gp by ref) ← top (extends `mid` by store
+        // name — installed as a side effect of mid's own resolution? no:
+        // mid is only installed if referenced; top extends mid by ref
+        // first to get it in the store, then a second child uses the
+        // store name.)
+        let gp = plain_pkg(tmp.path(), "gp");
+        std::fs::write(gp.join("gp.txt"), "G").unwrap();
+        let mid = pkg_with_extends(tmp.path(), "mid", &gp.display().to_string());
+        std::fs::write(mid.join("mid.txt"), "M").unwrap();
+        let top = pkg_with_extends(tmp.path(), "top", &mid.display().to_string());
+        std::fs::write(top.join("top.txt"), "T").unwrap();
+        install(&env, top.to_str().unwrap(), false).unwrap();
+        let dir = Store::new(&env.store_root).find("top").unwrap().dir;
+        // top/.scarab-parent = mid's committed payload (mid.txt + its
+        // own .scarab-parent = gp's payload)
+        assert!(dir.join(".scarab-parent/mid.txt").is_file());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".scarab-parent/.scarab-parent/gp.txt")).unwrap(),
+            "G"
+        );
+        // now a child extending `mid` BY STORE NAME gets the same
+        // already-composed payload — no re-resolution
+        let via_name = pkg_with_extends(tmp.path(), "via-name", "mid");
+        std::fs::write(via_name.join("v.txt"), "V").unwrap();
+        install(&env, via_name.to_str().unwrap(), false).unwrap();
+        let dir2 = Store::new(&env.store_root).find("via-name").unwrap().dir;
+        assert_eq!(
+            std::fs::read_to_string(dir2.join(".scarab-parent/.scarab-parent/gp.txt")).unwrap(),
+            "G"
+        );
+    }
+
+    #[test]
+    fn extends_cycle_and_malformed_ref_error() {
+        let _g = EnvGuard::new();
+        let (tmp, env) = env();
+        // a ⇄ b via fs-path extends — recursion must not hang
+        let a = plain_pkg(tmp.path(), "ea");
+        let b = plain_pkg(tmp.path(), "eb");
+        std::fs::write(
+            a.join("tamias.yaml"),
+            format!(
+                "name: ea\nversion: 1.0.0\ntemplate:\n  extends: '{}'\n",
+                b.display()
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            b.join("tamias.yaml"),
+            format!(
+                "name: eb\nversion: 1.0.0\ntemplate:\n  extends: '{}'\n",
+                a.display()
+            ),
+        )
+        .unwrap();
+        let err = install(&env, a.to_str().unwrap(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("template.extends cycle"), "{err}");
+        // non-string extends fails validation
+        let bad = tmp.path().join("badext");
+        std::fs::create_dir_all(&bad).unwrap();
+        std::fs::write(
+            bad.join("tamias.yaml"),
+            "name: badext\nversion: 1.0.0\ntemplate:\n  extends: 42\n",
+        )
+        .unwrap();
+        std::fs::write(bad.join("a.txt"), "a").unwrap();
+        let err = install(&env, bad.to_str().unwrap(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("template.extends"), "{err}");
+        assert!(Store::new(&env.store_root).find("badext").is_err());
     }
 
     #[test]

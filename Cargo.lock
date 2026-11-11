@@ -2726,6 +2726,7 @@ version = "0.1.4"
 dependencies = [
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tamias-cache-local",
  "tamias-config",
  "tamias-core",
@@ -2741,6 +2742,7 @@ dependencies = [
  "tamias-source-registry",
  "tamias-store-local",
  "tempfile",
+ "toml",
  "tracing",
 ]
 
