@@ -33,32 +33,35 @@ order="tamias-core tamias-registry tamias-config tamias-registry-local \
        tamias-telemetry tamias-cli tamias-cache tamias-cache-cf \
        tamias-store tamias-store-cf tamias-testkit"
 
-touched=""
-for c in $order; do
-    grep -q "^crates/$c/" <<<"$changed" && touched="$touched $c"
-done
-# the bin re-publishes whenever any crate changed
-[ -n "$touched" ] && touched="$touched tamias-cli"
-if [ -z "$touched" ]; then echo "no crate changes since $last"; exit 0; fi
+if [ -z "$changed" ]; then echo "no changes since $last"; exit 0; fi
+
+# Versions are workspace-inherited — a bump is all-or-nothing, so every
+# publishable crate republishes each release (dep reqs all move
+# together). `cargo set-version --workspace` bumps once; per-crate
+# `-p` bumps cascade the workspace version and corrupt dep reqs.
+cargo set-version --workspace --bump patch
 
 published=""
 tags=""
 for c in $order; do
-    grep -qw "$c" <<<"$touched" || continue
     p="${c}"; [ "$c" = tamias-cli ] && p="tamias"   # cli package name
-    cargo set-version -p "$p" --bump patch
     # crates.io rate-limits *new* crates (a time window per push); retry
-    # through it rather than failing the release.
+    # through it rather than failing the release. Other failures retry
+    # briefly too (index lag) but bail fast on hard errors.
+    ok=""
     for i in $(seq 1 60); do
-        out="$(cargo publish -p "$p" --allow-dirty 2>&1)" && break
+        out="$(cargo publish -p "$p" --allow-dirty 2>&1)" && { ok=1; break; }
         if grep -q '429\|too many new crates' <<<"$out"; then
             echo "rate-limited on $p — sleeping 60s"; sleep 60
         elif grep -q 'already exists\|already uploaded' <<<"$out"; then
-            break
+            ok=1; break
+        elif [ "$i" -ge 3 ]; then
+            echo "$out" | tail -5; echo "publish failed on $p" >&2; exit 1
         else
-            echo "$out" | tail -3; sleep 30
+            sleep 15
         fi
     done
+    [ -n "$ok" ] || { echo "publish failed on $p (rate limit window)" >&2; exit 1; }
     published="$published $p"
     # Per-crate tag — versions diverge independently in a monorepo.
     ver_c="$(grep -m1 '^version' "crates/$c/Cargo.toml" | cut -d'"' -f2)"
