@@ -85,6 +85,48 @@ pub struct Manifest {
     /// materializes (service units, ingress/forge hooks, health probe).
     /// Absent = a plain package with nothing to deploy.
     pub provider: Option<Provider>,
+    /// `bins:` — executable surfaces the package declares (P-023).
+    /// `tamias bin deploy` materializes them into the bin dir; `tamias
+    /// install` deploys them by default. Pure data — tamias never
+    /// learns a product's CLI shape.
+    pub bins: Vec<BinDecl>,
+}
+
+/// One `bins[]` entry — a command name plus *how* it materializes.
+///
+/// Exactly one of `shim`/`payload` is set:
+///
+/// - `shim: "cli"` + `driver: <kind>` — a generated front-end: tamias
+///   writes a small script into the bin dir that execs
+///   `tamias bin exec <label> <name> "$@"`, which resolves the kind
+///   driver (`tamias-driver-<kind>`, falling back through capabilities
+///   — e.g. a generic `tamias-driver-cli`) and dispatches its `cli`
+///   verb with the package's `--dir`/`--name`. The shim is a script,
+///   not a compiled helper: `tamias` itself is the helper binary, so
+///   driver discovery stays dynamic (PATH + `<tamias-home>/drivers/`,
+///   including drivers the package itself just installed).
+/// - `payload: tools/bin/<triple>/<file>` — a real binary shipped in
+///   the payload. The `<triple>` segment selects the host platform
+///   (`tamias_driver::target_triple`); declaring another triple's
+///   path resolves to the host's dir at deploy time, and a payload
+///   whose `tools/bin/` ships platform dirs but none for this host
+///   fails the install (same rule as `drivers/bin/`). A path without
+///   a triple dir (`tools/bin/<file>`) is a portable payload bin.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(default)]
+pub struct BinDecl {
+    /// Command name on `PATH` — `[A-Za-z0-9][A-Za-z0-9._-]*`, never
+    /// `tamias` itself (reserved for the real binary).
+    pub name: String,
+    /// Shim kind — only `"cli"` (generated driver front-end) exists.
+    pub shim: Option<String>,
+    /// Driver kind the `cli` shim dispatches to — resolved like a
+    /// content type (`tamias-driver-<kind>` → capabilities fallback).
+    /// Required iff `shim` is set.
+    pub driver: Option<String>,
+    /// Payload-relative path to a real binary — `tools/bin/…`.
+    /// Required iff `shim` is unset.
+    pub payload: Option<String>,
 }
 
 /// `provider:` — declarative service/runtime spec. Deploy drivers turn
@@ -172,6 +214,32 @@ fn is_valid_unit_name(s: &str) -> bool {
         && !s.contains("..")
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '@' | '-'))
+}
+
+/// `bins[].payload` path rules — a relative `tools/bin/…` path made of
+/// plain components only (no `.`/`..`, no root/prefix, no separators
+/// beyond `/`, no NUL). The triple-selection and on-disk checks live
+/// in `tamias-bin`; this is the manifest-level safety gate.
+fn check_bin_payload_path(bin: &str, payload: &str) -> Result<(), Error> {
+    let bad = |why: &str| {
+        Err(Error::Failed(format!(
+            "bin '{bin}': invalid payload path '{payload}' — {why}"
+        )))
+    };
+    if payload.is_empty() || payload.contains(['\0', '\\']) {
+        return bad("empty or contains NUL/backslash");
+    }
+    let comps: Vec<&str> = payload.split('/').collect();
+    if comps
+        .iter()
+        .any(|c| c.is_empty() || *c == "." || *c == "..")
+    {
+        return bad("must be a clean relative path (no empty, '.', or '..' segments)");
+    }
+    if comps.len() < 3 || comps[0] != "tools" || comps[1] != "bin" {
+        return bad("must live under tools/bin/");
+    }
+    Ok(())
 }
 
 /// Reject line breaks/NUL in a field that lands on one unit-file line —
@@ -397,6 +465,54 @@ impl Manifest {
         }
         if let Some(provider) = &self.provider {
             provider.check()?;
+        }
+        self.check_bins()?;
+        Ok(())
+    }
+
+    /// Semantic checks for `bins[]` — name charset + uniqueness,
+    /// exactly one of `shim`/`payload`, known shim kinds, a driver
+    /// kind for shims, and a safe payload-relative path.
+    fn check_bins(&self) -> Result<(), Error> {
+        let mut seen = std::collections::BTreeSet::new();
+        for bin in &self.bins {
+            if !is_valid_name(&bin.name) || bin.name == "tamias" {
+                return Err(Error::Failed(format!(
+                    "invalid bin name '{}' — expected [A-Za-z0-9][A-Za-z0-9._-]*, not 'tamias'",
+                    bin.name
+                )));
+            }
+            if !seen.insert(bin.name.as_str()) {
+                return Err(Error::Failed(format!("duplicate bin name '{}'", bin.name)));
+            }
+            match (&bin.shim, &bin.payload) {
+                (Some(_), Some(_)) | (None, None) => {
+                    return Err(Error::Failed(format!(
+                        "bin '{}' must set exactly one of shim/payload",
+                        bin.name
+                    )));
+                }
+                (Some(shim), None) => {
+                    if shim != "cli" {
+                        return Err(Error::Failed(format!(
+                            "bin '{}': unknown shim kind '{shim}' (only 'cli' exists)",
+                            bin.name
+                        )));
+                    }
+                    match &bin.driver {
+                        Some(driver) if is_valid_kind(driver) => {}
+                        _ => {
+                            return Err(Error::Failed(format!(
+                                "bin '{}': shim 'cli' requires a valid driver kind",
+                                bin.name
+                            )));
+                        }
+                    }
+                }
+                (None, Some(payload)) => {
+                    check_bin_payload_path(&bin.name, payload)?;
+                }
+            }
         }
         Ok(())
     }
@@ -760,5 +876,123 @@ provider:
         let badver = dir.path().join("badver.yaml");
         std::fs::write(&badver, "name: x\nversion: \"../../evil\"\n").unwrap();
         assert!(Manifest::load_at(&badver).is_err());
+    }
+
+    #[test]
+    fn bins_parse_and_validate() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("tamias.yaml"),
+            "name: x\nbins:\n  \
+             - name: x-cli\n    shim: cli\n    driver: x\n  \
+             - name: x-tool\n    payload: tools/bin/x86_64-unknown-linux-gnu/x-tool\n",
+        )
+        .unwrap();
+        let m = Manifest::load(dir.path()).unwrap();
+        assert_eq!(m.bins.len(), 2);
+        assert_eq!(m.bins[0].shim.as_deref(), Some("cli"));
+        assert_eq!(m.bins[0].driver.as_deref(), Some("x"));
+        assert_eq!(
+            m.bins[1].payload.as_deref(),
+            Some("tools/bin/x86_64-unknown-linux-gnu/x-tool")
+        );
+
+        let with_bins = |bins: Vec<BinDecl>| Manifest {
+            name: "x".into(),
+            bins,
+            ..Default::default()
+        };
+        let shim = |name: &str| BinDecl {
+            name: name.into(),
+            shim: Some("cli".into()),
+            driver: Some("x".into()),
+            payload: None,
+        };
+        let payload = |name: &str, p: &str| BinDecl {
+            name: name.into(),
+            shim: None,
+            driver: None,
+            payload: Some(p.into()),
+        };
+        // happy paths
+        assert!(with_bins(vec![shim("a"), payload("b", "tools/bin/t/a")])
+            .validate()
+            .is_ok());
+        assert!(
+            with_bins(vec![payload("b", "tools/bin/aarch64-apple-darwin/x/b")])
+                .validate()
+                .is_ok()
+        );
+        // name rules
+        for bad in ["", "-x", "a b", "tamias", "../x"] {
+            assert!(
+                with_bins(vec![shim(bad)]).validate().is_err(),
+                "bin name {bad:?} must fail"
+            );
+        }
+        // exactly one of shim/payload
+        assert!(with_bins(vec![BinDecl {
+            name: "a".into(),
+            shim: Some("cli".into()),
+            driver: Some("x".into()),
+            payload: Some("tools/bin/t/a".into()),
+        }])
+        .validate()
+        .is_err());
+        assert!(with_bins(vec![BinDecl {
+            name: "a".into(),
+            shim: None,
+            driver: None,
+            payload: None,
+        }])
+        .validate()
+        .is_err());
+        // unknown shim kind / missing driver
+        assert!(with_bins(vec![BinDecl {
+            name: "a".into(),
+            shim: Some("mcp".into()),
+            driver: Some("x".into()),
+            payload: None,
+        }])
+        .validate()
+        .is_err());
+        assert!(with_bins(vec![BinDecl {
+            name: "a".into(),
+            shim: Some("cli".into()),
+            driver: None,
+            payload: None,
+        }])
+        .validate()
+        .is_err());
+        assert!(with_bins(vec![BinDecl {
+            name: "a".into(),
+            shim: Some("cli".into()),
+            driver: Some("Bad Kind".into()),
+            payload: None,
+        }])
+        .validate()
+        .is_err());
+        // payload path rules
+        for bad in [
+            "",
+            "bin/x",
+            "tools/x",
+            "tools/bin",
+            "tools/bin/",
+            "tools//bin/x",
+            "tools/bin/../x",
+            "tools/bin/./x",
+            "/tools/bin/x",
+            "tools/bin/x/../../y",
+            "tools\\bin\\x",
+            "tools/bin/a\0b",
+        ] {
+            assert!(
+                with_bins(vec![payload("a", bad)]).validate().is_err(),
+                "payload {bad:?} must fail"
+            );
+        }
+        // duplicate names
+        assert!(with_bins(vec![shim("a"), shim("a")]).validate().is_err());
     }
 }

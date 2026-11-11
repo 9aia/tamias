@@ -28,7 +28,7 @@ pub use digest::{content_digest, dir_digest, dir_size, file_digest, sha256_hex, 
 pub use error::Error;
 pub use identity::{Identity, IdentityError};
 pub use manifest::{
-    is_valid_kind, is_valid_name, is_valid_version, Manifest, Provider, ProviderHealth,
+    is_valid_kind, is_valid_name, is_valid_version, BinDecl, Manifest, Provider, ProviderHealth,
     ProviderHook, ProviderIngress, ProviderService, MANIFEST_NAMES,
 };
 pub use overlay::{find_store_entry, overlay, payload_root};

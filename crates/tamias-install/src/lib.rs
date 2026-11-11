@@ -389,6 +389,13 @@ pub(crate) fn install_inner(
         )?;
     }
     let _extends_guard = extends_scratch;
+    // Declared `bins[]` + `tools/bin/<triple>/` payloads — the same
+    // trust rule as `drivers/bin/`: a payload that ships platform dirs
+    // but none for this host fails the install, and every declared
+    // payload bin must resolve to a real file in the committed tree.
+    // Runs before driver dispatch + the store commit, so a broken bin
+    // declaration leaves no partial state.
+    tamias_bin::check_bins(&driver_root, &manifest)?;
     // Driver work runs *before* the store commit: a missing or failing
     // driver fails the install with no committed entry (the fetch-cache
     // entry is content-addressed and stays).
@@ -482,6 +489,19 @@ pub fn remove(
         warn(format!(
             "no driver for type '{kind}'; provider resources may remain"
         ));
+    }
+    // Deployed executable surfaces — declared `bins[]` and the legacy
+    // `bin/` payload links — while the entry dir still exists so
+    // ownership checks (copy byte-compare, payload listing) can read
+    // it. Best-effort: a cleanup failure warns, never fails the
+    // removal (the store entry is the source of truth being dropped).
+    if let Err(err) = tamias_bin::cleanup_after_remove(
+        name,
+        &entry,
+        &tamias_bin::default_bin_dir(),
+        &tamias_bin::default_alias_root(store_root),
+    ) {
+        warn(format!("bin cleanup for {name}: {err}"));
     }
     store.remove(name)
 }
@@ -621,6 +641,9 @@ pub struct InstallPlan {
     /// run `capabilities` probes on discovered drivers — trusted local
     /// binaries, 10s timeout — acceptable for a plan.
     pub driver: Option<PathBuf>,
+    /// Declared `bins[]` command names (`tamias bin deploy` would
+    /// materialize them on a real install).
+    pub bins: Vec<String>,
     /// `provider.services` — what `tamias deploy` would later create.
     /// Clearly NOT part of install.
     pub provider_services: Vec<PlannedService>,
@@ -795,6 +818,21 @@ pub fn plan_install(env: &Env, reference: &str, allow_drivers: bool) -> Result<I
         ));
     }
 
+    // Declared bins — names always report; the `tools/bin/` platform
+    // rule + payload resolution surface as would-be problems (a real
+    // install hard-fails via `tamias_bin::check_bins`).
+    let bins: Vec<String> = manifest.bins.iter().map(|b| b.name.clone()).collect();
+    if let Err(e) = tamias_bin::check_platform(&root) {
+        problems.push(format!("{e} — install would fail"));
+    }
+    for decl in &manifest.bins {
+        if decl.payload.is_some() {
+            if let Err(e) = tamias_bin::resolve_payload_bin(&root, decl) {
+                problems.push(format!("bin '{}': {e} — install would fail", decl.name));
+            }
+        }
+    }
+
     // `provider:` services — deploy-time resources, reported so the
     // plan shows the full picture; install never touches them.
     let provider_services = manifest
@@ -827,6 +865,7 @@ pub fn plan_install(env: &Env, reference: &str, allow_drivers: bool) -> Result<I
         bundled_drivers: shipped,
         consent_required,
         driver,
+        bins,
         provider_services,
         trust,
         signer,

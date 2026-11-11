@@ -2574,6 +2574,7 @@ dependencies = [
  "schemars",
  "serde_json",
  "sigpipe",
+ "tamias-bin",
  "tamias-cache-local",
  "tamias-config",
  "tamias-config-toml",
@@ -2596,6 +2597,15 @@ dependencies = [
  "tamias-tui",
  "tempfile",
  "tracing",
+]
+
+[[package]]
+name = "tamias-bin"
+version = "0.1.4"
+dependencies = [
+ "tamias-core",
+ "tamias-driver",
+ "tempfile",
 ]
 
 [[package]]
@@ -2727,6 +2737,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "tamias-bin",
  "tamias-cache-local",
  "tamias-config",
  "tamias-core",

@@ -1343,10 +1343,10 @@ fn bin_links_payload_into_bin_dir() {
     assert!(o.status.success(), "install: {}", stderr(&o));
 
     // no bin/ payload → clean error naming the package
-    let o = run(&["bin", "ghost"]);
+    let o = run(&["bin", "destroy", "ghost"]);
     assert!(!o.status.success());
 
-    let o = run(&["bin", "widget"]);
+    let o = run(&["bin", "deploy", "widget"]);
     assert!(o.status.success(), "bin: {}", stderr(&o));
     let link = bindir.join("widget");
     #[cfg(unix)]
@@ -1367,12 +1367,125 @@ fn bin_links_payload_into_bin_dir() {
     assert!(!bindir.join(".hidden").exists());
 
     // idempotent, then --unlink removes link + alias
-    let o = run(&["bin", "widget"]);
+    let o = run(&["bin", "deploy", "widget"]);
     assert!(o.status.success(), "re-link: {}", stderr(&o));
-    let o = run(&["bin", "widget", "--unlink"]);
+    let o = run(&["bin", "destroy", "widget"]);
     assert!(o.status.success(), "unlink: {}", stderr(&o));
     assert!(!link.exists() && !link.is_symlink());
     assert!(std::fs::symlink_metadata(home.join("bin-alias/widget")).is_err());
+}
+
+/// P-023: declared `bins[]` — install auto-deploys a generated cli
+/// shim plus a `tools/bin/<triple>/` payload link; `bin list` reports
+/// both; `bin destroy` tears them down; `remove` cleans up too.
+#[test]
+fn declared_bins_deploy_list_destroy_and_remove() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let cache = tmp.path().join("cache");
+    let bindir = tmp.path().join("userbin");
+    let pkg = tmp.path().join("pkg");
+    let host = tamias_driver::target_triple();
+    std::fs::create_dir_all(pkg.join(format!("tools/bin/{host}"))).unwrap();
+    std::fs::write(
+        pkg.join("tamias.yaml"),
+        "name: widget
+version: 1.0.0
+type: files
+bins:
+  \
+         - name: widget
+    shim: cli
+    driver: widget
+  \
+         - name: widget-tool
+    payload: tools/bin/other-triple/widget-tool
+",
+    )
+    .unwrap();
+    // payload decl names a foreign triple — host substitution finds
+    // this file under the host dir.
+    std::fs::write(
+        pkg.join(format!("tools/bin/{host}/widget-tool")),
+        "#!/bin/sh\necho widget-tool\n",
+    )
+    .unwrap();
+
+    let run = |args: &[&str]| {
+        Command::new(tamias_bin())
+            .args(args)
+            .env("TAMIAS_HOME", &home)
+            .env("TAMIAS_CACHE", &cache)
+            .env("TAMIAS_BIN_DIR", &bindir)
+            .env("TAMIAS_CONSENT_FILE", cache.join("consented.json"))
+            .env_remove("TAMIAS_ALLOW_DRIVERS")
+            .output()
+            .unwrap()
+    };
+
+    // install deploys both declared bins by default
+    let o = run(&["install", pkg.to_str().unwrap()]);
+    assert!(o.status.success(), "install: {}", stderr(&o));
+    let shim = bindir.join("widget");
+    let tool = bindir.join("widget-tool");
+    assert!(shim.is_file(), "shim missing: {}", stderr(&o));
+    let script = std::fs::read_to_string(&shim).unwrap();
+    assert!(script.contains("# tamias-bin: widget"), "{script}");
+    assert!(
+        script.contains("bin exec 'widget@1.0.0' 'widget'"),
+        "{script}"
+    );
+    #[cfg(unix)]
+    {
+        let target = std::fs::read_link(&tool).unwrap();
+        assert!(
+            target.starts_with(home.join("bin-alias/widget/tools/bin")),
+            "{target:?}"
+        );
+    }
+    #[cfg(not(unix))]
+    assert!(tool.is_file());
+
+    // bin list --json reports both deployed
+    let o = run(&["bin", "list", "--json"]);
+    assert!(o.status.success(), "list: {}", stderr(&o));
+    let v: serde_json::Value = serde_json::from_str(stdout(&o).trim()).unwrap();
+    let bins = v["bins"].as_array().unwrap();
+    assert_eq!(bins.len(), 2, "{bins:?}");
+    assert!(bins.iter().all(|b| b["deployed"] == true), "{bins:?}");
+    assert!(bins.iter().all(|b| b["package"] == "widget@1.0.0"));
+
+    // --no-bins opt-out on a fresh home
+    let home2 = tmp.path().join("home2");
+    let bindir2 = tmp.path().join("userbin2");
+    let o = Command::new(tamias_bin())
+        .args(["install", "--no-bins", pkg.to_str().unwrap()])
+        .env("TAMIAS_HOME", &home2)
+        .env("TAMIAS_CACHE", &cache)
+        .env("TAMIAS_BIN_DIR", &bindir2)
+        .env("TAMIAS_CONSENT_FILE", cache.join("consented2.json"))
+        .env_remove("TAMIAS_ALLOW_DRIVERS")
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "install --no-bins: {}", stderr(&o));
+    assert!(!bindir2.join("widget").exists());
+
+    // bin destroy removes deployed surfaces, keeps the entry
+    let o = run(&["bin", "destroy", "widget"]);
+    assert!(o.status.success(), "destroy: {}", stderr(&o));
+    assert!(!shim.exists() && !shim.is_symlink());
+    assert!(!tool.exists() && !tool.is_symlink());
+    let o = run(&["list"]);
+    assert!(stdout(&o).contains("widget@1.0.0"), "{}", stdout(&o));
+
+    // redeploy + remove cleans everything
+    let o = run(&["bin", "deploy", "widget"]);
+    assert!(o.status.success(), "redeploy: {}", stderr(&o));
+    assert!(shim.exists());
+    let o = run(&["remove", "widget"]);
+    assert!(o.status.success(), "remove: {}", stderr(&o));
+    assert!(!shim.exists() && !shim.is_symlink());
+    assert!(!tool.exists() && !tool.is_symlink());
 }
 
 #[test]

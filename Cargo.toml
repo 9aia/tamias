@@ -23,6 +23,7 @@ members = [
     "crates/tamias-registry-cf",
     "crates/tamias-store-cf",
     "crates/tamias-cache-cf",
+    "crates/tamias-bin",
     "crates/tamias-serve",
     "crates/tamias-shell",
     "crates/tamias-sign",
@@ -85,6 +86,7 @@ tamias-registry-open = { path = "crates/tamias-registry-open", version = "0.1.4"
 tamias-registry-cf = { path = "crates/tamias-registry-cf", version = "0.1.4" }
 tamias-store-cf = { path = "crates/tamias-store-cf", version = "0.1.4" }
 tamias-cache-cf = { path = "crates/tamias-cache-cf", version = "0.1.4" }
+tamias-bin = { path = "crates/tamias-bin", version = "0.1.4" }
 tamias-serve = { path = "crates/tamias-serve", version = "0.1.4" }
 tamias-shell = { path = "crates/tamias-shell", version = "0.1.4" }
 tamias-sign = { path = "crates/tamias-sign", version = "0.1.4" }

@@ -24,6 +24,7 @@ tamias-telemetry.workspace = true
 tracing.workspace = true
 tamias-cache-local.workspace = true
 tamias-driver.workspace = true
+tamias-bin.workspace = true
 tamias-serve.workspace = true
 tamias-registry-local.workspace = true
 tamias-registry-open.workspace = true
@@ -51,6 +52,7 @@ default = ["tui"]
 tui = ["dep:tamias-tui"]
 
 [dev-dependencies]
+tamias-driver.workspace = true
 tempfile.workspace = true
 
 [lints]
