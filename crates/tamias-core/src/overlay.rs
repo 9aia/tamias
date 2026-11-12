@@ -136,6 +136,16 @@ fn write_doc(path: &Path, format: DocFormat, value: &Value) -> Result<(), Error>
     crate::write_atomic(path, text.as_bytes())
 }
 
+/// Deep-merge `high` over `low` — the [`overlay`] merge rule exposed for
+/// callers that fold partial documents themselves (deploy-time operator
+/// overrides, driver-side config merges): dicts merge per-key, arrays
+/// concat high-first with `id`-keyed dedupe, everything else takes
+/// `high`.
+#[must_use]
+pub fn merge_values(high: &Value, low: &Value) -> Value {
+    merge_documents(high, low)
+}
+
 /// Deep-merge `high` over `low`: dicts merge per-key, arrays concat
 /// high-first, everything else takes `high`.
 fn merge_documents(high: &Value, low: &Value) -> Value {

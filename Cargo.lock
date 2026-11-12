@@ -2573,6 +2573,7 @@ dependencies = [
  "clap_complete",
  "schemars",
  "serde_json",
+ "serde_yaml_ng",
  "sigpipe",
  "tamias-bin",
  "tamias-cache-local",
@@ -2726,6 +2727,7 @@ name = "tamias-driver"
 version = "0.1.5"
 dependencies = [
  "serde_json",
+ "serde_yaml_ng",
  "tamias-core",
  "tempfile",
 ]

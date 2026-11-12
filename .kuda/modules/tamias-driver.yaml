@@ -5,223 +5,228 @@ api:
 - name: CAPABILITIES_TIMEOUT
   kind: const
   file: crates/tamias-driver/src/lib.rs
-  line: 68
+  line: 82
+  module: tamias-driver
+- name: CLI_FRAGMENT
+  kind: const
+  file: crates/tamias-driver/src/overrides.rs
+  line: 55
   module: tamias-driver
 - name: DISPATCH_TIMEOUT
   kind: const
   file: crates/tamias-driver/src/lib.rs
-  line: 65
+  line: 79
   module: tamias-driver
 - name: DriverOutput
   kind: type
   file: crates/tamias-driver/src/lib.rs
-  line: 60
+  line: 74
   module: tamias-driver
 - name: ENV
   kind: const
   file: crates/tamias-driver/src/lib.rs
-  line: 516
+  line: 537
   module: tamias-driver
 - name: EnvGuard
   kind: type
   file: crates/tamias-driver/src/lib.rs
-  line: 521
+  line: 542
+  module: tamias-driver
+- name: FragmentFormat
+  kind: type
+  file: crates/tamias-driver/src/overrides.rs
+  line: 96
+  module: tamias-driver
+- name: OVERRIDES_ENV
+  kind: const
+  file: crates/tamias-driver/src/overrides.rs
+  line: 45
+  module: tamias-driver
+- name: OVERRIDES_ROOT_ENV
+  kind: const
+  file: crates/tamias-driver/src/overrides.rs
+  line: 50
+  module: tamias-driver
+- name: ambient_package_dir
+  kind: function
+  file: crates/tamias-driver/src/overrides.rs
+  line: 83
   module: tamias-driver
 - name: bundled_drivers
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 330
+  line: 351
   module: tamias-driver
 - name: bundled_drivers_detects_and_consent
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 603
+  line: 624
   module: tamias-driver
 - name: capabilities
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 154
+  line: 168
   module: tamias-driver
 - name: capability_and_error_paths
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 690
+  line: 711
+  module: tamias-driver
+- name: clear_and_invalid_coords
+  kind: function
+  file: crates/tamias-driver/src/overrides.rs
+  line: 494
+  module: tamias-driver
+- name: clear_overrides
+  kind: function
+  file: crates/tamias-driver/src/overrides.rs
+  line: 260
   module: tamias-driver
 - name: config_schema
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 252
+  line: 266
   module: tamias-driver
 - name: config_schema_fetch_and_unsupported
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 662
+  line: 683
   module: tamias-driver
 - name: discovered_drivers
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 173
+  line: 187
   module: tamias-driver
 - name: dispatch
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 211
+  line: 225
+  module: tamias-driver
+- name: dispatch_injects_overrides_env_when_dir_exists
+  kind: function
+  file: crates/tamias-driver/src/lib.rs
+  line: 929
   module: tamias-driver
 - name: dispatch_none_and_driver
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 555
+  line: 576
   module: tamias-driver
 - name: dispatch_with_args
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 232
+  line: 246
   module: tamias-driver
 - name: dispatch_with_args_passes_argv_and_captures_output
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 768
+  line: 789
   module: tamias-driver
 - name: dispatch_with_config_and_non_file_entry
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 890
+  line: 911
   module: tamias-driver
 - name: dispatch_with_timeout
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 278
+  line: 292
   module: tamias-driver
 - name: driver_handles
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 139
+  line: 153
   module: tamias-driver
 - name: drivers_allowed
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 317
+  line: 338
   module: tamias-driver
 - name: drivers_dir
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 101
+  line: 115
   module: tamias-driver
 - name: drop
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 541
+  line: 562
+  module: tamias-driver
+- name: env_dir
+  kind: function
+  file: crates/tamias-driver/src/overrides.rs
+  line: 89
   module: tamias-driver
 - name: find_driver
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 110
+  line: 124
   module: tamias-driver
 - name: find_via_path
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 724
+  line: 745
+  module: tamias-driver
+- name: fragment_format
+  kind: function
+  file: crates/tamias-driver/src/overrides.rs
+  line: 101
   module: tamias-driver
 - name: home_defaults
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 624
+  line: 645
   module: tamias-driver
 - name: home_fallback_is_dot_tamias
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 632
+  line: 653
   module: tamias-driver
 - name: hostile_kind_never_resolves_a_driver
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 575
+  line: 596
   module: tamias-driver
 - name: hung_driver_is_killed
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 742
+  line: 763
   module: tamias-driver
 - name: lookup
   kind: function
   file: crates/tamias-driver/src/lib.rs
-  line: 126
+  line: 140
   module: tamias-driver
 - name: main
   kind: function
   file: crates/tamias-driver/build.rs
   line: 1
   module: tamias-driver
-- name: new
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 528
-  module: tamias-driver
-- name: platform_bin_names
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 360
-  module: tamias-driver
-- name: platform_bins_empty_and_nested_dirs_ignored
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 870
-  module: tamias-driver
-- name: platform_bins_missing_platform_errors
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 849
-  module: tamias-driver
-- name: platform_bins_select_current_triple
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 806
-  module: tamias-driver
-- name: register_bundled_drivers
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 405
-  module: tamias-driver
-- name: register_bundled_drivers_copies
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 588
-  module: tamias-driver
-- name: register_platform_bins
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 444
-  module: tamias-driver
-- name: set_executable
-  kind: function
-  file: crates/tamias-driver/src/lib.rs
-  line: 493
-  module: tamias-driver
-- name: tamias-driver
-  kind: module
-  file: crates/tamias-driver/Cargo.toml
-  line: 1
-  module: tamias-driver
-api_omitted: 4
+api_omitted: 33
 deps:
 - serde_json
+- serde_yaml_ng
 - tamias-core
 - tempfile
+- serde_json
 - tamias-core
 notes: ''
 verify:
 - crates/tamias-driver/Cargo.toml
 - crates/tamias-driver/build.rs
 - crates/tamias-driver/src/lib.rs
+- crates/tamias-driver/src/overrides.rs
 provenance:
   files:
   - crates/tamias-driver/Cargo.toml
   - crates/tamias-driver/build.rs
   - crates/tamias-driver/src/lib.rs
+  - crates/tamias-driver/src/overrides.rs
   hashes:
-  - d6affaac6d38ba853246c8395a498bcbf7928cbd
+  - a60598cde4a7ffbb54204b99b25a4baa66247642
   - 2aa4b3045d9f4e8df24b0cce5d2e7a98338f26f5
-  - ae720efadf7cab6dd37ad78617bc868a98320e25
-  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
-  generated_at: '1794424824'
+  - 3ad8aaf3b7c7aa8b4fa6de8bd417af179f3bd1d0
+  - 8aea063b525e3b615862fdc7266049c75666d940
+  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
+  generated_at: '1794454384'
   generator: kuda-template/0.1.4

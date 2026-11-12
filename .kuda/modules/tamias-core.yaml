@@ -105,17 +105,17 @@ api:
 - name: apply_layer
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 177
+  line: 187
   module: tamias-core
 - name: apply_layer_copy_error
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 306
+  line: 316
   module: tamias-core
 - name: apply_layer_unparseable_doc_falls_through_to_copy
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 316
+  line: 326
   module: tamias-core
 - name: archive
   kind: module
@@ -190,7 +190,7 @@ api:
 - name: dedup_by_id
   kind: function
   file: crates/tamias-core/src/overlay.rs
-  line: 167
+  line: 177
   module: tamias-core
 - name: digest
   kind: module
@@ -202,7 +202,7 @@ api:
   file: crates/tamias-core/src/digest.rs
   line: 103
   module: tamias-core
-api_omitted: 130
+api_omitted: 131
 deps:
 - flate2
 - hex
@@ -260,19 +260,19 @@ provenance:
   - crates/tamias-core/src/records.rs
   - crates/tamias-core/tests/props.rs
   hashes:
-  - dfb23283d56f62f7d7feaea9529d555171c83383
+  - 41c0b417aa2ae7fba37e6233740da606a595f029
   - 8c21b2230abe2a97d97d039fb95804bba2072723
   - 0d7a6cf52913cb69facccecc985a743277960ff6
   - bf42b5dcc0b30109a2bcee497b675ba447cab7f0
   - 3050b521008bf72751d6ffcab5f7dcbeced1d9f6
   - ea8ff165afcdccfccd8aad76171a031df45b4c05
-  - 12ab04d7318ad37937c0962dd013e7cba8e06e5f
+  - cf054722d16a3de61b42f40475f5b2e15a14a086
   - 07261b7ab18abeb7b3ca3f192a4a8ea1632f94da
-  - 44f44be9271b9c03955c2a269d2e56a4bddc6f9e
+  - ad3411fbcd063805a820b83e66a8dc3b0b20b224
   - d6ce3df521f4d85fdde031717f0a7345b0152098
   - 5b009cd1135bfa3db0f3b4be137c80398503c410
   - 2a50fa7f36f1fb3af8946ca611ef14520a706243
   - 1d8f69e21ec4d6bb45e702432caa1d56e02c97d8
-  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
-  generated_at: '1794424824'
+  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
+  generated_at: '1794454384'
   generator: kuda-template/0.1.4

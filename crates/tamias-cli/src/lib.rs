@@ -337,6 +337,22 @@ enum Command {
         /// Node/config file the provider reads operator params from.
         #[arg(long)]
         config: Option<PathBuf>,
+        /// Persist an operator config override — `key=value`, dotted
+        /// keys build nested maps, values parse as YAML. Repeatable;
+        /// stored under `<config>/tamias/deploy.d/<kind>/<name>/cli.yaml`
+        /// and handed to the driver on every deploy/install.
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
+        /// Remove a persisted override by dotted key. Repeatable.
+        #[arg(long, value_name = "KEY")]
+        unset: Vec<String>,
+        /// Drop all persisted overrides for this package.
+        #[arg(long)]
+        clear_overrides: bool,
+        /// Print the persisted overrides (post --set/--unset/--clear)
+        /// and exit without deploying.
+        #[arg(long)]
+        show_overrides: bool,
     },
     /// Uninstall — provider teardown + drop the store entry.
     Uninstall {
@@ -1627,8 +1643,23 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                 println!("{action}");
             }
         }
-        Some(Command::Deploy { name, config }) => {
-            deploy_package(&env, &name, config.as_deref())?;
+        Some(Command::Deploy {
+            name,
+            config,
+            set,
+            unset,
+            clear_overrides,
+            show_overrides,
+        }) => {
+            deploy_package(
+                &env,
+                &name,
+                config.as_deref(),
+                &set,
+                &unset,
+                clear_overrides,
+                show_overrides,
+            )?;
         }
         Some(Command::Uninstall { name }) => {
             uninstall_package(&env, &name)?;
@@ -1799,8 +1830,73 @@ enum ServiceCommand {
 
 /// `deploy <name>` — the installed package's provider deploy step
 /// (kind driver `deploy` + declarative `provider.services[]` units),
-/// shared with `tamias ui` through `tamias-provider`.
-fn deploy_package(env: &Env, name: &str, config: Option<&Path>) -> Result<(), Error> {
+/// shared with `tamias ui` through `tamias-provider`. `--set`/`--unset`/
+/// `--clear-overrides` maintain the durable operator overrides under
+/// `tamias_driver::overrides` (T-026); `--show-overrides` prints the
+/// merged persisted doc instead of deploying.
+#[allow(clippy::too_many_arguments)]
+fn deploy_package(
+    env: &Env,
+    name: &str,
+    config: Option<&Path>,
+    sets: &[String],
+    unsets: &[String],
+    clear_overrides: bool,
+    show_overrides: bool,
+) -> Result<(), Error> {
+    let wants_overrides =
+        !sets.is_empty() || !unsets.is_empty() || clear_overrides || show_overrides;
+    let overrides_root = wants_overrides
+        .then(|| {
+            tamias_driver::overrides::overrides_root().ok_or_else(|| {
+                Error::Failed(
+                    "cannot resolve the overrides dir — no XDG_CONFIG_HOME/HOME (or set TAMIAS_DEPLOY_D)"
+                        .into(),
+                )
+            })
+        })
+        .transpose()?;
+    // Resolve the entry once for the (kind, name) coordinates the
+    // driver sees — the same lookup provider::deploy repeats.
+    let coords = Store::new(&env.store_root).find(name).ok().map(|entry| {
+        (
+            entry.record.kind.as_deref().unwrap_or("files").to_string(),
+            entry.record.name.clone(),
+        )
+    });
+    if let (Some(root), Some((kind, pkg))) = (&overrides_root, &coords) {
+        for arg in sets {
+            let (key, value) = tamias_driver::overrides::parse_set_arg(arg)?;
+            let frag = tamias_driver::overrides::set_override(root, kind, pkg, &key, value)?;
+            println!("override {kind}/{pkg} {key} → {}", frag.display());
+        }
+        for key in unsets {
+            tamias_driver::overrides::unset_override(root, kind, pkg, key)?;
+        }
+        if clear_overrides {
+            tamias_driver::overrides::clear_overrides(root, kind, pkg)?;
+        }
+    } else if wants_overrides && !show_overrides {
+        return Err(Error::Failed(format!(
+            "{name}: not installed — nothing to hang overrides on"
+        )));
+    }
+    if show_overrides {
+        match (&overrides_root, &coords) {
+            (Some(root), Some((kind, pkg))) => {
+                match tamias_driver::overrides::package_overrides(root, kind, pkg)? {
+                    Some(doc) => {
+                        let text = serde_yaml_ng::to_string(&doc)
+                            .map_err(|e| Error::Failed(format!("render overrides: {e}")))?;
+                        print!("{text}");
+                    }
+                    None => println!("{name}: no persisted overrides"),
+                }
+            }
+            _ => println!("{name}: no persisted overrides"),
+        }
+        return Ok(());
+    }
     let report = tamias_provider::deploy(&env.store_root, name, config)?;
     for line in &report.lines {
         println!("{line}");
@@ -3369,6 +3465,53 @@ mod tests {
         assert!(run_args(e.clone(), &["tamias", "uninstall", "ghost"]).is_err());
         assert!(run_args(e.clone(), &["tamias", "bin", "deploy", "ghost"]).is_err());
         assert!(run_args(e.clone(), &["tamias", "bin", "destroy", "ghost"]).is_err());
+    }
+
+    /// T-026 — `deploy --set/--unset/--clear-overrides/--show-overrides`
+    /// maintain the durable drop-ins under `<xdg>/tamias/deploy.d/`.
+    #[test]
+    fn deploy_overrides_persist_under_deploy_d() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = pkg(tmp.path());
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        // kind defaults to "files" for a manifest without `type:`
+        let pkgdir = PathBuf::from(std::env::var("XDG_CONFIG_HOME").unwrap())
+            .join("tamias/deploy.d/files/w");
+        let frag = pkgdir.join("cli.yaml");
+        run_args(
+            e.clone(),
+            &[
+                "tamias",
+                "deploy",
+                "w",
+                "--set",
+                "config.repos.0.name=o/r",
+                "--set",
+                "flag=true",
+            ],
+        )
+        .unwrap();
+        assert!(frag.is_file());
+        let text = std::fs::read_to_string(&frag).unwrap();
+        assert!(text.contains("o/r"), "{text}");
+        assert!(text.contains("flag: true"), "{text}");
+        // --show-overrides prints the merged doc without deploying
+        run_args(e.clone(), &["tamias", "deploy", "w", "--show-overrides"]).unwrap();
+        // --unset removes one key; the fragment survives with the rest
+        run_args(e.clone(), &["tamias", "deploy", "w", "--unset", "flag"]).unwrap();
+        let text = std::fs::read_to_string(&frag).unwrap();
+        assert!(!text.contains("flag"), "{text}");
+        // --clear-overrides drops the whole drop-in dir
+        run_args(e.clone(), &["tamias", "deploy", "w", "--clear-overrides"]).unwrap();
+        assert!(!pkgdir.exists());
+        // --set against a package that isn't installed errors
+        assert!(run_args(e.clone(), &["tamias", "deploy", "ghost", "--set", "a=1"]).is_err());
+        // a bad --set arg errors before touching disk
+        assert!(run_args(e.clone(), &["tamias", "deploy", "w", "--set", "noequals"]).is_err());
+        // plain deploy is unchanged
+        run_args(e.clone(), &["tamias", "deploy", "w"]).unwrap();
     }
 
     /// A payload dir whose `bin/` holds `tool`, a dotfile, and a nested

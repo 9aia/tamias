@@ -31,6 +31,16 @@
 //! so a driver that wants validation implements it as an ordinary
 //! provider verb — `tamias driver exec <pkg> config validate
 //! --config <file>` is the intended shape.
+//!
+//! **Operator config overrides (T-026).** Drivers that *generate*
+//! config on `deploy`/`install` wipe hand edits every run. tamias owns
+//! the persistence half in [`overrides`]: drop-in fragments under
+//! `<config>/tamias/deploy.d/<kind>/<name>/` (`tamias deploy --set
+//! key=value` edits the `cli.yaml` fragment), injected into every
+//! dispatch as [`overrides::OVERRIDES_ENV`]. A driver that generates
+//! config merges the dir's fragments over the generated doc before
+//! writing — [`tamias_core::merge_values`] gives the same deep-merge
+//! `include:` overlays use.
 //! Installing a product drops its driver into
 //! `<tamias-home>/drivers/` (from the payload's `drivers/` dir), so tamias
 //! finds it. The engine never links a product crate.
@@ -54,6 +64,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tamias_core::{output_with_timeout, Error};
+
+/// Operator deploy-override drop-ins — see the module docs and the
+/// crate-level contract note.
+pub mod overrides;
 
 /// `(stdout, stderr)` captured from a dispatched driver verb —
 /// [`dispatch_with_args`] returns it for the caller to render.
@@ -295,6 +309,13 @@ fn dispatch_with_timeout(
     };
     let mut cmd = std::process::Command::new(&driver);
     cmd.arg(verb).arg("--dir").arg(dir).arg("--name").arg(name);
+    // Operator overrides: when the package has a `deploy.d/<kind>/<name>/`
+    // drop-in dir, hand it to the driver — config-generating drivers
+    // merge it over the generated doc (T-026). `name` here is the bare
+    // record name the driver sees on argv.
+    if let Some(dir) = overrides::env_dir(kind, name) {
+        cmd.env(overrides::OVERRIDES_ENV, dir);
+    }
     if let Some(config) = config {
         cmd.arg("--config").arg(config);
     }
@@ -902,5 +923,42 @@ mod tests {
         std::fs::write(payload.join("drivers/d1"), "#!/bin/sh\n").unwrap();
         assert_eq!(register_bundled_drivers(&payload).unwrap().len(), 1);
         std::env::remove_var("TAMIAS_HOME");
+    }
+
+    #[test]
+    fn dispatch_injects_overrides_env_when_dir_exists() {
+        let _guard = EnvGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("TAMIAS_HOME", tmp.path().join("home"));
+        // The drop-in root — TAMIAS_DEPLOY_D names it directly.
+        let root = tmp.path().join("deploy.d");
+        std::env::set_var(overrides::OVERRIDES_ROOT_ENV, &root);
+        // A driver that records the env it was dispatched with.
+        let probe = tmp.path().join("seen");
+        let body = format!(
+            "#!/bin/sh\nprintf '%s' \"${}\" > {}\nexit 0\n",
+            overrides::OVERRIDES_ENV,
+            probe.display()
+        );
+        write_driver(&drivers_dir(), "tamias-driver-ovr", &body);
+        // No drop-in dir → no env injected (the probe still runs; it
+        // just records an empty variable).
+        assert!(dispatch("ovr", "deploy", tmp.path(), "pkg", None).unwrap());
+        assert_eq!(std::fs::read_to_string(&probe).unwrap(), "");
+        // With `<root>/ovr/pkg/` present the driver sees the dir.
+        let dir = root.join("ovr").join("pkg");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("ops.yaml"), "a: 1\n").unwrap();
+        assert!(dispatch("ovr", "deploy", tmp.path(), "pkg", None).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&probe).unwrap(),
+            dir.display().to_string()
+        );
+        // An invalid package name never resolves a dir → no env (the
+        // driver still runs; it just sees an empty variable).
+        assert!(dispatch("ovr", "deploy", tmp.path(), "../pkg", None).unwrap());
+        assert_eq!(std::fs::read_to_string(&probe).unwrap(), "");
+        std::env::remove_var("TAMIAS_HOME");
+        std::env::remove_var(overrides::OVERRIDES_ROOT_ENV);
     }
 }

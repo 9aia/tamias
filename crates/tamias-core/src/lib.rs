@@ -31,7 +31,7 @@ pub use manifest::{
     is_valid_kind, is_valid_name, is_valid_version, BinDecl, Manifest, Provider, ProviderHealth,
     ProviderHook, ProviderIngress, ProviderService, MANIFEST_NAMES,
 };
-pub use overlay::{find_store_entry, overlay, payload_root};
+pub use overlay::{find_store_entry, merge_values, overlay, payload_root};
 pub use process::output_with_timeout;
 pub use project::{Lock, LockEntry};
 pub use records::{copy_tree, StoreEntry, StoreRecord, RECORD_FILE};
