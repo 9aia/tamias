@@ -47,6 +47,36 @@ exit fails the tamias verb, with your stderr surfaced. Dispatch has a
 120s timeout (`capabilities` probes get 10s), so a hung driver fails the
 verb instead of wedging it.
 
+## Operator overrides (`TAMIAS_DEPLOY_OVERRIDES`)
+
+If your driver **generates** operator config (node yaml, service
+definitions), regeneration wipes hand-applied edits on every
+`install`/`deploy`/`uninstall`. tamias provides a persistence channel —
+you own the merge because only you know the generated document's
+shape:
+
+- When the package has drop-ins, tamias sets
+  `TAMIAS_DEPLOY_OVERRIDES=<dir>` on the driver spawn — every
+  lifecycle verb and `driver exec` passthrough carries it.
+- `<dir>` is `deploy.d/<kind>/<name>/` under the tamias config root
+  (`$XDG_CONFIG_HOME/tamias` → `~/.config/tamias`; `$TAMIAS_DEPLOY_D`
+  overrides the root). It holds `*.yaml`/`*.yml`/`*.json` fragments —
+  partial documents merged in **sorted-filename order, later files
+  win**, with `tamias_core::merge_values` semantics (dicts per-key,
+  arrays concat high-first with `id` dedupe).
+- Operators write fragments by hand, or use
+  `tamias deploy <pkg> --set key=value` (repeatable; dotted keys,
+  YAML values → the `cli.yaml` fragment), `--unset`,
+  `--clear-overrides`, `--show-overrides`.
+
+To honor it, fold the fragments over your generated doc before
+writing — parse each file (YAML or JSON by extension), merge them in
+filename order, then `merge_values(overrides, generated)` so operator
+keys win. A malformed fragment should fail the verb, not be skipped.
+Drivers that generate no config can ignore the variable entirely.
+Reference impl: `peregrin-cli`'s `provision` module
+(`apply_deploy_overrides`).
+
 ## Capabilities
 
 tamias maps a package's `type:` to a driver. Naming the binary
