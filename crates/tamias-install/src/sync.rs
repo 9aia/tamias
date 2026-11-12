@@ -397,6 +397,7 @@ mod tests {
             cache_root: root.join("cache"),
             max_download: None,
             signing: tamias_sign::SigningPolicy::default(),
+            bin_dir: None,
         }
     }
 
@@ -460,6 +461,41 @@ mod tests {
         // the lock was repaired by the reinstall
         let lock = Lock::load(&lock_path).unwrap();
         assert_ne!(lock.packages[0].digest, "sha256:stale");
+    }
+
+    /// A package fixture declaring one `shim: cli` bin.
+    fn pkg_with_bin(dir: &Path, name: &str) -> PathBuf {
+        let pkg = dir.join(name);
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(
+            pkg.join("tamias.yaml"),
+            format!(
+                "name: {name}\nversion: 1.0.0\nbins:\n  \
+                 - name: {name}-cli\n    shim: cli\n    driver: files\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(pkg.join("a.txt"), "a").unwrap();
+        pkg
+    }
+
+    #[test]
+    fn sync_deploys_declared_bins() {
+        let _g = EnvGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let p = pkg_with_bin(tmp.path(), "wb");
+        let proj = project(tmp.path(), &[p.display().to_string()]);
+        let mut env = env(tmp.path());
+        env.bin_dir = Some(tmp.path().join("bin"));
+        let report = sync_project(&env, &proj, Surface::Cli, opts(), &mut |_| {}).unwrap();
+        assert_eq!(report.outcomes[0].status, DepStatus::Installed);
+        // The dep's declared bin landed on the bin dir — sync runs the
+        // same post-commit deploy as `install` (T-027).
+        let shim = tmp.path().join("bin/wb-cli");
+        assert!(shim.is_file(), "sync must deploy declared bins[]");
+        assert!(std::fs::read_to_string(&shim)
+            .unwrap()
+            .contains("# tamias-bin: wb"));
     }
 
     #[test]

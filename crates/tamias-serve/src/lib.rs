@@ -145,6 +145,7 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                     max_download: Some(config.effective_limits(None, None).max_download),
                     // `signing.*` — package-signature verification policy.
                     signing: tamias_sign::SigningPolicy::resolve(Some(&config)),
+                    bin_dir: None,
                 },
                 reference,
                 allow_drivers,
@@ -203,6 +204,7 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                     cache_root: env.cache_root.clone(),
                     max_download: Some(config.effective_limits(None, None).max_download),
                     signing: tamias_sign::SigningPolicy::resolve(Some(&config)),
+                    bin_dir: None,
                 },
                 dir,
                 tamias_install::Surface::Rpc,
@@ -541,6 +543,37 @@ mod tests {
     }
 
     #[test]
+    fn dispatch_install_deploys_declared_bins() {
+        let _g = EnvGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        // The serve `Env` carries no bin dir — the deploy resolves
+        // `TAMIAS_BIN_DIR` like the CLI does.
+        let bindir = tmp.path().join("bin");
+        std::env::set_var("TAMIAS_BIN_DIR", &bindir);
+        let env = env();
+        let pkg = tempfile::tempdir().unwrap();
+        std::fs::write(
+            pkg.path().join("tamias.yaml"),
+            "name: swb\nversion: 1.0.0\nbins:\n  \
+             - name: swb-cli\n    shim: cli\n    driver: files\n",
+        )
+        .unwrap();
+        std::fs::write(pkg.path().join("a.txt"), "a").unwrap();
+        let req = format!(
+            "{{\"op\":\"install\",\"ref\":{:?}}}",
+            pkg.path().to_str().unwrap()
+        );
+        dispatch(&env, &req).unwrap();
+        // T-027: the install op runs the same post-commit bins[] deploy.
+        let shim = bindir.join("swb-cli");
+        assert!(shim.is_file(), "serve install must deploy declared bins[]");
+        assert!(std::fs::read_to_string(&shim)
+            .unwrap()
+            .contains("# tamias-bin: swb"));
+        std::env::remove_var("TAMIAS_BIN_DIR");
+    }
+
+    #[test]
     fn dispatch_plan_is_a_dry_run() {
         let env = env();
         let pkg = tempfile::tempdir().unwrap();
@@ -627,6 +660,7 @@ mod tests {
                 cache_root: seed_env.cache_root.clone(),
                 max_download: None,
                 signing: tamias_sign::SigningPolicy::default(),
+                bin_dir: None,
             },
             &pkg.display().to_string(),
             false,

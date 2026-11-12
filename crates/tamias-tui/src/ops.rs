@@ -377,6 +377,14 @@ fn install_ref(
             Progress::Installing { label } => log(format!("installing {label}")),
             Progress::Including { base } => log(format!("including {base}")),
             Progress::DriverAction { action } => log(format!("driver: {action}")),
+            Progress::BinsDeployed { actions, warnings } => {
+                for warning in warnings {
+                    log(format!("warning: {warning}"));
+                }
+                for action in actions {
+                    log(action);
+                }
+            }
             Progress::Done { label } => log(format!("done — {label}")),
         },
     )
@@ -904,6 +912,14 @@ fn sync_deps(
             Progress::Installing { label } => log(format!("installing {label}")),
             Progress::Including { base } => log(format!("including {base}")),
             Progress::DriverAction { action } => log(format!("driver: {action}")),
+            Progress::BinsDeployed { actions, warnings } => {
+                for warning in warnings {
+                    log(format!("warning: {warning}"));
+                }
+                for action in actions {
+                    log(action);
+                }
+            }
             Progress::Done { label } => log(format!("done — {label}")),
         },
     )?;

@@ -8,7 +8,7 @@
 //!     → payload manifest → bundled-driver consent gate
 //!     → `template.extends` parent materialization (`.scarab-parent/`)
 //!     → register bundled drivers → driver `install` dispatch
-//!     → store commit
+//!     → store commit → declared `bins[]` deploy
 //! ```
 //!
 //! Driver work runs *before* the store commit: a missing or failing
@@ -18,6 +18,12 @@
 //! registered or executed without explicit consent (`--allow-drivers`,
 //! `"allow_drivers":true`, `TAMIAS_ALLOW_DRIVERS=1`, or a recorded
 //! per-package consent — see [`consent`]).
+//!
+//! The `bins[]` deploy is the mirror image — *after* the commit, on
+//! every install path (CLI, serve op, sync dep, TUI job), via
+//! [`install_with_progress_opts`]'s `deploy_bins` tail; a deploy
+//! failure fails the install post-commit (`tamias bin deploy --force`
+//! is the retry).
 //!
 //! Progress is reported through [`Progress`] events so each surface
 //! keeps its own rendering: the CLI prints `tamias:` lines to stderr
@@ -67,6 +73,11 @@ pub struct Env {
     /// verified before the store commit; `required` rejects unsigned
     /// installs.
     pub signing: tamias_sign::SigningPolicy,
+    /// Bin dir the post-commit `bins[]` deploy writes into — `None`
+    /// → [`tamias_bin::default_bin_dir`] (`TAMIAS_BIN_DIR` →
+    /// `XDG_BIN_HOME` → `~/.local/bin`). Surfaces with their own
+    /// bin-dir resolution (the CLI's `Env::bin_dir`) pass `Some`.
+    pub bin_dir: Option<PathBuf>,
 }
 
 impl Env {
@@ -86,6 +97,7 @@ impl Env {
             cache_root,
             max_download: config.map(|c| c.effective_limits(None, None).max_download),
             signing: tamias_sign::SigningPolicy::resolve(config),
+            bin_dir: None,
         }
     }
 }
@@ -163,6 +175,19 @@ pub enum Progress {
         /// The action line (`driver: <path>`).
         action: String,
     },
+    /// The post-commit declared-`bins[]` deploy — emitted once per
+    /// top-level install whose manifest declares bins (or that
+    /// produced deploy warnings). `actions` are the
+    /// `bin: <path> (deployed|already)` lines; `warnings` are
+    /// collision/foreign-file notices. The CLI prints actions like
+    /// driver actions and warnings to stderr; other surfaces may
+    /// drop them.
+    BinsDeployed {
+        /// Deploy action lines from [`tamias_bin::deploy_bins`].
+        actions: Vec<String>,
+        /// Collision/foreign-file warnings from the deploy.
+        warnings: Vec<String>,
+    },
     /// `tamias: done — {label}` — after the store commit.
     Done {
         /// The committed entry's label.
@@ -195,14 +220,75 @@ pub fn install_with_progress(
     surface: Surface,
     report: &mut dyn FnMut(Progress),
 ) -> Result<StoreEntry, Error> {
-    install_inner(
+    install_with_progress_opts(env, reference, allow_drivers, surface, report, true)
+}
+
+/// [`install_with_progress`] plus the post-commit `bins[]` deploy
+/// toggle — `deploy_bins: false` is the CLI's `--no-bins`: the entry
+/// commits but declared bins stay undeployed (`tamias bin deploy`
+/// materializes them later). Every other caller deploys: the deploy
+/// lives *here*, in the one pipeline, so `tamias install`/`add`/
+/// `update`, `tamias serve`'s `install` op, `sync` deps, and the TUI's
+/// install jobs all land declared bins on `PATH` uniformly. Only the
+/// top-level entry deploys — `include:`/`extends` bases recurse
+/// through [`install_inner`] directly and never reach this tail.
+///
+/// # Errors
+/// Same as [`install_with_progress`], plus post-commit bin-deploy
+/// failures (a foreign file at a bin path, I/O) — the entry is
+/// committed either way; `tamias bin deploy --force` is the retry.
+pub fn install_with_progress_opts(
+    env: &Env,
+    reference: &str,
+    allow_drivers: bool,
+    surface: Surface,
+    report: &mut dyn FnMut(Progress),
+    deploy_bins: bool,
+) -> Result<StoreEntry, Error> {
+    let entry = install_inner(
         env,
         reference,
         allow_drivers,
         surface,
         report,
         &mut include::IncludeState::default(),
-    )
+    )?;
+    if deploy_bins {
+        deploy_committed_bins(env, &entry, report)?;
+    }
+    Ok(entry)
+}
+
+/// The post-commit half of the bin lifecycle — deploy the entry's
+/// declared `bins[]` into the bin dir. Runs on *every* install path
+/// (see [`install_with_progress_opts`]); roots match the uninstall
+/// side's ([`tamias_bin::default_bin_dir`] /
+/// [`tamias_bin::default_alias_root`] — `TAMIAS_BIN_DIR`/
+/// `XDG_BIN_HOME` resolution is the same one the CLI's `Env` uses).
+/// A deploy failure fails the install *after* the commit: the entry
+/// is honest state and `bin deploy --force` is the retry path.
+fn deploy_committed_bins(
+    env: &Env,
+    entry: &StoreEntry,
+    report: &mut dyn FnMut(Progress),
+) -> Result<(), Error> {
+    let bin_dir = env
+        .bin_dir
+        .clone()
+        .unwrap_or_else(tamias_bin::default_bin_dir);
+    let deployed = tamias_bin::deploy_bins(
+        entry,
+        &bin_dir,
+        &tamias_bin::default_alias_root(&env.store_root),
+        false,
+    )?;
+    if !deployed.actions.is_empty() || !deployed.warnings.is_empty() {
+        report(Progress::BinsDeployed {
+            actions: deployed.actions,
+            warnings: deployed.warnings,
+        });
+    }
+    Ok(())
 }
 
 /// The pipeline body — [`install_with_progress`] with the caller's
@@ -937,6 +1023,7 @@ mod tests {
             cache_root: dir.path().join("cache"),
             max_download: None,
             signing: tamias_sign::SigningPolicy::default(),
+            bin_dir: None,
         };
         (dir, env)
     }
@@ -990,6 +1077,7 @@ mod tests {
             cache_root: tmp.path().join("cache"),
             max_download: None,
             signing: tamias_sign::SigningPolicy::default(),
+            bin_dir: None,
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(pkg.join("drivers")).unwrap();
@@ -1044,6 +1132,7 @@ mod tests {
             cache_root: tmp.join("cache"),
             max_download: None,
             signing: tamias_sign::SigningPolicy::default(),
+            bin_dir: None,
         }
     }
 
@@ -1121,6 +1210,7 @@ mod tests {
             cache_root: tmp.path().join("cache"),
             max_download: None,
             signing: tamias_sign::SigningPolicy::default(),
+            bin_dir: None,
         };
         let pkg = tmp.path().join("pkg");
         std::fs::create_dir_all(&pkg).unwrap();
@@ -1221,6 +1311,7 @@ mod tests {
                 required: false,
                 namespace: tamias_sign::DEFAULT_NAMESPACE.to_string(),
             },
+            bin_dir: None,
         }
     }
 
@@ -1718,6 +1809,7 @@ mod tests {
             cache_root: tmp.path().join("cache"),
             max_download: None,
             signing: tamias_sign::SigningPolicy::default(),
+            bin_dir: None,
         };
         let dir = tmp.path().join("pkg");
         std::fs::create_dir_all(dir.join("drivers")).unwrap();
@@ -1815,5 +1907,69 @@ mod tests {
         assert_eq!(plan.provider_services[0].name, "web");
         assert_eq!(plan.provider_services[0].exec, "/bin/serve --port 8080");
         assert!(Store::new(&env.store_root).entries().unwrap().is_empty());
+    }
+
+    /// T-027: the post-commit `bins[]` deploy lives in the shared
+    /// pipeline, so `install_with_progress` (the `serve` op / `sync`
+    /// dep / TUI job shape) lands declared bins on `PATH` exactly like
+    /// the CLI's `install` — `env.bin_dir` is the target, the
+    /// `BinsDeployed` progress event reports it, and
+    /// `install_with_progress_opts(.., deploy_bins: false)` is the
+    /// `--no-bins` opt-out.
+    #[test]
+    fn install_deploys_declared_bins_unless_opted_out() {
+        let _g = EnvGuard::new();
+        let bins_pkg = |root: &std::path::Path| {
+            let dir = root.join("pkg");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("tamias.yaml"),
+                "name: w\nversion: 1.0.0\n\
+                 bins:\n  - name: w-tool\n    shim: cli\n    driver: w\n",
+            )
+            .unwrap();
+            std::fs::write(dir.join("a.txt"), "a").unwrap();
+            dir
+        };
+
+        // default path deploys into env.bin_dir + reports the event
+        let (tmp, mut ienv) = env();
+        ienv.bin_dir = Some(tmp.path().join("userbin"));
+        let dir = bins_pkg(tmp.path());
+        let mut events = Vec::new();
+        install_with_progress(
+            &ienv,
+            dir.to_str().unwrap(),
+            false,
+            Surface::Cli,
+            &mut |p| events.push(p),
+        )
+        .unwrap();
+        let shim = tmp.path().join("userbin/w-tool");
+        assert!(shim.is_file(), "declared bin not deployed: {shim:?}");
+        let script = std::fs::read_to_string(&shim).unwrap();
+        assert!(script.contains("# tamias-bin: w"), "{script}");
+        assert!(
+            events
+                .iter()
+                .any(|p| matches!(p, Progress::BinsDeployed { .. })),
+            "{events:?}"
+        );
+
+        // deploy_bins: false — the entry commits, no shim lands
+        let (tmp2, mut env2) = env();
+        env2.bin_dir = Some(tmp2.path().join("userbin"));
+        let dir2 = bins_pkg(tmp2.path());
+        let entry = install_with_progress_opts(
+            &env2,
+            dir2.to_str().unwrap(),
+            false,
+            Surface::Cli,
+            &mut |_| {},
+            false,
+        )
+        .unwrap();
+        assert_eq!(entry.record.name, "w");
+        assert!(!tmp2.path().join("userbin/w-tool").exists());
     }
 }

@@ -742,6 +742,14 @@ fn progress_lines(progress: Progress) {
         Progress::Installing { label } => eprintln!("tamias: installing {label}"),
         Progress::Including { base } => eprintln!("tamias: including {base}"),
         Progress::DriverAction { action } => println!("  {action}"),
+        Progress::BinsDeployed { actions, warnings } => {
+            for warning in &warnings {
+                eprintln!("tamias: warning — {warning}");
+            }
+            for action in &actions {
+                println!("  {action}");
+            }
+        }
         Progress::Done { label } => eprintln!("tamias: done — {label}"),
     }
 }
@@ -755,44 +763,40 @@ fn install(
     allow_drivers: bool,
     no_bins: bool,
 ) -> Result<StoreEntry, Error> {
-    let entry = tamias_install::install_with_progress(
-        &tamias_install::Env::for_config(
-            env.store_root.clone(),
-            env.cache_root.clone(),
-            cli_config().as_ref(),
-        ),
+    // The declared-`bins[]` deploy lives inside the shared pipeline
+    // (`tamias_install::install_with_progress_opts`) so `sync`,
+    // `tamias serve install`, and the TUI deploy uniformly; `--no-bins`
+    // is the only opt-out. A deploy failure fails the install *after*
+    // the commit: the entry is honest state and `bin deploy --force`
+    // is the retry path.
+    let entry = tamias_install::install_with_progress_opts(
+        &install_env(env),
         reference,
         allow_drivers,
         Surface::Cli,
         &mut progress_lines,
+        !no_bins,
     )?;
     // `tamias bin` links resolve through a per-name alias — retarget it
     // at the fresh entry dir so upgrades don't break existing links.
     refresh_bin_alias(env, &entry);
-    // Declared `bins[]` deploy by default (P-023) — `--no-bins` opts
-    // out; `tamias bin deploy` deploys later. A deploy failure fails
-    // the install *after* the commit: the entry is honest state and
-    // `bin deploy --force` is the retry path (a foreign file at a bin
-    // path is operator-actionable, not something to roll back over).
-    if !no_bins {
-        deploy_declared_bins(env, &entry)?;
-    }
     Ok(entry)
 }
 
-/// Deploy an entry's declared `bins[]` — the post-commit half of
-/// `install`'s bin lifecycle. Actions print like driver actions;
-/// collision warnings go to stderr.
-fn deploy_declared_bins(env: &Env, entry: &StoreEntry) -> Result<(), Error> {
-    let report =
-        tamias_bin::deploy_bins(entry, &env.bin_dir, &bin_alias_root(&env.store_root), false)?;
-    for warning in &report.warnings {
-        eprintln!("tamias: warning — {warning}");
+/// The pipeline [`tamias_install::Env`] for this CLI `Env` — the
+/// shared `for_config` resolution plus the CLI's own `bin_dir`
+/// (identical to [`tamias_bin::default_bin_dir`] in production; the
+/// test `Env` overrides it, and the post-commit `bins[]` deploy must
+/// land there, not in the operator's real `~/.local/bin`).
+fn install_env(env: &Env) -> tamias_install::Env {
+    tamias_install::Env {
+        bin_dir: Some(env.bin_dir.clone()),
+        ..tamias_install::Env::for_config(
+            env.store_root.clone(),
+            env.cache_root.clone(),
+            cli_config().as_ref(),
+        )
     }
-    for action in &report.actions {
-        println!("  {action}");
-    }
-    Ok(())
 }
 
 /// `install --plan` — the dry-run in `tamias-install` over the same
@@ -934,11 +938,7 @@ fn sync(
     allow_drivers: bool,
 ) -> Result<tamias_install::SyncReport, Error> {
     tamias_install::sync_project(
-        &tamias_install::Env::for_config(
-            env.store_root.clone(),
-            env.cache_root.clone(),
-            cli_config().as_ref(),
-        ),
+        &install_env(env),
         Path::new("."),
         Surface::Cli,
         tamias_install::SyncOptions {
