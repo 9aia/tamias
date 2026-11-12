@@ -93,6 +93,25 @@ impl Store {
         }
     }
 
+    /// Other installed entries sharing `entry`'s bare package name —
+    /// the "siblings remain" check for version-aware uninstall
+    /// (T-029). Drivers key their shared operator state
+    /// (`~/.config/<product>/…`) on `--name` alone — scope, kind, and
+    /// version never reach the driver — so `uninstall` teardown must
+    /// wait until the last same-name entry is gone. Matching is on
+    /// `record.name` only: any other entry that would dispatch to a
+    /// driver under the same `--name` keeps that shared state alive.
+    ///
+    /// # Errors
+    /// Propagates [`Store::entries`] failures.
+    pub fn siblings_of(&self, entry: &StoreEntry) -> Result<Vec<StoreEntry>, Error> {
+        Ok(self
+            .entries()?
+            .into_iter()
+            .filter(|e| e.dir != entry.dir && e.record.name == entry.record.name)
+            .collect())
+    }
+
     /// Unpack `payload` into the entry dir, replacing an existing one
     /// (re-install is the upgrade path). The payload is staged into a
     /// sibling `.tmp-*` dir — copy, digest, and record write all happen
@@ -390,6 +409,37 @@ mod tests {
         assert!(store.find("@acme/w@1.0.0").is_ok());
         assert!(store.remove("@acme/w@1.0.0").is_ok());
         assert_eq!(store.entries().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn siblings_of_matches_bare_name_across_versions_and_scopes() {
+        let root = tempfile::tempdir().unwrap();
+        let store = Store::new(root.path());
+        let p = tempfile::tempdir().unwrap();
+        payload(p.path());
+        let mut v1 = record("w", None);
+        v1.version = Some("1.0.0".into());
+        let mut v2 = record("w", None);
+        v2.version = Some("2.0.0".into());
+        let e1 = store.install(p.path(), v1).unwrap();
+        store.install(p.path(), v2).unwrap();
+        store.install(p.path(), record("other", None)).unwrap();
+        // a scoped install of the same bare name shares the driver's
+        // `--name` namespace too
+        let mut scoped = record("w", Some("acme"));
+        scoped.version = Some("3.0.0".into());
+        store.install(p.path(), scoped).unwrap();
+        let sibs = store.siblings_of(&e1).unwrap();
+        let labels: Vec<String> = sibs.iter().map(StoreEntry::label).collect();
+        assert_eq!(labels, ["@acme/w@3.0.0", "w@2.0.0"]);
+        // every other same-name entry is a sibling, whichever version
+        // is being removed
+        let last = store.find("w@2.0.0").unwrap();
+        let sibs = store.siblings_of(&last).unwrap();
+        assert_eq!(sibs.len(), 2);
+        store.remove("w@2.0.0").unwrap();
+        store.remove("@acme/w@3.0.0").unwrap();
+        assert!(store.siblings_of(&e1).unwrap().is_empty());
     }
 
     #[test]

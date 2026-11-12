@@ -687,6 +687,14 @@ fn surviving_units(
 /// provider still declares the same unit name — that unit is
 /// re-rendered from the survivor's spec instead.
 ///
+/// The driver `uninstall` verb is **version-aware** (T-029): drivers
+/// key shared operator state (`~/.config/<product>/…`) on the bare
+/// `--name`, so the verb runs only when the entry being dropped is the
+/// last installed one sharing that name — removing one of several
+/// versions must not tear down state the survivors still use. The
+/// store entry itself is always dropped; shared units already follow
+/// the same rule via [`surviving_units`].
+///
 /// # Errors
 /// Store lookup, driver dispatch, or store removal failures.
 pub fn uninstall(store_root: &Path, name: &str) -> Result<DeployReport, Error> {
@@ -711,12 +719,29 @@ pub fn uninstall(store_root: &Path, name: &str) -> Result<DeployReport, Error> {
         .unwrap_or_default();
     // Teardown runs before the entry is dropped: a failing driver keeps
     // the store entry so the uninstall can be retried instead of
-    // leaking provider-side resources under a false "uninstalled".
-    if !tamias_driver::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None)?
-        && kind != "files"
-    {
+    // leaking provider-side resources under a false "uninstalled". The
+    // verb itself is version-aware (T-029): while another same-name
+    // install remains, the driver is not dispatched at all — its
+    // name-keyed shared state (`~/.config/<product>/…`) belongs to the
+    // survivors.
+    let siblings = store.siblings_of(&entry)?;
+    if siblings.is_empty() {
+        if !tamias_driver::dispatch(kind, "uninstall", &entry.dir, &entry.record.name, None)?
+            && kind != "files"
+        {
+            report.warnings.push(format!(
+                "no driver for type '{kind}'; provider resources may remain"
+            ));
+        }
+    } else {
         report.warnings.push(format!(
-            "no driver for type '{kind}'; provider resources may remain"
+            "driver uninstall for {} skipped — sibling installs remain: {}",
+            entry.label(),
+            siblings
+                .iter()
+                .map(StoreEntry::label)
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     let record = store.remove(name)?;
@@ -982,5 +1007,132 @@ mod tests {
 
     fn store_root(tmp: &Path) -> PathBuf {
         tmp.join("store")
+    }
+
+    /// Serializes tests that mutate process env (`TAMIAS_HOME` — driver
+    /// discovery) and restores it on drop, panic-safe. Mirrors
+    /// `tamias-install`'s `EnvGuard`; provider's suite is its own test
+    /// binary, so a private lock suffices.
+    struct EnvGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+    }
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            Self {
+                _lock: lock,
+                env: std::env::vars_os().collect(),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, _) in std::env::vars_os() {
+                if !self.env.iter().any(|(sk, _)| *sk == k) {
+                    std::env::remove_var(&k);
+                }
+            }
+            for (k, v) in &self.env {
+                std::env::set_var(k, v);
+            }
+        }
+    }
+
+    /// Two installed versions of one `t029test`-kind package plus a
+    /// fake driver that emulates bupha's contract — `uninstall`
+    /// deletes the shared name-keyed config and logs that it ran.
+    /// Returns `(store, shared-config path, driver-log path)`.
+    fn versioned_store(tmp: &Path) -> (Store, PathBuf, PathBuf) {
+        std::env::set_var("TAMIAS_HOME", tmp.join("th"));
+        let drivers = tmp.join("th/drivers");
+        std::fs::create_dir_all(&drivers).unwrap();
+        let log = tmp.join("driver.log");
+        let cfg = tmp.join("shared.toml");
+        let script = drivers.join("tamias-driver-t029test");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nif [ \"$1\" = uninstall ]; then\n  echo uninstall >> {}\n  rm -f {}\nfi\n",
+                log.display(),
+                cfg.display()
+            ),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::fs::write(&cfg, "live = true\n").unwrap();
+        let store = Store::new(tmp.join("store"));
+        for v in ["0.3.0", "0.3.1"] {
+            let payload = tmp.join(format!("pkg{v}"));
+            std::fs::create_dir_all(&payload).unwrap();
+            std::fs::write(payload.join("a.txt"), "a").unwrap();
+            store
+                .install(
+                    &payload,
+                    tamias_core::StoreRecord {
+                        name: "ci-gate".into(),
+                        scope: None,
+                        version: Some(v.into()),
+                        kind: Some("t029test".into()),
+                        source_ref: "./x".into(),
+                        resolved: format!("sha256:{v}"),
+                        digest: String::new(),
+                        signature: None,
+                        signer: None,
+                        trust: None,
+                        installed_at: 0,
+                    },
+                )
+                .unwrap();
+        }
+        (store, cfg, log)
+    }
+
+    /// T-029 regression: `uninstall` must not dispatch the driver's
+    /// `uninstall` verb while a same-name sibling remains — drivers key
+    /// shared operator state (`~/.config/<product>/…`) on `--name`, so
+    /// tearing it down mid-version-churn wipes the survivors' live
+    /// config. The last same-name removal runs the verb.
+    #[test]
+    fn uninstall_skips_driver_while_siblings_remain() {
+        let _g = EnvGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let (store, cfg, log) = versioned_store(tmp.path());
+        // Removing 0.3.0 while 0.3.1 remains: driver verb skipped,
+        // shared config preserved, store entry dropped.
+        let report = uninstall(store.root(), "ci-gate@0.3.0").unwrap();
+        assert!(
+            cfg.is_file(),
+            "shared config must survive a non-last uninstall"
+        );
+        assert!(
+            !log.exists(),
+            "driver uninstall must not run while siblings remain"
+        );
+        assert!(
+            report.warnings.iter().any(|w| w.contains("skipped")),
+            "{:?}",
+            report.warnings
+        );
+        assert_eq!(store.entries().unwrap().len(), 1);
+        // The last version runs the verb — shared config goes with it.
+        let report = uninstall(store.root(), "ci-gate@0.3.1").unwrap();
+        assert!(!cfg.exists(), "last uninstall removes shared config");
+        assert!(log.exists(), "driver uninstall ran for last version");
+        assert!(
+            report.lines.iter().any(|l| l.contains("uninstalled")),
+            "{:?}",
+            report.lines
+        );
+        assert!(store.entries().unwrap().is_empty());
+        std::env::remove_var("TAMIAS_HOME");
     }
 }
