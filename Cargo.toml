@@ -47,7 +47,7 @@ members = [
 exclude = ["crates/tamias-driver-tamias"]
 
 [workspace.package]
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/9aia/tamias"
@@ -65,42 +65,42 @@ lto = "thin"
 
 [workspace.dependencies]
 tamias = { path = "crates/tamias-cli", version = "0.1.3" }
-tamias-cache = { path = "crates/tamias-cache", version = "0.1.4" }
-tamias-cache-local = { path = "crates/tamias-cache-local", version = "0.1.4" }
-tamias-config = { path = "crates/tamias-config", version = "0.1.4" }
-tamias-config-yml = { path = "crates/tamias-config-yml", version = "0.1.4" }
-tamias-config-toml = { path = "crates/tamias-config-toml", version = "0.1.4" }
-tamias-driver = { path = "crates/tamias-driver", version = "0.1.4" }
-tamias-install = { path = "crates/tamias-install", version = "0.1.4" }
+tamias-cache = { path = "crates/tamias-cache", version = "0.1.5" }
+tamias-cache-local = { path = "crates/tamias-cache-local", version = "0.1.5" }
+tamias-config = { path = "crates/tamias-config", version = "0.1.5" }
+tamias-config-yml = { path = "crates/tamias-config-yml", version = "0.1.5" }
+tamias-config-toml = { path = "crates/tamias-config-toml", version = "0.1.5" }
+tamias-driver = { path = "crates/tamias-driver", version = "0.1.5" }
+tamias-install = { path = "crates/tamias-install", version = "0.1.5" }
 tamias-core = { path = "crates/tamias-core", version = "0.1.3" }
-tamias-deploy = { path = "crates/tamias-deploy", version = "0.1.4" }
-tamias-deploy-systemd = { path = "crates/tamias-deploy-systemd", version = "0.1.4" }
-tamias-deploy-windows = { path = "crates/tamias-deploy-windows", version = "0.1.4" }
-tamias-deploy-launchd = { path = "crates/tamias-deploy-launchd", version = "0.1.4" }
+tamias-deploy = { path = "crates/tamias-deploy", version = "0.1.5" }
+tamias-deploy-systemd = { path = "crates/tamias-deploy-systemd", version = "0.1.5" }
+tamias-deploy-windows = { path = "crates/tamias-deploy-windows", version = "0.1.5" }
+tamias-deploy-launchd = { path = "crates/tamias-deploy-launchd", version = "0.1.5" }
 tamias-deploy-cf = { path = "crates/tamias-deploy-cf", version = "0.1.2" }
-tamias-publish = { path = "crates/tamias-publish", version = "0.1.4" }
-tamias-provider = { path = "crates/tamias-provider", version = "0.1.4" }
-tamias-registry = { path = "crates/tamias-registry", version = "0.1.4" }
-tamias-registry-local = { path = "crates/tamias-registry-local", version = "0.1.4" }
-tamias-registry-open = { path = "crates/tamias-registry-open", version = "0.1.4" }
-tamias-registry-cf = { path = "crates/tamias-registry-cf", version = "0.1.4" }
-tamias-store-cf = { path = "crates/tamias-store-cf", version = "0.1.4" }
-tamias-cache-cf = { path = "crates/tamias-cache-cf", version = "0.1.4" }
-tamias-bin = { path = "crates/tamias-bin", version = "0.1.4" }
-tamias-serve = { path = "crates/tamias-serve", version = "0.1.4" }
-tamias-shell = { path = "crates/tamias-shell", version = "0.1.4" }
-tamias-sign = { path = "crates/tamias-sign", version = "0.1.4" }
-tamias-source = { path = "crates/tamias-source", version = "0.1.4" }
-tamias-source-cf = { path = "crates/tamias-source-cf", version = "0.1.4" }
-tamias-source-fs = { path = "crates/tamias-source-fs", version = "0.1.4" }
-tamias-source-git = { path = "crates/tamias-source-git", version = "0.1.4" }
-tamias-source-http = { path = "crates/tamias-source-http", version = "0.1.4" }
-tamias-source-registry = { path = "crates/tamias-source-registry", version = "0.1.4" }
-tamias-store = { path = "crates/tamias-store", version = "0.1.4" }
-tamias-store-local = { path = "crates/tamias-store-local", version = "0.1.4" }
-tamias-tui = { path = "crates/tamias-tui", version = "0.1.4" }
-tamias-telemetry = { path = "crates/tamias-telemetry", version = "0.1.4" }
-tamias-testkit = { path = "crates/tamias-testkit", version = "0.1.4" }
+tamias-publish = { path = "crates/tamias-publish", version = "0.1.5" }
+tamias-provider = { path = "crates/tamias-provider", version = "0.1.5" }
+tamias-registry = { path = "crates/tamias-registry", version = "0.1.5" }
+tamias-registry-local = { path = "crates/tamias-registry-local", version = "0.1.5" }
+tamias-registry-open = { path = "crates/tamias-registry-open", version = "0.1.5" }
+tamias-registry-cf = { path = "crates/tamias-registry-cf", version = "0.1.5" }
+tamias-store-cf = { path = "crates/tamias-store-cf", version = "0.1.5" }
+tamias-cache-cf = { path = "crates/tamias-cache-cf", version = "0.1.5" }
+tamias-bin = { path = "crates/tamias-bin", version = "0.1.5" }
+tamias-serve = { path = "crates/tamias-serve", version = "0.1.5" }
+tamias-shell = { path = "crates/tamias-shell", version = "0.1.5" }
+tamias-sign = { path = "crates/tamias-sign", version = "0.1.5" }
+tamias-source = { path = "crates/tamias-source", version = "0.1.5" }
+tamias-source-cf = { path = "crates/tamias-source-cf", version = "0.1.5" }
+tamias-source-fs = { path = "crates/tamias-source-fs", version = "0.1.5" }
+tamias-source-git = { path = "crates/tamias-source-git", version = "0.1.5" }
+tamias-source-http = { path = "crates/tamias-source-http", version = "0.1.5" }
+tamias-source-registry = { path = "crates/tamias-source-registry", version = "0.1.5" }
+tamias-store = { path = "crates/tamias-store", version = "0.1.5" }
+tamias-store-local = { path = "crates/tamias-store-local", version = "0.1.5" }
+tamias-tui = { path = "crates/tamias-tui", version = "0.1.5" }
+tamias-telemetry = { path = "crates/tamias-telemetry", version = "0.1.5" }
+tamias-testkit = { path = "crates/tamias-testkit", version = "0.1.5" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

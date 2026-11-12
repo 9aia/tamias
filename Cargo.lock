@@ -2601,7 +2601,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-bin"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
  "tamias-driver",
@@ -2610,21 +2610,21 @@ dependencies = [
 
 [[package]]
 name = "tamias-cache"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
 ]
 
 [[package]]
 name = "tamias-cache-cf"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
 ]
 
 [[package]]
 name = "tamias-cache-local"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -2634,7 +2634,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-config"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde",
  "tamias-core",
@@ -2643,7 +2643,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-config-toml"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-config",
  "tamias-core",
@@ -2652,7 +2652,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-config-yml"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_yaml_ng",
  "tamias-config",
@@ -2680,7 +2680,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-deploy"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
 ]
@@ -2696,7 +2696,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-deploy-launchd"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
  "tamias-deploy",
@@ -2705,7 +2705,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-deploy-systemd"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
  "tamias-deploy",
@@ -2714,7 +2714,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-deploy-windows"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
  "tamias-deploy",
@@ -2723,7 +2723,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-driver"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_json",
  "tamias-core",
@@ -2732,7 +2732,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-install"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -2759,7 +2759,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-provider"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
  "tamias-deploy",
@@ -2773,7 +2773,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-publish"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
  "tamias-source",
@@ -2784,7 +2784,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-registry"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proptest",
  "semver",
@@ -2795,7 +2795,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-registry-cf"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_json",
  "tamias-core",
@@ -2807,7 +2807,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-registry-local"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_json",
  "tamias-core",
@@ -2817,7 +2817,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-registry-open"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_json",
  "tamias-config",
@@ -2833,7 +2833,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-serve"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_json",
  "tamias-cache-local",
@@ -2850,14 +2850,14 @@ dependencies = [
 
 [[package]]
 name = "tamias-shell"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "temp-env",
 ]
 
 [[package]]
 name = "tamias-sign"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-config",
  "tamias-core",
@@ -2866,7 +2866,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-source"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
  "tempfile",
@@ -2874,7 +2874,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-source-cf"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proptest",
  "tamias-core",
@@ -2888,7 +2888,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-source-fs"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proptest",
  "tamias-core",
@@ -2899,7 +2899,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-source-git"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proptest",
  "tamias-core",
@@ -2909,7 +2909,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-source-http"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proptest",
  "tamias-core",
@@ -2920,7 +2920,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-source-registry"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-config",
  "tamias-core",
@@ -2934,21 +2934,21 @@ dependencies = [
 
 [[package]]
 name = "tamias-store"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
 ]
 
 [[package]]
 name = "tamias-store-cf"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
 ]
 
 [[package]]
 name = "tamias-store-local"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_json",
  "tamias-core",
@@ -2957,7 +2957,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-telemetry"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "http",
  "opentelemetry",
@@ -2970,7 +2970,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-testkit"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "serde_json",
  "tamias-core",
@@ -2978,7 +2978,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-tui"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "crossterm",
  "notify",
@@ -3001,7 +3001,7 @@ dependencies = [
 
 [[package]]
 name = "tamias-xtask"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "tamias-core",
  "tamias-publish",
