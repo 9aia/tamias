@@ -15,8 +15,18 @@ tamias-driver-<type> <verb> --dir <dir> --name <name> [--config <file>]
 | --- | --- |
 | `install` | materialize the payload at `--dir` |
 | `deploy` | activate (unit, hooks) |
-| `uninstall` | tear down |
+| `uninstall` | tear down — **last installed version only** (see below) |
 | `capabilities` | print `{"types":[…],"verbs":[…]}` on stdout — the types + verbs this binary handles |
+
+`uninstall` is **version-aware**: drivers key shared operator state
+(`~/.config/<product>/…`) on `--name` alone, so tamias dispatches the
+verb only when the store entry being removed is the *last* installed
+one sharing that package name. Removing one of several coexisting
+versions skips the verb entirely (the store entry still drops, and
+the skip is reported); the final removal runs it once, with that
+last entry's `--dir`. If your driver tracks per-version resources,
+note they accumulate until the last uninstall — keep `uninstall`
+cheap and name-keyed.
 
 ## Ops verbs beyond the lifecycle three
 
