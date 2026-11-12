@@ -78,8 +78,10 @@ flatten includes by default (`--keep-includes` ships the raw payload).
 addressed cache can be hit *before* fetching. The fetch→unpack split is
 what makes repeat installs and air-gapped nodes free.
 
-Declared `bins[]` (P-023) ride the same commit: `install` deploys them
-into the bin dir by default (`--no-bins` opts out) — `shim: cli`
+Declared `bins[]` (P-023) ride the same commit: every install path —
+`install`/`add`/`update`, `sync`, the `tamias serve` `install` op, the
+TUI — deploys them into the bin dir by default (`--no-bins` opts out
+on the CLI verbs) — `shim: cli`
 entries become generated scripts exec'ing `tamias bin exec`, and
 `payload: tools/bin/<triple>/…` entries link real binaries through a
 per-package `bin-alias/` so upgrades don't break them. `bin/`
