@@ -74,6 +74,11 @@ Crates publish to **crates.io** in dependency order via `scripts/release.sh`
 `cargo install --git https://github.com/9aia/tamias tamias`. The script needs
 `cargo-edit` (`cargo set-version`) and, for artifacts, `cargo-dist` (`dist`) + `gh`.
 
+The org release plane is **tarsi** (`repos/tarsi` — `tarsi-serve` ops;
+project ADR-0005): `scripts/release.sh` is being converted to a thin
+shim over it (PL-014 E1), and tamias is the only repo whose releases
+still publish to crates.io (ADR-0004).
+
 ## Docs
 
 Follow Diátaxis: `docs/tutorials/` · `docs/how-to/` · `docs/reference/`

@@ -108,6 +108,10 @@ store + fetch cache, and content-type dispatch. Neighbors own theirs:
   driver); `libraries/ci-gate` is its first bundle — the org gate
   is migrating back from the peregrin `ci-gate` campaign (PL-013).
 - **sepia** — session lifecycle · **cicada** — scheduled updates.
+- **tarsi** — the org release plane; release profiles ship as
+  `type: tarsi` content packs (e.g. `libraries/9aia-release`) —
+  tamias distributes them, `tarsi-serve`/`tamias-driver-tarsi`
+  consume them (project ADR-0005).
 
 A hosted registry is in scope (it's a store/registry impl); a daemon or
 multi-actor arbitration belongs to peregrin.
