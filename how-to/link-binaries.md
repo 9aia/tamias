@@ -40,6 +40,29 @@ A package may also ship an undeclared `bin/` dir — every regular file
 directly under it is linked too (legacy surface, same alias
 machinery).
 
+## Authoring a `tools/bin/` payload
+
+The pack side of `payload:` is a plain directory convention — stage
+prebuilt executables under `tools/bin/<triple>/<name>` where
+`<triple>` is the Rust target-triple spelling (`rustc -vV`'s host, or
+`rustup target list` for cross-builds):
+
+```text
+mycli/
+  tamias.yaml
+  tools/bin/x86_64-unknown-linux-gnu/mytool
+  tools/bin/aarch64-apple-darwin/mytool
+```
+
+Ship one dir per platform you support; a file directly under
+`tools/bin/` (no triple dir) is a *portable* payload bin — same bytes
+on every host. The manifest's `payload:` path may name **any**
+triple's dir (typically the one you built on): at install time the
+triple segment is replaced with the host's, so one manifest serves
+every platform. `tamias pack`/`publish` verifies each declared
+payload has a shipped counterpart under *some* platform dir — a decl
+that matches nothing fails the pack, not the install.
+
 ## Deploy, inspect, remove
 
 ```sh
