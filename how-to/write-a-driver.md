@@ -18,8 +18,18 @@ tamias-driver-<type> <verb> --dir <dir> --name <name> [--config <file>]
 | --- | --- |
 | `install` | materialize the payload at `--dir` |
 | `deploy` | activate (unit, hooks) |
-| `uninstall` | tear down |
+| `uninstall` | tear down — **last installed version only** (see below) |
 | `capabilities` | print `{"types":[…],"verbs":[…]}` on stdout — the types + verbs this binary handles |
+
+`uninstall` is **version-aware**: drivers key shared operator state
+(`~/.config/<product>/…`) on `--name` alone, so tamias dispatches the
+verb only when the store entry being removed is the *last* installed
+one sharing that package name. Removing one of several coexisting
+versions skips the verb entirely (the store entry still drops, and
+the skip is reported); the final removal runs it once, with that
+last entry's `--dir`. If your driver tracks per-version resources,
+note they accumulate until the last uninstall — keep `uninstall`
+cheap and name-keyed.
 
 ## Ops verbs beyond the lifecycle three
 
@@ -49,6 +59,36 @@ params (`tamias deploy --config`). Exit zero on success; a non-zero
 exit fails the tamias verb, with your stderr surfaced. Dispatch has a
 120s timeout (`capabilities` probes get 10s), so a hung driver fails the
 verb instead of wedging it.
+
+## Operator overrides (`TAMIAS_DEPLOY_OVERRIDES`)
+
+If your driver **generates** operator config (node yaml, service
+definitions), regeneration wipes hand-applied edits on every
+`install`/`deploy`/`uninstall`. tamias provides a persistence channel —
+you own the merge because only you know the generated document's
+shape:
+
+* When the package has drop-ins, tamias sets
+  `TAMIAS_DEPLOY_OVERRIDES=<dir>` on the driver spawn — every
+  lifecycle verb and `driver exec` passthrough carries it.
+* `<dir>` is `deploy.d/<kind>/<name>/` under the tamias config root
+  (`$XDG_CONFIG_HOME/tamias` → `~/.config/tamias`; `$TAMIAS_DEPLOY_D`
+  overrides the root). It holds `*.yaml`/`*.yml`/`*.json` fragments —
+  partial documents merged in **sorted-filename order, later files
+  win**, with `tamias_core::merge_values` semantics (dicts per-key,
+  arrays concat high-first with `id` dedupe).
+* Operators write fragments by hand, or use
+  `tamias deploy <pkg> --set key=value` (repeatable; dotted keys,
+  YAML values → the `cli.yaml` fragment), `--unset`,
+  `--clear-overrides`, `--show-overrides`.
+
+To honor it, fold the fragments over your generated doc before
+writing — parse each file (YAML or JSON by extension), merge them in
+filename order, then `merge_values(overrides, generated)` so operator
+keys win. A malformed fragment should fail the verb, not be skipped.
+Drivers that generate no config can ignore the variable entirely.
+Reference impl: `peregrin-cli`'s `provision` module
+(`apply_deploy_overrides`).
 
 ## Capabilities
 

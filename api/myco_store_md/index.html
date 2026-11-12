@@ -38,8 +38,8 @@ Empty when <code>src</code> doesn’t parse (callers scan unwhitelisted —
 a stale ref inside a broken fence is still worth flagging).</dd><dt><a class="fn" href="fn.emit_backlog.html" title="fn myco_store_md::emit_backlog">emit_<wbr>backlog</a></dt><dd>Canonical <code>BACKLOG.md</code> — same layout as <a href="fn.emit_todo.html" title="fn myco_store_md::emit_todo"><code>crate::emit_todo</code></a>
 minus the <code>[ ]</code> checkboxes. Fails on non-deferred items and the
 same line-grammar limits as TODO.md.</dd><dt><a class="fn" href="fn.emit_done.html" title="fn myco_store_md::emit_done">emit_<wbr>done</a></dt><dd>Canonical <code>DONE.md</code> — same layout as <a href="fn.emit_backlog.html" title="fn myco_store_md::emit_backlog"><code>crate::emit_backlog</code></a>
-with the done-only rule. Fails on non-done items and the same
-line-grammar limits as the other ledger docs.</dd><dt><a class="fn" href="fn.emit_entry.html" title="fn myco_store_md::emit_entry">emit_<wbr>entry</a></dt><dd>One <code>## &lt;date&gt; · &lt;actor&gt;[ · session:&lt;id&gt;]</code> block + note —
+with the terminal-only rule. Fails on non-terminal items and
+the same line-grammar limits as the other ledger docs.</dd><dt><a class="fn" href="fn.emit_entry.html" title="fn myco_store_md::emit_entry">emit_<wbr>entry</a></dt><dd>One <code>## &lt;date&gt; · &lt;actor&gt;[ · session:&lt;id&gt;]</code> block + note —
 <code>append_handoff</code> writes this verbatim. The note may not contain
 a <code>##</code> heading (it would read back as the next entry).</dd><dt><a class="fn" href="fn.emit_handoff_file.html" title="fn myco_store_md::emit_handoff_file">emit_<wbr>handoff_<wbr>file</a></dt><dd>Canonical <code>handoffs/&lt;ID&gt;.md</code> — header + entries in file order.</dd><dt><a class="fn" href="fn.emit_item_file.html" title="fn myco_store_md::emit_item_file">emit_<wbr>item_<wbr>file</a></dt><dd>Canonical item file — <code>+++\n&lt;toml&gt;+++\n\n&lt;body&gt;\n</code>. The model
 is validated first ([<code>line::check_item</code>] — the same validity
