@@ -5,197 +5,197 @@ api:
 - name: FailRunner
   kind: type
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 638
+  line: 640
   module: tamias-deploy-systemd
 - name: LocalDeploy
   kind: type
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 54
+  line: 56
   module: tamias-deploy-systemd
 - name: Recorder
   kind: type
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 428
+  line: 430
   module: tamias-deploy-systemd
 - name: Runner
   kind: trait
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 24
+  line: 26
   module: tamias-deploy-systemd
 - name: SystemRunner
   kind: type
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 34
+  line: 36
   module: tamias-deploy-systemd
 - name: check_unit_fields
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 274
+  line: 276
   module: tamias-deploy-systemd
 - name: check_unit_name
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 254
+  line: 256
   module: tamias-deploy-systemd
 - name: daemon_reload
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 112
+  line: 114
   module: tamias-deploy-systemd
 - name: default
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 220
+  line: 222
   module: tamias-deploy-systemd
 - name: default_uses_new
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 690
+  line: 692
   module: tamias-deploy-systemd
 - name: default_uses_system_runner
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 665
+  line: 667
   module: tamias-deploy-systemd
 - name: disable
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 133
+  line: 135
   module: tamias-deploy-systemd
 - name: enable
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 122
+  line: 124
   module: tamias-deploy-systemd
 - name: error_arm_and_extra_verbs
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 646
+  line: 648
   module: tamias-deploy-systemd
 - name: expand_home_cases
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 540
+  line: 542
   module: tamias-deploy-systemd
 - name: expands_home_in_exec_argv
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 488
+  line: 490
   module: tamias-deploy-systemd
 - name: install
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 95
+  line: 97
   module: tamias-deploy-systemd
 - name: install_enable_uninstall
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 549
+  line: 551
   module: tamias-deploy-systemd
 - name: journalctl_args
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 233
+  line: 235
   module: tamias-deploy-systemd
 - name: logs
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 185
+  line: 187
   module: tamias-deploy-systemd
 - name: logs_with
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 196
+  line: 198
   module: tamias-deploy-systemd
 - name: new
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 62
+  line: 64
   module: tamias-deploy-systemd
 - name: quote_arg
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 344
+  line: 346
   module: tamias-deploy-systemd
 - name: quotes_argv_with_spaces_and_quotes
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 506
+  line: 508
   module: tamias-deploy-systemd
 - name: rejects_newline_injection_in_spec
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 584
+  line: 586
   module: tamias-deploy-systemd
 - name: rejects_unit_name_traversal
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 562
+  line: 564
   module: tamias-deploy-systemd
 - name: render_unit
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 363
+  line: 365
   module: tamias-deploy-systemd
 - name: render_with_workdir_and_env
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 672
+  line: 674
   module: tamias-deploy-systemd
 - name: renders_a_unit
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 457
+  line: 459
   module: tamias-deploy-systemd
 - name: renders_env_file_workdir_and_extras
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 469
+  line: 471
   module: tamias-deploy-systemd
 - name: restart
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 163
+  line: 165
   module: tamias-deploy-systemd
 - name: run
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 37
+  line: 39
   module: tamias-deploy-systemd
 - name: run
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 430
+  line: 432
   module: tamias-deploy-systemd
 - name: run
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 640
+  line: 642
   module: tamias-deploy-systemd
 - name: spec
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 439
+  line: 441
   module: tamias-deploy-systemd
 - name: split_exec_quotes_and_escapes
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 526
+  line: 528
   module: tamias-deploy-systemd
 - name: start
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 143
+  line: 145
   module: tamias-deploy-systemd
 - name: status
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 173
+  line: 175
   module: tamias-deploy-systemd
 - name: stop
   kind: function
   file: crates/tamias-deploy-systemd/src/lib.rs
-  line: 153
+  line: 155
   module: tamias-deploy-systemd
 - name: tamias-deploy-systemd
   kind: module
@@ -219,7 +219,7 @@ provenance:
   - crates/tamias-deploy-systemd/src/lib.rs
   hashes:
   - c0eaffacba245dfd41b3fa6d8b35df7f9199bffe
-  - d426fd7605a0c8f336b89b637acc57d2315d200e
-  commit_sha: 638308751a15bcc1c4333dddc1eba46e6b7fda62
-  generated_at: '1794424824'
+  - 057d79f996d2964bcd34af2b82acd4c95c31d379
+  commit_sha: 117609e7b20a97eaee6a28d94914dd98d157c7c2
+  generated_at: '1794444404'
   generator: kuda-template/0.1.4

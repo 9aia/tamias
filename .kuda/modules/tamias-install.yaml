@@ -20,7 +20,7 @@ api:
 - name: DRVENV
   kind: const
   file: crates/tamias-install/src/lib.rs
-  line: 891
+  line: 977
   module: tamias-install
 - name: DepOutcome
   kind: type
@@ -35,12 +35,12 @@ api:
 - name: Env
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 53
+  line: 59
   module: tamias-install
 - name: EnvGuard
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 900
+  line: 986
   module: tamias-install
 - name: FILE_NAME
   kind: const
@@ -55,7 +55,7 @@ api:
 - name: IncludeResolution
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 565
+  line: 651
   module: tamias-install
 - name: IncludeState
   kind: type
@@ -65,7 +65,7 @@ api:
 - name: InstallPlan
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 603
+  line: 689
   module: tamias-install
 - name: MAX_EXTENDS_DEPTH
   kind: const
@@ -85,27 +85,27 @@ api:
 - name: PlanManifest
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 551
+  line: 637
   module: tamias-install
 - name: PlannedInclude
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 580
+  line: 666
   module: tamias-install
 - name: PlannedService
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 590
+  line: 676
   module: tamias-install
 - name: Progress
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 141
+  line: 153
   module: tamias-install
 - name: Surface
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 97
+  line: 109
   module: tamias-install
 - name: SyncOptions
   kind: type
@@ -125,7 +125,7 @@ api:
 - name: allow
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1156
+  line: 1246
   module: tamias-install
 - name: as_str
   kind: function
@@ -135,27 +135,27 @@ api:
 - name: bad_ref_and_missing_manifest_fail
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1662
+  line: 1753
   module: tamias-install
 - name: consent
   kind: module
   file: crates/tamias-install/src/lib.rs
-  line: 45
+  line: 51
   module: tamias-install
 - name: consent_env
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1041
+  line: 1129
   module: tamias-install
 - name: consent_gate_and_surface_hints
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 982
+  line: 1069
   module: tamias-install
 - name: consent_memory_skips_reprompt_for_identical_bytes
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1051
+  line: 1140
   module: tamias-install
 - name: consent_path
   kind: function
@@ -170,7 +170,7 @@ api:
 - name: consent_refusal
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 109
+  line: 121
   module: tamias-install
 - name: consent_round_trip_and_digest_binding
   kind: function
@@ -190,19 +190,19 @@ api:
 - name: corrupt_consent_file_means_no_consent
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1088
+  line: 1177
+  module: tamias-install
+- name: deploy_committed_bins
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 270
   module: tamias-install
 - name: drivers_hint
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 119
+  line: 131
   module: tamias-install
-- name: drop
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 920
-  module: tamias-install
-api_omitted: 92
+api_omitted: 97
 deps:
 - serde
 - serde_json
@@ -257,8 +257,8 @@ provenance:
   - ee8d6763ab4fc04a6bdd00a690e31db67bba55e9
   - 97ee9b90f1acc41875049b718dbe0759e9634664
   - 7838ecba0294bdc9b39b3273102cd21d9a9dd36e
-  - c52791087a24f79d8604a1d1ff8354f1b97cebe2
-  - c17f6b8edb459d412e238eb3e1f3cbcdc6fe8028
-  commit_sha: 6485ef1cbb9ac691cfd02df9c73938110af699f6
-  generated_at: '1794428713'
+  - 387c729a24626baed069d6c7717f656444133e06
+  - bd22a393ffae872ac5ed9a9400f447fd6598e32a
+  commit_sha: 117609e7b20a97eaee6a28d94914dd98d157c7c2
+  generated_at: '1794444404'
   generator: kuda-template/0.1.4
