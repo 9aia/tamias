@@ -27,7 +27,7 @@ order="tamias-core tamias-registry tamias-config tamias-registry-local \
        tamias-config-toml tamias-config-yml tamias-store-local \
        tamias-source-fs tamias-publish tamias-registry-open \
        tamias-source-registry tamias-source-git tamias-cache-local \
-       tamias-sign tamias-driver tamias-install tamias-shell tamias-deploy \
+       tamias-sign tamias-driver tamias-bin tamias-install tamias-shell tamias-deploy \
        tamias-deploy-launchd tamias-deploy-windows tamias-deploy-systemd \
        tamias-provider tamias-tui tamias-deploy-cf tamias-serve \
        tamias-telemetry tamias-cli tamias-cache tamias-cache-cf \
