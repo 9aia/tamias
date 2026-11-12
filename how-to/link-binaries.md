@@ -47,6 +47,8 @@ machinery).
 
 ```sh
 tamias install ./mycli            # bins[] deploy automatically
+                                 # (sync, `tamias serve` install, and
+                                 #  the TUI deploy the same way)
 tamias install ./mycli --no-bins  # opt out
 
 tamias bin list                   # every package's bins + deploy state,

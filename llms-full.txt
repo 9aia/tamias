@@ -451,11 +451,11 @@ project-scoped, so extraneous packages are `tamias remove`'s job. A
 dep that ships `drivers/` needs `--allow-drivers` (or
 `TAMIAS_ALLOW_DRIVERS=1`) like `install`/`add`.
 
-Note: `sync` installs through the shared pipeline but skips the
-`bins[]` deploy pass that `install`/`add`/`update` run — a synced pack
-with declared bins lands in the store without its commands on `PATH`.
-Run `tamias bin deploy <pkg>` (or `tamias bin list` to see what's
-missing) afterwards.
+Deps that declare `bins[]` deploy them on install like any other
+install path — the post-commit deploy lives in the shared pipeline,
+so `sync` (and the `sync` op of `tamias serve`, the TUI's sync) lands
+a synced pack's commands on `PATH` too. `tamias bin list` shows deploy
+state; `tamias bin deploy <pkg>` is the retry path after a collision.
 
 `--locked` is the reproducible-install mode: every dep must already be
 `current` per `tamias.lock` + the store. Drift, a missing store entry,
@@ -544,6 +544,8 @@ machinery).
 
 ```sh
 tamias install ./mycli            # bins[] deploy automatically
+                                 # (sync, `tamias serve` install, and
+                                 #  the TUI deploy the same way)
 tamias install ./mycli --no-bins  # opt out
 
 tamias bin list                   # every package's bins + deploy state,
@@ -1819,8 +1821,10 @@ flatten includes by default (`--keep-includes` ships the raw payload).
 addressed cache can be hit *before* fetching. The fetch→unpack split is
 what makes repeat installs and air-gapped nodes free.
 
-Declared `bins[]` (P-023) ride the same commit: `install` deploys them
-into the bin dir by default (`--no-bins` opts out) — `shim: cli`
+Declared `bins[]` (P-023) ride the same commit: every install path —
+`install`/`add`/`update`, `sync`, the `tamias serve` `install` op, the
+TUI — deploys them into the bin dir by default (`--no-bins` opts out
+on the CLI verbs) — `shim: cli`
 entries become generated scripts exec'ing `tamias bin exec`, and
 `payload: tools/bin/<triple>/…` entries link real binaries through a
 per-package `bin-alias/` so upgrades don't break them. `bin/`
