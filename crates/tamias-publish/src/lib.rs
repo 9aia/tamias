@@ -204,8 +204,13 @@ pub fn pack(
     let out = out.map_or_else(|| PathBuf::from(&default_name), Path::to_path_buf);
     if includes == Includes::Flatten && !manifest.include.is_empty() {
         let composed = compose(&root, store_root)?;
+        // Declared `bins[].payload` files must ship in the tarball —
+        // catch authoring typos here, not at install time. Checked on
+        // the composed payload so `include:` bases can satisfy decls.
+        tamias_bin::check_shipped_bins(&composed.dir, &manifest)?;
         return pack_tgz(&composed.dir, &out);
     }
+    tamias_bin::check_shipped_bins(&root, &manifest)?;
     pack_tgz(&root, &out)
 }
 
@@ -412,6 +417,42 @@ mod tests {
         let entries = tgz_files(&out);
         assert!(entries.iter().any(|e| e == "fs.txt"), "{entries:?}");
         assert!(entries.iter().any(|e| e == "ref.txt"), "{entries:?}");
+    }
+
+    /// T-005: `bins[].payload` decls are gated at pack time — a decl
+    /// with no shipped counterpart fails `pack`, while a decl naming a
+    /// *foreign* triple passes as long as some platform dir ships the
+    /// file (the install host's triple is substituted at deploy).
+    #[test]
+    fn pack_gates_declared_payload_bins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store_root = tmp.path().join("store");
+        let src = tmp.path().join("tool");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(
+            src.join("tamias.yaml"),
+            "name: tool\nversion: 1.0.0\nbins:\n  \
+             - name: tool\n    payload: tools/bin/x86_64-unknown-linux-gnu/tool\n",
+        )
+        .unwrap();
+        // nothing shipped → pack fails naming the decl
+        let err = pack(&src, None, Includes::Keep, &store_root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("'tool'"), "{err}");
+        // a foreign-triple dir satisfies the decl on any host
+        let foreign = src.join("tools/bin/aarch64-apple-darwin");
+        std::fs::create_dir_all(&foreign).unwrap();
+        std::fs::write(foreign.join("tool"), "bin").unwrap();
+        let out = tmp.path().join("tool.tgz");
+        pack(&src, Some(&out), Includes::Keep, &store_root).unwrap();
+        let entries = tgz_files(&out);
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.ends_with("tools/bin/aarch64-apple-darwin/tool")),
+            "{entries:?}"
+        );
     }
 
     /// File list inside a `.tgz` — entries are stored under a single

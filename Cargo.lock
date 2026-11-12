@@ -2777,6 +2777,7 @@ dependencies = [
 name = "tamias-publish"
 version = "0.1.5"
 dependencies = [
+ "tamias-bin",
  "tamias-core",
  "tamias-source",
  "tamias-source-fs",

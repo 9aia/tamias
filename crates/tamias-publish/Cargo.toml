@@ -13,6 +13,7 @@ homepage.workspace = true
 documentation.workspace = true
 
 [dependencies]
+tamias-bin.workspace = true
 tamias-core.workspace = true
 tamias-source.workspace = true
 tamias-source-fs.workspace = true

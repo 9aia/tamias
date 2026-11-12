@@ -67,7 +67,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `crates/tamias-cache` + `-local`/`-cf` | content-addressed fetch cache (`-cf` scaffolded) |
 | `crates/tamias-registry` + `-local`/`-cf` | index + publish port + impls (local dir, optionally HTTP-served; CF Worker client) |
 | `crates/tamias-registry-open` | shared registry-source layer — name-or-ref resolution + named-source config CRUD, consumed by `tamias-cli` and `tamias-serve` |
-| `crates/tamias-publish` | author-side packing — payload dir + manifest → `.tgz` |
+| `crates/tamias-publish` | author-side packing — payload dir + manifest → `.tgz`; gates declared `bins[].payload` files actually ship (`tamias_bin::check_shipped_bins`) |
 | `crates/tamias-provider` | provider lifecycle shared by `tamias` (CLI verbs) and `tamias ui` — `provider:` block → unit/task names, host-backend state probes, deploy/uninstall teardown, `run` exec spec, `logs` unit list |
 | `crates/tamias-deploy` + `-systemd`/`-windows`/`-launchd`/`-cf` | deploy port — provision a remote registry (`-cf` materializes Worker + wrangler config) / per-user host service (`-systemd` user units, `-windows` Task Scheduler tasks, `-launchd` LaunchAgents plists + `launchctl`; picked by `cfg!` in `tamias-provider::ServiceBackend`). Shared `ServiceSpec`/`split_exec`/`expand_home` live in the port |
 | `crates/tamias-driver` | content-driver host — discovers `tamias-driver-<type>` on PATH/`<tamias-home>/drivers/`, dispatches install/deploy/uninstall, registers payload-bundled drivers (consent-gated): portable `drivers/<name>` files plus compiled `drivers/bin/<target-triple>/<name>` bins — only the host triple's dir is installed, a missing platform is a hard error |

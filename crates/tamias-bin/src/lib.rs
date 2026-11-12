@@ -166,6 +166,115 @@ fn platform_dirs(bin: &Path) -> Result<Vec<String>, Error> {
     Ok(out)
 }
 
+/// Pack-time conformance gate for `bins[].payload` decls — every
+/// declared payload must have a shipped counterpart *for some*
+/// platform. The install host's triple is substituted at deploy time
+/// ([`resolve_payload_bin`]), so pack time can't pin one: a
+/// `tools/bin/<triple>/<rest>` decl is satisfied by `<rest>` under
+/// *any* shipped platform dir, while a portable `tools/bin/<file>`
+/// decl needs that literal file (mirroring the resolver's rules —
+/// substitution only applies to paths deep enough to carry a triple
+/// segment).
+///
+/// Catches authoring typos at `tamias pack`/`publish` instead of
+/// install time. [`check_bins`] remains the install-side gate — it
+/// additionally enforces the host-platform rule, which is
+/// host-dependent and must not run at pack time.
+///
+/// # Errors
+/// Fails naming each decl with no shipped counterpart.
+pub fn check_shipped_bins(payload_root: &Path, manifest: &Manifest) -> Result<(), Error> {
+    let decls: Vec<&BinDecl> = manifest
+        .bins
+        .iter()
+        .filter(|d| d.payload.is_some())
+        .collect();
+    if decls.is_empty() {
+        return Ok(());
+    }
+    let shipped = shipped_payload_keys(payload_root)?;
+    let mut missing = Vec::new();
+    for decl in decls {
+        // `validate()` guarantees a payload decl carries a path; an
+        // unvalidated manifest just reports as missing.
+        let Some(payload) = decl.payload.as_deref() else {
+            continue;
+        };
+        let mut key: Vec<String> = payload.split('/').map(str::to_string).collect();
+        if key.len() >= 4 {
+            key[2] = "*".to_string();
+        }
+        if !shipped.contains(&key) {
+            missing.push(format!("'{}' ({payload})", decl.name));
+        }
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::Failed(format!(
+            "declared bins[] payloads not shipped under {}: {}",
+            payload_root.join(TOOLS_BIN).display(),
+            missing.join(", ")
+        )))
+    }
+}
+
+/// Every file under `tools/bin/` as a match key — component list with
+/// the platform-dir segment wildcarded (`tools/bin/*/<rest>`), or the
+/// literal `tools/bin/<file>` for portable files. Dirs directly under
+/// `tools/bin/` are target triples by convention (same rule as
+/// [`platform_dirs`]), so their names never appear in keys.
+fn shipped_payload_keys(
+    payload_root: &Path,
+) -> Result<std::collections::BTreeSet<Vec<String>>, Error> {
+    let mut out = std::collections::BTreeSet::new();
+    let bin = payload_root.join(TOOLS_BIN);
+    if !bin.is_dir() {
+        return Ok(out);
+    }
+    for entry in std::fs::read_dir(&bin).map_err(Error::io(format!("read {}", bin.display())))? {
+        let entry = entry.map_err(Error::io(format!("read {}", bin.display())))?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if path.is_dir() {
+            // Platform dir — its name wildcards out of the key.
+            collect_payload_keys(
+                &path,
+                &mut vec!["tools".into(), "bin".into(), "*".into()],
+                &mut out,
+            )?;
+        } else if path.is_file() {
+            out.insert(vec!["tools".into(), "bin".into(), name]);
+        }
+    }
+    Ok(out)
+}
+
+/// Recursive walk filling `out` — `prefix` is the key's leading
+/// components (already wildcarded for the platform dir).
+fn collect_payload_keys(
+    dir: &Path,
+    prefix: &mut Vec<String>,
+    out: &mut std::collections::BTreeSet<Vec<String>>,
+) -> Result<(), Error> {
+    for entry in std::fs::read_dir(dir).map_err(Error::io(format!("read {}", dir.display())))? {
+        let entry = entry.map_err(Error::io(format!("read {}", dir.display())))?;
+        let path = entry.path();
+        // `is_file`/`is_dir` follow symlinks — a linked payload file
+        // still counts as shipped (same as `resolve_payload_bin`).
+        if path.is_dir() {
+            prefix.push(entry.file_name().to_string_lossy().to_string());
+            collect_payload_keys(&path, prefix, out)?;
+            prefix.pop();
+        } else if path.is_file() {
+            let mut key = prefix.clone();
+            key.push(entry.file_name().to_string_lossy().to_string());
+            out.insert(key);
+        }
+    }
+    Ok(())
+}
+
 /// `tools/bin/` contents as a human list for error messages —
 /// `<triple>/<name>` for platform files, bare `<name>` for portable
 /// ones.
@@ -1160,6 +1269,46 @@ mod tests {
         let decl = payload_decl("ghost", "tools/bin/nowhere/ghost");
         let err = resolve_payload_bin(root, &decl).unwrap_err();
         assert!(err.to_string().contains("not found"), "{err}");
+    }
+
+    #[test]
+    fn shipped_bins_gate_is_host_independent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // payload decl but no tools/bin at all → error
+        let m = manifest_with(vec![payload_decl("tool", "tools/bin/t/tool")]);
+        let err = check_shipped_bins(root, &m).unwrap_err();
+        assert!(err.to_string().contains("not shipped"), "{err}");
+        // a foreign-triple dir satisfies a decl naming any triple —
+        // pack time can't know the install host
+        let foreign = root.join("tools/bin/aarch64-apple-darwin");
+        std::fs::create_dir_all(foreign.join("sub")).unwrap();
+        std::fs::write(foreign.join("tool"), "x").unwrap();
+        std::fs::write(foreign.join("sub/nested"), "x").unwrap();
+        assert!(check_shipped_bins(root, &m).is_ok());
+        // nested rest paths match too
+        let m = manifest_with(vec![payload_decl(
+            "nested",
+            "tools/bin/x86_64-pc-windows-msvc/sub/nested",
+        )]);
+        assert!(check_shipped_bins(root, &m).is_ok());
+        // a portable decl needs the literal portable file — a
+        // platform file of the same name does NOT satisfy it
+        std::fs::write(root.join("tools/bin/portable"), "x").unwrap();
+        let m = manifest_with(vec![payload_decl("p", "tools/bin/portable")]);
+        assert!(check_shipped_bins(root, &m).is_ok());
+        let m = manifest_with(vec![payload_decl("p2", "tools/bin/missing")]);
+        assert!(check_shipped_bins(root, &m).is_err());
+        // wrong filename under the right shape → error naming the decl
+        let m = manifest_with(vec![payload_decl(
+            "ghost",
+            "tools/bin/another-triple/ghost",
+        )]);
+        let err = check_shipped_bins(root, &m).unwrap_err();
+        assert!(err.to_string().contains("'ghost'"), "{err}");
+        // shim-only manifests pass with no tools/bin at all
+        let m = manifest_with(vec![shim_decl("s")]);
+        assert!(check_shipped_bins(root, &m).is_ok());
     }
 
     #[test]
