@@ -16,6 +16,16 @@ cache:
 # (`tamias deploy-registry` materializes it; bearer token via
 # TAMIAS_REGISTRY_TOKEN, value lives in cuora as
 # cuora://tamias/registry-token — inject with `cuora run -s …`).
+#
+# Canonical home (T-037): the ORG vault — `nine` (cuora.9aia.com),
+# reached via a cuora.toml routing envs → `nine` (e.g. the cuora
+# repo's). The token is env-agnostic, so it is seeded under every
+# env (dev/staging/preview/prod) — `--env` cannot pick a wrong
+# slot. The personal vault (cuora.luisfuturist.com) carries a
+# mirror copy for personal-dev convenience; it is NOT authoritative
+# — org consumers must resolve through the org vault. Long-term
+# this ref migrates to a sealed `secrets-9aia` tamias pack
+# (P-027/PL-017), which retires the vault/env question entirely.
 registries:
   nine:
     kind: cf
