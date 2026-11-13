@@ -3,7 +3,7 @@
 for scoped packages).</p>
 <p><code>&lt;label&gt;</code> resolves against the <em>effective</em> config’s <code>registries</code>
 map — an entry’s <code>id</code> (uuid) first, then its map key (slug) — via
-[<code>tamias_registry_open::load_config</code>] (user-level <code>~/.config/tamias</code>
+<a href="../tamias_registry_open/fn.load_config.html" title="fn tamias_registry_open::load_config"><code>tamias_registry_open::load_config</code></a> (user-level <code>~/.config/tamias</code>
 layered under the cwd <code>tamias.*</code>). Only <code>http</code>/<code>cf</code> kind registries
 are installable; <code>local</code> (unserved dir) registries error with a
 pointer at <code>tamias registry serve</code>.</p>

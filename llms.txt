@@ -23,6 +23,7 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 - [How to use the TUI](/tamias/how-to/use-the-tui.md)
 - [How to publish to a registry](/tamias/how-to/publish-to-a-registry.md)
 - [How to provision and service-manage a package](/tamias/how-to/provision-a-service.md)
+- [How to deploy a CI gate bundle](/tamias/how-to/deploy-a-ci-gate-bundle.md)
 - [How to write a content driver](/tamias/how-to/write-a-driver.md)
 
 ### Reference
