@@ -1,0 +1,27 @@
+# tamias release config — tamias is the ONE repo that publishes to
+# crates.io (ADR-0004); every other org repo is tag-only. Units
+# resolve from the cargo workspace; versions are workspace-inherited
+# (one shared bump — `cargo set-version --workspace` semantics), so
+# releasing units share one version. `tamias-driver-tamias` is
+# excluded from the workspace (own lockfile, publish = false) and
+# `tamias-xtask` is skipped below.
+#
+# GitHub Releases stay off — binary dist was opt-in
+# (TAMIAS_RELEASE_DIST=1) and is not part of the release plane.
+
+[release]
+styleguide = "keep-a-changelog"
+changelog_path = "CHANGELOG.md"
+diff_exclude = ["docs/**", "project/**", "*.md", ".github/**"]
+tag_format = "{unit}-v{version}"
+
+[release.unit_overrides.tamias-xtask]
+skip = true
+
+[publish.crates]
+enabled = true
+token_env = "CARGO_REGISTRY_TOKEN"   # secret NAME — never a value
+retry_429 = true                     # release.sh semantics: back off on crates.io rate limits
+
+[publish.ghreleases]
+enabled = false   # org releases are tag-only; capability stays for opt-in
