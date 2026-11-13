@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::sealed::Sealed;
 use crate::Error;
 
 /// Manifest file names tried, in order — YAML first, TOML last.
@@ -90,6 +91,15 @@ pub struct Manifest {
     /// install` deploys them by default. Pure data — tamias never
     /// learns a product's CLI shape.
     pub bins: Vec<BinDecl>,
+    /// `sealed:` — the pack is **ciphertext-only** (tamias ADR-0004 /
+    /// org P-027): every payload file is age-encrypted and tamias
+    /// carries it opaquely — digest, verify, and sign work on bytes
+    /// unchanged; there is no decrypt path in the engine. Orthogonal
+    /// to `type:` (`type: secrets` is a cuora-driver convention, not a
+    /// requirement). Sealed packs reject `include:`/`bins:`/`provider:`
+    /// — composition, bin deploys, and service specs over ciphertext
+    /// are meaningless; `deps:` stays allowed.
+    pub sealed: Option<Sealed>,
 }
 
 /// One `bins[]` entry — a command name plus *how* it materializes.
@@ -467,6 +477,36 @@ impl Manifest {
             provider.check()?;
         }
         self.check_bins()?;
+        self.check_sealed()?;
+        Ok(())
+    }
+
+    /// Semantic checks for `sealed:` — the block's own rules plus the
+    /// v1 incompatibilities (`include:`/`bins:`/`provider:` are
+    /// meaningless over ciphertext).
+    fn check_sealed(&self) -> Result<(), Error> {
+        let Some(sealed) = &self.sealed else {
+            return Ok(());
+        };
+        sealed.check()?;
+        if !self.include.is_empty() {
+            return Err(Error::Failed(
+                "sealed packs cannot use include: — composition over ciphertext is meaningless"
+                    .to_string(),
+            ));
+        }
+        if !self.bins.is_empty() {
+            return Err(Error::Failed(
+                "sealed packs cannot declare bins: — bin deploys over ciphertext are meaningless"
+                    .to_string(),
+            ));
+        }
+        if self.provider.is_some() {
+            return Err(Error::Failed(
+                "sealed packs cannot declare provider: — service specs over ciphertext are meaningless"
+                    .to_string(),
+            ));
+        }
         Ok(())
     }
 

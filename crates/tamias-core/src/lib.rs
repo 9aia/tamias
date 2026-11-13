@@ -19,6 +19,7 @@ pub mod overlay;
 pub mod process;
 pub mod project;
 pub mod records;
+pub mod sealed;
 pub use archive::{
     pack_tgz, pack_tgz_atomic, untar, untar_gz, untar_gz_limited, untar_limited,
     DEFAULT_MAX_ENTRIES, DEFAULT_MAX_UNPACK_BYTES,
@@ -35,3 +36,6 @@ pub use overlay::{find_store_entry, merge_values, overlay, payload_root};
 pub use process::output_with_timeout;
 pub use project::{Lock, LockEntry};
 pub use records::{copy_tree, StoreEntry, StoreRecord, RECORD_FILE};
+pub use sealed::{
+    check_ciphertext_only, has_age_magic, is_age_ciphertext, Sealed, AGE_FORMAT, AGE_MAGIC,
+};

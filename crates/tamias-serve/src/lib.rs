@@ -249,10 +249,18 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
         "info" => {
             let name = str_field(&req, "name")?;
             let entry = Store::new(&env.store_root).find(name)?;
+            // `sealed:` format when the payload manifest declares a
+            // ciphertext-only pack — advisory badge, never a gate.
+            let sealed = entry
+                .manifest()
+                .ok()
+                .and_then(|m| m.sealed)
+                .map(|s| s.format);
             Ok(json!({
                 "label": entry.label(),
                 "resolved": entry.record.resolved,
                 "digest": entry.record.digest,
+                "sealed": sealed,
                 "size": entry.size()?,
             }))
         }

@@ -851,6 +851,9 @@ fn print_plan(plan: &tamias_install::InstallPlan) {
         "package:   {label}  (kind: {})",
         m.kind.as_deref().unwrap_or("files")
     );
+    if let Some(sealed) = &m.sealed {
+        println!("sealed:    {sealed}  (ciphertext-only payload)");
+    }
     println!(
         "cache:     {}",
         if plan.cache_hit {
@@ -996,6 +999,17 @@ fn print_json(value: &serde_json::Value) -> Result<(), Error> {
     Ok(())
 }
 
+/// The entry's `sealed:` format (`age/v1`) when the payload manifest
+/// declares a sealed pack — `None` for plaintext packs or an
+/// unreadable/absent manifest (the badge is advisory, never a gate).
+fn entry_sealed(entry: &StoreEntry) -> Option<String> {
+    entry
+        .manifest()
+        .ok()
+        .and_then(|m| m.sealed)
+        .map(|s| s.format)
+}
+
 /// One store entry as a JSON object — the record fields plus the derived
 /// label, payload size, and on-disk dir.
 fn entry_json(entry: &StoreEntry) -> serde_json::Value {
@@ -1005,6 +1019,7 @@ fn entry_json(entry: &StoreEntry) -> serde_json::Value {
         "scope": entry.record.scope,
         "version": entry.record.version,
         "kind": entry.record.kind,
+        "sealed": entry_sealed(entry),
         "source_ref": entry.record.source_ref,
         "resolved": entry.record.resolved,
         "digest": entry.record.digest,
@@ -1265,12 +1280,18 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                     println!("no packages installed");
                 }
                 for e in entries {
+                    let sealed = if entry_sealed(&e).is_some() {
+                        "  [sealed]"
+                    } else {
+                        ""
+                    };
                     println!(
-                        "{}  {}  {}  {}",
+                        "{}  {}  {}  {}{}",
                         e.label(),
                         e.record.trust.as_deref().unwrap_or("-"),
                         short_digest(&e.record.digest),
-                        e.record.source_ref
+                        e.record.source_ref,
+                        sealed
                     );
                 }
             }
@@ -1289,6 +1310,9 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                     entry.record.version.as_deref().unwrap_or("-")
                 );
                 println!("type:    {}", entry.record.kind.as_deref().unwrap_or("-"));
+                if let Some(sealed) = entry_sealed(&entry) {
+                    println!("sealed:  {sealed}  (ciphertext-only payload)");
+                }
                 println!("source:  {}", entry.record.source_ref);
                 println!("resolved: {}", entry.record.resolved);
                 println!("digest:  {}", entry.record.digest);

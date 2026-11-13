@@ -10,27 +10,27 @@ api:
 - name: add_get_list_remove_round_trip
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 589
+  line: 595
   module: tamias-registry-open
 - name: add_registry
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 503
+  line: 509
   module: tamias-registry-open
 - name: add_registry_id_round_trip_and_validation
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 633
+  line: 639
   module: tamias-registry-open
 - name: add_validates_kind_and_url
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 622
+  line: 628
   module: tamias-registry-open
 - name: config_target
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 382
+  line: 388
   module: tamias-registry-open
 - name: effective_limits
   kind: function
@@ -45,7 +45,7 @@ api:
 - name: get_registry
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 572
+  line: 578
   module: tamias-registry-open
 - name: http_registry
   kind: function
@@ -55,12 +55,12 @@ api:
 - name: load_config
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 413
+  line: 419
   module: tamias-registry-open
 - name: load_config_defaults_and_file
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 753
+  line: 812
   module: tamias-registry-open
 - name: open_named_registry
   kind: function
@@ -75,7 +75,7 @@ api:
 - name: open_registry_resolves_name_then_ref
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 677
+  line: 683
   module: tamias-registry-open
 - name: publish
   kind: function
@@ -87,20 +87,25 @@ api:
   file: crates/tamias-registry-open/src/lib.rs
   line: 303
   module: tamias-registry-open
+- name: publish_plan_gates_sealed_payloads
+  kind: function
+  file: crates/tamias-registry-open/src/lib.rs
+  line: 742
+  module: tamias-registry-open
 - name: registry_id
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 478
+  line: 484
   module: tamias-registry-open
 - name: registry_json
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 448
+  line: 454
   module: tamias-registry-open
 - name: registry_kind
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 464
+  line: 470
   module: tamias-registry-open
 - name: registry_target
   kind: function
@@ -110,12 +115,12 @@ api:
 - name: registry_target_order
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 713
+  line: 719
   module: tamias-registry-open
 - name: remove_registry
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 556
+  line: 562
   module: tamias-registry-open
 - name: search
   kind: function
@@ -130,32 +135,32 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-registry-open/src/lib.rs
-  line: 583
+  line: 589
   module: tamias-registry-open
 - name: user_config
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 367
+  line: 373
   module: tamias-registry-open
 - name: user_config_dir
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 345
+  line: 351
   module: tamias-registry-open
 - name: user_config_in
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 357
+  line: 363
   module: tamias-registry-open
 - name: user_config_in_finds_tamias_files
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 734
+  line: 793
   module: tamias-registry-open
 - name: write_config
   kind: function
   file: crates/tamias-registry-open/src/lib.rs
-  line: 436
+  line: 442
   module: tamias-registry-open
 deps:
 - serde_json
@@ -185,7 +190,7 @@ provenance:
   - crates/tamias-registry-open/src/lib.rs
   hashes:
   - 2a1c32c88ad81cf787a4fc0e85ee29ceb850d396
-  - ea159f24768458fd0de02684a7285bd9fa118f46
-  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
-  generated_at: '1794454384'
+  - a97ffa07ea0b9104d6c9b27b915b19cdc1dc0895
+  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
+  generated_at: '1794581782'
   generator: kuda-template/0.1.4

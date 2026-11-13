@@ -6,25 +6,28 @@ deps: []
 notes: ''
 verify:
 - refs/sturn/wal/9aia
+- refs/sturn/wal/default
 - refs/sturn/wal/devin
 - refs/sturn/wal/devin-audit
 - refs/sturn/wal/devin-ci-bupha
 - refs/sturn/wal/devin-driver-conformance
+- refs/sturn/wal/devin-e5
 - refs/sturn/wal/devin-lockonly
 - refs/sturn/wal/devin-p024
 - refs/sturn/wal/devin-payload
-- refs/sturn/wal/devin-plt004
-- refs/sturn/wal/devin-plt004b
 provenance:
   files:
   - refs/sturn/wal/9aia
+  - refs/sturn/wal/default
   - refs/sturn/wal/devin
   - refs/sturn/wal/devin-audit
   - refs/sturn/wal/devin-ci-bupha
   - refs/sturn/wal/devin-driver-conformance
+  - refs/sturn/wal/devin-e5
   - refs/sturn/wal/devin-lockonly
   - refs/sturn/wal/devin-p024
   - refs/sturn/wal/devin-payload
+  - refs/sturn/wal/devin-pl014-e1
   - refs/sturn/wal/devin-plt004
   - refs/sturn/wal/devin-plt004b
   - refs/sturn/wal/devin-plt004c
@@ -40,6 +43,8 @@ provenance:
   - refs/sturn/wal/devin-win
   - refs/sturn/wal/docs-sweep
   - refs/sturn/wal/main
+  - refs/sturn/wal/sealed-packs
+  - refs/sturn/wal/t042
   - refs/sturn/wal/t8-3-cli-surface
   - refs/sturn/wal/t8-6-binary-distribution
   - refs/sturn/wal/tamias
@@ -48,13 +53,16 @@ provenance:
   - refs/sturn/ws/devin-p024
   hashes:
   - 55b49bccd69d5f3daecf408f3ef9c92fe09cbb7f
+  - 73a7a935f687eb808383ee3c3714ed855094ade5
   - 0344c258b0392072e82f3282d9e2108f4e18ae4c
   - 562b74c23d96c90f85afa280f596136ddae80db7
   - b604086ddeb2869a43a2d09815cc3b5f45aec0e8
   - febcf0121191ae432ee83dfb3faa3a82ea7de134
+  - 3a54f1ce74151c485c2fd27cfeb9481da7c8bf17
   - fbe0a1d1d55b6407821c2f0c6d9546c4915d8100
   - 22fb392bee097e3af5ba62ae11d924389a9f1a0e
   - dd946052c51178c9cb6a12651917bb357a7c7dc2
+  - 037654dc627e1172ec4c471dc008cb2fdba2c081
   - c7ce7e6a3c5d7e8f93748b76a85e4b0d90a6830f
   - 8f6f7f42cdbd8274def59a236d3f1365680d54bf
   - 57f22eaf226b96d5f1db4b50324662927d364ef4
@@ -70,12 +78,14 @@ provenance:
   - b6113648eb6b4227be70caf1beeb3528ce96035d
   - ee8e98f88672aa9aa4e2401eb911a3a0f1560405
   - aa4d83ebcc3b1716c31ea5c5b337937d9cfe2782
+  - 44af1a21d2d9d29e6dbd9c0f97e49ee71c500604
+  - e7ed750a13f2d1f34aaccffc351a77d26b6dd76a
   - 556695b9190378fc2a0061057b38f31dd8a988d1
   - 96a9778feccc8eacea586ede09ca8a9bd1c4557b
-  - 01d73c556e1c6835b108e0b656cdb4c2bff5a95d
+  - 2f05104d322fc3d952bec444e92586d73744123b
   - 21c92171c34188115ddaa88ece5a724392948a1f
   - 75f581ed6829529e4b83898232e45f343da79f52
   - 6485ef1cbb9ac691cfd02df9c73938110af699f6
-  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
-  generated_at: '1794454384'
+  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
+  generated_at: '1794581782'
   generator: kuda-template/0.1.4

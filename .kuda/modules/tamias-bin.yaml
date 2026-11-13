@@ -25,7 +25,7 @@ api:
 - name: Row
   kind: type
   file: crates/tamias-bin/src/lib.rs
-  line: 750
+  line: 859
   module: tamias-bin
 - name: SHIM_MARKER
   kind: const
@@ -40,17 +40,17 @@ api:
 - name: UnlinkReport
   kind: type
   file: crates/tamias-bin/src/lib.rs
-  line: 891
+  line: 1000
   module: tamias-bin
 - name: alias_path
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 282
+  line: 391
   module: tamias-bin
 - name: alias_rel
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 274
+  line: 383
   module: tamias-bin
 - name: check_bins
   kind: function
@@ -62,110 +62,120 @@ api:
   file: crates/tamias-bin/src/lib.rs
   line: 130
   module: tamias-bin
+- name: check_shipped_bins
+  kind: function
+  file: crates/tamias-bin/src/lib.rs
+  line: 186
+  module: tamias-bin
 - name: cleanup_after_remove
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1025
+  line: 1134
+  module: tamias-bin
+- name: collect_payload_keys
+  kind: function
+  file: crates/tamias-bin/src/lib.rs
+  line: 255
   module: tamias-bin
 - name: collision_warns_and_last_deploy_wins
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1245
+  line: 1394
   module: tamias-bin
 - name: conflict
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 410
+  line: 519
   module: tamias-bin
 - name: default_alias_root
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 856
+  line: 965
   module: tamias-bin
 - name: default_bin_dir
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 841
+  line: 950
   module: tamias-bin
 - name: deploy_bins
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 601
+  line: 710
   module: tamias-bin
 - name: deploy_destroy_round_trip
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1166
+  line: 1315
   module: tamias-bin
 - name: dest_ownership
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 807
+  line: 916
   module: tamias-bin
 - name: destroy_bins
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 689
+  line: 798
   module: tamias-bin
 - name: ensure_alias
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 290
+  line: 399
   module: tamias-bin
 - name: entry
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1078
+  line: 1187
   module: tamias-bin
 - name: foreign_file_conflicts_without_force
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1287
+  line: 1436
   module: tamias-bin
 - name: links_into_alias
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 390
+  line: 499
   module: tamias-bin
 - name: list_bins
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 743
+  line: 852
   module: tamias-bin
 - name: manifest_with
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1104
+  line: 1213
   module: tamias-bin
 - name: materialize_payload
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 555
+  line: 664
   module: tamias-bin
 - name: package_id
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 265
+  line: 374
   module: tamias-bin
 - name: payload_bin_names
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 866
+  line: 975
   module: tamias-bin
 - name: payload_decl
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1085
+  line: 1194
   module: tamias-bin
 - name: place_payload
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 493
+  line: 602
   module: tamias-bin
 - name: place_shim
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 422
+  line: 531
   module: tamias-bin
 - name: platform_dirs
   kind: function
@@ -175,34 +185,24 @@ api:
 - name: platform_rule_errors_only_when_dirs_miss_host
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1114
+  line: 1223
   module: tamias-bin
 - name: record
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1062
+  line: 1171
   module: tamias-bin
 - name: remove_dest
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 479
+  line: 588
   module: tamias-bin
 - name: resolve_payload_bin
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 214
+  line: 323
   module: tamias-bin
-- name: resolve_payload_bin_literal_and_triple_substitution
-  kind: function
-  file: crates/tamias-bin/src/lib.rs
-  line: 1138
-  module: tamias-bin
-- name: same_file
-  kind: function
-  file: crates/tamias-bin/src/lib.rs
-  line: 401
-  module: tamias-bin
-api_omitted: 8
+api_omitted: 12
 deps:
 - tamias-core
 - tamias-driver
@@ -218,7 +218,7 @@ provenance:
   - crates/tamias-bin/src/lib.rs
   hashes:
   - 445a59764f2c95491158650a1cbdd66a63271be3
-  - 0e9322dd35c024781c0677da72da6ab995ed6dda
-  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
-  generated_at: '1794454384'
+  - c1c3094b1a61cc0f63f5d1a5b874e74879239199
+  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
+  generated_at: '1794581596'
   generator: kuda-template/0.1.4

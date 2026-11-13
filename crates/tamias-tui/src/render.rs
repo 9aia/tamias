@@ -431,7 +431,12 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
             let r = &m.entries[i];
             let rec = &r.entry.record;
             Row::new(vec![
-                format!("{}{}", r.entry.label(), trust_badge(rec)),
+                format!(
+                    "{}{}{}",
+                    r.entry.label(),
+                    trust_badge(rec),
+                    if r.sealed { " [sealed]" } else { "" }
+                ),
                 rec.kind.clone().unwrap_or_else(|| "-".into()),
                 rec.source_ref.clone(),
                 short_sha(&rec.resolved),
@@ -530,6 +535,16 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
                 lines.push(Line::from(vec![
                     Span::styled("deps:      ", Style::default().fg(ACCENT)),
                     Span::raw(manifest.deps.join(", ")),
+                ]));
+            }
+            if let Some(sealed) = &manifest.sealed {
+                lines.push(Line::from(vec![
+                    Span::styled("sealed:    ", Style::default().fg(ACCENT)),
+                    Span::raw(format!(
+                        "{} — {} secret(s), ciphertext-only",
+                        sealed.format,
+                        sealed.files.len()
+                    )),
                 ]));
             }
             if let Some(provider) = &manifest.provider {

@@ -413,6 +413,9 @@ fn package_detail(snap: &Snapshot, params: &Map<String, Value>) -> Value {
             if !m.deps.is_empty() {
                 out.insert("deps".into(), json!(m.deps));
             }
+            if let Some(sealed) = &m.sealed {
+                out.insert("sealed".into(), json!(sealed.format));
+            }
         }
         Err(e) => {
             out.insert("manifest_error".into(), json!(e.to_string()));

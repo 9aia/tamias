@@ -27,6 +27,7 @@ provenance:
   - docs/gen-config-docs.py
   - docs/gen-crate-map.py
   - docs/getting-started.md
+  - docs/how-to/deploy-a-ci-gate-bundle.md
   - docs/how-to/install-from-git.md
   - docs/how-to/link-binaries.md
   - docs/how-to/manage-deps.md
@@ -56,13 +57,14 @@ provenance:
   - b4e9263d7b9019584f025807962312043a91ab6e
   - e2cead2cc0e80bc434328f8d6703aa14983b9bc9
   - 8141c7d5661a80ce040fbf3b9437c5c983b7251e
+  - b993eb78f83a93bd8a106c59f3e044237ddf739e
   - 3a898dd50a7a45dd10b4bb7627e309c8b5c28269
-  - 86f540822600a62502831779d1aa10e97fa26b19
+  - e48c0c8ebeedbe52f127581b69f6d1c419cac203
   - 531bd985de65db8009df7cc9c6359a86191ee2f5
   - a260bbf5c62b2d822a89055092649d8a4a592f0d
   - 851a5acceb3a687b665421d1ce1444d17c85e717
   - a20fbe2538d7947acf28eaf648448cc5887c69e0
-  - a41d8a492c2623f0ce92760af0730ab3f7041573
+  - 107022e00a13f7871c7847b86435fd7122ca7cc8
   - fd49412c0b9f1eb1a8f342536cf16e08eb14e08f
   - bd4ad762a3f06738d714b9be6cb896675f371375
   - 175fa4f47aecdc02e902d243a1c29914eb2ee258
@@ -74,6 +76,6 @@ provenance:
   - 0f1340da63d9c6bb61ac0ad6474a32294998778f
   - e1d6c5c142d44b1e750f28a79c9573ebd79f7cd8
   - 297361edd66c33976c2da1ef0b8ba4285fdd7a89
-  commit_sha: 117609e7b20a97eaee6a28d94914dd98d157c7c2
-  generated_at: '1794444404'
+  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
+  generated_at: '1794581596'
   generator: kuda-template/0.1.4

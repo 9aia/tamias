@@ -59,6 +59,10 @@ pub struct Row {
     pub entry: StoreEntry,
     /// Payload bytes (`None` when the walk failed).
     pub size: Option<u64>,
+    /// The payload manifest declares `sealed:` — a ciphertext-only
+    /// pack (ADR-0004). Measured once at load like `size`; a manifest
+    /// read failure just means no badge.
+    pub sealed: bool,
 }
 
 /// Which pane the tab bar shows. `ALL` fixes the `1`-`5` jump order
@@ -627,7 +631,12 @@ impl Model {
                     .into_iter()
                     .map(|entry| {
                         let size = entry.size().ok();
-                        Row { entry, size }
+                        let sealed = entry.manifest().ok().is_some_and(|m| m.sealed.is_some());
+                        Row {
+                            entry,
+                            size,
+                            sealed,
+                        }
                     })
                     .collect();
                 self.load_err = None;
@@ -908,13 +917,15 @@ impl Model {
                     return true;
                 }
                 let rec = &r.entry.record;
+                let sealed = if r.sealed { " sealed" } else { "" };
                 let hay = format!(
-                    "{} {} {} {} {}",
+                    "{} {} {} {} {}{}",
                     r.entry.label(),
                     rec.kind.as_deref().unwrap_or(""),
                     rec.source_ref,
                     rec.resolved,
-                    rec.digest
+                    rec.digest,
+                    sealed
                 )
                 .to_lowercase();
                 hay.contains(&needle)

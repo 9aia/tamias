@@ -197,6 +197,11 @@ pub fn pack(
 ) -> Result<PathBuf, Error> {
     let root = payload_root(dir)?;
     let manifest = Manifest::load(&root)?;
+    // Sealed packs are ciphertext-only (ADR-0004): refuse stray
+    // plaintext / missing `.age` files / bad magic at pack time.
+    // `sealed:` manifests can't declare `include:`, so `root` is the
+    // payload that ships on every path below.
+    tamias_core::sealed::check_ciphertext_only(&root, &manifest)?;
     let default_name = match &manifest.version {
         Some(v) => format!("{}-{v}.tgz", manifest.name),
         None => format!("{}.tgz", manifest.name),
@@ -453,6 +458,69 @@ mod tests {
                 .any(|e| e.ends_with("tools/bin/aarch64-apple-darwin/tool")),
             "{entries:?}"
         );
+    }
+
+    /// ADR-0004: `pack` enforces the sealed ciphertext-only gate — a
+    /// clean `.age` payload ships, stray plaintext / missing declared
+    /// files / `include:` on a sealed manifest all refuse.
+    #[test]
+    fn pack_gates_sealed_payloads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store_root = tmp.path().join("store");
+        let write_age = |dir: &std::path::Path, rel: &str| {
+            let path = dir.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut bytes = tamias_core::sealed::AGE_MAGIC.to_vec();
+            bytes.extend_from_slice(b"\n-> X25519 fake\n\nBODY");
+            std::fs::write(path, bytes).unwrap();
+        };
+        let sealed_yaml = "name: sec\nversion: 1.0.0\nsealed:\n  format: age/v1\n  \
+                          recipients: sealed/recipients\n  files:\n    \
+                          token: sealed/token.age\n";
+        let src = tmp.path().join("sec");
+        std::fs::create_dir_all(src.join("sealed")).unwrap();
+        std::fs::write(src.join("tamias.yaml"), sealed_yaml).unwrap();
+        std::fs::write(src.join("sealed/recipients"), "age1pub…\n").unwrap();
+        write_age(&src, "sealed/token.age");
+        // clean → packs
+        let out = tmp.path().join("sec.tgz");
+        pack(&src, Some(&out), Includes::Keep, &store_root).unwrap();
+        let entries = tgz_files(&out);
+        assert!(
+            entries.iter().any(|e| e.ends_with("sealed/token.age")),
+            "{entries:?}"
+        );
+        // stray plaintext → refused
+        std::fs::write(src.join("notes.txt"), "oops").unwrap();
+        let err = pack(&src, None, Includes::Keep, &store_root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("notes.txt"), "{err}");
+        std::fs::remove_file(src.join("notes.txt")).unwrap();
+        // .age suffix without the magic → refused
+        std::fs::write(src.join("sealed/fake.age"), "not age").unwrap();
+        let err = pack(&src, None, Includes::Keep, &store_root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("sealed/fake.age"), "{err}");
+        std::fs::remove_file(src.join("sealed/fake.age")).unwrap();
+        // declared file missing → refused
+        std::fs::remove_file(src.join("sealed/token.age")).unwrap();
+        let err = pack(&src, None, Includes::Keep, &store_root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("sealed/token.age"), "{err}");
+        write_age(&src, "sealed/token.age");
+        // sealed + include: → manifest validation refuses
+        std::fs::write(
+            src.join("tamias.yaml"),
+            format!("{sealed_yaml}include:\n  - base\n"),
+        )
+        .unwrap();
+        let err = pack(&src, None, Includes::Keep, &store_root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("include"), "{err}");
     }
 
     /// File list inside a `.tgz` — entries are stored under a single

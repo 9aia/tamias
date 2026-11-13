@@ -323,6 +323,12 @@ pub fn publish_plan(
         let composed = tamias_publish::compose(&root, store_root)?;
         (composed.dir.clone(), Some(composed))
     };
+    // Sealed packs are ciphertext-only (ADR-0004): `publish` doesn't
+    // go through `tamias_publish::pack`, so the gate runs here — on
+    // the composed root when `include:` flattened (sealed manifests
+    // can't declare `include:`, so this is the shipped tree either
+    // way). Stray plaintext / missing `.age` files refuse pre-upload.
+    tamias_core::sealed::check_ciphertext_only(&root, &manifest)?;
     let registry = open_registry(
         registry_root,
         config,
@@ -728,6 +734,59 @@ mod tests {
             );
             assert_eq!(registry_target(None, &[None]), None);
         }
+    }
+
+    /// ADR-0004: `publish_plan` is the `tamias publish` gate — sealed
+    /// packs must be ciphertext-only before anything uploads.
+    #[test]
+    fn publish_plan_gates_sealed_payloads() {
+        let tmp = tempfile::tempdir().unwrap();
+        let reg_root = tmp.path().join("reg");
+        let store_root = tmp.path().join("store");
+        let src = tmp.path().join("sec");
+        std::fs::create_dir_all(src.join("sealed")).unwrap();
+        std::fs::write(
+            src.join("tamias.yaml"),
+            "name: sec\nversion: 1.0.0\nsealed:\n  format: age/v1\n  \
+             recipients: sealed/recipients\n  files:\n    \
+             token: sealed/token.age\n",
+        )
+        .unwrap();
+        std::fs::write(src.join("sealed/recipients"), "age1pub…\n").unwrap();
+        let mut age = tamias_core::sealed::AGE_MAGIC.to_vec();
+        age.extend_from_slice(b"\n-> X25519 fake\n\nBODY");
+        std::fs::write(src.join("sealed/token.age"), age).unwrap();
+        let mut report = |_: &Manifest, _: Option<&str>| {};
+        // clean → plan resolves
+        publish_plan(
+            &src,
+            &reg_root,
+            None,
+            None,
+            &[None],
+            &store_root,
+            false,
+            None,
+            &mut report,
+        )
+        .unwrap();
+        // stray plaintext → refused before the registry opens
+        std::fs::write(src.join("notes.txt"), "oops").unwrap();
+        let err = publish_plan(
+            &src,
+            &reg_root,
+            None,
+            None,
+            &[None],
+            &store_root,
+            false,
+            None,
+            &mut report,
+        )
+        .map(|_| ())
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("notes.txt"), "{err}");
     }
 
     #[test]

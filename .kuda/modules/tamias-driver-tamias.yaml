@@ -55,7 +55,7 @@ api:
 - name: cache_payload
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 568
+  line: 571
   module: tamias-driver-tamias
 - name: cache_stats
   kind: function
@@ -95,7 +95,7 @@ api:
 - name: driver_claims
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 427
+  line: 430
   module: tamias-driver-tamias
 - name: driver_passes_pavo_conformance
   kind: function
@@ -130,7 +130,7 @@ api:
 - name: every_binding_is_a_known_query
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 687
+  line: 690
   module: tamias-driver-tamias
 - name: flag
   kind: function
@@ -145,7 +145,7 @@ api:
 - name: fmt_ts_renders_unix_utc
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 696
+  line: 699
   module: tamias-driver-tamias
 - name: graph
   kind: function
@@ -155,12 +155,12 @@ api:
 - name: graph_payload
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 593
+  line: 596
   module: tamias-driver-tamias
 - name: graph_payload_shape
   kind: function
   file: crates/tamias-driver-tamias/src/views.rs
-  line: 723
+  line: 726
   module: tamias-driver-tamias
 - name: kind
   kind: function
@@ -246,8 +246,8 @@ provenance:
   - 8e3cc8faff66be7233a710287b83493be76d5ad9
   - 005573c1d0e47bd6ab208d463c98d3bcbbeac7be
   - 0e017f68f70e3ca7e0a28adf84596a520ee795d4
-  - 3de5aae1e076b62eb6465c6d6595bae84b8aeccf
+  - ed2ac0fe3872bcf838c54f9f9e0a9066725ee6e9
   - da6ee25ea49c5751fdf325a58fd3f016205b0c4b
-  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
-  generated_at: '1794454384'
+  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
+  generated_at: '1794581686'
   generator: kuda-template/0.1.4

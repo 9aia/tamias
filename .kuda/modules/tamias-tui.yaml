@@ -10,7 +10,7 @@ api:
 - name: ALL
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 93
+  line: 97
   module: tamias-tui
 - name: Base
   kind: type
@@ -25,7 +25,7 @@ api:
 - name: Cmd
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 208
+  line: 212
   module: tamias-tui
 - name: Ctx
   kind: type
@@ -35,7 +35,7 @@ api:
 - name: Detail
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 195
+  line: 199
   module: tamias-tui
 - name: Drained
   kind: type
@@ -75,22 +75,22 @@ api:
 - name: Modal
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 156
+  line: 160
   module: tamias-tui
 - name: Mode
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 137
+  line: 141
   module: tamias-tui
 - name: Model
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 437
+  line: 441
   module: tamias-tui
 - name: Msg
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 178
+  line: 182
   module: tamias-tui
 - name: Outcome
   kind: type
@@ -100,12 +100,12 @@ api:
 - name: Pane
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 67
+  line: 71
   module: tamias-tui
 - name: PromptKind
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 105
+  line: 109
   module: tamias-tui
 - name: RESCAN_TICKS
   kind: const
@@ -155,12 +155,12 @@ api:
 - name: arm_watch
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 723
+  line: 732
   module: tamias-tui
 - name: author_verb
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1448
+  line: 1459
   module: tamias-tui
 - name: cache_clean
   kind: function
@@ -185,12 +185,12 @@ api:
 - name: command_parsing
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1961
+  line: 1972
   module: tamias-tui
 - name: confirm_job
   kind: function
   file: crates/tamias-tui/src/app.rs
-  line: 1088
+  line: 1099
   module: tamias-tui
 - name: ctx
   kind: function
@@ -250,12 +250,12 @@ provenance:
   - crates/tamias-tui/tests/pty.rs
   hashes:
   - b6a235087c38037ce9ad4db4bddbfe7ee52a710d
-  - 1f76706680dcf171f467dcae52131c8da4f4ff6d
+  - a1edcbf0c2aacaae42375dc7425a0f1b7c3a1384
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
   - 42ff68d035bfcf163bff20707c3b2d2f09cd1a16
-  - 3ad22909943db81c2550d1e968bc077eecddf114
+  - 4b642ac587c7d3fb08debb41572f2af6167f17f6
   - 7c33e3b53797f14b73b0d7fcfefca0f11f1ac8c2
-  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
-  generated_at: '1794454384'
+  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
+  generated_at: '1794581596'
   generator: kuda-template/0.1.4

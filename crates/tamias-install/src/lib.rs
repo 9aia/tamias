@@ -314,6 +314,12 @@ pub(crate) fn install_inner(
     let (payload_dir, resolved_id, signature, _) = fetch_or_cached(env, &planned)?;
     let root = payload_root(&payload_dir)?;
     let manifest = Manifest::load(&root)?;
+    // Sealed packs are ciphertext-only (ADR-0004): every payload file
+    // must be `.age` with the age magic — a stray plaintext byte is a
+    // hard error before anything dispatches or commits. `sealed:`
+    // manifests can't declare `include:`, so `root` is the tree the
+    // store will commit.
+    tamias_core::sealed::check_ciphertext_only(&root, &manifest)?;
     let base = manifest.scope.as_ref().map_or_else(
         || manifest.name.clone(),
         |scope| format!("@{scope}/{}", manifest.name),
@@ -663,6 +669,9 @@ pub struct PlanManifest {
     pub version: Option<String>,
     /// Content type (`type:` in the manifest) — `None` means `files`.
     pub kind: Option<String>,
+    /// The `sealed:` format (`age/v1`) when the pack is
+    /// ciphertext-only — `None` = plaintext payload.
+    pub sealed: Option<String>,
 }
 
 /// How one `include:` entry resolves — see [`include::plan_include`].
@@ -796,6 +805,12 @@ pub fn plan_install(env: &Env, reference: &str, allow_drivers: bool) -> Result<I
     let root = payload_root(&payload_dir)?;
     let manifest = Manifest::load(&root)?;
     let mut problems = Vec::new();
+
+    // The sealed ciphertext-only gate — a real install hard-fails, so
+    // the plan surfaces it as a would-be problem instead.
+    if let Err(e) = tamias_core::sealed::check_ciphertext_only(&root, &manifest) {
+        problems.push(format!("sealed pack check would fail: {e}"));
+    }
 
     // `include:` classification — a real install resolves each entry
     // (store name → stored payload dir; ref → recursive install) and
@@ -962,6 +977,7 @@ pub fn plan_install(env: &Env, reference: &str, allow_drivers: bool) -> Result<I
             scope: manifest.scope,
             version: manifest.version,
             kind: manifest.kind,
+            sealed: manifest.sealed.map(|s| s.format),
         },
         cache_hit,
         payload_digest,
@@ -1083,6 +1099,66 @@ mod tests {
         let dir2 = pkg(tmp2.path(), "w2");
         let entry2 = install(&env2, dir2.to_str().unwrap(), false).unwrap();
         assert_eq!(entry2.record.name, "w2");
+    }
+
+    /// ADR-0004: a sealed pack's payload is ciphertext-only — the
+    /// pipeline carries it opaquely (digest/verify unchanged), a clean
+    /// pack installs, and stray plaintext hard-fails before commit.
+    #[test]
+    fn sealed_pack_gate() {
+        let _g = EnvGuard::new();
+        let (tmp, env) = env();
+        let write_age = |dir: &std::path::Path, rel: &str| {
+            let path = dir.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut bytes = tamias_core::sealed::AGE_MAGIC.to_vec();
+            bytes.extend_from_slice(b"\n-> X25519 fake\n\nBODY");
+            std::fs::write(path, bytes).unwrap();
+        };
+        let sealed_yaml = "name: sec\nversion: 1.0.0\nsealed:\n  format: age/v1\n  \
+                          recipients: sealed/recipients\n  files:\n    \
+                          token: sealed/token.age\n";
+        // clean sealed payload installs as `files` (no `type:` needed —
+        // `sealed:` is orthogonal to the content type)
+        let pkg = tmp.path().join("sec");
+        std::fs::create_dir_all(pkg.join("sealed")).unwrap();
+        std::fs::write(pkg.join("tamias.yaml"), sealed_yaml).unwrap();
+        std::fs::write(pkg.join("sealed/recipients"), "age1pub…\n").unwrap();
+        write_age(&pkg, "sealed/token.age");
+        let entry = install(&env, pkg.to_str().unwrap(), false).unwrap();
+        assert_eq!(entry.record.name, "sec");
+        assert_eq!(
+            entry.manifest().unwrap().sealed.unwrap().format,
+            tamias_core::sealed::AGE_FORMAT
+        );
+        // plan reports the sealed format, no problems
+        let plan = plan_install(&env, pkg.to_str().unwrap(), false).unwrap();
+        assert_eq!(plan.manifest.sealed.as_deref(), Some("age/v1"));
+        assert!(plan.problems.is_empty(), "{:?}", plan.problems);
+        // stray plaintext → install fails before commit; plan surfaces it
+        let bad = tmp.path().join("bad");
+        std::fs::create_dir_all(bad.join("sealed")).unwrap();
+        std::fs::write(
+            bad.join("tamias.yaml"),
+            sealed_yaml.replace("name: sec", "name: bad"),
+        )
+        .unwrap();
+        std::fs::write(bad.join("sealed/recipients"), "age1pub…\n").unwrap();
+        write_age(&bad, "sealed/token.age");
+        std::fs::write(bad.join("notes.txt"), "oops").unwrap();
+        let err = install(&env, bad.to_str().unwrap(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("notes.txt"), "{err}");
+        assert!(Store::new(&env.store_root).find("bad").is_err());
+        let plan = plan_install(&env, bad.to_str().unwrap(), false).unwrap();
+        assert!(
+            plan.problems
+                .iter()
+                .any(|p| p.contains("sealed pack check") && p.contains("notes.txt")),
+            "{:?}",
+            plan.problems
+        );
     }
 
     #[test]
