@@ -42,6 +42,7 @@ export default defineConfig({
           { text: "Use the TUI", link: "/how-to/use-the-tui" },
           { text: "Publish to a registry", link: "/how-to/publish-to-a-registry" },
           { text: "Provision and service", link: "/how-to/provision-a-service" },
+          { text: "Deploy a CI gate bundle", link: "/how-to/deploy-a-ci-gate-bundle" },
           { text: "Write a driver", link: "/how-to/write-a-driver" },
         ],
       },
