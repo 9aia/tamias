@@ -14,23 +14,24 @@ cache:
 
 # The org registry — Cloudflare Worker + R2 at tamias.9aia.com
 # (`tamias deploy-registry` materializes it; bearer token via
-# TAMIAS_REGISTRY_TOKEN, value lives in cuora as
-# cuora://tamias/registry-token — inject with `cuora run -s …`).
+# TAMIAS_REGISTRY_TOKEN, value lives sealed in the `secrets-9aia`
+# pack — consumption ref `cuora://secrets-9aia/registry-token`,
+# inject with `cuora run -s …`; the cuora engine resolves installed
+# sealed packs natively on vault miss).
 #
-# Canonical home (T-037): the ORG vault — `nine` (cuora.9aia.com),
-# reached via a cuora.toml routing envs → `nine` (e.g. the cuora
-# repo's). The token is env-agnostic, so it is seeded under every
-# env (dev/staging/preview/prod) — `--env` cannot pick a wrong
-# slot. The personal vault (cuora.luisfuturist.com) carries a
-# mirror copy for personal-dev convenience; it is NOT authoritative
-# — org consumers must resolve through the org vault.
+# Canonical home (T-037): the `secrets-9aia` sealed pack
+# (workspace/libraries/secrets-9aia, published to the org registry) —
+# age ciphertext, opened consumer-side by recipient keyholders. The
+# token is env-agnostic, so one sealed copy retires the old
+# vault/env ambiguity (it was seeded under every env of vault `nine`
+# — dev/staging/preview/prod — plus a mirror in the personal vault
+# cuora.luisfuturist.com; those vault copies are deleted post-migration).
 #
-# Migration status (PL-017): the token now ALSO ships sealed in the
-# `secrets-9aia` pack (workspace/libraries/secrets-9aia, published to
-# the org registry) — consumption ref `cuora://secrets-9aia/
-# registry-token`. Vault entries stay until engine pack-ref
-# resolution (cuora T-051) lands and consumers are verified on the
-# pack path; deletion is a separate, later step. `cuora://tamias/
+# Migration status (PL-017): COMPLETED — engine pack-ref resolution
+# landed (cuora 9fd14a0: `cuora get`/`run -s`/`env` fall back to
+# installed sealed packs on vault miss, vault-first), `secrets-9aia`
+# v1.0.1 is published + installed, and the `nine` + personal-vault
+# `tamias/registry-token` entries are deleted. `cuora://tamias/
 # signing-key` deliberately stays vault-resident: it is a PUBLISHER
 # credential (tamias-sign), not a consumer secret — sealing it into
 # a pack would distribute the private key to every recipient.
