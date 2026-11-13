@@ -1,7 +1,7 @@
 +++
 id = "ADR-0004"
 title = "sealed secrets packs — age-sealed payloads; tamias stays zero-knowledge, cuora owns seal/open"
-status = "open"
+status = "in-progress"
 created = "2026-11-12"
 owner = "devin"
 priority = "high"
