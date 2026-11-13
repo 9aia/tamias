@@ -100,8 +100,11 @@ impl LocalDeploy {
         std::fs::create_dir_all(&self.unit_dir)
             .map_err(Error::io(format!("create {}", self.unit_dir.display())))?;
         let path = self.unit_path(&spec.name)?;
-        std::fs::write(&path, render_unit(spec))
-            .map_err(Error::io(format!("write {}", path.display())))?;
+        let rendered = render_unit(spec);
+        if let Some(warning) = dropped_env_warning(&path, &rendered) {
+            eprintln!("tamias: warning — {warning}");
+        }
+        std::fs::write(&path, rendered).map_err(Error::io(format!("write {}", path.display())))?;
         Ok(path)
     }
 
@@ -419,6 +422,40 @@ fn unit_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".config/systemd/user"))
 }
 
+/// Advisory check before overwriting an existing unit: if the old
+/// file carried `EnvironmentFile=`/`Environment=` lines the new
+/// render drops entirely, return a warning — silently losing
+/// operator env (e.g. `PEREGRIN_CUORA_TRANSPORT`) can stall a
+/// service for tens of minutes with no error anywhere. Directive
+/// names only — values may be sensitive.
+fn dropped_env_warning(path: &Path, rendered: &str) -> Option<String> {
+    let old = std::fs::read_to_string(path).ok()?;
+    let old_env: std::collections::BTreeSet<&str> = old
+        .lines()
+        .filter(|l| l.starts_with("EnvironmentFile=") || l.starts_with("Environment="))
+        .collect();
+    if old_env.is_empty() {
+        return None;
+    }
+    let new_env: std::collections::BTreeSet<&str> = rendered
+        .lines()
+        .filter(|l| l.starts_with("EnvironmentFile=") || l.starts_with("Environment="))
+        .collect();
+    let dropped: Vec<&&str> = old_env.difference(&new_env).collect();
+    if dropped.is_empty() {
+        return None;
+    }
+    let names: std::collections::BTreeSet<&str> = dropped
+        .iter()
+        .map(|l| l.split('=').next().unwrap_or("?"))
+        .collect();
+    Some(format!(
+        "{} loses env directives the current unit has: {}",
+        path.display(),
+        names.into_iter().collect::<Vec<_>>().join(", ")
+    ))
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
@@ -691,5 +728,33 @@ mod tests {
     #[test]
     fn default_uses_new() {
         let _ = LocalDeploy::default();
+    }
+
+    #[test]
+    fn dropped_env_warning_names_directives_not_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("x.service");
+        std::fs::write(
+            &path,
+            "[Service]\nEnvironmentFile=-/home/u/.config/x/env\nEnvironment=SECRET_TOKEN=hunter2\n",
+        )
+        .unwrap();
+        let warning = dropped_env_warning(&path, "[Service]\nType=simple\n").unwrap();
+        assert!(warning.contains("EnvironmentFile"));
+        assert!(warning.contains("Environment"));
+        assert!(!warning.contains("hunter2"));
+        assert!(warning.contains("x.service"));
+
+        // Identical env carried over → no warning.
+        std::fs::write(&path, "[Service]\nEnvironmentFile=-/home/u/.config/x/env\n").unwrap();
+        let kept = render_unit(&ServiceSpec {
+            env_file: Some("/home/u/.config/x/env".into()),
+            env: vec![],
+            ..spec()
+        });
+        assert!(dropped_env_warning(&path, &kept).is_none());
+
+        // No prior unit / no prior env → no warning.
+        assert!(dropped_env_warning(&dir.path().join("none.service"), "x").is_none());
     }
 }
