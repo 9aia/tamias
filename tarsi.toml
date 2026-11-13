@@ -20,7 +20,8 @@ skip = true
 
 [publish.crates]
 enabled = true
-token_env = "CARGO_REGISTRY_TOKEN"   # secret NAME — never a value
+token_env = "CARGO_REGISTRY_TOKEN"   # env-var fallback — secret NAME, never a value
+# token_ref = "cuora://tamias/crates-token"  # cuora secret ref — wins over token_env
 retry_429 = true                     # release.sh semantics: back off on crates.io rate limits
 
 [publish.ghreleases]
