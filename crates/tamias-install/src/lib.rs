@@ -459,7 +459,8 @@ pub(crate) fn install_inner(
     // including `.scarab-parent/` (`verify` stays honest).
     let mut extends_scratch = None;
     let mut driver_root = work_root.clone();
-    if let Some(parent_ref) = extends::extends_ref(&work_root)? {
+    let extends_parents = extends::parents(&work_root)?;
+    if !extends_parents.is_empty() {
         if driver_root == root {
             // `work_root` aliases the content-addressed fetch cache —
             // it must never be written into; stage a private copy.
@@ -473,7 +474,7 @@ pub(crate) fn install_inner(
             env,
             &driver_root,
             &consent_label,
-            &parent_ref,
+            &extends_parents,
             state,
             allow_drivers,
             surface,
@@ -732,12 +733,13 @@ pub struct InstallPlan {
     pub has_includes: bool,
     /// `include:` entries classified without recursing installs.
     pub includes: Vec<PlannedInclude>,
-    /// `template.extends:` classified the same way (store name →
-    /// stored payload; ref → a real install would recursively install
-    /// the parent, then materialize it at `.scarab-parent/`). `None`
-    /// = the manifest declares no parent. A malformed `extends`
-    /// (non-string/empty) lands in [`Self::problems`].
-    pub template_extends: Option<PlannedInclude>,
+    /// `template.extends:` parents classified the same way (store
+    /// name → stored payload; ref → a real install would recursively
+    /// install the parent, then materialize it at `.scarab-parent/`
+    /// for one parent or `.scarab-parents/<i>/` for several). Empty
+    /// = the manifest declares no parents. A malformed `extends`
+    /// lands in [`Self::problems`].
+    pub template_extends: Vec<PlannedInclude>,
     /// Driver files the payload ships under `drivers/` (portable files
     /// plus `bin/<triple>/` payloads, reported as `bin/<triple>/<name>`).
     pub bundled_drivers: Vec<String>,
@@ -835,30 +837,33 @@ pub fn plan_install(env: &Env, reference: &str, allow_drivers: bool) -> Result<I
     }
 
     // `template.extends:` — same store-name-then-ref classification as
-    // `include:`; a real install materializes the parent payload at
-    // `.scarab-parent/` inside the composed tree. A malformed value is
-    // a would-be install failure → problems, not a hard error.
-    let template_extends = match extends::extends_ref(&root) {
-        Ok(Some(text)) => {
-            let resolves_to = match include::plan_base(&entries, &text, "template.extends") {
-                include::IncludePlan::Store(label) => IncludeResolution::StoreLabel(label),
-                include::IncludePlan::WouldInstall => IncludeResolution::WouldInstall,
-                include::IncludePlan::Missing(reason) => {
-                    problems.push(format!("{reason} — install would fail"));
-                    IncludeResolution::Missing
-                }
-            };
-            Some(PlannedInclude {
-                entry: text,
-                resolves_to,
-            })
+    // `include:`; a real install materializes each parent payload at
+    // `.scarab-parent/` (one) or `.scarab-parents/<i>/` (several)
+    // inside the composed tree. A malformed value is a would-be
+    // install failure → problems, not a hard error.
+    let mut template_extends = Vec::new();
+    match extends::parents(&root) {
+        Ok(parents) => {
+            for p in parents {
+                let resolves_to = match include::plan_base(&entries, &p.source, "template.extends")
+                {
+                    include::IncludePlan::Store(label) => IncludeResolution::StoreLabel(label),
+                    include::IncludePlan::WouldInstall => IncludeResolution::WouldInstall,
+                    include::IncludePlan::Missing(reason) => {
+                        problems.push(format!("{reason} — install would fail"));
+                        IncludeResolution::Missing
+                    }
+                };
+                template_extends.push(PlannedInclude {
+                    entry: p.source,
+                    resolves_to,
+                });
+            }
         }
-        Ok(None) => None,
         Err(e) => {
             problems.push(format!("template.extends: {e} — install would fail"));
-            None
         }
-    };
+    }
 
     // The RAW payload digest — see `payload_digest`/`has_includes` on
     // [`InstallPlan`] for the composed-tree caveat.
@@ -1759,11 +1764,76 @@ mod tests {
         std::fs::write(child2.join("c.txt"), "c").unwrap();
         let plan = plan_install(&env2, child2.to_str().unwrap(), false).unwrap();
         assert!(matches!(
-            plan.template_extends.as_ref().map(|e| &e.resolves_to),
+            plan.template_extends.first().map(|e| &e.resolves_to),
             Some(IncludeResolution::WouldInstall)
         ));
         assert!(plan.problems.is_empty(), "{:?}", plan.problems);
         assert!(Store::new(&env2.store_root).entries().unwrap().is_empty());
+    }
+
+    #[test]
+    fn extends_multi_parent_materializes_indexed_dirs() {
+        let _g = EnvGuard::new();
+        let (tmp, env) = env();
+        let pa = plain_pkg(tmp.path(), "pa");
+        std::fs::write(pa.join("a.txt"), "A").unwrap();
+        let pb = plain_pkg(tmp.path(), "pb");
+        std::fs::write(pb.join("b.txt"), "B").unwrap();
+        // list form: string + {source, via} — declaration order is
+        // precedence order (lowest first)
+        let child = tmp.path().join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(
+            child.join("tamias.yaml"),
+            format!(
+                "name: child\nversion: 1.0.0\ntemplate:\n  extends:\n    - '{}'\n    - source: '{}'\n      via: tamias-ref\n",
+                pa.display(),
+                pb.display()
+            ),
+        )
+        .unwrap();
+        install(&env, child.to_str().unwrap(), false).unwrap();
+        let dir = Store::new(&env.store_root).find("child").unwrap().dir;
+        // several parents → .scarab-parents/<index>/, NOT .scarab-parent/
+        assert!(!dir.join(".scarab-parent").exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".scarab-parents/0/a.txt")).unwrap(),
+            "A"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join(".scarab-parents/1/b.txt")).unwrap(),
+            "B"
+        );
+        // --plan classifies every declared parent
+        let (_tmp2, env2) = self::env();
+        let plan = plan_install(&env2, child.to_str().unwrap(), false).unwrap();
+        assert_eq!(plan.template_extends.len(), 2);
+        assert!(plan
+            .template_extends
+            .iter()
+            .all(|e| matches!(e.resolves_to, IncludeResolution::WouldInstall)));
+    }
+
+    #[test]
+    fn extends_unknown_via_fails_install() {
+        let _g = EnvGuard::new();
+        let (tmp, env) = env();
+        let parent = plain_pkg(tmp.path(), "base");
+        let child = tmp.path().join("child");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::write(
+            child.join("tamias.yaml"),
+            format!(
+                "name: child\nversion: 1.0.0\ntemplate:\n  extends:\n    source: '{}'\n    via: handl-kit\n",
+                parent.display()
+            ),
+        )
+        .unwrap();
+        let err = install(&env, child.to_str().unwrap(), false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("via 'handl-kit'"), "{err}");
+        assert!(Store::new(&env.store_root).find("child").is_err());
     }
 
     #[test]

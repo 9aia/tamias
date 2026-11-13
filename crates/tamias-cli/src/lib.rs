@@ -896,7 +896,7 @@ fn print_plan(plan: &tamias_install::InstallPlan) {
             }
         }
     }
-    if let Some(e) = &plan.template_extends {
+    for e in &plan.template_extends {
         match &e.resolves_to {
             IncludeResolution::StoreLabel(label) => {
                 println!("template.extends: {} → store {}", e.entry, label);
