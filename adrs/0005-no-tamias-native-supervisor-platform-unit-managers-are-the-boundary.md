@@ -1,7 +1,7 @@
 +++
 id = "ADR-0005"
 title = "no tamias-native supervisor — platform unit managers are the boundary"
-status = "in-progress"
+status = "done"
 created = "2026-11-14"
 owner = "devin"
 priority = "med"
