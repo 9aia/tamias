@@ -1,11 +1,12 @@
 +++
 id = "P-006"
 title = "package metadata: description/keywords/url/license propagation to store + registry index"
-status = "open"
+status = "done"
 created = "2026-11-14"
 owner = "devin"
 priority = "med"
 labels = ["metadata", "registry"]
+done = "2026-11-14"
 +++
 
 ## Problem
