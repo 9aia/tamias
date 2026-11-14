@@ -5,12 +5,12 @@ api:
 - name: DEFAULT_CACHE_MAX_AGE
   kind: const
   file: crates/tamias-serve/src/lib.rs
-  line: 433
+  line: 446
   module: tamias-serve
 - name: DRVENV
   kind: const
   file: crates/tamias-serve/src/lib.rs
-  line: 448
+  line: 461
   module: tamias-serve
 - name: Env
   kind: type
@@ -20,17 +20,17 @@ api:
 - name: EnvGuard
   kind: type
   file: crates/tamias-serve/src/lib.rs
-  line: 453
+  line: 466
   module: tamias-serve
 - name: cache_hit_and_missing_name_error
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 748
+  line: 761
   module: tamias-serve
 - name: corrupt_cache_entry_refetches
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 784
+  line: 797
   module: tamias-serve
 - name: dispatch
   kind: function
@@ -40,57 +40,57 @@ api:
 - name: dispatch_error_arms
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 695
+  line: 708
   module: tamias-serve
 - name: dispatch_install_deploys_declared_bins
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 554
+  line: 567
   module: tamias-serve
 - name: dispatch_install_git_arm
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 705
+  line: 718
   module: tamias-serve
 - name: dispatch_install_http_dead
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 735
+  line: 748
   module: tamias-serve
 - name: dispatch_install_list_info_verify_remove
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 515
+  line: 528
   module: tamias-serve
 - name: dispatch_ops
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 497
+  line: 510
   module: tamias-serve
 - name: dispatch_plan_is_a_dry_run
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 585
+  line: 598
   module: tamias-serve
 - name: dispatch_sync_from_lock_uses_lock_as_spec
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 647
+  line: 660
   module: tamias-serve
 - name: dispatch_sync_reconciles_cwd_project
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 619
+  line: 632
   module: tamias-serve
 - name: drop
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 473
+  line: 486
   module: tamias-serve
 - name: env
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 486
+  line: 499
   module: tamias-serve
 - name: env_config
   kind: function
@@ -105,52 +105,52 @@ api:
 - name: handle_wraps_ok_and_err
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 507
+  line: 520
   module: tamias-serve
 - name: install_gates_bundled_drivers
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 829
+  line: 842
   module: tamias-serve
 - name: install_unknown_kind_fails_without_entry
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 878
+  line: 891
   module: tamias-serve
 - name: new
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 460
+  line: 473
   module: tamias-serve
 - name: publish_search_route_by_name_and_raw_ref
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 1039
+  line: 1052
   module: tamias-serve
 - name: registry_entry_json
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 415
+  line: 422
   module: tamias-serve
 - name: registry_env
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 968
+  line: 981
   module: tamias-serve
 - name: registry_op_error_arms
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 1017
+  line: 1030
   module: tamias-serve
 - name: registry_ops_round_trip
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 978
+  line: 991
   module: tamias-serve
 - name: remove_propagates_driver_failure
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 905
+  line: 918
   module: tamias-serve
 - name: serve
   kind: function
@@ -170,12 +170,12 @@ api:
 - name: serve_probe_is_covered
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 743
+  line: 756
   module: tamias-serve
 - name: store_error_arms
   kind: function
   file: crates/tamias-serve/src/lib.rs
-  line: 954
+  line: 967
   module: tamias-serve
 - name: str_field
   kind: function
@@ -190,7 +190,7 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-serve/src/lib.rs
-  line: 437
+  line: 450
   module: tamias-serve
 deps:
 - serde_json
@@ -218,7 +218,7 @@ provenance:
   - crates/tamias-serve/src/lib.rs
   hashes:
   - 45cb9ad213b0c6397e35c4bf6eeda67fcc707709
-  - 2a73b34326b41f70ed4ee2bed0c25b3ec9fff9ed
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581596'
+  - c9ba60fcfba05b1a7f67066e207e2a3c37ae282b
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

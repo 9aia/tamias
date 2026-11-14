@@ -40,7 +40,7 @@ api:
 - name: Drained
   kind: type
   file: crates/tamias-tui/tests/pty.rs
-  line: 122
+  line: 128
   module: tamias-tui
 - name: Fixture
   kind: type
@@ -175,12 +175,12 @@ api:
 - name: closed_pty_surfaces_an_error
   kind: function
   file: crates/tamias-tui/tests/pty.rs
-  line: 349
+  line: 355
   module: tamias-tui
 - name: command
   kind: function
   file: crates/tamias-tui/tests/pty.rs
-  line: 77
+  line: 83
   module: tamias-tui
 - name: command_parsing
   kind: function
@@ -253,9 +253,9 @@ provenance:
   - a1edcbf0c2aacaae42375dc7425a0f1b7c3a1384
   - 2e7b1a0546f48b38aa4293ca3db88f42966bb876
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - 42ff68d035bfcf163bff20707c3b2d2f09cd1a16
-  - 4b642ac587c7d3fb08debb41572f2af6167f17f6
-  - 7c33e3b53797f14b73b0d7fcfefca0f11f1ac8c2
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581596'
+  - cc945e7b815ccd19921dbcad3adf493718e52af8
+  - b45889ff4e330dbe0294491c72faa97c7457acf5
+  - ce47a9a3c78db016cabc95afbcdb70418f407f9d
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

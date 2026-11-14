@@ -5,12 +5,12 @@ api:
 - name: PublishOutcome
   kind: type
   file: crates/tamias-registry/src/lib.rs
-  line: 60
+  line: 79
   module: tamias-registry
 - name: Registry
   kind: trait
   file: crates/tamias-registry/src/lib.rs
-  line: 152
+  line: 171
   module: tamias-registry
 - name: RegistryEntry
   kind: type
@@ -20,87 +20,87 @@ api:
 - name: RegistryRef
   kind: type
   file: crates/tamias-registry/src/lib.rs
-  line: 191
+  line: 217
   module: tamias-registry
 - name: Target
   kind: type
   file: crates/tamias-registry/src/lib.rs
-  line: 73
+  line: 92
   module: tamias-registry
 - name: apply_retention
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 94
+  line: 113
   module: tamias-registry
 - name: deref
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 75
+  line: 94
   module: tamias-registry
 - name: entry
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 273
+  line: 311
   module: tamias-registry
 - name: label
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 45
+  line: 64
   module: tamias-registry
 - name: label_and_ref_parse
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 218
+  line: 244
   module: tamias-registry
 - name: parse_registry_ref
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 200
+  line: 226
   module: tamias-registry
 - name: publisher_round_trips_through_index_json
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 247
+  line: 279
   module: tamias-registry
 - name: retention_counts_prereleases_in_semver_order
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 317
+  line: 361
   module: tamias-registry
 - name: retention_keep_zero_keeps_only_published
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 332
+  line: 376
   module: tamias-registry
 - name: retention_keeps_newest_semver_versions
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 301
+  line: 345
   module: tamias-registry
 - name: retention_never_prunes_published_old_version
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 345
+  line: 389
   module: tamias-registry
 - name: retention_noop_when_within_keep
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 398
+  line: 442
   module: tamias-registry
 - name: retention_protects_unorderable_versions
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 360
+  line: 404
   module: tamias-registry
 - name: retention_scopes_to_published_package
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 380
+  line: 424
   module: tamias-registry
 - name: search
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 176
+  line: 196
   module: tamias-registry
 - name: tamias-registry
   kind: module
@@ -110,12 +110,12 @@ api:
 - name: tests
   kind: module
   file: crates/tamias-registry/src/lib.rs
-  line: 210
+  line: 236
   module: tamias-registry
 - name: versions
   kind: function
   file: crates/tamias-registry/src/lib.rs
-  line: 293
+  line: 337
   module: tamias-registry
 deps:
 - semver
@@ -137,8 +137,8 @@ provenance:
   - crates/tamias-registry/tests/props.rs
   hashes:
   - 27a46246625517af42b3de909638c8510ef61bdd
-  - 9b5e66d5bcaf1fe3836fd6420761bd16c1f01031
+  - 387e67fbfbc42553bc4d5993bb7007f1590285ce
   - 9c76c50538df4b424c71707ee8c7b4a786ad6101
-  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
-  generated_at: '1794454384'
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

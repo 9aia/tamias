@@ -10,12 +10,12 @@ api:
 - name: ENV_LOCK
   kind: const
   file: crates/tamias-provider/src/lib.rs
-  line: 1021
+  line: 1027
   module: tamias-provider
 - name: EnvGuard
   kind: type
   file: crates/tamias-provider/src/lib.rs
-  line: 1016
+  line: 1022
   module: tamias-provider
 - name: ExecSpec
   kind: type
@@ -70,7 +70,7 @@ api:
 - name: drop
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 1034
+  line: 1040
   module: tamias-provider
 - name: enable
   kind: function
@@ -125,7 +125,7 @@ api:
 - name: new
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 1024
+  line: 1030
   module: tamias-provider
 - name: provider_base
   kind: function
@@ -170,7 +170,7 @@ api:
 - name: store_root
   kind: function
   file: crates/tamias-provider/src/lib.rs
-  line: 1008
+  line: 1014
   module: tamias-provider
 - name: surviving_units
   kind: function
@@ -228,7 +228,7 @@ provenance:
   - crates/tamias-provider/src/lib.rs
   hashes:
   - c25db321c302a1735c7b30ee64ed311398d9962c
-  - c082f1f58ac81e09087e3eb4a32035016cac8077
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581596'
+  - 92f7452a046b9867fdb67bbd9187cc679ce70581
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

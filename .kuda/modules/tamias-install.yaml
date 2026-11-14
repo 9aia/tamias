@@ -20,7 +20,7 @@ api:
 - name: DRVENV
   kind: const
   file: crates/tamias-install/src/lib.rs
-  line: 1013
+  line: 1026
   module: tamias-install
 - name: DepOutcome
   kind: type
@@ -40,7 +40,12 @@ api:
 - name: EnvGuard
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 1022
+  line: 1035
+  module: tamias-install
+- name: ExtParent
+  kind: type
+  file: crates/tamias-install/src/extends.rs
+  line: 77
   module: tamias-install
 - name: FILE_NAME
   kind: const
@@ -50,12 +55,12 @@ api:
 - name: IncludePlan
   kind: type
   file: crates/tamias-install/src/include.rs
-  line: 235
+  line: 241
   module: tamias-install
 - name: IncludeResolution
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 680
+  line: 689
   module: tamias-install
 - name: IncludeState
   kind: type
@@ -65,37 +70,42 @@ api:
 - name: InstallPlan
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 718
+  line: 727
   module: tamias-install
 - name: MAX_EXTENDS_DEPTH
   kind: const
   file: crates/tamias-install/src/extends.rs
-  line: 50
+  line: 59
   module: tamias-install
 - name: MAX_INCLUDE_DEPTH
   kind: const
   file: crates/tamias-install/src/include.rs
   line: 43
   module: tamias-install
+- name: PARENTS_DIR
+  kind: const
+  file: crates/tamias-install/src/extends.rs
+  line: 68
+  module: tamias-install
 - name: PARENT_DIR
   kind: const
   file: crates/tamias-install/src/extends.rs
-  line: 54
+  line: 63
   module: tamias-install
 - name: PlanManifest
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 663
+  line: 672
   module: tamias-install
 - name: PlannedInclude
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 695
+  line: 704
   module: tamias-install
 - name: PlannedService
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 705
+  line: 714
   module: tamias-install
 - name: Progress
   kind: type
@@ -122,10 +132,15 @@ api:
   file: crates/tamias-install/src/sync.rs
   line: 103
   module: tamias-install
+- name: TAMIAS_VIA
+  kind: const
+  file: crates/tamias-install/src/extends.rs
+  line: 72
+  module: tamias-install
 - name: allow
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1342
+  line: 1355
   module: tamias-install
 - name: as_str
   kind: function
@@ -135,7 +150,7 @@ api:
 - name: bad_ref_and_missing_manifest_fail
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1849
+  line: 1927
   module: tamias-install
 - name: consent
   kind: module
@@ -145,17 +160,17 @@ api:
 - name: consent_env
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1225
+  line: 1238
   module: tamias-install
 - name: consent_gate_and_surface_hints
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1165
+  line: 1178
   module: tamias-install
 - name: consent_memory_skips_reprompt_for_identical_bytes
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1236
+  line: 1249
   module: tamias-install
 - name: consent_path
   kind: function
@@ -187,22 +202,7 @@ api:
   file: crates/tamias-install/src/consent.rs
   line: 107
   module: tamias-install
-- name: corrupt_consent_file_means_no_consent
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 1273
-  module: tamias-install
-- name: deploy_committed_bins
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 270
-  module: tamias-install
-- name: drivers_hint
-  kind: function
-  file: crates/tamias-install/src/lib.rs
-  line: 131
-  module: tamias-install
-api_omitted: 99
+api_omitted: 107
 deps:
 - serde
 - serde_json
@@ -255,10 +255,10 @@ provenance:
   hashes:
   - 8162f54710e782799c63f837f0390b5d09514c95
   - ee8d6763ab4fc04a6bdd00a690e31db67bba55e9
-  - 97ee9b90f1acc41875049b718dbe0759e9634664
-  - 7838ecba0294bdc9b39b3273102cd21d9a9dd36e
-  - f311cdfec01fad960ce0c1763679b0fdc68b886e
+  - 6e296d597cb9c661e107658a60b7602c1036323e
+  - e5a8987da13014dd6b8b8b1eafc62fc09fdcaf22
+  - d86fcd347749cfac9b54a68e905970c865661f70
   - bd22a393ffae872ac5ed9a9400f447fd6598e32a
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581596'
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

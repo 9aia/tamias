@@ -49,10 +49,11 @@ provenance:
   - refs/sturn/wal/t8-6-binary-distribution
   - refs/sturn/wal/tamias
   - refs/sturn/wal/tamias-io002
+  - refs/sturn/wal/tamias-metadata
   - refs/sturn/wal/tamias-xtask-test-fix
   - refs/sturn/ws/devin-p024
   hashes:
-  - 55b49bccd69d5f3daecf408f3ef9c92fe09cbb7f
+  - c15c0f76f96a60b81cba6b4da1033160e90a04e9
   - 73a7a935f687eb808383ee3c3714ed855094ade5
   - 0344c258b0392072e82f3282d9e2108f4e18ae4c
   - 562b74c23d96c90f85afa280f596136ddae80db7
@@ -78,14 +79,15 @@ provenance:
   - b6113648eb6b4227be70caf1beeb3528ce96035d
   - ee8e98f88672aa9aa4e2401eb911a3a0f1560405
   - aa4d83ebcc3b1716c31ea5c5b337937d9cfe2782
-  - 44af1a21d2d9d29e6dbd9c0f97e49ee71c500604
+  - 29c1db0ce4628fb294c168ef7a01166f70f4e9a3
   - e7ed750a13f2d1f34aaccffc351a77d26b6dd76a
   - 556695b9190378fc2a0061057b38f31dd8a988d1
   - 96a9778feccc8eacea586ede09ca8a9bd1c4557b
-  - 2f05104d322fc3d952bec444e92586d73744123b
+  - 357a4e75c719e4da159d5eab67e72b6868b9a27f
   - 21c92171c34188115ddaa88ece5a724392948a1f
+  - d94c61f34efac15d43336f61fb7e20ba2364175d
   - 75f581ed6829529e4b83898232e45f343da79f52
   - 6485ef1cbb9ac691cfd02df9c73938110af699f6
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581782'
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

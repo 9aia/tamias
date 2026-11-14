@@ -12,9 +12,9 @@ verify:
 - project/adrs/0002-ref-source-are-ports-the-grammar-and-the-transport-leave-core.md
 - project/adrs/0003-binary-distribution-release-tarballs-ride-existing-https-refs-no-new-channel-in-v1.md
 - project/adrs/0004-sealed-secrets-packs-age-sealed-payloads-tamias-stays-zero-knowledge-cuora-owns-seal-open.md
+- project/adrs/0005-no-tamias-native-supervisor-platform-unit-managers-are-the-boundary.md
 - project/handoffs/T-012.md
 - project/handoffs/T-013.md
-- project/handoffs/T-014.md
 provenance:
   files:
   - project/BACKLOG.md
@@ -24,6 +24,7 @@ provenance:
   - project/adrs/0002-ref-source-are-ports-the-grammar-and-the-transport-leave-core.md
   - project/adrs/0003-binary-distribution-release-tarballs-ride-existing-https-refs-no-new-channel-in-v1.md
   - project/adrs/0004-sealed-secrets-packs-age-sealed-payloads-tamias-stays-zero-knowledge-cuora-owns-seal-open.md
+  - project/adrs/0005-no-tamias-native-supervisor-platform-unit-managers-are-the-boundary.md
   - project/handoffs/T-012.md
   - project/handoffs/T-013.md
   - project/handoffs/T-014.md
@@ -45,6 +46,7 @@ provenance:
   - project/proposals/proposal-0003-tamias-sync-install-a-project-s-dep-set-from-tamias-yaml-tamias-lock.md
   - project/proposals/proposal-0004-payload-composition-include-overlay-on-install-publish-lock-only-install.md
   - project/proposals/proposal-0005-package-verification-official-badge-opt-in-service-consent-hardening.md
+  - project/proposals/proposal-0006-package-metadata-description-keywords-url-license-propagation-to-store-registry-index.md
   hashes:
   - a8d17ca6e86c1faa677ebf8bbe55112e6b79ddb9
   - 70388804cc00a3ecec9918d49c30fabb458ef786
@@ -52,7 +54,8 @@ provenance:
   - 19a31a3ecdddb5e163a6ce4dc8d5303c8ce74004
   - 6d84ca6eeec801f5cb5415f9a9bb30f9b0f02f07
   - 2d2a62dd3e84a0b397b2a24b67ed1301c831e67b
-  - 7974bf38a83590e75080420a5d8e19ec6ca26276
+  - e2b6ce852b8e9b55167c86654db5281c1b65f96c
+  - 20acfcaa54c5aa944282e61e2a0079833587031d
   - 2148ca115ccf3019f27156a391f8536f89b26c43
   - 4cbec5f3b90a5532434c3acaa088860161100b5e
   - ed0d6acdaec65bac42bd614e1de98d3859d56a5f
@@ -74,6 +77,7 @@ provenance:
   - 78681634bda1973a368dfcfa325759f622410294
   - 8fcedfde5dcf4d5a61b0dbdd9942dbeec0fd0d53
   - acc048aa4451baae4addc01f57cccddba9f8365b
-  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
-  generated_at: '1794454384'
+  - 6b16308e2175ffdd16d5aae0877d5cbbccfe222f
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

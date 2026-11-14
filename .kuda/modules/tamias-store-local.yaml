@@ -20,12 +20,12 @@ api:
 - name: collect_skips_non_dirs
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 510
+  line: 516
   module: tamias-store-local
 - name: corrupt_record_is_skipped_not_fatal
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 521
+  line: 527
   module: tamias-store-local
 - name: entries
   kind: function
@@ -40,7 +40,7 @@ api:
 - name: failed_reinstall_keeps_old_entry_and_cleans_staging
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 557
+  line: 563
   module: tamias-store-local
 - name: find
   kind: function
@@ -55,22 +55,22 @@ api:
 - name: install_find_verify_remove_and_ambiguity
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 396
+  line: 402
   module: tamias-store-local
 - name: install_rejects_unsafe_record_fields
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 489
+  line: 495
   module: tamias-store-local
 - name: install_skips_symlinked_payload_entries
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 583
+  line: 589
   module: tamias-store-local
 - name: io_error_arms
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 603
+  line: 609
   module: tamias-store-local
 - name: new
   kind: function
@@ -85,7 +85,7 @@ api:
 - name: payload
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 391
+  line: 397
   module: tamias-store-local
 - name: record
   kind: function
@@ -100,7 +100,7 @@ api:
 - name: remove_leaves_no_litter
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 541
+  line: 547
   module: tamias-store-local
 - name: retarget
   kind: function
@@ -115,12 +115,12 @@ api:
 - name: root_accessor_and_sha_label
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 475
+  line: 481
   module: tamias-store-local
 - name: scope_recursion_replace_and_manifest
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 459
+  line: 465
   module: tamias-store-local
 - name: siblings_of
   kind: function
@@ -130,7 +130,7 @@ api:
 - name: siblings_of_matches_bare_name_across_versions_and_scopes
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 415
+  line: 421
   module: tamias-store-local
 - name: staging_dir
   kind: function
@@ -170,7 +170,7 @@ api:
 - name: verify_mismatch_and_missing
   kind: function
   file: crates/tamias-store-local/src/lib.rs
-  line: 446
+  line: 452
   module: tamias-store-local
 - name: version_label
   kind: function
@@ -192,7 +192,7 @@ provenance:
   - crates/tamias-store-local/src/lib.rs
   hashes:
   - b72ecdfc35205627f0652e893fcaa0e5558afc3b
-  - 64b207261b596e0a5aa1782ceb16e575de11f6e4
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581596'
+  - dfaf242afb71a59c9b85973a4a858fa4a612cbe3
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

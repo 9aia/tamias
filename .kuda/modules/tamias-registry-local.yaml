@@ -5,12 +5,12 @@ api:
 - name: IndexLock
   kind: type
   file: crates/tamias-registry-local/src/lib.rs
-  line: 186
+  line: 193
   module: tamias-registry-local
 - name: LOCK_TIMEOUT
   kind: const
   file: crates/tamias-registry-local/src/lib.rs
-  line: 193
+  line: 200
   module: tamias-registry-local
 - name: LocalRegistry
   kind: type
@@ -20,42 +20,42 @@ api:
 - name: MAX_PUT
   kind: const
   file: crates/tamias-registry-local/src/lib.rs
-  line: 251
+  line: 258
   module: tamias-registry-local
 - name: READ_TIMEOUT
   kind: const
   file: crates/tamias-registry-local/src/lib.rs
-  line: 255
+  line: 262
   module: tamias-registry-local
 - name: SERVE_TOKEN_ENV
   kind: const
   file: crates/tamias-registry-local/src/lib.rs
-  line: 259
+  line: 266
   module: tamias-registry-local
 - name: STALE_AFTER
   kind: const
   file: crates/tamias-registry-local/src/lib.rs
-  line: 191
+  line: 198
   module: tamias-registry-local
 - name: acquire
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 201
+  line: 208
   module: tamias-registry-local
 - name: bad_index_errors
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 744
+  line: 803
   module: tamias-registry-local
 - name: concurrent_publishes_keep_all_entries
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 779
+  line: 838
   module: tamias-registry-local
 - name: drop
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 235
+  line: 242
   module: tamias-registry-local
 - name: entries
   kind: function
@@ -65,17 +65,17 @@ api:
 - name: entries_publish_twice_and_label
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 475
+  line: 534
   module: tamias-registry-local
 - name: free_addr
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 553
+  line: 612
   module: tamias-registry-local
 - name: handle
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 331
+  line: 338
   module: tamias-registry-local
 - name: index_path
   kind: function
@@ -85,7 +85,7 @@ api:
 - name: lock_stale
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 242
+  line: 249
   module: tamias-registry-local
 - name: new
   kind: function
@@ -100,47 +100,52 @@ api:
 - name: publish_and_read_io_errors
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 807
+  line: 866
   module: tamias-registry-local
 - name: publish_and_search
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 457
+  line: 464
   module: tamias-registry-local
 - name: publish_enforces_max_upload
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 652
+  line: 711
+  module: tamias-registry-local
+- name: publish_indexes_metadata_and_search_matches_it
+  kind: function
+  file: crates/tamias-registry-local/src/lib.rs
+  line: 485
   module: tamias-registry-local
 - name: publish_leaves_no_tmp_or_lock_litter
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 751
+  line: 810
   module: tamias-registry-local
 - name: publish_rejects_unsafe_manifest_fields
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 710
+  line: 769
   module: tamias-registry-local
 - name: publish_with_retention_prunes_index_not_payloads
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 497
+  line: 556
   module: tamias-registry-local
 - name: raw
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 541
+  line: 600
   module: tamias-registry-local
 - name: respond
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 428
+  line: 435
   module: tamias-registry-local
 - name: respond_unknown_code_uses_error_reason
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 895
+  line: 954
   module: tamias-registry-local
 - name: root
   kind: function
@@ -150,59 +155,54 @@ api:
 - name: sanitize_default_curdir_arms
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 873
+  line: 932
   module: tamias-registry-local
 - name: sanitize_key
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 412
+  line: 419
   module: tamias-registry-local
 - name: search_scoped_entry
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 857
+  line: 916
   module: tamias-registry-local
 - name: serve_http
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 273
+  line: 280
   module: tamias-registry-local
 - name: serve_http_bearer_token
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 679
+  line: 738
   module: tamias-registry-local
 - name: serve_http_custom_upload_limit
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 624
+  line: 683
   module: tamias-registry-local
 - name: serve_http_io_errors
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 935
+  line: 994
   module: tamias-registry-local
 - name: serve_http_method_and_query
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 837
+  line: 896
   module: tamias-registry-local
 - name: serve_http_rejects_oversized_content_length
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 598
+  line: 657
   module: tamias-registry-local
 - name: serve_http_roundtrip
   kind: function
   file: crates/tamias-registry-local/src/lib.rs
-  line: 573
+  line: 632
   module: tamias-registry-local
-- name: serve_http_token
-  kind: function
-  file: crates/tamias-registry-local/src/lib.rs
-  line: 292
-  module: tamias-registry-local
-api_omitted: 7
+api_omitted: 8
 deps:
 - serde_json
 - tamias-core
@@ -220,7 +220,7 @@ provenance:
   - crates/tamias-registry-local/src/lib.rs
   hashes:
   - 51ef3679e4e57f8ded9dd6b8fe7be1488e63be2e
-  - 0eb5534c25e668fb735ef993fb2531d9b1132d98
-  commit_sha: dea871a71cdd9784a83a7fa47a977f388105c3a9
-  generated_at: '1794454384'
+  - 432804ab6a4274e232cd636b61bbc32616b1bcc0
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

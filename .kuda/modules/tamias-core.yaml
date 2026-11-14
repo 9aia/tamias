@@ -15,7 +15,7 @@ api:
 - name: BinDecl
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 127
+  line: 162
   module: tamias-core
 - name: DEFAULT_MAX_ENTRIES
   kind: const
@@ -60,12 +60,17 @@ api:
 - name: MANIFEST_NAMES
   kind: const
   file: crates/tamias-core/src/manifest.rs
-  line: 12
+  line: 18
+  module: tamias-core
+- name: MAX_KEYWORD_LEN
+  kind: const
+  file: crates/tamias-core/src/manifest.rs
+  line: 60
   module: tamias-core
 - name: Manifest
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 55
+  line: 78
   module: tamias-core
 - name: POLL
   kind: const
@@ -75,27 +80,27 @@ api:
 - name: Provider
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 147
+  line: 182
   module: tamias-core
 - name: ProviderHealth
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 212
+  line: 247
   module: tamias-core
 - name: ProviderHook
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 200
+  line: 235
   module: tamias-core
 - name: ProviderIngress
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 186
+  line: 221
   module: tamias-core
 - name: ProviderService
   kind: type
   file: crates/tamias-core/src/manifest.rs
-  line: 165
+  line: 200
   module: tamias-core
 - name: RECORD_FILE
   kind: const
@@ -110,7 +115,7 @@ api:
 - name: StoreEntry
   kind: type
   file: crates/tamias-core/src/records.rs
-  line: 57
+  line: 76
   module: tamias-core
 - name: StoreRecord
   kind: type
@@ -150,7 +155,7 @@ api:
 - name: bins_parse_and_validate
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 922
+  line: 1090
   module: tamias-core
 - name: chatty_child_does_not_deadlock
   kind: function
@@ -160,12 +165,12 @@ api:
 - name: check
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 273
+  line: 323
   module: tamias-core
 - name: check
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 444
+  line: 494
   module: tamias-core
 - name: check
   kind: function
@@ -175,34 +180,29 @@ api:
 - name: check_bin_payload_path
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 233
+  line: 283
   module: tamias-core
 - name: check_bins
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 516
+  line: 596
   module: tamias-core
 - name: check_ciphertext_only
   kind: function
   file: crates/tamias-core/src/sealed.rs
   line: 173
   module: tamias-core
-- name: check_rel_path
-  kind: function
-  file: crates/tamias-core/src/sealed.rs
-  line: 72
-  module: tamias-core
-- name: check_sealed
+- name: check_meta_line
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 487
+  line: 269
   module: tamias-core
-- name: check_single_line
+- name: check_metadata
   kind: function
   file: crates/tamias-core/src/manifest.rs
-  line: 257
+  line: 540
   module: tamias-core
-api_omitted: 149
+api_omitted: 154
 deps:
 - flate2
 - hex
@@ -268,14 +268,14 @@ provenance:
   - bf42b5dcc0b30109a2bcee497b675ba447cab7f0
   - 3050b521008bf72751d6ffcab5f7dcbeced1d9f6
   - ea8ff165afcdccfccd8aad76171a031df45b4c05
-  - 0b6466187de9609b751838e2caf1311177f7682c
-  - bad9d9967758806b7a93e10ec1c1c4fcad487a09
+  - c36e67e8c57df336be1919d82907bb438c2e470b
+  - 8056da8425668bd17e3b0313f58473bb88468cc6
   - ad3411fbcd063805a820b83e66a8dc3b0b20b224
   - d6ce3df521f4d85fdde031717f0a7345b0152098
-  - 5b009cd1135bfa3db0f3b4be137c80398503c410
-  - 2a50fa7f36f1fb3af8946ca611ef14520a706243
+  - d1b45974201edb6bbf374e8c93bfcf80921ff6f3
+  - ac8ea90ecde2148994883b801139cd4011ba1247
   - 6c48fdae2d88de9d03a5815b29ce61828a37ff6c
-  - 1d8f69e21ec4d6bb45e702432caa1d56e02c97d8
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581596'
+  - 08506f4ca17f04dfa839948078f32952003205a4
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

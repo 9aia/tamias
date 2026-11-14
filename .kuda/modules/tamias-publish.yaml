@@ -50,22 +50,22 @@ api:
 - name: pack_gates_declared_payload_bins
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 432
+  line: 444
   module: tamias-publish
 - name: pack_gates_sealed_payloads
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 467
+  line: 479
   module: tamias-publish
 - name: pack_missing_base_fails_naming_it
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 364
+  line: 370
   module: tamias-publish
 - name: pack_resolves_fs_dir_and_installed_ref_bases
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 386
+  line: 392
   module: tamias-publish
 - name: pack_without_version_uses_name
   kind: function
@@ -105,7 +105,7 @@ api:
 - name: tgz_files
   kind: function
   file: crates/tamias-publish/src/lib.rs
-  line: 528
+  line: 540
   module: tamias-publish
 - name: unresolvable
   kind: function
@@ -138,7 +138,7 @@ provenance:
   - crates/tamias-publish/src/lib.rs
   hashes:
   - 2c1262867cc3f0e373d39cbb9512ba3af218fced
-  - 45892372fbbc761364c98d8a01065e2064de3ae7
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581596'
+  - 455d01143d3376779cb010df7a1d66d526be2279
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4

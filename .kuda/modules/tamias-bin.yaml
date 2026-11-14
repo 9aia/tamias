@@ -80,7 +80,7 @@ api:
 - name: collision_warns_and_last_deploy_wins
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1394
+  line: 1400
   module: tamias-bin
 - name: conflict
   kind: function
@@ -105,7 +105,7 @@ api:
 - name: deploy_destroy_round_trip
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1315
+  line: 1321
   module: tamias-bin
 - name: dest_ownership
   kind: function
@@ -125,12 +125,12 @@ api:
 - name: entry
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1187
+  line: 1193
   module: tamias-bin
 - name: foreign_file_conflicts_without_force
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1436
+  line: 1442
   module: tamias-bin
 - name: links_into_alias
   kind: function
@@ -145,7 +145,7 @@ api:
 - name: manifest_with
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1213
+  line: 1219
   module: tamias-bin
 - name: materialize_payload
   kind: function
@@ -165,7 +165,7 @@ api:
 - name: payload_decl
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1194
+  line: 1200
   module: tamias-bin
 - name: place_payload
   kind: function
@@ -185,7 +185,7 @@ api:
 - name: platform_rule_errors_only_when_dirs_miss_host
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1223
+  line: 1229
   module: tamias-bin
 - name: record
   kind: function
@@ -218,7 +218,7 @@ provenance:
   - crates/tamias-bin/src/lib.rs
   hashes:
   - 445a59764f2c95491158650a1cbdd66a63271be3
-  - c1c3094b1a61cc0f63f5d1a5b874e74879239199
-  commit_sha: ffe0c05778624a980cac62e5bc0b845a2d0926c0
-  generated_at: '1794581596'
+  - 29dc1a8f8e6e473127706a5f9f1677077b4705f0
+  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
+  generated_at: '1794623356'
   generator: kuda-template/0.1.4
