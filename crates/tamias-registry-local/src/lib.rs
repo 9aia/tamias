@@ -140,6 +140,13 @@ impl Registry for LocalRegistry {
             scope: manifest.scope.clone(),
             version: manifest.version.clone(),
             kind: manifest.kind.clone(),
+            // P-006 display metadata — indexed so search/list see it.
+            description: manifest.description.clone(),
+            keywords: manifest.keywords.clone(),
+            homepage: manifest.homepage.clone(),
+            repository: manifest.repository.clone(),
+            license: manifest.license.clone(),
+            authors: manifest.authors.clone(),
             digest: dir_digest(payload_root)?,
             signature: signature.map(str::to_string),
             publisher: None,
@@ -469,6 +476,58 @@ mod tests {
         assert_eq!(entry.label(), "ci-gate@0.2.0");
         assert!(reg_dir.path().join("ci-gate/0.2.0.tgz").is_file());
         assert_eq!(registry.search("gate").unwrap().len(), 1);
+    }
+
+    /// P-006: publish indexes manifest metadata; `search` matches
+    /// name + keywords + description, and old index entries (no
+    /// metadata fields) still decode.
+    #[test]
+    fn publish_indexes_metadata_and_search_matches_it() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(
+            src.path().join("tamias.yaml"),
+            "name: deployer\nversion: 1.0.0\ndescription: rolls out services\n\
+             keywords:\n  - ci\n  - automation\nhomepage: https://example.com\n\
+             repository: https://github.com/o/r\nlicense: MIT\nauthors:\n  - Ada\n",
+        )
+        .unwrap();
+        std::fs::write(src.path().join("main.yaml"), "x").unwrap();
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry = LocalRegistry::new(reg_dir.path());
+        let manifest = Manifest::load(src.path()).unwrap();
+        let entry = registry.publish(src.path(), &manifest, None).unwrap();
+        assert_eq!(entry.description.as_deref(), Some("rolls out services"));
+        assert_eq!(entry.keywords, ["ci", "automation"]);
+        assert_eq!(entry.license.as_deref(), Some("MIT"));
+        assert_eq!(entry.authors, ["Ada"]);
+        // keyword + description matches (name doesn't contain them)
+        assert_eq!(registry.search("automation").unwrap().len(), 1);
+        assert_eq!(registry.search("services").unwrap().len(), 1);
+        assert!(registry.search("nomatch").unwrap().is_empty());
+        // a pre-P-006 index entry (no metadata keys) still decodes
+        let index = reg_dir.path().join("index.json");
+        let mut entries: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(&index).unwrap()).unwrap();
+        for e in &mut entries {
+            if let Some(obj) = e.as_object_mut() {
+                for k in [
+                    "description",
+                    "keywords",
+                    "homepage",
+                    "repository",
+                    "license",
+                    "authors",
+                ] {
+                    obj.remove(k);
+                }
+            }
+        }
+        std::fs::write(&index, serde_json::to_string_pretty(&entries).unwrap()).unwrap();
+        let back = registry.entries().unwrap();
+        assert_eq!(back.len(), 1);
+        assert!(back[0].description.is_none() && back[0].keywords.is_empty());
+        // and it still matches by name
+        assert_eq!(registry.search("deployer").unwrap().len(), 1);
     }
 
     #[test]

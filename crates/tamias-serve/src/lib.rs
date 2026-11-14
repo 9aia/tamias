@@ -241,6 +241,7 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                         "label": e.label(),
                         "source_ref": e.record.source_ref,
                         "digest": e.record.digest,
+                        "description": e.record.description,
                     })
                 })
                 .collect();
@@ -260,6 +261,12 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
                 "label": entry.label(),
                 "resolved": entry.record.resolved,
                 "digest": entry.record.digest,
+                "description": entry.record.description,
+                "keywords": entry.record.keywords,
+                "homepage": entry.record.homepage,
+                "repository": entry.record.repository,
+                "license": entry.record.license,
+                "authors": entry.record.authors,
                 "sealed": sealed,
                 "size": entry.size()?,
             }))
@@ -419,6 +426,12 @@ fn registry_entry_json(entry: &tamias_registry::RegistryEntry) -> Value {
         "scope": entry.scope,
         "version": entry.version,
         "kind": entry.kind,
+        "description": entry.description,
+        "keywords": entry.keywords,
+        "homepage": entry.homepage,
+        "repository": entry.repository,
+        "license": entry.license,
+        "authors": entry.authors,
         "digest": entry.digest,
         "signed": entry.signature.is_some(),
         "publisher": entry.publisher,

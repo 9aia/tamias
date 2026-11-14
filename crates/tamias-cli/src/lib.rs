@@ -1019,6 +1019,12 @@ fn entry_json(entry: &StoreEntry) -> serde_json::Value {
         "scope": entry.record.scope,
         "version": entry.record.version,
         "kind": entry.record.kind,
+        "description": entry.record.description,
+        "keywords": entry.record.keywords,
+        "homepage": entry.record.homepage,
+        "repository": entry.record.repository,
+        "license": entry.record.license,
+        "authors": entry.record.authors,
         "sealed": entry_sealed(entry),
         "source_ref": entry.record.source_ref,
         "resolved": entry.record.resolved,
@@ -1310,6 +1316,25 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                     entry.record.version.as_deref().unwrap_or("-")
                 );
                 println!("type:    {}", entry.record.kind.as_deref().unwrap_or("-"));
+                // P-006 display metadata — install-time record snapshot.
+                if let Some(desc) = &entry.record.description {
+                    println!("desc:    {desc}");
+                }
+                if !entry.record.keywords.is_empty() {
+                    println!("keywords: {}", entry.record.keywords.join(", "));
+                }
+                if let Some(homepage) = &entry.record.homepage {
+                    println!("homepage: {homepage}");
+                }
+                if let Some(repository) = &entry.record.repository {
+                    println!("repository: {repository}");
+                }
+                if let Some(license) = &entry.record.license {
+                    println!("license:  {license}");
+                }
+                if !entry.record.authors.is_empty() {
+                    println!("authors:  {}", entry.record.authors.join(", "));
+                }
                 if let Some(sealed) = entry_sealed(&entry) {
                     println!("sealed:  {sealed}  (ciphertext-only payload)");
                 }
@@ -1583,6 +1608,12 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                             "scope": e.scope,
                             "version": e.version,
                             "kind": e.kind,
+                            "description": e.description,
+                            "keywords": e.keywords,
+                            "homepage": e.homepage,
+                            "repository": e.repository,
+                            "license": e.license,
+                            "authors": e.authors,
                             "digest": e.digest,
                             "signed": e.signature.is_some(),
                             "publisher": e.publisher,
@@ -1598,12 +1629,18 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                     } else {
                         ""
                     };
+                    let desc = e
+                        .description
+                        .as_deref()
+                        .map(|d| format!("  — {d}"))
+                        .unwrap_or_default();
                     println!(
-                        "{}  {}  {}{}",
+                        "{}  {}  {}{}{}",
                         e.label(),
                         short_digest(&e.digest),
                         e.file,
-                        signed
+                        signed,
+                        desc
                     );
                 }
             }
@@ -5065,6 +5102,12 @@ mod tests {
             scope: None,
             version: Some("1.0.0".into()),
             kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
             source_ref: source_ref.into(),
             resolved: "sha256:resolved".into(),
             digest: digest.into(),

@@ -269,6 +269,13 @@ impl Registry for HttpRegistry {
             scope: manifest.scope.clone(),
             version: manifest.version.clone(),
             kind: manifest.kind.clone(),
+            // P-006 display metadata — indexed so search/list see it.
+            description: manifest.description.clone(),
+            keywords: manifest.keywords.clone(),
+            homepage: manifest.homepage.clone(),
+            repository: manifest.repository.clone(),
+            license: manifest.license.clone(),
+            authors: manifest.authors.clone(),
             digest: dir_digest(payload_root)?,
             signature: signature.map(str::to_string),
             publisher: None,

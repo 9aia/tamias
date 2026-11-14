@@ -525,6 +525,36 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
                     Span::raw(desc.clone()),
                 ]));
             }
+            if !manifest.keywords.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("keywords:  ", Style::default().fg(ACCENT)),
+                    Span::raw(manifest.keywords.join(", ")),
+                ]));
+            }
+            if let Some(homepage) = &manifest.homepage {
+                lines.push(Line::from(vec![
+                    Span::styled("homepage:  ", Style::default().fg(ACCENT)),
+                    Span::raw(homepage.clone()),
+                ]));
+            }
+            if let Some(repository) = &manifest.repository {
+                lines.push(Line::from(vec![
+                    Span::styled("repository:", Style::default().fg(ACCENT)),
+                    Span::raw(repository.clone()),
+                ]));
+            }
+            if let Some(license) = &manifest.license {
+                lines.push(Line::from(vec![
+                    Span::styled("license:   ", Style::default().fg(ACCENT)),
+                    Span::raw(license.clone()),
+                ]));
+            }
+            if !manifest.authors.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("authors:   ", Style::default().fg(ACCENT)),
+                    Span::raw(manifest.authors.join(", ")),
+                ]));
+            }
             if !manifest.include.is_empty() {
                 lines.push(Line::from(vec![
                     Span::styled("include:   ", Style::default().fg(ACCENT)),

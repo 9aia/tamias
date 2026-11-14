@@ -407,6 +407,21 @@ fn package_detail(snap: &Snapshot, params: &Map<String, Value>) -> Value {
             if let Some(d) = &m.description {
                 out.insert("description".into(), json!(d));
             }
+            if !m.keywords.is_empty() {
+                out.insert("keywords".into(), json!(m.keywords));
+            }
+            if let Some(h) = &m.homepage {
+                out.insert("homepage".into(), json!(h));
+            }
+            if let Some(r) = &m.repository {
+                out.insert("repository".into(), json!(r));
+            }
+            if let Some(l) = &m.license {
+                out.insert("license".into(), json!(l));
+            }
+            if !m.authors.is_empty() {
+                out.insert("authors".into(), json!(m.authors));
+            }
             if !m.include.is_empty() {
                 out.insert("include".into(), json!(m.include));
             }
@@ -741,6 +756,12 @@ mod tests {
                 scope: None,
                 version: Some("1.0.0".into()),
                 kind: None,
+                description: None,
+                keywords: Vec::new(),
+                homepage: None,
+                repository: None,
+                license: None,
+                authors: Vec::new(),
                 source_ref: "./x".into(),
                 resolved: "sha256:abc".into(),
                 digest: String::new(),

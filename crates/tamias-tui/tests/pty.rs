@@ -52,6 +52,12 @@ fn fixture() -> Fixture {
                 scope: None,
                 version: Some("1.2.3".into()),
                 kind: Some("files".into()),
+                description: None,
+                keywords: Vec::new(),
+                homepage: None,
+                repository: None,
+                license: None,
+                authors: Vec::new(),
                 source_ref: "./pkg".into(),
                 resolved: "sha256:0123456789abcdef".into(),
                 digest: String::new(), // install() fills it

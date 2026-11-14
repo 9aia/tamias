@@ -22,6 +22,25 @@ pub struct RegistryEntry {
     /// Content type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// Manifest `description:` — display metadata carried into the
+    /// index at publish (P-006); `None` on entries that predate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Manifest `keywords:` — `search` matches these too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
+    /// Manifest `homepage:`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+    /// Manifest `repository:`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// Manifest `license:`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    /// Manifest `authors:` — display names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub authors: Vec<String>,
     /// `sha256:<hex>` of the packed payload.
     pub digest: String,
     /// Armored `ssh-keygen -Y` signature over the provenance anchors
@@ -169,7 +188,8 @@ pub trait Registry {
         signature: Option<&str>,
     ) -> Result<PublishOutcome, Error>;
 
-    /// Entries whose name/scope contains `query` (case-insensitive).
+    /// Entries matching `query` (case-insensitive) — name, scope,
+    /// description, and keywords (P-006).
     ///
     /// # Errors
     /// Adapter-specific (delegates to [`Registry::entries`]).
@@ -181,6 +201,12 @@ pub trait Registry {
             .filter(|e| {
                 e.name.to_lowercase().contains(&q)
                     || e.scope.as_deref().unwrap_or("").to_lowercase().contains(&q)
+                    || e.description
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&q)
+                    || e.keywords.iter().any(|k| k.to_lowercase().contains(&q))
             })
             .collect())
     }
@@ -221,6 +247,12 @@ mod tests {
             scope: None,
             version: None,
             kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
             digest: "sha256:d".into(),
             signature: None,
             publisher: None,
@@ -250,6 +282,12 @@ mod tests {
             scope: Some("acme".into()),
             version: Some("1.0.0".into()),
             kind: None,
+            description: Some("does things".into()),
+            keywords: vec!["ci".into(), "deploy".into()],
+            homepage: Some("https://example.com".into()),
+            repository: Some("https://github.com/o/r".into()),
+            license: Some("MIT".into()),
+            authors: vec!["Ada".into()],
             digest: "sha256:d".into(),
             signature: None,
             publisher: Some("@acme".into()),
@@ -280,6 +318,12 @@ mod tests {
             scope: scope.map(str::to_string),
             version: version.map(str::to_string),
             kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
             digest: "sha256:d".into(),
             signature: None,
             publisher: None,

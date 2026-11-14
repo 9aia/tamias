@@ -25,6 +25,25 @@ pub struct StoreRecord {
     /// Content type (`peregrin-bundle`, `myco-config`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// Manifest `description:` snapshot at install (P-006) — `None`
+    /// on records that predate the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Manifest `keywords:` snapshot — `search`/discovery terms.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
+    /// Manifest `homepage:` snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+    /// Manifest `repository:` snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+    /// Manifest `license:` snapshot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    /// Manifest `authors:` snapshot — display names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub authors: Vec<String>,
     /// The exact source ref the install was invoked with.
     pub source_ref: String,
     /// What the source resolved to — commit sha or `sha256:<hex>`.
@@ -132,6 +151,12 @@ mod tests {
             scope: scope.map(str::to_string),
             version: version.map(str::to_string),
             kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
             source_ref: "./x".into(),
             resolved: resolved.into(),
             digest: "sha256:d".into(),

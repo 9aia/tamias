@@ -1,5 +1,11 @@
 //! `tamias.{yaml,yml,toml}` — the package manifest. YAML is preferred
 //! when several exist; TOML stays the fallback.
+//!
+//! Beyond identity (`name`/`scope`/`version`/`type`) the manifest
+//! carries display metadata — `description`, `keywords`, `homepage`,
+//! `repository`, `license`, `authors` — propagated into the store
+//! record and registry index so `list`/`info`/`search`/the TUI can
+//! report and match on it without re-reading payloads (P-006).
 
 use std::path::{Path, PathBuf};
 
@@ -49,6 +55,23 @@ pub fn is_valid_kind(s: &str) -> bool {
         && !s.contains("..")
 }
 
+/// Keyword length cap — discovery terms stay short so the registry
+/// index doesn't bloat.
+pub const MAX_KEYWORD_LEN: usize = 64;
+
+/// Keyword charset — `[A-Za-z0-9][A-Za-z0-9._+-]*`, at most
+/// [`MAX_KEYWORD_LEN`] chars. More permissive than [`is_valid_kind`]
+/// (keywords aren't path components) but still bounded: no spaces,
+/// separators, or control chars.
+#[must_use]
+pub fn is_valid_keyword(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().count() <= MAX_KEYWORD_LEN
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'+'))
+        && s.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
+}
+
 /// The package manifest.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
@@ -61,6 +84,18 @@ pub struct Manifest {
     pub version: Option<String>,
     /// Free-text description.
     pub description: Option<String>,
+    /// Discovery keywords — `tamias search` matches name + keywords +
+    /// description. Each entry is charset/length-checked
+    /// ([`is_valid_keyword`]).
+    pub keywords: Vec<String>,
+    /// Project homepage URL — display metadata, free text.
+    pub homepage: Option<String>,
+    /// Source repository URL — display metadata, free text.
+    pub repository: Option<String>,
+    /// License — SPDX id or free text.
+    pub license: Option<String>,
+    /// Author display names (free text, one line each).
+    pub authors: Vec<String>,
     /// Content type (`peregrin-bundle`, `myco-config`, …).
     #[serde(rename = "type")]
     pub kind: Option<String>,
@@ -224,6 +259,21 @@ fn is_valid_unit_name(s: &str) -> bool {
         && !s.contains("..")
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '@' | '-'))
+}
+
+/// Reject empty/whitespace-only or multi-line values in a metadata
+/// field — these land on one display line in `info`/`search`/index
+/// output, so line breaks and NULs are the only clearly-invalid shape
+/// worth a hard error (bad URLs/license text warn nowhere — there's
+/// no warn path in core — and stay permissive).
+fn check_meta_line(field: &str, value: &str) -> Result<(), Error> {
+    if value.trim().is_empty() || value.contains(['\n', '\r', '\0']) {
+        Err(Error::Failed(format!(
+            "invalid manifest {field} '{value}' — expected a single non-empty line"
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 /// `bins[].payload` path rules — a relative `tools/bin/…` path made of
@@ -473,11 +523,41 @@ impl Manifest {
                 )));
             }
         }
+        self.check_metadata()?;
         if let Some(provider) = &self.provider {
             provider.check()?;
         }
         self.check_bins()?;
         self.check_sealed()?;
+        Ok(())
+    }
+
+    /// Semantic checks for the P-006 metadata fields — keyword
+    /// charset/length ([`is_valid_keyword`]) and single-line,
+    /// non-empty free text for `homepage`/`repository`/`license`/
+    /// `authors` (URLs and license strings are *not* scheme- or
+    /// SPDX-checked — display metadata stays permissive).
+    fn check_metadata(&self) -> Result<(), Error> {
+        for keyword in &self.keywords {
+            if !is_valid_keyword(keyword) {
+                return Err(Error::Failed(format!(
+                    "invalid keyword '{keyword}' — expected [A-Za-z0-9][A-Za-z0-9._+-]*, \
+                     at most {MAX_KEYWORD_LEN} chars"
+                )));
+            }
+        }
+        for (field, value) in [
+            ("homepage", self.homepage.as_deref()),
+            ("repository", self.repository.as_deref()),
+            ("license", self.license.as_deref()),
+        ] {
+            if let Some(value) = value {
+                check_meta_line(field, value)?;
+            }
+        }
+        for author in &self.authors {
+            check_meta_line("authors", author)?;
+        }
         Ok(())
     }
 
@@ -723,6 +803,94 @@ mod tests {
         assert!(Manifest {
             name: "x".into(),
             ..Default::default()
+        }
+        .validate()
+        .is_ok());
+    }
+
+    #[test]
+    fn metadata_fields_parse_and_validate() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tamias.yaml");
+        std::fs::write(
+            &path,
+            "name: x\ndescription: does things\nkeywords:\n  - ci\n  - deploy+automation\n\
+             homepage: https://example.com\nrepository: https://github.com/o/r\n\
+             license: MIT\nauthors:\n  - Ada Lovelace\n",
+        )
+        .unwrap();
+        let m = Manifest::load_at(&path).unwrap();
+        assert_eq!(m.description.as_deref(), Some("does things"));
+        assert_eq!(m.keywords, ["ci", "deploy+automation"]);
+        assert_eq!(m.homepage.as_deref(), Some("https://example.com"));
+        assert_eq!(m.repository.as_deref(), Some("https://github.com/o/r"));
+        assert_eq!(m.license.as_deref(), Some("MIT"));
+        assert_eq!(m.authors, ["Ada Lovelace"]);
+        // round-trip through save/load keeps the fields
+        let saved = dir.path().join("saved.yaml");
+        m.save(&saved).unwrap();
+        assert_eq!(Manifest::load_at(&saved).unwrap(), m);
+
+        // old manifests without the fields still decode
+        let plain = dir.path().join("plain.yaml");
+        std::fs::write(&plain, "name: p\n").unwrap();
+        let p = Manifest::load_at(&plain).unwrap();
+        assert!(p.keywords.is_empty() && p.authors.is_empty());
+        assert!(p.homepage.is_none() && p.repository.is_none() && p.license.is_none());
+
+        let base = || Manifest {
+            name: "x".into(),
+            ..Default::default()
+        };
+        // keyword charset + length bounds
+        for bad in ["", "-lead", "has space", "a/b", "a\0b"] {
+            assert!(!is_valid_keyword(bad), "keyword {bad:?} must be rejected");
+            assert!(
+                Manifest {
+                    keywords: vec![bad.into()],
+                    ..base()
+                }
+                .validate()
+                .is_err(),
+                "keyword {bad:?} must fail validation"
+            );
+        }
+        let long = "a".repeat(MAX_KEYWORD_LEN + 1);
+        assert!(!is_valid_keyword(&long));
+        assert!(is_valid_keyword(&"k".repeat(MAX_KEYWORD_LEN)));
+        // free-text fields: single non-empty line only
+        for (field, bad) in [
+            ("homepage", "https://x\nextra"),
+            ("repository", "  "),
+            ("license", "MIT\0"),
+        ] {
+            let m = match field {
+                "homepage" => Manifest {
+                    homepage: Some(bad.into()),
+                    ..base()
+                },
+                "repository" => Manifest {
+                    repository: Some(bad.into()),
+                    ..base()
+                },
+                _ => Manifest {
+                    license: Some(bad.into()),
+                    ..base()
+                },
+            };
+            assert!(m.validate().is_err(), "{field}={bad:?} must fail");
+        }
+        assert!(Manifest {
+            authors: vec!["ok".into(), "bad\nname".into()],
+            ..base()
+        }
+        .validate()
+        .is_err());
+        // permissive shapes pass — no scheme/SPDX enforcement
+        assert!(Manifest {
+            homepage: Some("git@github.com:o/r".into()),
+            license: Some("see LICENSE file".into()),
+            ..base()
         }
         .validate()
         .is_ok());

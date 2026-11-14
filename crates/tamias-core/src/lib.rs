@@ -29,8 +29,9 @@ pub use digest::{content_digest, dir_digest, dir_size, file_digest, sha256_hex, 
 pub use error::Error;
 pub use identity::{Identity, IdentityError};
 pub use manifest::{
-    is_valid_kind, is_valid_name, is_valid_version, BinDecl, Manifest, Provider, ProviderHealth,
-    ProviderHook, ProviderIngress, ProviderService, MANIFEST_NAMES,
+    is_valid_keyword, is_valid_kind, is_valid_name, is_valid_version, BinDecl, Manifest, Provider,
+    ProviderHealth, ProviderHook, ProviderIngress, ProviderService, MANIFEST_NAMES,
+    MAX_KEYWORD_LEN,
 };
 pub use overlay::{find_store_entry, merge_values, overlay, payload_root};
 pub use process::output_with_timeout;
