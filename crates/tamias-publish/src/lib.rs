@@ -6,7 +6,7 @@
 //! **flattens** — each base resolves *read-only* (installed store
 //! entry → its payload dir; a ref already installed → the entry whose
 //! `source_ref` matches; an existing fs path → resolved in place) and
-//! [`tamias_core::overlay`] composes them under the local payload in a
+//! [`tamias_core::overlay()`] composes them under the local payload in a
 //! scratch dir that is packed instead. Publish never installs
 //! anything: an unresolvable base fails naming it. `keep_includes`
 //! ships the raw payload dir for consumers that compose themselves.

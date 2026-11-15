@@ -693,7 +693,7 @@ fn surviving_units(
 /// last installed one sharing that name — removing one of several
 /// versions must not tear down state the survivors still use. The
 /// store entry itself is always dropped; shared units already follow
-/// the same rule via [`surviving_units`].
+/// the same rule via `surviving_units`.
 ///
 /// # Errors
 /// Store lookup, driver dispatch, or store removal failures.

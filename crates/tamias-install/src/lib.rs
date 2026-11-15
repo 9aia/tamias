@@ -17,7 +17,7 @@
 //! arbitrary code shipped inside the package — they are never
 //! registered or executed without explicit consent (`--allow-drivers`,
 //! `"allow_drivers":true`, `TAMIAS_ALLOW_DRIVERS=1`, or a recorded
-//! per-package consent — see [`consent`]).
+//! per-package consent — see `consent`).
 //!
 //! The `bins[]` deploy is the mirror image — *after* the commit, on
 //! every install path (CLI, serve op, sync dep, TUI job), via
@@ -231,7 +231,7 @@ pub fn install_with_progress(
 /// `update`, `tamias serve`'s `install` op, `sync` deps, and the TUI's
 /// install jobs all land declared bins on `PATH` uniformly. Only the
 /// top-level entry deploys — `include:`/`extends` bases recurse
-/// through [`install_inner`] directly and never reach this tail.
+/// through `install_inner` directly and never reach this tail.
 ///
 /// # Errors
 /// Same as [`install_with_progress`], plus post-commit bin-deploy
@@ -683,7 +683,7 @@ pub struct PlanManifest {
     pub sealed: Option<String>,
 }
 
-/// How one `include:` entry resolves — see [`include::plan_include`].
+/// How one `include:` entry resolves — see `include::plan_include`.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IncludeResolution {
@@ -789,9 +789,9 @@ pub struct InstallPlan {
     pub problems: Vec<String>,
 }
 
-/// `tamias install --plan` — the dry-run half of [`install_inner`]:
+/// `tamias install --plan` — the dry-run half of `install_inner`:
 /// parse → plan → fetch-or-cache → manifest, then *report* instead of
-/// act. `include:` entries are classified ([`include::plan_include`]),
+/// act. `include:` entries are classified (`include::plan_include`),
 /// never resolved — no recursive installs, no overlay, no composed
 /// digest. Driver work stops at resolution ([`tamias_driver::find_driver`]
 /// may `capabilities`-probe discovered drivers — trusted local

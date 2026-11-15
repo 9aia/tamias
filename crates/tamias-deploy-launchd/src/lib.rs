@@ -73,7 +73,7 @@
 //!   the job with cwd `/` — set `workdir` in the manifest if the
 //!   payload expects `~`.
 //! - Real `launchctl` execution is `#[cfg(target_os = "macos")]`-gated
-//!   ([`LaunchctlRunner`] only exists there); everywhere else
+//!   (`LaunchctlRunner` only exists there); everywhere else
 //!   [`LaunchdDeploy::new`] installs an unavailable runner so verbs
 //!   fail loudly instead of shelling out. Tests inject a [`Runner`]
 //!   recorder on any platform; arg-builder tests are `cfg(unix)`
@@ -123,7 +123,7 @@ impl Runner for LaunchctlRunner {
     }
 }
 
-/// Off-macOS stand-in for [`LaunchctlRunner`] — every verb errors
+/// Off-macOS stand-in for `LaunchctlRunner` — every verb errors
 /// instead of exec'ing a binary that doesn't exist. Only installed by
 /// [`LaunchdDeploy::new`] on non-macOS; tests inject their own
 /// [`Runner`].
@@ -149,7 +149,7 @@ pub struct LaunchdDeploy {
 impl LaunchdDeploy {
     /// The default: `~/Library/LaunchAgents` (falling back through
     /// `HOME` to `./.tamias/LaunchAgents`) + the platform runner —
-    /// [`LaunchctlRunner`] on macOS, an unavailable runner elsewhere.
+    /// `LaunchctlRunner` on macOS, an unavailable runner elsewhere.
     #[must_use]
     pub fn new() -> Self {
         #[cfg(target_os = "macos")]
@@ -439,7 +439,7 @@ impl Default for LaunchdDeploy {
 ///
 /// # Errors
 /// [`Error::Failed`] when `name` is not a valid unit base name (see
-/// [`check_name`]).
+/// `check_name`).
 pub fn label_for(name: &str) -> Result<String, Error> {
     check_name(name)?;
     let mut label = String::from("com.9aia.");

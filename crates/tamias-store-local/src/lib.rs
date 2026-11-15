@@ -1,7 +1,7 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-store-local — the local store: unpacked packages under
 //! `<root>/[@scope/]<name>@<label>/`, each carrying a
-//! [`RECORD_FILE`](tamias_core::RECORD_FILE). `name` aliases the entry so
+//! [`RECORD_FILE`]. `name` aliases the entry so
 //! other tools resolve `@scope/name` refs.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]

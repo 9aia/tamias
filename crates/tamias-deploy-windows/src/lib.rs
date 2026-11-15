@@ -100,7 +100,7 @@ impl Runner for SchtasksRunner {
     }
 }
 
-/// Off-Windows stand-in for [`SchtasksRunner`] — every verb errors
+/// Off-Windows stand-in for `SchtasksRunner` — every verb errors
 /// instead of exec'ing a binary that doesn't exist. Only installed by
 /// [`WindowsDeploy::new`] on non-Windows; tests inject their own
 /// [`Runner`].
@@ -125,7 +125,7 @@ pub struct WindowsDeploy {
 
 impl WindowsDeploy {
     /// The default: `%LOCALAPPDATA%\tamias\tasks` (falling back through
-    /// `USERPROFILE`/`HOME`) + the platform runner — [`SchtasksRunner`]
+    /// `USERPROFILE`/`HOME`) + the platform runner — `SchtasksRunner`
     /// on Windows, an unavailable runner elsewhere.
     #[must_use]
     pub fn new() -> Self {
@@ -563,7 +563,7 @@ fn cmd_quote(arg: &str) -> Result<String, Error> {
 ///
 /// # Errors
 /// [`Error::Failed`] on an empty `exec` argv or an argument
-/// [`cmd_quote`] rejects.
+/// `cmd_quote` rejects.
 pub fn render_wrapper(spec: &ServiceSpec) -> Result<String, Error> {
     let mut cmd = String::new();
     cmd.push_str("@echo off\r\n");
@@ -640,7 +640,7 @@ fn restart_on_failure(spec: &ServiceSpec) -> bool {
 /// wrapper `.cmd`.
 ///
 /// # Errors
-/// Never fails on spec content — callers run [`check_task_fields`]
+/// Never fails on spec content — callers run `check_task_fields`
 /// first; paths are XML-escaped.
 #[must_use]
 pub fn render_task_xml(spec: &ServiceSpec, wrapper: &Path) -> String {

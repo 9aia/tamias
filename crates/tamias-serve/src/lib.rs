@@ -441,7 +441,7 @@ fn registry_entry_json(entry: &tamias_registry::RegistryEntry) -> Value {
 
 /// A convenience default cache eviction window re-exported for callers that
 /// embed the loop and manage their own cache — 30 days, kept in sync with
-/// [`tamias_cache_local::DEFAULT_MAX_AGE`] (dev-dep only here, so the
+/// `tamias_cache_local::DEFAULT_MAX_AGE` (dev-dep only here, so the
 /// value is spelled out rather than linked).
 pub const DEFAULT_CACHE_MAX_AGE: Duration = Duration::from_secs(30 * 86_400);
 

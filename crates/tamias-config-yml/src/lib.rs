@@ -2,7 +2,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 //! YAML config impl (`tamias-config-yml`) — **the standard**. Claims
 //! `tamias.yml` / `tamias.yaml`; TOML (`tamias-config-toml`) is the
-//! alternative, and both parse into the same [`Config`](tamias_config::Config).
+//! alternative, and both parse into the same [`Config`].
 
 use tamias_config::{Config, ConfigFormat};
 use tamias_core::Error;

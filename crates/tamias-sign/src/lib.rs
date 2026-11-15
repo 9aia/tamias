@@ -503,7 +503,7 @@ pub fn official_signature_status(
 ///   *failed* against every configured signers file. A failed
 ///   signature must never display as merely unsigned.
 /// - [`TrustTier::Pinned`] — no verifiable signature, but
-///   `source_ref` carries an integrity pin (see [`ref_is_pinned`]).
+///   `source_ref` carries an integrity pin (see `ref_is_pinned`).
 /// - [`TrustTier::Unpinned`] — everything else: a moving git
 ///   branch/tag, bare http(s), fs paths.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

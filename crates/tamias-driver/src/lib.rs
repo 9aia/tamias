@@ -159,7 +159,7 @@ fn driver_handles(driver: &Path, kind: &str) -> bool {
 }
 
 /// Run a driver's `capabilities` probe and return the JSON it prints —
-/// the same bounded call [`driver_handles`] makes, exposed for the
+/// the same bounded call `driver_handles` makes, exposed for the
 /// `tamias drivers` listing. `Ok` only on a zero exit *and* parseable
 /// JSON; anything else is an [`Error`] the caller renders as "unreachable".
 ///
