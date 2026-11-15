@@ -5,6 +5,9 @@
 # check = fmt + clippy -D warnings; test = the whole suite.
 set -euo pipefail
 
+export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"
+export SCCACHE_CONF="${SCCACHE_CONF:-file://$HOME/.cache/sccache}"
+
 cargo xtask check
 cargo xtask test
 
