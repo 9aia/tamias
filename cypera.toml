@@ -113,3 +113,6 @@ text = """
   `tamias schema` emits the JSON Schema for the *package* manifest
   (`tamias.yaml`), a different document.
 """
+
+[check]
+profile = "engine"
