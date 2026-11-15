@@ -2,7 +2,7 @@
     addr: &amp;<a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.str.html">str</a>,
     root: &amp;<a class="struct" href="https://doc.rust-lang.org/1.99.1/std/path/struct.Path.html" title="struct std::path::Path">Path</a>,
     max_upload: <a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.u64.html">u64</a>,
-) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.99.1/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.unit.html">()</a>, Error&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p><a href="fn.serve_http.html" title="fn tamias_registry_local::serve_http"><code>serve_http</code></a> with an explicit upload cap — the configured
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.99.1/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.unit.html">()</a>, <a class="enum" href="../tamias_core/error/enum.Error.html" title="enum tamias_core::error::Error">Error</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p><a href="fn.serve_http.html" title="fn tamias_registry_local::serve_http"><code>serve_http</code></a> with an explicit upload cap — the configured
 <code>limits.max_upload</code> (flag &gt; config &gt; this default).</p>
 <h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
 <p>Propagates the bind failure; per-request errors are logged, not fatal.</p>

@@ -23,7 +23,6 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 - [How to publish to a registry](/tamias/how-to/publish-to-a-registry.md)
 - [How to provision and service-manage a package](/tamias/how-to/provision-a-service.md)
 - [How to deploy a CI gate bundle](/tamias/how-to/deploy-a-ci-gate-bundle.md)
-- [How to heal a failing PR with an agent](/tamias/how-to/heal-a-failing-pr.md)
 - [How to write a content driver](/tamias/how-to/write-a-driver.md)
 
 ### Reference
@@ -39,10 +38,11 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 
 - [Architecture](/tamias/explanation/architecture.md)
 - [Content types](/tamias/explanation/content-types.md)
-- [Concepts](/tamias/explanation/concepts.md)
-- [Decisions](/tamias/explanation/decisions.md)
 - [Security model](/tamias/explanation/security.md)
 
 ### Other
 
+- [Concepts](/tamias/explanation/concepts.md)
+- [Decisions](/tamias/explanation/decisions.md)
+- [How to heal a failing PR with an agent](/tamias/how-to/heal-a-failing-pr.md)
 - [Untitled](/tamias/public/api/static.files/SourceSerif4-LICENSE-a2cfd9d5.md)
