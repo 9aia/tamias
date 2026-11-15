@@ -149,24 +149,4 @@ campaign bundle ships as `peregrin-bundle`; a CI fleet ships as
 `type: bupha`. Tamias never learns what the bytes mean — the content
 type's driver does. See [Content types](/explanation/content-types).
 
-## Boundaries
-
-Tamias owns **content distribution**: refs, transport, the install
-store + fetch cache, and content-type dispatch. Every neighbour owns
-its own concern:
-
-| Sibling | Owns | Relationship |
-| --- | --- | --- |
-| **peregrin** | orchestration | `install/remove/list/…` become thin wrappers over `tamias-*`; peregrin's distribution impl moves here |
-| **myco** | work memory | kinds/views/templates ship as a `myco-config` content type |
-| **kuda** | code memory | `kuda-domain` packs |
-| **mimus** | critic | `mimus-rules` packs |
-| **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
-| **sturn** | coordination | claim the store lock during concurrent installs |
-| **bupha** | CI | the CI product repo — `type: bupha` bundles via `tamias-driver-bupha`; the org gate is mid-migration back from the peregrin `ci-gate` campaign |
-| **sepia** | sessions | — |
-| **cicada** | calendars | `type: cicada` bundles via `tamias-driver-cicada`; `tamias update --all` + registry reindex |
-| **tarsi** | releases | release profiles ship as `type: tarsi` packs — tamias distributes them |
-
-A hosted registry is in scope (it's a `registry` impl). A daemon or
-multi-actor arbitration belongs to peregrin.
+See [Boundaries](boundaries.md) for owns / does-not-own.

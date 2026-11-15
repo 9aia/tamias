@@ -2,11 +2,11 @@
     names: &amp;[<a class="struct" href="https://doc.rust-lang.org/1.99.1/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>],
     lines: <a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.u32.html">u32</a>,
     follow: <a class="primitive" href="https://doc.rust-lang.org/1.99.1/std/primitive.bool.html">bool</a>,
-) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.99.1/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.99.1/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.99.1/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>&gt;, <a class="enum" href="../tamias_core/error/enum.Error.html" title="enum tamias_core::error::Error">Error</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The <code>journalctl --user -u &lt;unit&gt;… -n &lt;lines&gt;</code> argv — journalctl
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.99.1/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.99.1/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.99.1/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>&gt;, Error&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The <code>journalctl --user -u &lt;unit&gt;… -n &lt;lines&gt;</code> argv — journalctl
 accepts repeated <code>-u</code> flags, so a package’s several provider units
 share one stream. <code>follow</code> adds <code>-f</code>. <a href="struct.LocalDeploy.html#method.logs_with" title="method tamias_deploy_systemd::LocalDeploy::logs_with"><code>LocalDeploy::logs_with</code></a>
 runs it through the <a href="trait.Runner.html" title="trait tamias_deploy_systemd::Runner"><code>Runner</code></a> seam; interactive surfaces spawn
 <code>journalctl</code> with the same argv so the two can’t diverge.</p>
 <h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
-<p><a href="../tamias_core/error/enum.Error.html#variant.Failed" title="variant tamias_core::error::Error::Failed"><code>Error::Failed</code></a> on an invalid/empty unit list.</p>
+<p>[<code>Error::Failed</code>] on an invalid/empty unit list.</p>
 </div></details></section></div></main></body></html>
