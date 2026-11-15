@@ -28,7 +28,7 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 
 ### Reference
 
-- [tamias CLI](/tamias/reference/cli.md)
+- [Command-Line Help for `tamias`](/tamias/reference/cli.md)
 - [Ref grammar](/tamias/reference/refs.md)
 - [Config — `tamias.yml` / `tamias.yaml` / `tamias.toml`](/tamias/reference/config.md)
 - [Scripting tamias](/tamias/reference/scripting.md)
