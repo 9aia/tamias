@@ -10,3 +10,8 @@ cargo xtask test
 
 # advisory scan — best-effort; skipped when the tool is absent
 command -v cargo-audit >/dev/null && cargo audit || echo 'cargo-audit not installed — skipping'
+
+# Docs contract — cypera check + docs/ drift gate. Materializes a
+# detached docs-branch worktree when the run tree lacks one (bupha
+# gate runs), so it is hermetic in CI.
+bash scripts/docs-check.sh
