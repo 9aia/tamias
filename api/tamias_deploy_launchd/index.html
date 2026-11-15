@@ -66,7 +66,7 @@ enable/disable symlink semantics than a bare bootout. Re-running
 the job with cwd <code>/</code> — set <code>workdir</code> in the manifest if the
 payload expects <code>~</code>.</li>
 <li>Real <code>launchctl</code> execution is <code>#[cfg(target_os = "macos")]</code>-gated
-([<code>LaunchctlRunner</code>] only exists there); everywhere else
+(<code>LaunchctlRunner</code> only exists there); everywhere else
 <a href="struct.LaunchdDeploy.html#method.new" title="associated function tamias_deploy_launchd::LaunchdDeploy::new"><code>LaunchdDeploy::new</code></a> installs an unavailable runner so verbs
 fail loudly instead of shelling out. Tests inject a <a href="trait.Runner.html" title="trait tamias_deploy_launchd::Runner"><code>Runner</code></a>
 recorder on any platform; arg-builder tests are <code>cfg(unix)</code>

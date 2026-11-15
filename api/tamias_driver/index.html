@@ -56,7 +56,7 @@ platform bins under <code>drivers/bin/&lt;triple&gt;/</code> (reported as
 <code>bin/&lt;triple&gt;/&lt;name&gt;</code>). Lets callers detect (and gate) bundled drivers
 <em>before</em> copying or dispatching them — including binaries for other
 platforms, which are still bundled executable content.</dd><dt><a class="fn" href="fn.capabilities.html" title="fn tamias_driver::capabilities">capabilities</a></dt><dd>Run a driver’s <code>capabilities</code> probe and return the JSON it prints —
-the same bounded call [<code>driver_handles</code>] makes, exposed for the
+the same bounded call <code>driver_handles</code> makes, exposed for the
 <code>tamias drivers</code> listing. <code>Ok</code> only on a zero exit <em>and</em> parseable
 JSON; anything else is an <a href="../tamias_core/error/enum.Error.html" title="enum tamias_core::error::Error"><code>Error</code></a> the caller renders as “unreachable”.</dd><dt><a class="fn" href="fn.config_schema.html" title="fn tamias_driver::config_schema">config_<wbr>schema</a></dt><dd>Fetch a kind driver’s <code>config-schema</code> — the reserved verb that
 prints a JSON Schema (draft 2020-12) describing the <code>--config</code> file

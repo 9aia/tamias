@@ -73,7 +73,7 @@
 <a href=#73 id=73 data-nosnippet>73</a>//!   the job with cwd `/` — set `workdir` in the manifest if the
 <a href=#74 id=74 data-nosnippet>74</a>//!   payload expects `~`.
 <a href=#75 id=75 data-nosnippet>75</a>//! - Real `launchctl` execution is `#[cfg(target_os = "macos")]`-gated
-<a href=#76 id=76 data-nosnippet>76</a>//!   ([`LaunchctlRunner`] only exists there); everywhere else
+<a href=#76 id=76 data-nosnippet>76</a>//!   (`LaunchctlRunner` only exists there); everywhere else
 <a href=#77 id=77 data-nosnippet>77</a>//!   [`LaunchdDeploy::new`] installs an unavailable runner so verbs
 <a href=#78 id=78 data-nosnippet>78</a>//!   fail loudly instead of shelling out. Tests inject a [`Runner`]
 <a href=#79 id=79 data-nosnippet>79</a>//!   recorder on any platform; arg-builder tests are `cfg(unix)`
@@ -123,7 +123,7 @@
 <a href=#123 id=123 data-nosnippet>123</a>    }
 <a href=#124 id=124 data-nosnippet>124</a>}
 <a href=#125 id=125 data-nosnippet>125</a>
-<a href=#126 id=126 data-nosnippet>126</a><span class="doccomment">/// Off-macOS stand-in for [`LaunchctlRunner`] — every verb errors
+<a href=#126 id=126 data-nosnippet>126</a><span class="doccomment">/// Off-macOS stand-in for `LaunchctlRunner` — every verb errors
 <a href=#127 id=127 data-nosnippet>127</a>/// instead of exec'ing a binary that doesn't exist. Only installed by
 <a href=#128 id=128 data-nosnippet>128</a>/// [`LaunchdDeploy::new`] on non-macOS; tests inject their own
 <a href=#129 id=129 data-nosnippet>129</a>/// [`Runner`].
@@ -149,7 +149,7 @@
 <a href=#149 id=149 data-nosnippet>149</a><span class="kw">impl </span>LaunchdDeploy {
 <a href=#150 id=150 data-nosnippet>150</a>    <span class="doccomment">/// The default: `~/Library/LaunchAgents` (falling back through
 <a href=#151 id=151 data-nosnippet>151</a>    /// `HOME` to `./.tamias/LaunchAgents`) + the platform runner —
-<a href=#152 id=152 data-nosnippet>152</a>    /// [`LaunchctlRunner`] on macOS, an unavailable runner elsewhere.
+<a href=#152 id=152 data-nosnippet>152</a>    /// `LaunchctlRunner` on macOS, an unavailable runner elsewhere.
 <a href=#153 id=153 data-nosnippet>153</a>    </span><span class="attr">#[must_use]
 <a href=#154 id=154 data-nosnippet>154</a>    </span><span class="kw">pub fn </span>new() -&gt; <span class="self">Self </span>{
 <a href=#155 id=155 data-nosnippet>155</a>        <span class="attr">#[cfg(target_os = <span class="string">"macos"</span>)]
@@ -439,7 +439,7 @@
 <a href=#439 id=439 data-nosnippet>439</a>///
 <a href=#440 id=440 data-nosnippet>440</a>/// # Errors
 <a href=#441 id=441 data-nosnippet>441</a>/// [`Error::Failed`] when `name` is not a valid unit base name (see
-<a href=#442 id=442 data-nosnippet>442</a>/// [`check_name`]).
+<a href=#442 id=442 data-nosnippet>442</a>/// `check_name`).
 <a href=#443 id=443 data-nosnippet>443</a></span><span class="kw">pub fn </span>label_for(name: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Result</span>&lt;String, Error&gt; {
 <a href=#444 id=444 data-nosnippet>444</a>    check_name(name)<span class="question-mark">?</span>;
 <a href=#445 id=445 data-nosnippet>445</a>    <span class="kw">let </span><span class="kw-2">mut </span>label = String::from(<span class="string">"com.9aia."</span>);

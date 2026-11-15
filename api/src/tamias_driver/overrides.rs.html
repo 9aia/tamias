@@ -21,8 +21,8 @@
 <a href=#21 id=21 data-nosnippet>21</a>//!   `--clear-overrides` drops the package's whole dir. Because
 <a href=#22 id=22 data-nosnippet>22</a>//!   `cli.yaml` is just one fragment, hand-written files sorting after
 <a href=#23 id=23 data-nosnippet>23</a>//!   it (`zz-*.yaml`) still win over `--set` values.
-<a href=#24 id=24 data-nosnippet>24</a>//! - At dispatch time [`dispatch`](crate::dispatch) hands
-<a href=#25 id=25 data-nosnippet>25</a>//!   the driver the drop-in dir via [`OVERRIDES_ENV`] whenever it
+<a href=#24 id=24 data-nosnippet>24</a>//! - At dispatch time [`dispatch`] hands
+<a href=#25 id=25 data-nosnippet>25</a>//!   the driver the drop-in dir via [`OVERRIDES_ENV`](crate::overrides::OVERRIDES_ENV) whenever it
 <a href=#26 id=26 data-nosnippet>26</a>//!   exists — every lifecycle verb (`install`/`deploy`/`uninstall`)
 <a href=#27 id=27 data-nosnippet>27</a>//!   and `driver exec` passthrough, so CLI, `tamias serve`, sync, and
 <a href=#28 id=28 data-nosnippet>28</a>//!   the TUI all carry it. Drivers that generate config merge the

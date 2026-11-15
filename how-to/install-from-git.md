@@ -29,7 +29,10 @@ tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias info ci-gate        # shows source ref + resolved sha
 ```
 
-If the package ships its own `drivers/`, add `--allow-drivers` (or
+**Verify:** `tamias info ci-gate` prints the recorded `source` ref, the
+resolved commit sha, and the payload digest; `tamias list` shows the
+package with its trust tier. If the package ships its own `drivers/`,
+add `--allow-drivers` (or
 `TAMIAS_ALLOW_DRIVERS=1`) — see [Write a driver](/how-to/write-a-driver).
 
 ## Track it in a project

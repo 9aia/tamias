@@ -23,7 +23,7 @@ maps (<code>a.b.c=v</code>), values parse as YAML (<code>--set 'nodes=[1,2]'</co
 <code>cli.yaml</code> is just one fragment, hand-written files sorting after
 it (<code>zz-*.yaml</code>) still win over <code>--set</code> values.</li>
 <li>At dispatch time <a href="../fn.dispatch.html" title="fn tamias_driver::dispatch"><code>dispatch</code></a> hands
-the driver the drop-in dir via [<code>OVERRIDES_ENV</code>] whenever it
+the driver the drop-in dir via <a href="constant.OVERRIDES_ENV.html" title="constant tamias_driver::overrides::OVERRIDES_ENV"><code>OVERRIDES_ENV</code></a> whenever it
 exists — every lifecycle verb (<code>install</code>/<code>deploy</code>/<code>uninstall</code>)
 and <code>driver exec</code> passthrough, so CLI, <code>tamias serve</code>, sync, and
 the TUI all carry it. Drivers that generate config merge the

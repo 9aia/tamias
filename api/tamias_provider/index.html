@@ -23,7 +23,7 @@ label, service name, unit base name (<code>&lt;provider&gt;-&lt;service&gt;</cod
 <code>exec</code> line.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.ServiceBackend.html" title="enum tamias_provider::ServiceBackend">Service<wbr>Backend</a></dt><dd>The per-user service backend for this host — systemd <code>--user</code>
 units on Linux/Unix, Task Scheduler per-user tasks on Windows,
 launchd <code>gui/&lt;uid&gt;</code> agents on macOS. All render the same
-[<code>ServiceSpec</code>] from the <code>tamias-deploy</code> port; <a href="enum.ServiceBackend.html#method.new" title="associated function tamias_provider::ServiceBackend::new"><code>ServiceBackend::new</code></a>
+<a href="../tamias_deploy/struct.ServiceSpec.html" title="struct tamias_deploy::ServiceSpec"><code>ServiceSpec</code></a> from the <code>tamias-deploy</code> port; <a href="enum.ServiceBackend.html#method.new" title="associated function tamias_provider::ServiceBackend::new"><code>ServiceBackend::new</code></a>
 picks by <code>cfg!</code> once, so callers never branch on platform
 themselves.</dd><dt><a class="enum" href="enum.UnitAction.html" title="enum tamias_provider::UnitAction">Unit<wbr>Action</a></dt><dd>A <code>systemctl --user</code> lifecycle verb on a unit base name.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.deploy.html" title="fn tamias_provider::deploy">deploy</a></dt><dd><code>deploy &lt;name&gt;</code> — the installed package’s provider deploy step:
 the kind driver’s <code>deploy</code> verb <em>and</em>, independently, every

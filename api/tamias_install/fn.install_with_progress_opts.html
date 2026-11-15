@@ -13,7 +13,7 @@ lives <em>here</em>, in the one pipeline, so <code>tamias install</code>/<code>a
 <code>update</code>, <code>tamias serve</code>’s <code>install</code> op, <code>sync</code> deps, and the TUI’s
 install jobs all land declared bins on <code>PATH</code> uniformly. Only the
 top-level entry deploys — <code>include:</code>/<code>extends</code> bases recurse
-through [<code>install_inner</code>] directly and never reach this tail.</p>
+through <code>install_inner</code> directly and never reach this tail.</p>
 <h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
 <p>Same as <a href="fn.install_with_progress.html" title="fn tamias_install::install_with_progress"><code>install_with_progress</code></a>, plus post-commit bin-deploy
 failures (a foreign file at a bin path, I/O) — the entry is

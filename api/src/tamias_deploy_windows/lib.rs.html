@@ -100,7 +100,7 @@
 <a href=#100 id=100 data-nosnippet>100</a>    }
 <a href=#101 id=101 data-nosnippet>101</a>}
 <a href=#102 id=102 data-nosnippet>102</a>
-<a href=#103 id=103 data-nosnippet>103</a><span class="doccomment">/// Off-Windows stand-in for [`SchtasksRunner`] — every verb errors
+<a href=#103 id=103 data-nosnippet>103</a><span class="doccomment">/// Off-Windows stand-in for `SchtasksRunner` — every verb errors
 <a href=#104 id=104 data-nosnippet>104</a>/// instead of exec'ing a binary that doesn't exist. Only installed by
 <a href=#105 id=105 data-nosnippet>105</a>/// [`WindowsDeploy::new`] on non-Windows; tests inject their own
 <a href=#106 id=106 data-nosnippet>106</a>/// [`Runner`].
@@ -125,7 +125,7 @@
 <a href=#125 id=125 data-nosnippet>125</a>
 <a href=#126 id=126 data-nosnippet>126</a><span class="kw">impl </span>WindowsDeploy {
 <a href=#127 id=127 data-nosnippet>127</a>    <span class="doccomment">/// The default: `%LOCALAPPDATA%\tamias\tasks` (falling back through
-<a href=#128 id=128 data-nosnippet>128</a>    /// `USERPROFILE`/`HOME`) + the platform runner — [`SchtasksRunner`]
+<a href=#128 id=128 data-nosnippet>128</a>    /// `USERPROFILE`/`HOME`) + the platform runner — `SchtasksRunner`
 <a href=#129 id=129 data-nosnippet>129</a>    /// on Windows, an unavailable runner elsewhere.
 <a href=#130 id=130 data-nosnippet>130</a>    </span><span class="attr">#[must_use]
 <a href=#131 id=131 data-nosnippet>131</a>    </span><span class="kw">pub fn </span>new() -&gt; <span class="self">Self </span>{
@@ -563,7 +563,7 @@
 <a href=#563 id=563 data-nosnippet>563</a>///
 <a href=#564 id=564 data-nosnippet>564</a>/// # Errors
 <a href=#565 id=565 data-nosnippet>565</a>/// [`Error::Failed`] on an empty `exec` argv or an argument
-<a href=#566 id=566 data-nosnippet>566</a>/// [`cmd_quote`] rejects.
+<a href=#566 id=566 data-nosnippet>566</a>/// `cmd_quote` rejects.
 <a href=#567 id=567 data-nosnippet>567</a></span><span class="kw">pub fn </span>render_wrapper(spec: <span class="kw-2">&amp;</span>ServiceSpec) -&gt; <span class="prelude-ty">Result</span>&lt;String, Error&gt; {
 <a href=#568 id=568 data-nosnippet>568</a>    <span class="kw">let </span><span class="kw-2">mut </span>cmd = String::new();
 <a href=#569 id=569 data-nosnippet>569</a>    cmd.push_str(<span class="string">"@echo off\r\n"</span>);
@@ -640,7 +640,7 @@
 <a href=#640 id=640 data-nosnippet>640</a>/// wrapper `.cmd`.
 <a href=#641 id=641 data-nosnippet>641</a>///
 <a href=#642 id=642 data-nosnippet>642</a>/// # Errors
-<a href=#643 id=643 data-nosnippet>643</a>/// Never fails on spec content — callers run [`check_task_fields`]
+<a href=#643 id=643 data-nosnippet>643</a>/// Never fails on spec content — callers run `check_task_fields`
 <a href=#644 id=644 data-nosnippet>644</a>/// first; paths are XML-escaped.
 <a href=#645 id=645 data-nosnippet>645</a></span><span class="attr">#[must_use]
 <a href=#646 id=646 data-nosnippet>646</a></span><span class="kw">pub fn </span>render_task_xml(spec: <span class="kw-2">&amp;</span>ServiceSpec, wrapper: <span class="kw-2">&amp;</span>Path) -&gt; String {

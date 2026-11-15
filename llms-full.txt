@@ -136,167 +136,6 @@ tamias info ci-gate    # provenance: source ref, resolved sha, digest
 ---
 
 ---
-url: /tamias/tutorials/pr-heal-workflow.md
----
-# Tutorial: heal a failing PR with an agent
-
-A guided walk from `tamias install` to a pull request that fixed
-itself: red CI → agent session repairs the code → push → green check →
-campaign merges. This is the `pr-heal` workflow bundle, verified
-end-to-end — every command below ran for real.
-
-You will need: `tamias`, `peregrin`, `sepia`, `lasius`, `bupha`, `gh`
-(on `PATH`, authenticated), and a GitHub repo with a CI check.
-
-## 1. Install the bundle
-
-`pr-heal` ships in the 9aia workspace repo:
-
-```sh
-tamias install --allow-drivers ~/GitHub/9aia/workspace/workflows/pr-heal
-```
-
-`--allow-drivers` is required for `peregrin-bundle` content — the
-bundle renders a systemd service through the peregrin provider.
-
-## 2. Deploy it
-
-```sh
-tamias deploy pr-heal
-```
-
-This writes `~/.config/peregrin/serve/pr-heal.yaml` — a campaign
-document that `include:`s the bundle's `main.yaml` and carries a
-`config:` block. The loader deep-merges that block over the bundle
-defaults, so **this file is where you configure the deployment**:
-
-```yaml
-config:
-  name: pr-heal
-  public_url: https://tamias.luisfuturist.com
-  repo: "you/your-repo"                    # required
-  webhook_secret_env: "BUPHA_WH_YOU_YOUR_REPO"  # required
-  checkout: "$HOME/GitHub/you/your-repo"   # required — local clone
-  agent: "devin"                           # sepia agent-config id
-  agent_mode: "bypass"                     # see §6 — required
-  max_agent_attempts: 3
-  ci_check_name: "ci"
-  default_branch: "main"
-```
-
-If the webhook secret env var is not already in
-`~/.config/peregrin/env`, also declare its name under
-`capabilities.secrets` in the same file.
-
-> `tamias deploy` regenerates this file — keep a copy of your config
-> block and re-apply it after re-deploys.
-
-## 3. Register the webhook
-
-Point a GitHub webhook at the shared campaign listener (the URL your
-deployment's tunnel fronts — `https://tamias.luisfuturist.com/hook`
-on this one):
-
-* events: `push`, `pull_request`, `check_run`, `status`
-* secret: the value behind `webhook_secret_env`, stored in
-  `~/.config/peregrin/env` as `BUPHA_WH_<OWNER>_<REPO>`
-  (uppercased, `-` → `_`)
-
-```sh
-gh api repos/you/your-repo/hooks -f name=web -f 'config[url]=https://tamias.luisfuturist.com/hook' \
-  -f 'config[content_type]=json' -f 'config[secret]=…' \
-  -f 'events[]=push' -f 'events[]=pull_request' -f 'events[]=check_run' -f 'events[]=status'
-```
-
-## 4. Restart and watch it come up
-
-```sh
-systemctl --user restart peregrin-campaign
-journalctl --user -u peregrin-campaign -f | grep pr-heal
-```
-
-Every `peregrin-bundle` renders into the one shared
-`peregrin-campaign.service` — ci-gate, docs-deploy and pr-heal
-campaigns coexist on a single webhook listener that demuxes by repo.
-
-## 5. Run the loop
-
-Open a PR that breaks CI (the spike used a `SPIKE_BROKEN` marker that
-`ci.sh` rejects):
-
-```sh
-gh pr create --title 'deliberate CI failure' --body 'pr-heal e2e'
-```
-
-Then watch the chain — no polling anywhere, every hop is a webhook or
-entity event:
-
-```
-push/pull_request webhook → ci-job entity → bupha CI failure
-  → status event → pr-heal.check.failed.<sha>
-  → lasius worktree @ sha → sepia agent session fixes the tree
-  → lasius commit + push HEAD:refs/heads/<pr-branch>
-  → CI re-runs → green check → lasius forge pr merge --squash
-```
-
-Real observed output from the verified run (PR #3 of the spike repo):
-
-```
-{"merge":"9fcfce2c2de642b68fa55b8f013a3dba530ceb04",
- "mergedAt":"2026-11-11T22:48:17Z","state":"MERGED"}
-```
-
-Inspect what happened:
-
-```sh
-tamias logs pr-heal                          # campaign service logs
-tail -f ~/.local/share/peregrin/serve-history/pr-heal.jsonl   # event log
-ls ~/.local/share/pr-heal/worktrees           # heal worktrees (auto-removed on success)
-cat ~/.local/share/pr-heal/worktrees/attempts/pr-3            # attempt ledger
-```
-
-## 6. The agent permission mode — read this
-
-`agent_mode: "bypass"` is not optional decoration: unattended agent
-turns cannot answer ACP `session/request_permission` prompts, and
-devin's default `accept-edits` mode prompts on shell commands — the
-turn deadlocks until timeout (observed live, twice). `bypass`
-auto-approves everything, which is acceptable *because* the agent only
-ever touches a disposable worktree. `smart` is the safer middle
-ground. T-023 added a proper per-session `permissions` policy on the
-sepia wire (`sessions.set_permission_policy`, rules over tool kinds) —
-the campaign will migrate to it; until then `bypass` is the honest
-setting for unattended heals.
-
-## 7. Safety model, honestly stated
-
-* **Verified-sha merge** — the campaign only merges when an open PR's
-  *current* `head_sha` equals the sha that went green. A stale green
-  finds no PR and skips.
-* **Per-PR attempt ledger** — `<worktree_base>/attempts/pr-<n>` caps
-  agent runs (default 3), durable across restarts. Over-cap reports
-  `attempts.gaveup` and leaves the PR for a human.
-* **Per-sha agent lock** — duplicate failure events can't start
-  parallel agents on one worktree.
-* **Merge conflicts are NOT auto-resolved** — `merge.failed` is
-  terminal; conflict → agent-rework is tracked follow-up work.
-* **No-diff fixes fail honestly** — the push node commits without
-  `--allow-empty`, so an agent that changed nothing errors instead of
-  looping CI forever.
-
-## What just happened, architecturally
-
-| hop | owner |
-| --- | --- |
-| webhook verify, parse, repo demux | peregrin (`github-webhook` driver, `push_refs`/`*_actions` filters) |
-| CI job queue → worktree → status | bupha (`ci-job` entity plane) |
-| agent session, prompt, permission mode | sepia (`/api/sessions/run` → `prompt_wait`) |
-| worktree, commit, push, PR merge | lasius (`vcs`/`forge` verbs — `gh` is the impl) |
-| install, deploy, service lifecycle | tamias (this bundle) |
-
----
-
----
 url: /tamias/how-to/install-from-git.md
 ---
 # How to install from a git repo
@@ -327,7 +166,10 @@ tamias install git:9aia/bupha//libraries/ci-gate#main
 tamias info ci-gate        # shows source ref + resolved sha
 ```
 
-If the package ships its own `drivers/`, add `--allow-drivers` (or
+**Verify:** `tamias info ci-gate` prints the recorded `source` ref, the
+resolved commit sha, and the payload digest; `tamias list` shows the
+package with its trust tier. If the package ships its own `drivers/`,
+add `--allow-drivers` (or
 `TAMIAS_ALLOW_DRIVERS=1`) — see [Write a driver](/how-to/write-a-driver).
 
 ## Track it in a project
@@ -717,6 +559,12 @@ Mutating verbs ask `y`/`n` first (default `n`). Installs that ship
 bundled `drivers/` raise the consent prompt — answering `y` is the
 equivalent of `--allow-drivers`; there is no env-var shortcut in the
 TUI.
+
+## Verify
+
+`tamias ui` opens with the **Installed** pane listing every store entry
+— name, type, source ref, resolved sha, digest. `?` shows the key
+overlay; `q` quits.
 
 ## Notes
 
@@ -1232,6 +1080,170 @@ Secrets are env-var **names** only — `secret_env`/`token_env` in
 `fleet.toml` resolve env → cuora (`cuora://bupha/<NAME>`) → keyring.
 Seed values with `printf '%s' "$VALUE" | cuora put cuora://bupha/<NAME>`;
 never write a secret into either file.
+
+---
+
+---
+url: /tamias/how-to/heal-a-failing-pr.md
+---
+# How to heal a failing PR with an agent
+
+**Goal:** stand up an event-driven heal loop — red CI on a PR spawns an
+agent session that repairs the code, pushes, and merges once green —
+using the `pr-heal` workflow bundle. Verified end-to-end; every command
+below ran for real.
+
+**Prerequisites:** `tamias`, `peregrin`, `sepia`, `lasius`, `bupha`,
+`gh` (on `PATH`, authenticated), and a GitHub repo with a CI check.
+
+## 1. Install the bundle
+
+`pr-heal` ships in the 9aia workspace repo:
+
+```sh
+tamias install --allow-drivers ~/GitHub/9aia/workspace/workflows/pr-heal
+```
+
+`--allow-drivers` is required for `peregrin-bundle` content — the
+bundle renders a systemd service through the peregrin provider.
+
+## 2. Deploy it
+
+```sh
+tamias deploy pr-heal
+```
+
+This writes `~/.config/peregrin/serve/pr-heal.yaml` — a campaign
+document that `include:`s the bundle's `main.yaml` and carries a
+`config:` block. The loader deep-merges that block over the bundle
+defaults, so **this file is where you configure the deployment**:
+
+```yaml
+config:
+  name: pr-heal
+  public_url: https://tamias.luisfuturist.com
+  repo: "you/your-repo"                    # required
+  webhook_secret_env: "BUPHA_WH_YOU_YOUR_REPO"  # required
+  checkout: "$HOME/GitHub/you/your-repo"   # required — local clone
+  agent: "devin"                           # sepia agent-config id
+  agent_mode: "bypass"                     # see §6 — required
+  max_agent_attempts: 3
+  ci_check_name: "ci"
+  default_branch: "main"
+```
+
+If the webhook secret env var is not already in
+`~/.config/peregrin/env`, also declare its name under
+`capabilities.secrets` in the same file.
+
+> `tamias deploy` regenerates this file — keep a copy of your config
+> block and re-apply it after re-deploys.
+
+## 3. Register the webhook
+
+Point a GitHub webhook at the shared campaign listener (the URL your
+deployment's tunnel fronts — `https://tamias.luisfuturist.com/hook`
+on this one):
+
+* events: `push`, `pull_request`, `check_run`, `status`
+* secret: the value behind `webhook_secret_env`, stored in
+  `~/.config/peregrin/env` as `BUPHA_WH_<OWNER>_<REPO>`
+  (uppercased, `-` → `_`)
+
+```sh
+gh api repos/you/your-repo/hooks -f name=web -f 'config[url]=https://tamias.luisfuturist.com/hook' \
+  -f 'config[content_type]=json' -f 'config[secret]=…' \
+  -f 'events[]=push' -f 'events[]=pull_request' -f 'events[]=check_run' -f 'events[]=status'
+```
+
+## 4. Restart and watch it come up
+
+```sh
+systemctl --user restart peregrin-campaign
+journalctl --user -u peregrin-campaign -f | grep pr-heal
+```
+
+Every `peregrin-bundle` renders into the one shared
+`peregrin-campaign.service` — ci-gate, docs-deploy and pr-heal
+campaigns coexist on a single webhook listener that demuxes by repo.
+
+## 5. Run the loop
+
+Open a PR that breaks CI (the spike used a `SPIKE_BROKEN` marker that
+`ci.sh` rejects):
+
+```sh
+gh pr create --title 'deliberate CI failure' --body 'pr-heal e2e'
+```
+
+Then watch the chain — no polling anywhere, every hop is a webhook or
+entity event:
+
+```
+push/pull_request webhook → ci-job entity → bupha CI failure
+  → status event → pr-heal.check.failed.<sha>
+  → lasius worktree @ sha → sepia agent session fixes the tree
+  → lasius commit + push HEAD:refs/heads/<pr-branch>
+  → CI re-runs → green check → lasius forge pr merge --squash
+```
+
+Real observed output from the verified run (PR #3 of the spike repo):
+
+```
+{"merge":"9fcfce2c2de642b68fa55b8f013a3dba530ceb04",
+ "mergedAt":"2026-11-11T22:48:17Z","state":"MERGED"}
+```
+
+## Verify
+
+The loop is live when a deliberately-broken PR goes red → agent session
+→ push → green → merged, with no human step. Inspect what happened:
+
+```sh
+tamias logs pr-heal                          # campaign service logs
+tail -f ~/.local/share/peregrin/serve-history/pr-heal.jsonl   # event log
+ls ~/.local/share/pr-heal/worktrees           # heal worktrees (auto-removed on success)
+cat ~/.local/share/pr-heal/worktrees/attempts/pr-3            # attempt ledger
+```
+
+## 6. The agent permission mode — read this
+
+`agent_mode: "bypass"` is not optional decoration: unattended agent
+turns cannot answer ACP `session/request_permission` prompts, and
+devin's default `accept-edits` mode prompts on shell commands — the
+turn deadlocks until timeout (observed live, twice). `bypass`
+auto-approves everything, which is acceptable *because* the agent only
+ever touches a disposable worktree. `smart` is the safer middle
+ground. T-023 added a proper per-session `permissions` policy on the
+sepia wire (`sessions.set_permission_policy`, rules over tool kinds) —
+the campaign will migrate to it; until then `bypass` is the honest
+setting for unattended heals.
+
+## 7. Safety model, honestly stated
+
+* **Verified-sha merge** — the campaign only merges when an open PR's
+  *current* `head_sha` equals the sha that went green. A stale green
+  finds no PR and skips.
+* **Per-PR attempt ledger** — `<worktree_base>/attempts/pr-<n>` caps
+  agent runs (default 3), durable across restarts. Over-cap reports
+  `attempts.gaveup` and leaves the PR for a human.
+* **Per-sha agent lock** — duplicate failure events can't start
+  parallel agents on one worktree.
+* **Merge conflicts are NOT auto-resolved** — `merge.failed` is
+  terminal; conflict → agent-rework is tracked follow-up work.
+* **No-diff fixes fail honestly** — the push node commits without
+  `--allow-empty`, so an agent that changed nothing errors instead of
+  looping CI forever.
+
+## What just happened, architecturally
+
+| hop | owner |
+| --- | --- |
+| webhook verify, parse, repo demux | peregrin (`github-webhook` driver, `push_refs`/`*_actions` filters) |
+| CI job queue → worktree → status | bupha (`ci-job` entity plane) |
+| agent session, prompt, permission mode | sepia (`/api/sessions/run` → `prompt_wait`) |
+| worktree, commit, push, PR merge | lasius (`vcs`/`forge` verbs — `gh` is the impl) |
+| install, deploy, service lifecycle | tamias (this bundle) |
 
 ---
 
@@ -2736,9 +2748,6 @@ url: /tamias/explanation/architecture.md
 ---
 # Architecture
 
-> Seeded from a copy of `cuora` (its ports-and-adapters anatomy and the
-> `-cf` Worker pattern).
-
 tamias is **ports-and-adapters**. The engine owns the generic half of
 distribution; every content *meaning* is an adapter.
 
@@ -2867,6 +2876,46 @@ stack. Nothing exports unless you set an endpoint:
 * W3C `traceparent`/`tracestate` propagation is installed when export
   is on; `RUST_LOG`-style filtering still applies.
 
+## Where it sits
+
+Tamias is the **substrate** of the 9aia stack — everything above it is
+distributed *through* tamias:
+
+```
+tamias (distribution)  →  engines  →  orchestration  →  surfaces
+   refs, store, cache      myco,        peregrin           pavo,
+   drivers, providers      cuora,        campaigns,         TUI/CLI
+                           kuda,         bupha CI           drivers
+                           mimus…
+```
+
+An engine like `myco` ships its config as a `myco-config` pack; a
+campaign bundle ships as `peregrin-bundle`; a CI fleet ships as
+`type: bupha`. Tamias never learns what the bytes mean — the content
+type's driver does. See [Content types](/explanation/content-types).
+
+## Boundaries
+
+Tamias owns **content distribution**: refs, transport, the install
+store + fetch cache, and content-type dispatch. Every neighbour owns
+its own concern:
+
+| Sibling | Owns | Relationship |
+| --- | --- | --- |
+| **peregrin** | orchestration | `install/remove/list/…` become thin wrappers over `tamias-*`; peregrin's distribution impl moves here |
+| **myco** | work memory | kinds/views/templates ship as a `myco-config` content type |
+| **kuda** | code memory | `kuda-domain` packs |
+| **mimus** | critic | `mimus-rules` packs |
+| **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
+| **sturn** | coordination | claim the store lock during concurrent installs |
+| **bupha** | CI | the CI product repo — `type: bupha` bundles via `tamias-driver-bupha`; the org gate is mid-migration back from the peregrin `ci-gate` campaign |
+| **sepia** | sessions | — |
+| **cicada** | calendars | `type: cicada` bundles via `tamias-driver-cicada`; `tamias update --all` + registry reindex |
+| **tarsi** | releases | release profiles ship as `type: tarsi` packs — tamias distributes them |
+
+A hosted registry is in scope (it's a `registry` impl). A daemon or
+multi-actor arbitration belongs to peregrin.
+
 ---
 
 ---
@@ -2935,6 +2984,167 @@ discoverable driver — fail closed, never silent.
 verbs, location — the same scan `doctor` summarizes.
 
 See [Write a driver](/how-to/write-a-driver) for the authoring side.
+
+---
+
+---
+url: /tamias/explanation/concepts.md
+---
+# Concepts
+
+The vocabulary tamias uses — each term defined once.
+
+## Package and ref
+
+* **Package** — *bytes + a manifest* (`tamias.yaml`). The manifest names
+  the package (`name`, `version`, `@scope`), its content `type`, and
+  optional `deps:`, `include:`, `provider:`, and `bins[]` declarations.
+* **Ref** — the address of a package source: a local path, a `git:`
+  clone URL with `//subdir` and `#rev`, an `http(s):` tarball (optionally
+  `#sha256:`-pinned), a `cf:` registry ref, or a named-registry
+  `<label>:<pkg>@<ver>`. See [Ref grammar](/reference/refs).
+* **Resolved sha** — what a ref pinned to at install time: a commit sha
+  for git, a payload sha256 for tarballs. Recorded on the store entry so
+  provenance survives the ref moving.
+* **Payload digest** — the content hash of the unpacked payload.
+  `tamias verify` recomputes it; tampering with the store is detected.
+
+## Stores
+
+* **Install store** — `<tamias-home>/` entries of `name@version/` plus a
+  record (source ref, resolved sha, digest, trust tier). What `list`,
+  `info`, `verify` read.
+* **Fetch cache** — content-addressed, keyed by resolved sha. Repeat
+  installs and `update` reuse it; `remove` never touches it.
+* **Registry** — where published packages live: a directory (optionally
+  HTTP-served) or a Cloudflare Worker + R2/D1/KV. `publish`/`search`
+  talk to it; installs read its `index.json`.
+* **Bin dir** — where a package's executable surfaces land:
+  `$TAMIAS_BIN_DIR` → `$XDG_BIN_HOME` → `~/.local/bin`.
+
+## Content types and drivers
+
+* **Content type** (`type:`/`kind`) — the *meaning* of a payload,
+  declared as data in the manifest. The engine never links product
+  code.
+* **Driver** (`tamias-driver-<type>`) — the subprocess that knows how a
+  type installs/deploys/uninstalls. Discovered on `PATH` or in
+  `<tamias-home>/drivers/`; fails closed when absent.
+* **Bundled driver** — a `drivers/` dir inside the payload. Arbitrary
+  code → gated by `--allow-drivers` / consent memory.
+* **Provider** — the manifest's declarative `provider:` block: services,
+  ingress, verbs. `tamias deploy` renders it into per-user service
+  units (systemd / launchd / Task Scheduler) without a driver.
+* **`bins[]`** — declared executable surfaces: `shim: cli` (a generated
+  script dispatching `tamias bin exec` → the kind driver) or
+  `payload: tools/bin/<triple>/…` (a real binary, linked through a
+  per-package `bin-alias` so upgrades don't dangle).
+
+## Trust
+
+* **Trust tier** — `official` / `signed` / `pinned` / `unpinned` /
+  `bad`, *computed* at install/verify time from the ref's pin, the
+  package signature, and your signers files. Never self-declared.
+* **Signers files** — `allowed_signers` ("may sign packages I install")
+  vs `official_signers` (the smaller curated set earning the `official`
+  badge); `ssh-keygen -Y` format, namespace `tamias-package`.
+* **Consent** — the `--allow-drivers` gate, remembered per payload
+  digest in `~/.config/tamias/consented.json`. Binds to exact bytes, not
+  the package name.
+* **`include:`** — manifest composition: entries resolve to store
+  payloads or recursively-installed refs; the *composed* tree is what
+  drivers see, what gets digested, and what the store commits.
+
+---
+
+---
+url: /tamias/explanation/decisions.md
+---
+# Decisions
+
+ADR-lite: the calls that shaped tamias, the alternatives rejected, and
+the consequences we live with.
+
+## Ports-and-adapters, flat crates
+
+**Decision:** the engine is pure domain (`tamias-core`, no I/O); every
+external capability — source, store, cache, registry, deploy — is a
+trait with `-local`/`-cf`/platform impls in sibling crates.
+
+**Alternatives:** a monolithic binary; an async runtime with plugin
+traits loaded in-process.
+
+**Consequence:** impls are swappable and testable in isolation, and the
+binary stays sync and dependency-light. The cost is crate sprawl — the
+crate map is wide — and every new capability is a new port + impl pair
+rather than a function.
+
+## Content types are declared, drivers are subprocesses
+
+**Decision:** a package's `type:` is manifest *data*; the manager
+launches `tamias-driver-<type>` as a subprocess over argv — "no plugin
+system: files".
+
+**Alternatives:** linking product crates into the engine; an in-process
+plugin ABI (dlopen, WASM); a central registry of trusted drivers only.
+
+**Consequence:** adding a content type never changes the engine, and a
+malformed driver can't corrupt tamias's memory — but driver bugs are
+process boundaries, dispatch has a 120s timeout, and payload-shipped
+drivers needed the `--allow-drivers` consent gate. See
+[Write a driver](/how-to/write-a-driver).
+
+## `tamias` itself stays a native binary
+
+**Decision:** the `tamias` bin is never a `bins[]` shim — every shim in
+the org execs `tamias bin exec`, so tamias can't retire into a shim
+(bootstrap, T-007).
+
+**Alternatives:** shipping tamias as a pack like every other product
+CLI.
+
+**Consequence:** `cargo install tamias` works forever and shims never
+chase a moving helper; the cost is tamias alone among product CLIs is
+cargo-installable, which the docs must keep explaining.
+
+## YAML is the standard config, TOML the alternative
+
+**Decision:** `tamias.yml`/`tamias.yaml` is the standard manifest and
+project config; TOML is supported via `tamias-config-toml`.
+
+**Alternatives:** TOML-only (the Rust ecosystem default); JSON.
+
+**Consequence:** manifests read like the org's other YAML documents
+(peregrin campaigns, kuda cards), at the price of a second format impl
+to keep honest — drift between the two loaders is a real bug class.
+
+## `include:` composes, publish flattens
+
+**Decision:** `include:` entries deep-merge into one composed tree that
+drivers see and the digest covers; `publish`/`bundle pack` flatten by
+default (`--keep-includes` ships raw).
+
+**Alternatives:** shipping includes unresolved (consumers re-compose);
+always flattening at install.
+
+**Consequence:** installs are self-contained and digests are stable, but
+a flattened publish loses the include structure — `--keep-includes`
+exists for packs that want consumers to compose.
+
+## Signing is optional, trust tiers are computed
+
+**Decision:** package signing uses `ssh-keygen -Y` (namespace
+`tamias-package`); every install computes a trust tier from pins +
+signatures + signers files rather than trusting a declared badge.
+
+**Alternatives:** mandatory signing; a bespoke signature format;
+registry-attested trust.
+
+**Consequence:** unpinned installs still work (tier `unpinned`, loudly
+labeled) while `signing.required` can hard-fail them for registry
+policies. `cf:` installs are TLS-authenticated but not sha-pinned at
+transport — a documented caveat, mitigated by signatures. See
+[Security model](/explanation/security).
 
 ---
 
@@ -3150,33 +3360,6 @@ expose `tamias serve` to untrusted input.
 
 Vulnerabilities go to the maintainers via GitHub private advisories —
 see `SECURITY.md`. Don't open public issues for security reports.
-
----
-
----
-url: /tamias/explanation/boundaries.md
----
-# Boundaries
-
-Tamias owns **content distribution**: refs, transport, the install store
-
-* fetch cache, and content-type dispatch. Every neighbour owns its own
-  concern.
-
-| Sibling | Owns | Relationship |
-| --- | --- | --- |
-| **peregrin** | orchestration | `install/remove/list/…` become thin wrappers over `tamias-*`; peregrin's distribution impl moves here |
-| **myco** | work memory | kinds/views/templates ship as a `myco-config` content type |
-| **kuda** | code memory | `kuda-domain` packs |
-| **mimus** | critic | `mimus-rules` packs |
-| **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
-| **sturn** | coordination | claim the store lock during concurrent installs |
-| **bupha / ci-gate** | CI gate | bupha is the CI repo — `type: bupha` bundles via `tamias-driver-bupha`; the org gate is mid-migration back from the peregrin `ci-gate` campaign (PL-013) |
-| **sepia** | sessions | — |
-| **cicada** | calendars | `type: cicada` bundles via `tamias-driver-cicada` (install validates, deploy plans — apply stays cicada's gate); `tamias update --all` + registry reindex |
-
-A hosted registry is in scope (it's a `registry` impl). A daemon or
-multi-actor arbitration belongs to peregrin.
 
 ---
 

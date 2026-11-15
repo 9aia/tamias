@@ -4,7 +4,7 @@
 <strong>flattens</strong> — each base resolves <em>read-only</em> (installed store
 entry → its payload dir; a ref already installed → the entry whose
 <code>source_ref</code> matches; an existing fs path → resolved in place) and
-[<code>tamias_core::overlay</code>] composes them under the local payload in a
+<a href="../tamias_core/overlay/fn.overlay.html" title="fn tamias_core::overlay::overlay"><code>tamias_core::overlay()</code></a> composes them under the local payload in a
 scratch dir that is packed instead. Publish never installs
 anything: an unresolvable base fails naming it. <code>keep_includes</code>
 ships the raw payload dir for consumers that compose themselves.</p>

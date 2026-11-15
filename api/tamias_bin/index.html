@@ -13,7 +13,7 @@ dispatch logic lives in one place (<code>tamias bin exec</code>).</li>
 <li><code>payload: tools/bin/&lt;triple&gt;/&lt;file&gt;</code> — a real binary shipped in
 the payload. Only the host triple’s file deploys; the <code>&lt;triple&gt;</code>
 segment in the declared path is substituted with
-[<code>tamias_driver::target_triple</code>] when the literal path doesn’t
+<a href="../tamias_driver/fn.target_triple.html" title="fn tamias_driver::target_triple"><code>tamias_driver::target_triple</code></a> when the literal path doesn’t
 exist, so one manifest serves every platform. A payload whose
 <code>tools/bin/</code> ships platform dirs but none for this host fails the
 install — the same rule <code>drivers/bin/</code> already enforces.</li>
