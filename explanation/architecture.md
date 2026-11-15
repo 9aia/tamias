@@ -40,7 +40,6 @@ distribution; every content *meaning* is an adapter.
 | `tamias-deploy-systemd` | adapter | systemd deploy impl — manage a per-user service unit (Linux) |
 | `tamias-deploy-windows` | adapter | windows deploy impl — manage a per-user scheduled task (Task Scheduler via schtasks.exe) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-&lt;type&gt; (no product knowledge) |
-| `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
 | `tamias-install` | adapter | The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit |
 | `tamias-provider` | adapter | provider lifecycle — installed `provider:` blocks → units, deploy/uninstall, run exec specs, journal argv |
 | `tamias-publish` | adapter | author side — pack + push |
@@ -60,6 +59,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-telemetry` | adapter | Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation |
 | `tamias-testkit` | adapter | Fixtures + adapter conformance for every port |
 | `tamias-tui` | adapter | tamias — interactive package-manager TUI (ratatui); the `tamias ui` surface |
+| `tamias-xtask` | adapter | Repo chores: check / test / coverage / install / site |
 | `tamias` | binary | tamias — package & content manager: fetch, store, cache, dispense |
 
 ## The install path
