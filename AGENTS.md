@@ -156,6 +156,6 @@ commit their contents to `main`.
 ## Docs
 
 `docs/` worktree — VitePress + Diátaxis (tutorials/how-to/reference/
-explanation) → GitHub Pages at `9aia.com/tamias`. `docs/gen-*.py`
+explanation) → GitHub Pages at `9aia.com/tamias`. `cypera gen` (driven by `cypera.toml`)
 renders cli/config/crate-map from source — keep `lib.rs` module docs
 accurate; they feed the generated reference.

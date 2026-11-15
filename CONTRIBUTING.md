@@ -83,5 +83,5 @@ still publish to crates.io (ADR-0004).
 
 Follow Diátaxis: `docs/tutorials/` · `docs/how-to/` · `docs/reference/`
 · `docs/explanation/`. API reference is generated from doc comments —
-keep `lib.rs` module docs accurate; `docs/gen-*.py` renders
+keep `lib.rs` module docs accurate; `cypera gen` (driven by `cypera.toml`) renders
 cli/config/crate-map from source.
