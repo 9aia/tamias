@@ -8,7 +8,7 @@ hero:
   actions:
     - theme: brand
       text: Getting Started
-      link: /getting-started
+      link: /tutorials/getting-started
     - theme: alt
       text: Architecture
       link: /explanation/architecture
@@ -35,3 +35,12 @@ features:
     link: /reference/cli
     linkText: CLI reference
 ---
+
+## Where to go next
+
+| You want to… | Go to |
+| --- | --- |
+| Install tamias and publish a first package | [Tutorial](/tutorials/getting-started) |
+| Do a task (install from git, manage deps, write a driver) | [How-to](/how-to/install-from-git) |
+| Understand the design (ports, stores, provenance) | [Explanation](/explanation/architecture) |
+| Look up a ref, command, or config field | [Reference](/reference/cli) |
