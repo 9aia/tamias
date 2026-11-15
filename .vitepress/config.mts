@@ -30,7 +30,6 @@ export default defineConfig({
         text: "Tutorials",
         items: [
           { text: "Your first package", link: "/tutorials/first-package" },
-          { text: "Heal a failing PR with an agent", link: "/tutorials/pr-heal-workflow" },
         ],
       },
       {
@@ -43,6 +42,7 @@ export default defineConfig({
           { text: "Publish to a registry", link: "/how-to/publish-to-a-registry" },
           { text: "Provision and service", link: "/how-to/provision-a-service" },
           { text: "Deploy a CI gate bundle", link: "/how-to/deploy-a-ci-gate-bundle" },
+          { text: "Heal a failing PR with an agent", link: "/how-to/heal-a-failing-pr" },
           { text: "Write a driver", link: "/how-to/write-a-driver" },
         ],
       },
@@ -62,8 +62,9 @@ export default defineConfig({
         items: [
           { text: "Architecture", link: "/explanation/architecture" },
           { text: "Content types", link: "/explanation/content-types" },
+          { text: "Concepts", link: "/explanation/concepts" },
+          { text: "Decisions", link: "/explanation/decisions" },
           { text: "Security model", link: "/explanation/security" },
-          { text: "Boundaries", link: "/explanation/boundaries" },
         ],
       },
     ],
