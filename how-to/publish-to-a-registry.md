@@ -100,7 +100,8 @@ retention:
 ```
 
 `keep` counts versions in **semver order** (prereleases included —
-`1.0.0-rc.1` sorts below `1.0.0`), not publish order, and applies per
+a `-rc.N` prerelease sorts below its matching release), not publish
+order, and applies per
 `(scope, name)`. The version being published is never pruned, and
 versions that aren't semver are never pruned either. A `retention:`
 block under `registries.<name>` overrides the global policy for that
