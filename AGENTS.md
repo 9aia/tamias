@@ -83,11 +83,6 @@ domain (no I/O); ports are traits, impls are separate crates;
 | `crates/tamias-cli` | the `tamias` engine lib (`command()`/`run()`/`run_from()` — consumed by `tamias-driver-tamias`' ops surface) + the `tamias` compat bin — clap, `--json`, `manifest`/`schema`. The bin stays **native forever**: every `bins[]` shim in the org execs `tamias bin exec`, so `tamias` can't retire into a shim (bootstrap) — T-007 |
 | `xtask` (pkg `tamias-xtask`) | check / test / coverage / install / package / smoke / site |
 
-> **Seed state (P2 re-derivation).** This repo was seeded from a copy of
-> `cuora`, so the crates currently carry cuora's vault/identity/deploy
-> shapes under `tamias-*` names. They are being re-derived into the map
-> above — see the org-ledger seed proposal and `project/adrs`.
-
 ## Boundary
 
 Tamias owns **content distribution** — refs, transport, the install
