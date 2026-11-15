@@ -5,7 +5,9 @@
 # `bash scripts/deploy-docs.sh` in a detached worktree of the pushed
 # docs sha, so cwd is the docs checkout root and
 # `..` is NOT the main repo. Cargo work happens in TAMIAS_REPO (the real
-# checkout); the gen-*.py scripts honor TAMIAS_ROOT for the same reason.
+# checkout); the gen-api.py rustdoc pipeline honors TAMIAS_ROOT for the
+# same reason. cli/config/crate-map pages come from `cypera gen`
+# driven by $REPO/cypera.toml.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -16,14 +18,11 @@ export TAMIAS_ROOT="$REPO"
 echo "==> bun install"
 bun install
 
-TAMIAS_BIN="$(command -v tamias || true)"
-TAMIAS_BIN="${TAMIAS_BIN:-$HOME/.cargo/bin/tamias}"
-echo "==> reference/cli.md ($TAMIAS_BIN gen-cli-docs)"
-"$TAMIAS_BIN" gen-cli-docs > reference/cli.md
-
-echo "==> gen config + crate map (TAMIAS_ROOT=$REPO)"
-python3 gen-config-docs.py
-python3 gen-crate-map.py
+CYPERA="cargo run -q --manifest-path $REPO/../cypera/Cargo.toml -p cypera --"
+echo "==> reference pages (cypera gen, repo=$REPO)"
+$CYPERA gen cli --repo "$REPO"
+$CYPERA gen config --repo "$REPO"
+$CYPERA gen crate-map --repo "$REPO"
 
 echo "==> rustdoc → public/api (cargo doc in $REPO)"
 python3 gen-api.py
