@@ -23,7 +23,6 @@ documented at source (doc comments).
 * [tamias-deploy-systemd](/tamias/api/tamias_deploy_systemd/index.html) — adapter
 * [tamias-deploy-windows](/tamias/api/tamias_deploy_windows/index.html) — adapter
 * [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
-* [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
 * [tamias-install](/tamias/api/tamias_install/index.html) — adapter
 * [tamias-provider](/tamias/api/tamias_provider/index.html) — adapter
 * [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
@@ -43,4 +42,5 @@ documented at source (doc comments).
 * [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
 * [tamias-testkit](/tamias/api/tamias_testkit/index.html) — adapter
 * [tamias-tui](/tamias/api/tamias_tui/index.html) — adapter
+* [tamias-xtask](/tamias/api/tamias_xtask/index.html) — adapter
 * [tamias](/tamias/api/tamias/index.html) — binary

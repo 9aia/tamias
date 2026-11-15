@@ -1904,7 +1904,6 @@ documented at source (doc comments).
 * [tamias-deploy-systemd](/tamias/api/tamias_deploy_systemd/index.html) — adapter
 * [tamias-deploy-windows](/tamias/api/tamias_deploy_windows/index.html) — adapter
 * [tamias-driver](/tamias/api/tamias_driver/index.html) — adapter
-* [tamias-driver-tamias](/tamias/api/tamias_driver_tamias/index.html) — adapter
 * [tamias-install](/tamias/api/tamias_install/index.html) — adapter
 * [tamias-provider](/tamias/api/tamias_provider/index.html) — adapter
 * [tamias-publish](/tamias/api/tamias_publish/index.html) — adapter
@@ -1924,6 +1923,7 @@ documented at source (doc comments).
 * [tamias-telemetry](/tamias/api/tamias_telemetry/index.html) — adapter
 * [tamias-testkit](/tamias/api/tamias_testkit/index.html) — adapter
 * [tamias-tui](/tamias/api/tamias_tui/index.html) — adapter
+* [tamias-xtask](/tamias/api/tamias_xtask/index.html) — adapter
 * [tamias](/tamias/api/tamias/index.html) — binary
 
 ---
@@ -1972,7 +1972,6 @@ distribution; every content *meaning* is an adapter.
 | `tamias-deploy-systemd` | adapter | systemd deploy impl — manage a per-user service unit (Linux) |
 | `tamias-deploy-windows` | adapter | windows deploy impl — manage a per-user scheduled task (Task Scheduler via schtasks.exe) |
 | `tamias-driver` | adapter | content driver host — discovery + dispatch of tamias-driver-\<type> (no product knowledge) |
-| `tamias-driver-tamias` | adapter | tamias-driver-tamias — pavo view driver over the tamias install store, fetch cache, registry index, and driver dir (read-only) |
 | `tamias-install` | adapter | The shared install pipeline — ref → fetch/cache → manifest → driver dispatch → store commit |
 | `tamias-provider` | adapter | provider lifecycle — installed `provider:` blocks → units, deploy/uninstall, run exec specs, journal argv |
 | `tamias-publish` | adapter | author side — pack + push |
@@ -1992,6 +1991,7 @@ distribution; every content *meaning* is an adapter.
 | `tamias-telemetry` | adapter | Opt-in OpenTelemetry layer over the tracing stack — OTLP export, W3C context propagation |
 | `tamias-testkit` | adapter | Fixtures + adapter conformance for every port |
 | `tamias-tui` | adapter | tamias — interactive package-manager TUI (ratatui); the `tamias ui` surface |
+| `tamias-xtask` | adapter | Repo chores: check / test / coverage / install / site |
 | `tamias` | binary | tamias — package & content manager: fetch, store, cache, dispense |
 
 ## The install path
