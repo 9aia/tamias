@@ -119,4 +119,4 @@ untouched — `verify` recomputes the payload digest locally. Unset
 ## See also
 
 - [Config reference](/reference/config)
-- [Tutorial: your first package](/tutorials/first-package)
+- [Getting started](/tutorials/getting-started)

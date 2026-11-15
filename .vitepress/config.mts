@@ -25,11 +25,10 @@ export default defineConfig({
       },
     ],
     sidebar: [
-      { text: "Getting Started", items: [{ text: "Install a package", link: "/tutorials/getting-started" }] },
       {
         text: "Tutorials",
         items: [
-          { text: "Your first package", link: "/tutorials/first-package" },
+          { text: "Getting started", link: "/tutorials/getting-started" },
         ],
       },
       {
