@@ -1,12 +1,12 @@
-# Tutorial: heal a failing PR with an agent
+# How to heal a failing PR with an agent
 
-A guided walk from `tamias install` to a pull request that fixed
-itself: red CI → agent session repairs the code → push → green check →
-campaign merges. This is the `pr-heal` workflow bundle, verified
-end-to-end — every command below ran for real.
+**Goal:** stand up an event-driven heal loop — red CI on a PR spawns an
+agent session that repairs the code, pushes, and merges once green —
+using the `pr-heal` workflow bundle. Verified end-to-end; every command
+below ran for real.
 
-You will need: `tamias`, `peregrin`, `sepia`, `lasius`, `bupha`, `gh`
-(on `PATH`, authenticated), and a GitHub repo with a CI check.
+**Prerequisites:** `tamias`, `peregrin`, `sepia`, `lasius`, `bupha`,
+`gh` (on `PATH`, authenticated), and a GitHub repo with a CI check.
 
 ## 1. Install the bundle
 
@@ -106,7 +106,10 @@ Real observed output from the verified run (PR #3 of the spike repo):
  "mergedAt":"2026-11-11T22:48:17Z","state":"MERGED"}
 ```
 
-Inspect what happened:
+## Verify
+
+The loop is live when a deliberately-broken PR goes red → agent session
+→ push → green → merged, with no human step. Inspect what happened:
 
 ```sh
 tamias logs pr-heal                          # campaign service logs

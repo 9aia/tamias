@@ -1,8 +1,5 @@
 # Architecture
 
-> Seeded from a copy of `cuora` (its ports-and-adapters anatomy and the
-> `-cf` Worker pattern).
-
 tamias is **ports-and-adapters**. The engine owns the generic half of
 distribution; every content *meaning* is an adapter.
 
@@ -131,3 +128,43 @@ stack. Nothing exports unless you set an endpoint:
 - `TAMIAS_OTEL_SERVICE_NAME` / `OTEL_SERVICE_NAME` — `service.name`.
 - W3C `traceparent`/`tracestate` propagation is installed when export
   is on; `RUST_LOG`-style filtering still applies.
+
+## Where it sits
+
+Tamias is the **substrate** of the 9aia stack — everything above it is
+distributed *through* tamias:
+
+```
+tamias (distribution)  →  engines  →  orchestration  →  surfaces
+   refs, store, cache      myco,        peregrin           pavo,
+   drivers, providers      cuora,        campaigns,         TUI/CLI
+                           kuda,         bupha CI           drivers
+                           mimus…
+```
+
+An engine like `myco` ships its config as a `myco-config` pack; a
+campaign bundle ships as `peregrin-bundle`; a CI fleet ships as
+`type: bupha`. Tamias never learns what the bytes mean — the content
+type's driver does. See [Content types](/explanation/content-types).
+
+## Boundaries
+
+Tamias owns **content distribution**: refs, transport, the install
+store + fetch cache, and content-type dispatch. Every neighbour owns
+its own concern:
+
+| Sibling | Owns | Relationship |
+| --- | --- | --- |
+| **peregrin** | orchestration | `install/remove/list/…` become thin wrappers over `tamias-*`; peregrin's distribution impl moves here |
+| **myco** | work memory | kinds/views/templates ship as a `myco-config` content type |
+| **kuda** | code memory | `kuda-domain` packs |
+| **mimus** | critic | `mimus-rules` packs |
+| **cuora** | secrets | publish tokens / private-registry creds via `cuora://` refs |
+| **sturn** | coordination | claim the store lock during concurrent installs |
+| **bupha** | CI | the CI product repo — `type: bupha` bundles via `tamias-driver-bupha`; the org gate is mid-migration back from the peregrin `ci-gate` campaign |
+| **sepia** | sessions | — |
+| **cicada** | calendars | `type: cicada` bundles via `tamias-driver-cicada`; `tamias update --all` + registry reindex |
+| **tarsi** | releases | release profiles ship as `type: tarsi` packs — tamias distributes them |
+
+A hosted registry is in scope (it's a `registry` impl). A daemon or
+multi-actor arbitration belongs to peregrin.

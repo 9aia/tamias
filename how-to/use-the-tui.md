@@ -55,6 +55,12 @@ bundled `drivers/` raise the consent prompt — answering `y` is the
 equivalent of `--allow-drivers`; there is no env-var shortcut in the
 TUI.
 
+## Verify
+
+`tamias ui` opens with the **Installed** pane listing every store entry
+— name, type, source ref, resolved sha, digest. `?` shows the key
+overlay; `q` quits.
+
 ## Notes
 
 - Long ops (install, publish, verify) run on a worker thread; phases
