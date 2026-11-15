@@ -77,4 +77,4 @@ nothing.
 
 * [Manage project dependencies](/how-to/manage-deps)
 * [Ref grammar](/reference/refs)
-* [Tutorial: your first package](/tutorials/first-package)
+* [Getting started](/tutorials/getting-started)

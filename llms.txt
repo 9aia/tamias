@@ -6,13 +6,9 @@ fetch, store, cache, dispense — peregrin bundles, myco kinds, kuda domains, mi
 
 ## Table of Contents
 
-### Getting Started
-
-- [Getting Started](/tamias/tutorials/getting-started.md)
-
 ### Tutorials
 
-- [Tutorial: your first package](/tamias/tutorials/first-package.md)
+- [Getting Started](/tamias/tutorials/getting-started.md)
 
 ### How-to
 
