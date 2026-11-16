@@ -11,6 +11,12 @@ cargo-dist-version = "0.33.0"
 # GitHub Release with the artifacts. crates.io publish stays with
 # tarsi-serve (scripts/release.sh); the two planes are independent.
 ci = ["github"]
+# release.yml's tag glob is hand-narrowed to dist-able packages
+# (tamias-v*, tamias-tui-v*) — tarsi pushes one tag per workspace
+# unit and cargo-dist hard-errors on non-dist-able tags. The file
+# therefore differs from `cargo dist generate` output; allow the
+# ci artifact to be "dirty" so plan/host don't refuse to run.
+allow-dirty = ["ci"]
 # The installers to generate for each app — none: the "shell"
 # installer makes dist 0.33 panic in compute_releases on this virtual
 # workspace (same in myco); archives (.tar.xz + checksums) are all
