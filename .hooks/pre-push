@@ -1,2 +1,19 @@
 #!/usr/bin/env bash
+# Tag pushes point at commits the branch push already gated — a
+# release pushes ~20 unit tags at once, so running the full check +
+# docs gate per tag is wasteful and was observed to fail mid-release.
+# Skip the heavy checks when every pushed ref is a tag; any branch
+# ref (or an empty stdin, e.g. manual invocation) runs them.
+saw=0
+run_checks=0
+while read -r local_ref _ _ _; do
+  saw=1
+  case "$local_ref" in
+    refs/tags/*) ;;
+    *) run_checks=1 ;;
+  esac
+done
+if [ "$saw" = 1 ] && [ "$run_checks" = 0 ]; then
+  exit 0
+fi
 cargo xtask check && exec bash scripts/docs-check.sh
