@@ -55,14 +55,16 @@ tamias search hello --registry http://127.0.0.1:8788
 
 ```sh
 tamias install ./hello
+# once a named registry is configured (`tamias registry add`):
+#   tamias install 9aia:ci-gate@0.3.5    # <registry>:<pkg>@<ver>
 tamias list
 tamias info hello
-tamias install 9aia:ci-gate@0.2.0    # named registry — <registry>:<pkg>@<ver>
 ```
 
 `install` resolved the ref, fetched it, cached the payload by content, and
-unpacked it into the **install store** under `~/.local/share/tamias`.
-`info` shows provenance: source ref, resolved sha, digest.
+unpacked it into the **install store** at
+`~/.local/share/tamias/store/hello@0.1.0`. `info` shows provenance:
+source ref, resolved sha, digest.
 
 ## 5. Verify it — then break it
 
@@ -76,17 +78,20 @@ tamias doctor   # store, cache, git, registry, drivers — all green?
 one. Now poke the store and verify again — it should fail:
 
 ```sh
-echo tampered >> ~/.local/share/tamias/hello@0.1.0/world/greeting.txt
+echo tampered >> ~/.local/share/tamias/store/hello@0.1.0/world/greeting.txt
 tamias verify hello   # → digest mismatch
 ```
 
 Reinstall to restore. Then try a git ref — installs resolve straight from
-a repo subdir at a rev:
+a repo subdir at a rev. This one is `type: files`, so it needs no driver:
 
 ```sh
-tamias install git:9aia/bupha//libraries/ci-gate#main
-tamias info ci-gate
+tamias install git:9aia/bupha//libraries/bupha#main
+tamias info bupha
 ```
+
+(Non-`files` types need their `tamias-driver-<type>` discoverable —
+see [Write a driver](/how-to/write-a-driver).)
 
 ## What you now know
 
@@ -375,7 +380,7 @@ Ship one dir per platform you support; a file directly under
 on every host. The manifest's `payload:` path may name **any**
 triple's dir (typically the one you built on): at install time the
 triple segment is replaced with the host's, so one manifest serves
-every platform. `tamias pack`/`publish` verifies each declared
+every platform. `tamias bundle pack`/`publish` verifies each declared
 payload has a shipped counterpart under *some* platform dir — a decl
 that matches nothing fails the pack, not the install.
 
@@ -2432,7 +2437,7 @@ url: /tamias/reference/config.md
 | field | type | required | notes |
 |---|---|---|---|
 | `keep` | `int` | optional | Versions kept per package — `0` keeps only the just-published version. `None` inherits the next level / disables pruning. |
-| `packages` | `BTreeMap<String, Retention>` | required | Per-package overrides — exact name or `*` glob → retention. Lives on the global `retention` (and may appear under a registry's `retention`); `packages` nested inside a package entry is ignored — overrides are one level deep. |
+| `packages` | `{pkg: retention}` | required | Per-package overrides — exact name or `*` glob → retention. Lives on the global `retention` (and may appear under a registry's `retention`); `packages` nested inside a package entry is ignored — overrides are one level deep. |
 
 ## Top level
 
@@ -2447,10 +2452,25 @@ url: /tamias/reference/config.md
 | `retention` | `Retention` | optional | Global retention policy — versions kept per package after publish (P-024). Unset → no pruning. |
 | `signing` | `Signing` | optional | Package signing policy — `publish --sign` key resolution and install/verify `allowed_signers`/`official_signers` enforcement and trust-tier reporting (`tamias-sign`). |
 
-## format trait (parse/render)
+## `[search]` — search routing
 
 | field | type | required | notes |
 |---|---|---|---|
+| `default` | `string` | optional | Registry name `search` targets by default. Falls back to `publish.default`, then the local default root. |
+
+## `[limits]` — byte limits + per-package overrides
+
+| field | type | notes |
+|---|---|---|
+| `max_upload` | int | Largest payload tarball a publish may upload, in bytes. |
+| `max_download` | int | Largest tarball a fetch may download, in bytes. |
+| `packages` | `{pkg: limits}` | Per-package overrides — exact name or `*` glob → limits. |
+
+`Limits` uses byte-count serde (`256MiB`-style values also accepted);
+a `limits:` block under `registries.<name>` overrides the global
+policy for that registry. Documented here as text because the
+struct's `u64` fields use custom serde helpers cypera's parser
+skips.
 
 ## Formats
 
@@ -2808,8 +2828,9 @@ payload files link the same way (legacy, undeclared). See
 
 ## Stores
 
-* **install store** — `<name>@<version>/` with a record (source ref,
-  resolved sha, payload digest, installed-at).
+* **install store** — `<tamias-home>/store/<name>@<version>/` with a
+  `.tamias-store.json` record (source ref, resolved sha, payload
+  digest, installed-at, trust tier).
 * **fetch cache** — content-addressed; `remove` never touches it.
 * **registry** — where published content lives: a directory, or a
   Cloudflare Worker + R2 + D1/KV.
@@ -2995,8 +3016,9 @@ The vocabulary tamias uses — each term defined once.
 
 ## Stores
 
-* **Install store** — `<tamias-home>/` entries of `name@version/` plus a
-  record (source ref, resolved sha, digest, trust tier). What `list`,
+* **Install store** — `<tamias-home>/store/` entries of `name@version/`
+  (or a sha label) plus a `.tamias-store.json` record (source ref,
+  resolved sha, digest, trust tier). What `list`,
   `info`, `verify` read.
 * **Fetch cache** — content-addressed, keyed by resolved sha. Repeat
   installs and `update` reuse it; `remove` never touches it.

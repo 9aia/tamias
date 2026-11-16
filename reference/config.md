@@ -43,7 +43,7 @@ url: /tamias/reference/config.md
 | field | type | required | notes |
 |---|---|---|---|
 | `keep` | `int` | optional | Versions kept per package — `0` keeps only the just-published version. `None` inherits the next level / disables pruning. |
-| `packages` | `BTreeMap<String, Retention>` | required | Per-package overrides — exact name or `*` glob → retention. Lives on the global `retention` (and may appear under a registry's `retention`); `packages` nested inside a package entry is ignored — overrides are one level deep. |
+| `packages` | `{pkg: retention}` | required | Per-package overrides — exact name or `*` glob → retention. Lives on the global `retention` (and may appear under a registry's `retention`); `packages` nested inside a package entry is ignored — overrides are one level deep. |
 
 ## Top level
 
@@ -58,10 +58,25 @@ url: /tamias/reference/config.md
 | `retention` | `Retention` | optional | Global retention policy — versions kept per package after publish (P-024). Unset → no pruning. |
 | `signing` | `Signing` | optional | Package signing policy — `publish --sign` key resolution and install/verify `allowed_signers`/`official_signers` enforcement and trust-tier reporting (`tamias-sign`). |
 
-## format trait (parse/render)
+## `[search]` — search routing
 
 | field | type | required | notes |
 |---|---|---|---|
+| `default` | `string` | optional | Registry name `search` targets by default. Falls back to `publish.default`, then the local default root. |
+
+## `[limits]` — byte limits + per-package overrides
+
+| field | type | notes |
+|---|---|---|
+| `max_upload` | int | Largest payload tarball a publish may upload, in bytes. |
+| `max_download` | int | Largest tarball a fetch may download, in bytes. |
+| `packages` | `{pkg: limits}` | Per-package overrides — exact name or `*` glob → limits. |
+
+`Limits` uses byte-count serde (`256MiB`-style values also accepted);
+a `limits:` block under `registries.<name>` overrides the global
+policy for that registry. Documented here as text because the
+struct's `u64` fields use custom serde helpers cypera's parser
+skips.
 
 ## Formats
 
