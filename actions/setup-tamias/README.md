@@ -1,7 +1,12 @@
 # setup-tamias
 
 Composite GitHub Action that installs the `tamias` CLI on a GitHub
-Actions runner by compiling it from source with `cargo install`.
+Actions runner. When the pinned `ref` matches a GitHub Release that
+carries a prebuilt `tamias` binary for the runner's platform (built by
+cargo-dist — see `dist-workspace.toml` and `.github/workflows/release.yml`
+in this repo), the binary is downloaded, checksum-verified, and
+unpacked. Otherwise the action falls back to compiling from source with
+`cargo install`.
 
 ## Usage
 
@@ -13,10 +18,10 @@ steps:
 
 ### Inputs
 
-| input        | required | default | description                                                  |
-| ------------ | -------- | ------- | ------------------------------------------------------------ |
-| `ref`        | no       | `main`  | Git ref/tag of `9aia/tamias` to install                      |
-| `cargo-args` | no       | `""`    | Extra arguments appended to `cargo install`                  |
+| input        | required | default | description                                                                     |
+| ------------ | -------- | ------- | ------------------------------------------------------------------------------- |
+| `ref`        | no       | `main`  | Git ref/tag of `9aia/tamias` to install                                         |
+| `cargo-args` | no       | `""`    | Extra arguments appended to `cargo install` (source-build fallback only)        |
 
 ## Pinning
 
@@ -29,9 +34,6 @@ Pin a release tag for reproducible installs. Release tags on
     ref: tamias-v0.1.5
 ```
 
-## TODO
-
-Release binaries (via cargo-dist — `dist-workspace.toml` already exists
-but has `ci = []` / no installers configured yet) would replace the
-source build once published, making installs fast and
-Rust-toolchain-free.
+Prebuilt binaries are currently published for
+`x86_64-unknown-linux-gnu` only; other platforms (and refs without a
+matching release asset) automatically use the `cargo install` fallback.

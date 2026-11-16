@@ -1,17 +1,24 @@
 name: Setup tamias
-description: Install the tamias CLI from source on a GitHub Actions runner.
+description: >-
+  Install the tamias CLI — prebuilt release binary when one exists for
+  the pinned ref, `cargo install` from source otherwise.
 
 inputs:
   ref:
     description: >-
       Git ref of 9aia/tamias to install. Pin a release tag such as
-      tamias-v0.1.5 for reproducible builds (see README).
+      tamias-v0.1.5 for reproducible builds (see README). When the ref
+      matches a GitHub Release carrying a prebuilt `tamias` binary for
+      this runner's platform, the binary is downloaded and unpacked;
+      otherwise the action falls back to `cargo install --git`.
     required: false
     default: main
   cargo-args:
     description: >-
       Extra arguments appended to the `cargo install` command
-      (e.g. "--no-default-features" or feature flags).
+      (e.g. "--no-default-features" or feature flags). Only used on the
+      source-build fallback path — ignored when a prebuilt binary is
+      installed.
     required: false
     default: ""
 
@@ -24,19 +31,102 @@ runs:
         REF: ${{ inputs.ref }}
         CARGO_ARGS: ${{ inputs.cargo-args }}
       run: |
-        set -euo pipefail
-        # --locked requires Cargo.lock to stay untouched; the repo ships one.
-        # --tag selects the git tag of the source repo.
-        cargo install tamias \
-          --git https://github.com/9aia/tamias \
-          --tag "${REF}" \
-          --locked \
-          ${CARGO_ARGS}
+        set -uo pipefail
+
+        # Where the prebuilt binary lands. $RUNNER_TEMP persists for the
+        # whole job; ~/.cache/tamias/bin is the local-dev fallback.
+        BIN_DIR="${RUNNER_TEMP:-${HOME}/.cache}/tamias/bin"
+        mkdir -p "$BIN_DIR"
+        # Make the bin dir visible to subsequent steps (no-op locally).
+        if [ -n "${GITHUB_PATH:-}" ]; then
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+        fi
+
+        # Map the runner to a Rust target triple. Only triples listed in
+        # dist-workspace.toml `targets` will ever have release assets;
+        # anything else falls through to the source build.
+        target=""
+        case "$(uname -s)/$(uname -m)" in
+          Linux/x86_64)              target="x86_64-unknown-linux-gnu" ;;
+          Linux/aarch64|Linux/arm64) target="aarch64-unknown-linux-gnu" ;;
+          Darwin/arm64)              target="aarch64-apple-darwin" ;;
+          Darwin/x86_64)             target="x86_64-apple-darwin" ;;
+        esac
+
+        installed=0
+        if [ -n "$target" ] && [ -n "${REF:-}" ]; then
+          base="https://github.com/9aia/tamias/releases/download/${REF}"
+          tmp="${RUNNER_TEMP:-/tmp}/tamias-${target}"
+          for ext in tar.xz tar.gz tar.zst zip; do
+            asset="tamias-${target}.${ext}"
+            archive="${tmp}.${ext}"
+            # -f makes curl fail on 404 (no release / no asset for this
+            # ref or platform) — that is the normal fallback trigger.
+            if ! curl -fsSL --retry 3 --retry-delay 2 -o "$archive" "${base}/${asset}"; then
+              continue
+            fi
+            # Verify against the sibling .sha256 asset when it exists.
+            # The file is either a bare hex digest or `digest  filename`;
+            # compare on the first field either way.
+            if curl -fsSL -o "${archive}.sha256" "${base}/${asset}.sha256"; then
+              expected="$(awk '{print $1; exit}' "${archive}.sha256")"
+              if command -v sha256sum >/dev/null 2>&1; then
+                actual="$(sha256sum "$archive" | awk '{print $1}')"
+              else
+                actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+              fi
+              if [ "$expected" != "$actual" ]; then
+                echo "::warning::checksum mismatch for ${asset}; falling back to source build"
+                rm -f "$archive" "${archive}.sha256"
+                continue
+              fi
+            fi
+            extract_dir="${tmp}.extract"
+            rm -rf "$extract_dir"
+            mkdir -p "$extract_dir"
+            if ! (cd "$extract_dir" && tar -xf "$archive" 2>/dev/null) \
+               && ! (cd "$extract_dir" && unzip -q "$archive" 2>/dev/null); then
+              echo "::warning::failed to unpack ${asset}; falling back to source build"
+              rm -rf "$extract_dir" "$archive" "${archive}.sha256"
+              continue
+            fi
+            bin="$(find "$extract_dir" -type f -name tamias -perm -u+x | head -n 1)"
+            if [ -z "$bin" ]; then
+              echo "::warning::${asset} contains no executable 'tamias'; falling back to source build"
+              rm -rf "$extract_dir" "$archive" "${archive}.sha256"
+              continue
+            fi
+            install -m 0755 "$bin" "$BIN_DIR/tamias"
+            rm -rf "$extract_dir" "$archive" "${archive}.sha256"
+            echo "Installed prebuilt tamias from ${asset}"
+            installed=1
+            break
+          done
+        fi
+
+        if [ "$installed" -eq 0 ]; then
+          echo "No prebuilt tamias binary for ref '${REF}' on ${target:-this platform}; building from source."
+          # --locked requires Cargo.lock to stay untouched; the repo ships one.
+          # --tag selects the git tag of the source repo.
+          # NB: this step runs without `set -e` (the probe above relies on
+          # guarded failures), so the install result is checked explicitly.
+          if ! cargo install tamias \
+            --git https://github.com/9aia/tamias \
+            --tag "${REF}" \
+            --locked \
+            ${CARGO_ARGS}; then
+            echo "::error::cargo install tamias failed"
+            exit 1
+          fi
+        fi
 
     - name: Verify installation
       shell: bash
       run: |
         set -euo pipefail
-        # cargo install lands in ~/.cargo/bin, already on PATH on GH runners.
+        # Prebuilt installs land in $RUNNER_TEMP/tamias/bin (added to
+        # PATH via $GITHUB_PATH); cargo install lands in ~/.cargo/bin —
+        # both are on PATH on GH runners, prepend defensively anyway.
+        export PATH="${RUNNER_TEMP:-${HOME}/.cache}/tamias/bin:${PATH}"
         command -v tamias
         tamias --version
