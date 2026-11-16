@@ -69,15 +69,22 @@ resolves workspace members by path, not by registry version).
 Never edit a crate that is already published: bump it and republish, or the
 registry copy silently drifts from your source.
 
-Crates publish to **crates.io** in dependency order via `scripts/release.sh`
-(manual — releases are operator-run). The binary is also installable from source:
-`cargo install --git https://github.com/9aia/tamias tamias`. The script needs
-`cargo-edit` (`cargo set-version`) and, for artifacts, `cargo-dist` (`dist`) + `gh`.
+Crates publish to **crates.io** in dependency order via the org release
+plane — `tarsi-serve release --dir .` (manual, dry-run by default,
+`--yes` to execute). The crates.io token resolves from
+`tarsi.toml`'s `token_ref` (`cuora://tamias/crates-token`) — no env
+vars needed. Workspace-versioned units release in lockstep; literal
+versions (`tamias`, `tamias-core`) release independently. Post-publish,
+run `cargo xtask smoke` to verify the published CLI installs and runs.
+The binary is also installable from source:
+`cargo install --git https://github.com/9aia/tamias tamias`. Binary
+dist (GitHub Release tarballs) is cargo-dist's job — see
+`dist-workspace.toml`; it fires on `tamias-v*`/`tamias-tui-v*`/
+`tamias-serve-v*` tags.
 
 The org release plane is **tarsi** (`repos/tarsi` — `tarsi-serve` ops;
-project ADR-0005): `scripts/release.sh` is being converted to a thin
-shim over it (PL-014 E1), and tamias is the only repo whose releases
-still publish to crates.io (ADR-0004).
+project ADR-0005). tamias is the only repo whose releases publish to
+crates.io (ADR-0004); every other org repo is tag-only.
 
 ## Docs
 
