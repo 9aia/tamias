@@ -3,11 +3,11 @@
 for scoped packages).</p>
 <p><code>&lt;label&gt;</code> resolves against the <em>effective</em> config’s <code>registries</code>
 map — an entry’s <code>id</code> (uuid) first, then its map key (slug) — via
-<a href="../tamias_registry_open/fn.load_config.html" title="fn tamias_registry_open::load_config"><code>tamias_registry_open::load_config</code></a> (user-level <code>~/.config/tamias</code>
+[<code>tamias_registry_open::load_config</code>] (user-level <code>~/.config/tamias</code>
 layered under the cwd <code>tamias.*</code>). Only <code>http</code>/<code>cf</code> kind registries
 are installable; <code>local</code> (unserved dir) registries error with a
 pointer at <code>tamias registry serve</code>.</p>
-<p>The kind parses straight into a <a href="../tamias_source_cf/struct.CfSpec.html" title="struct tamias_source_cf::CfSpec"><code>CfSpec</code></a> — the same spec the
+<p>The kind parses straight into a [<code>CfSpec</code>] — the same spec the
 <code>cf:</code> arm produces — so plan/fetch (index lookup → digest +
 signature verification → tarball fetch) runs through <code>CfSource</code>
 unchanged, and provenance records the verbatim <code>&lt;label&gt;:…</code> ref.</p>
