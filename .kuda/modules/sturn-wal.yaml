@@ -41,8 +41,11 @@ provenance:
   - refs/sturn/wal/devin-t016
   - refs/sturn/wal/devin-t027
   - refs/sturn/wal/devin-win
+  - refs/sturn/wal/docs-audit
   - refs/sturn/wal/docs-fix
+  - refs/sturn/wal/docs-gate
   - refs/sturn/wal/docs-sweep
+  - refs/sturn/wal/docs-tutorial-merge
   - refs/sturn/wal/main
   - refs/sturn/wal/sealed-packs
   - refs/sturn/wal/t042
@@ -78,9 +81,12 @@ provenance:
   - 30581d221283a217218d85e486460adf764d1b8e
   - 8f097f41ddcebf29fdad6d2bfc34d927b02b236b
   - b6113648eb6b4227be70caf1beeb3528ce96035d
+  - 94895938c8285049c7be2dc1b53a21a0c400ed08
   - 8190b0a840d19668b660dedb824f97f40a98188d
+  - 15dc281653a4adf517f0c391a3cdccda719352a6
   - ee8e98f88672aa9aa4e2401eb911a3a0f1560405
-  - aa4d83ebcc3b1716c31ea5c5b337937d9cfe2782
+  - 91d8bf26e0ed47c41d92b32c03d57b264591291c
+  - 87bca97ac7d537af04003f26852c2a220afba0ab
   - 29c1db0ce4628fb294c168ef7a01166f70f4e9a3
   - e7ed750a13f2d1f34aaccffc351a77d26b6dd76a
   - 556695b9190378fc2a0061057b38f31dd8a988d1
@@ -90,6 +96,6 @@ provenance:
   - d94c61f34efac15d43336f61fb7e20ba2364175d
   - 75f581ed6829529e4b83898232e45f343da79f52
   - 6485ef1cbb9ac691cfd02df9c73938110af699f6
-  commit_sha: 25752aea380e3d0ebec88ae62fca626782e4307c
-  generated_at: '1794759785'
+  commit_sha: 00ba5ce56d70048b79852e4c0d015ccf4388c64c
+  generated_at: '1794847442'
   generator: kuda-template/0.1.4

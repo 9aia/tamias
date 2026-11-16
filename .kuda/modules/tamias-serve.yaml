@@ -27,6 +27,16 @@ api:
   file: crates/tamias-serve/src/lib.rs
   line: 761
   module: tamias-serve
+- name: cache_root
+  kind: function
+  file: crates/tamias-serve/src/main.rs
+  line: 74
+  module: tamias-serve
+- name: cli_config
+  kind: function
+  file: crates/tamias-serve/src/main.rs
+  line: 35
+  module: tamias-serve
 - name: corrupt_cache_entry_refetches
   kind: function
   file: crates/tamias-serve/src/lib.rs
@@ -117,6 +127,16 @@ api:
   file: crates/tamias-serve/src/lib.rs
   line: 891
   module: tamias-serve
+- name: location_root
+  kind: function
+  file: crates/tamias-serve/src/main.rs
+  line: 47
+  module: tamias-serve
+- name: main
+  kind: function
+  file: crates/tamias-serve/src/main.rs
+  line: 12
+  module: tamias-serve
 - name: new
   kind: function
   file: crates/tamias-serve/src/lib.rs
@@ -146,6 +166,11 @@ api:
   kind: function
   file: crates/tamias-serve/src/lib.rs
   line: 991
+  module: tamias-serve
+- name: registry_root
+  kind: function
+  file: crates/tamias-serve/src/main.rs
+  line: 87
   module: tamias-serve
 - name: remove_propagates_driver_failure
   kind: function
@@ -177,21 +202,7 @@ api:
   file: crates/tamias-serve/src/lib.rs
   line: 967
   module: tamias-serve
-- name: str_field
-  kind: function
-  file: crates/tamias-serve/src/lib.rs
-  line: 117
-  module: tamias-serve
-- name: tamias-serve
-  kind: module
-  file: crates/tamias-serve/Cargo.toml
-  line: 1
-  module: tamias-serve
-- name: tests
-  kind: module
-  file: crates/tamias-serve/src/lib.rs
-  line: 450
-  module: tamias-serve
+api_omitted: 4
 deps:
 - serde_json
 - tamias-config
@@ -202,8 +213,10 @@ deps:
 - tamias-registry-open
 - tamias-sign
 - tamias-store-local
+- tamias-telemetry
 - tamias-cache-local
 - tempfile
+- tamias-config
 - serde_json
 - tamias-core
 - tamias-store-local
@@ -212,13 +225,16 @@ notes: ''
 verify:
 - crates/tamias-serve/Cargo.toml
 - crates/tamias-serve/src/lib.rs
+- crates/tamias-serve/src/main.rs
 provenance:
   files:
   - crates/tamias-serve/Cargo.toml
   - crates/tamias-serve/src/lib.rs
+  - crates/tamias-serve/src/main.rs
   hashes:
-  - 45cb9ad213b0c6397e35c4bf6eeda67fcc707709
-  - c9ba60fcfba05b1a7f67066e207e2a3c37ae282b
-  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
-  generated_at: '1794623356'
+  - b9ed75f88348f0763043c7ed6528251839756ef0
+  - 4f9376aa1f55318a9f200dc864d5e2a88fe7ce85
+  - a6d9584882833de9b3e259d5154b63506706b4c8
+  commit_sha: 00ba5ce56d70048b79852e4c0d015ccf4388c64c
+  generated_at: '1794847442'
   generator: kuda-template/0.1.4

@@ -138,7 +138,7 @@ provenance:
   - crates/tamias-publish/src/lib.rs
   hashes:
   - 2c1262867cc3f0e373d39cbb9512ba3af218fced
-  - 455d01143d3376779cb010df7a1d66d526be2279
-  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
-  generated_at: '1794623356'
+  - 61a4211ed0b4250767025e4bf4c8626bd58db680
+  commit_sha: 00ba5ce56d70048b79852e4c0d015ccf4388c64c
+  generated_at: '1794847442'
   generator: kuda-template/0.1.4

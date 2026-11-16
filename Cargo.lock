@@ -2848,6 +2848,7 @@ dependencies = [
  "tamias-registry-open",
  "tamias-sign",
  "tamias-store-local",
+ "tamias-telemetry",
  "tempfile",
 ]
 

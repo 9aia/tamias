@@ -21,10 +21,15 @@ tamias-registry-open.workspace = true
 tamias-store-local.workspace = true
 tamias-driver.workspace = true
 tamias-sign.workspace = true
+tamias-telemetry.workspace = true
 serde_json.workspace = true
 
 [lints]
 workspace = true
+
+[[bin]]
+name = "tamias-serve"
+path = "src/main.rs"
 
 [dev-dependencies]
 tamias-cache-local.workspace = true

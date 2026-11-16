@@ -219,7 +219,7 @@ provenance:
   - crates/tamias-deploy-windows/src/lib.rs
   hashes:
   - ba79bf70651e794a4fe26855f2cf095f12b7045c
-  - 366d7ce004bae73077438bc9caa60a79e3479be3
-  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
-  generated_at: '1794623356'
+  - 44b69bce1ece75798835959b5c6a4d306c5cf019
+  commit_sha: 00ba5ce56d70048b79852e4c0d015ccf4388c64c
+  generated_at: '1794847442'
   generator: kuda-template/0.1.4

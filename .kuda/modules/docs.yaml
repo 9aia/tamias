@@ -5,27 +5,28 @@ api: []
 deps: []
 notes: ''
 verify:
+- docs/.vitepress/theme/index.ts
 - docs/package.json
 - docs/README.md
 - docs/explanation/architecture.md
 - docs/explanation/boundaries.md
+- docs/explanation/concepts.md
 - docs/explanation/content-types.md
+- docs/explanation/decisions.md
 - docs/explanation/security.md
-- docs/gen-api-index.py
-- docs/gen-api.py
-- docs/getting-started.md
 - docs/how-to/deploy-a-ci-gate-bundle.md
 provenance:
   files:
+  - docs/.vitepress/theme/index.ts
   - docs/README.md
   - docs/explanation/architecture.md
   - docs/explanation/boundaries.md
+  - docs/explanation/concepts.md
   - docs/explanation/content-types.md
+  - docs/explanation/decisions.md
   - docs/explanation/security.md
-  - docs/gen-api-index.py
-  - docs/gen-api.py
-  - docs/getting-started.md
   - docs/how-to/deploy-a-ci-gate-bundle.md
+  - docs/how-to/heal-a-failing-pr.md
   - docs/how-to/install-from-git.md
   - docs/how-to/link-binaries.md
   - docs/how-to/manage-deps.md
@@ -42,36 +43,35 @@ provenance:
   - docs/reference/refs.md
   - docs/reference/scripting.md
   - docs/reference/serve.md
-  - docs/tutorials/first-package.md
-  - docs/tutorials/pr-heal-workflow.md
+  - docs/tutorials/getting-started.md
   hashes:
-  - 3e2567532d755741f01fd8d843314a585c92065e
-  - 4ecbf3597f5745a92a5e8b81e62588a86f86a847
-  - bc25b380b10788ca9b6d165d735dd308cc94b849
+  - 73ba647e82ab0f8fec74d915003400b21fa6898b
+  - 68127271e100fac286b64cf110dbce3e0f27fe84
+  - 39e6f525b915cb1a223bdfbe508f3e5b6b96d942
+  - a429bb2b58a88b9bfa9aa9f00d8042096063ce3a
+  - d7e4e198c90a708c215854c6c546084c9a0315c1
   - 3b5bbd31f54f58753e7d52aacc9e574f280cfe32
+  - bf86a99a68bf53998e02476bd5e0fcc55fd916c2
   - 001a97b350d3d24f0dbc75f260982e95a52145ec
-  - 352656ecb5acf8fa9fa3788c3fcab8bb669a661d
-  - 200738f01ff6ce4eeb91dbf66c4521d3fc333da5
-  - 8141c7d5661a80ce040fbf3b9437c5c983b7251e
   - b993eb78f83a93bd8a106c59f3e044237ddf739e
-  - 3a898dd50a7a45dd10b4bb7627e309c8b5c28269
-  - e48c0c8ebeedbe52f127581b69f6d1c419cac203
+  - 01b395657fa1299946890446d21d6290ba05e3c7
+  - 158630e90916926f01dea7c4f5d5251b9f0e9510
+  - 64ea375c0344d8e82a76211aeaac67c719ec8f52
   - 531bd985de65db8009df7cc9c6359a86191ee2f5
   - a260bbf5c62b2d822a89055092649d8a4a592f0d
-  - 84e33743c35f5cd24422737f926d12f084f47fdd
-  - a20fbe2538d7947acf28eaf648448cc5887c69e0
+  - 5af9438282593b7aead660250b97ea83af8afdea
+  - a6be329eac407162a33364de10307dc700a697d7
   - 107022e00a13f7871c7847b86435fd7122ca7cc8
-  - fd49412c0b9f1eb1a8f342536cf16e08eb14e08f
-  - 2ae21a9b3433cfb28291f16151aa3e1a49952463
+  - 0d280c963e4efe882165eb596c841c8e6ff69840
+  - 4c2aebdec656e6d5186ae78bf2114abd4ac4f756
   - 175fa4f47aecdc02e902d243a1c29914eb2ee258
   - 25afff1e6c0d809fde78134066e718d8f352bb7b
-  - 742f26db38d0ed911388991642881620eb19304e
+  - 688f7731cd16b568ba30611dbf724e741c7b3788
   - 409c0b9e61123fd3d211aa243129dbda75e201a3
   - ded0f1a0a7b878c32eb254019883f42d835835cb
   - b56ff10fcf8018a69a8a824648aad2372b32f949
   - 0f1340da63d9c6bb61ac0ad6474a32294998778f
-  - e1d6c5c142d44b1e750f28a79c9573ebd79f7cd8
-  - 297361edd66c33976c2da1ef0b8ba4285fdd7a89
-  commit_sha: 25752aea380e3d0ebec88ae62fca626782e4307c
-  generated_at: '1794759785'
+  - c6f525b5b659b0d0f9f24ec29805b771c9d39af8
+  commit_sha: 00ba5ce56d70048b79852e4c0d015ccf4388c64c
+  generated_at: '1794847442'
   generator: kuda-template/0.1.4

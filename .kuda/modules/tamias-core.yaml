@@ -262,7 +262,7 @@ provenance:
   - crates/tamias-core/src/sealed.rs
   - crates/tamias-core/tests/props.rs
   hashes:
-  - 41c0b417aa2ae7fba37e6233740da606a595f029
+  - 62cb802a5bec85084acbbd27e225c8dec1e3c40a
   - 8c21b2230abe2a97d97d039fb95804bba2072723
   - 0d7a6cf52913cb69facccecc985a743277960ff6
   - bf42b5dcc0b30109a2bcee497b675ba447cab7f0
@@ -276,6 +276,6 @@ provenance:
   - ac8ea90ecde2148994883b801139cd4011ba1247
   - 6c48fdae2d88de9d03a5815b29ce61828a37ff6c
   - 08506f4ca17f04dfa839948078f32952003205a4
-  commit_sha: ac340daed57a0d120891df8ad657e80b87959d5b
-  generated_at: '1794623356'
+  commit_sha: 00ba5ce56d70048b79852e4c0d015ccf4388c64c
+  generated_at: '1794847442'
   generator: kuda-template/0.1.4
