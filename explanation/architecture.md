@@ -133,18 +133,21 @@ stack. Nothing exports unless you set an endpoint:
 
 ## Where it sits
 
-Tamias is the **substrate** of the 9aia stack — everything above it is
-distributed *through* tamias:
+Tamias is the **substrate** of the delivery layer — everything above
+it is distributed *through* tamias:
 
 ```
-tamias (distribution)  →  engines  →  orchestration  →  surfaces
-   refs, store, cache      myco,        peregrin           pavo,
-   drivers, providers      cuora,        campaigns,         TUI/CLI
-                           kuda,         bupha CI           drivers
-                           mimus…
+delivery  →  memory  →  process  →  interface
+tamias,      myco,      sturn,      pavo
+scarab,      kuda,      cuora,
+tarsi,                  mimus,
+bupha,                 cicada,
+hypha                   lasius,
+                        sepia,
+                        peregrin
 ```
 
-An engine like `myco` ships its config as a `myco-config` pack; a
+An organism like `myco` ships its config as a `myco-config` pack; a
 campaign bundle ships as `peregrin-bundle`; a CI fleet ships as
 `type: bupha`. Tamias never learns what the bytes mean — the content
 type's driver does. See [Content types](/explanation/content-types).
