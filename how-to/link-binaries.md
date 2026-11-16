@@ -59,7 +59,7 @@ Ship one dir per platform you support; a file directly under
 on every host. The manifest's `payload:` path may name **any**
 triple's dir (typically the one you built on): at install time the
 triple segment is replaced with the host's, so one manifest serves
-every platform. `tamias pack`/`publish` verifies each declared
+every platform. `tamias bundle pack`/`publish` verifies each declared
 payload has a shipped counterpart under *some* platform dir — a decl
 that matches nothing fails the pack, not the install.
 

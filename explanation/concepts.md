@@ -19,8 +19,9 @@ The vocabulary tamias uses — each term defined once.
 
 ## Stores
 
-- **Install store** — `<tamias-home>/` entries of `name@version/` plus a
-  record (source ref, resolved sha, digest, trust tier). What `list`,
+- **Install store** — `<tamias-home>/store/` entries of `name@version/`
+  (or a sha label) plus a `.tamias-store.json` record (source ref,
+  resolved sha, digest, trust tier). What `list`,
   `info`, `verify` read.
 - **Fetch cache** — content-addressed, keyed by resolved sha. Repeat
   installs and `update` reuse it; `remove` never touches it.

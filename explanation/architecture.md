@@ -87,8 +87,9 @@ payload files link the same way (legacy, undeclared). See
 
 ## Stores
 
-- **install store** — `<name>@<version>/` with a record (source ref,
-  resolved sha, payload digest, installed-at).
+- **install store** — `<tamias-home>/store/<name>@<version>/` with a
+  `.tamias-store.json` record (source ref, resolved sha, payload
+  digest, installed-at, trust tier).
 - **fetch cache** — content-addressed; `remove` never touches it.
 - **registry** — where published content lives: a directory, or a
   Cloudflare Worker + R2 + D1/KV.
