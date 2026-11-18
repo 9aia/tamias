@@ -5,7 +5,8 @@
 //!
 //! Ops: `install`, `plan`, `sync`, `list`, `info`, `verify`, `remove`,
 //! `search`, `publish`, `registry.list`, `registry.get`, `registry.add`,
-//! `registry.remove`. Requests are `{"op":"…", …}`; responses are
+//! `registry.remove`, `driver.list`, `driver.manifest`, `driver.query`,
+//! `driver.exec`. Requests are `{"op":"…", …}`; responses are
 //! `{"ok":true,"result":…}` or `{"ok":false,"error":"…"}`.
 //!
 //! `plan` is `tamias install --plan` — `{"op":"plan","ref":…,
@@ -26,15 +27,36 @@
 //! config writes through `tamias-registry-open` — the same code the
 //! `tamias` CLI verbs use, so the wire surface can't diverge.
 //!
+//! `driver.*` ops (P-096) proxy installed `tamias-driver-<name>`
+//! binaries so orchestrators can drive them through this wire:
+//! `driver.list` reports every discovered driver (`{"drivers":[{name,
+//! path, manifest|error}]}` — a per-driver `capabilities` failure
+//! degrades to an `error` field, never fails the op);
+//! `driver.manifest` fetches one driver's capabilities JSON;
+//! `driver.query` spawns `<bin> serve`, writes ONE
+//! `{"op":"query","query":…,"params":{…}}` line and returns the
+//! driver's single response line verbatim — a driver-side `ok:false`
+//! propagates as an op error; `driver.exec` runs `<bin> <argv…>`
+//! verbatim and reports `{code, stdout, stderr, json}` (`json` is the
+//! parsed stdout or null). `driver` names are content-type kinds —
+//! the same `[a-z0-9._-]` charset [`tamias_core::is_valid_kind`]
+//! enforces, so hostile names never reach argv or path joins.
+//! `timeout_ms` (default 120s, clamped to 30min) bounds `driver.query`
+//! and `driver.exec`. Driver sessions are spawn-per-call — pooled
+//! sessions are a follow-up.
+//!
 //! **Trust boundary.** Stdin is fully trusted: `install` accepts
 //! `allow_drivers:true` (bundled-driver consent), and
 //! `publish`/`registry.add`/`registry.remove` mutate config and the
 //! registry. Embedders must treat the pipe as a privileged channel —
 //! never expose it to untrusted input.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::process::Stdio;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tamias_core::Error;
@@ -413,6 +435,68 @@ fn dispatch(env: &Env, line: &str) -> Result<Value, Error> {
             out["pruned"] = json!(outcome.pruned);
             Ok(out)
         }
+        // --- driver proxy ops (P-096) ---
+        "driver.list" => driver_list(),
+        "driver.manifest" => {
+            let (_name, path) = resolve_driver(&req)?;
+            Ok(tamias_driver::capabilities(&path)?)
+        }
+        "driver.query" => {
+            let (name, path) = resolve_driver(&req)?;
+            let query = str_field(&req, "query")?;
+            let params = req.get("params").cloned().unwrap_or_else(|| json!({}));
+            if !params.is_object() {
+                return Err(Error::Failed("'params' must be an object".to_string()));
+            }
+            let request = json!({"op": "query", "query": query, "params": params});
+            let response = driver_serve_once(&path, &request, driver_timeout(&req))
+                .map_err(|e| Error::Failed(format!("driver '{name}': {e}")))?;
+            // The driver's response line comes back verbatim on
+            // `ok:true` — `{"ok":true,"result":{…}}` including the
+            // pavo `QueryResult` envelope. A driver-side `ok:false`
+            // is this op's error, with the driver's message.
+            match response.get("ok").and_then(Value::as_bool) {
+                Some(true) => Ok(response),
+                Some(false) => Err(Error::Failed(format!(
+                    "driver '{name}' query '{query}' failed: {}",
+                    response
+                        .get("error")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown error")
+                ))),
+                _ => Err(Error::Failed(format!(
+                    "driver '{name}' returned a malformed response: {response}"
+                ))),
+            }
+        }
+        "driver.exec" => {
+            let (name, path) = resolve_driver(&req)?;
+            let argv = req
+                .get("argv")
+                .and_then(Value::as_array)
+                .ok_or_else(|| Error::Failed("missing 'argv'".to_string()))?;
+            let mut args = Vec::with_capacity(argv.len());
+            for v in argv {
+                args.push(
+                    v.as_str()
+                        .ok_or_else(|| Error::Failed("'argv' must be strings".to_string()))?
+                        .to_string(),
+                );
+            }
+            let mut cmd = std::process::Command::new(&path);
+            // stdin null — the serve loop owns stdin; an exec'd
+            // driver must never eat wire lines.
+            cmd.args(&args).stdin(Stdio::null());
+            let out = tamias_core::output_with_timeout(&mut cmd, driver_timeout(&req))
+                .map_err(|e| Error::Failed(format!("driver '{name}': {e}")))?;
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            Ok(json!({
+                "code": out.status.code().unwrap_or(-1),
+                "stdout": stdout,
+                "stderr": String::from_utf8_lossy(&out.stderr),
+                "json": serde_json::from_str::<Value>(stdout.trim()).ok(),
+            }))
+        }
         other => Err(Error::Failed(format!("unknown op '{other}'"))),
     }
 }
@@ -437,6 +521,164 @@ fn registry_entry_json(entry: &tamias_registry::RegistryEntry) -> Value {
         "publisher": entry.publisher,
         "file": entry.file,
     })
+}
+
+// --- driver proxy helpers (P-096) ---
+
+/// Default bound for `driver.query`/`driver.exec` — the same 120s the
+/// driver's own lifecycle dispatch uses (`tamias-driver`'s
+/// `DISPATCH_TIMEOUT` is private to that crate).
+const DRIVER_OP_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// `timeout_ms` ceiling — a wire client can't park the serve loop
+/// forever (or overflow the deadline arithmetic) with an absurd
+/// value.
+const DRIVER_OP_TIMEOUT_MAX_MS: u64 = 30 * 60 * 1000;
+
+/// Every discovered `tamias-driver-*` binary with its capabilities
+/// manifest — `{"drivers":[{name, path, manifest}]}`. A driver whose
+/// `capabilities` probe fails reports `"error"` instead of `manifest`
+/// and never fails the op (same tolerance `tamias drivers` has for
+/// unreachable drivers).
+fn driver_list() -> Result<Value, Error> {
+    let drivers: Vec<Value> = tamias_driver::discovered_drivers()
+        .into_iter()
+        .map(|(name, path)| match tamias_driver::capabilities(&path) {
+            Ok(manifest) => json!({
+                "name": name,
+                "path": path.display().to_string(),
+                "manifest": manifest,
+            }),
+            Err(e) => json!({
+                "name": name,
+                "path": path.display().to_string(),
+                "error": e.to_string(),
+            }),
+        })
+        .collect();
+    Ok(json!({"drivers": drivers}))
+}
+
+/// Resolve `"driver":"<name>"` to its binary. The name is a
+/// content-type kind — [`tamias_core::is_valid_kind`] keeps hostile
+/// values (`../`, separators, uppercase) away from argv/path joins;
+/// [`tamias_driver::find_driver`] then does the PATH/`<tamias-home>`
+/// lookup plus its capabilities-fallback scan.
+fn resolve_driver(req: &Value) -> Result<(String, PathBuf), Error> {
+    let name = str_field(req, "driver")?;
+    if !tamias_core::is_valid_kind(name) {
+        return Err(Error::Failed(format!("invalid driver name {name:?}")));
+    }
+    let path = tamias_driver::find_driver(name)
+        .ok_or_else(|| Error::Failed(format!("no driver '{name}' found")))?;
+    Ok((name.to_string(), path))
+}
+
+/// `timeout_ms` param → bounded [`Duration`] (default
+/// [`DRIVER_OP_TIMEOUT`], clamped so a wire client can't park the
+/// loop or overflow the deadline arithmetic).
+fn driver_timeout(req: &Value) -> Duration {
+    req.get("timeout_ms")
+        .and_then(Value::as_u64)
+        .map(|ms| Duration::from_millis(ms.clamp(1, DRIVER_OP_TIMEOUT_MAX_MS)))
+        .unwrap_or(DRIVER_OP_TIMEOUT)
+}
+
+/// The `driver.query` transport: spawn `<bin> serve`, write ONE
+/// request line, read ONE response line. Spawn-per-call is the v1
+/// contract — pooled driver sessions are a follow-up. stdin closes
+/// after the request so a well-behaved serve loop answers then exits
+/// on EOF; the child is killed once the response line lands (or at
+/// the deadline) so a driver that ignores EOF can't leak.
+fn driver_serve_once(bin: &Path, request: &Value, timeout: Duration) -> Result<Value, Error> {
+    let line = serde_json::to_string(request)
+        .map_err(|e| Error::Failed(format!("encode driver request: {e}")))?;
+    let mut child = std::process::Command::new(bin)
+        .arg("serve")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| Error::Failed(format!("spawn {} serve: {e}", bin.display())))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // A dead-on-arrival child makes the write fail — that surfaces
+        // as "exited without a response" below, no need to fail early.
+        let _ = writeln!(stdin, "{line}");
+    }
+    // stderr drains on a thread so a chatty driver can't wedge the
+    // wait loop on a full pipe (same rule as `output_with_timeout`).
+    let stderr = child.stderr.take();
+    let stderr_thr = thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut p) = stderr {
+            let _ = p.read_to_end(&mut buf);
+        }
+        buf
+    });
+    // stdout streams lines over a channel — the FIRST line is the
+    // response; we don't wait for process exit (a serve loop may keep
+    // running after answering).
+    let stdout = child.stdout.take();
+    let (tx, rx) = mpsc::channel::<String>();
+    let stdout_thr = thread::spawn(move || {
+        let Some(stdout) = stdout else { return };
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    if tx.send(line.trim_end().to_string()).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    let deadline = Instant::now() + timeout;
+    let outcome = loop {
+        let now = Instant::now();
+        if now >= deadline {
+            break Err(Error::Failed(format!(
+                "{} serve timed out after {timeout:?}",
+                bin.display()
+            )));
+        }
+        match rx.recv_timeout(deadline - now) {
+            Ok(line) => {
+                break serde_json::from_str::<Value>(&line).map_err(|e| {
+                    Error::Failed(format!("{} serve: bad response line: {e}", bin.display()))
+                })
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                break Err(Error::Failed(format!(
+                    "{} serve: exited without a response",
+                    bin.display()
+                )));
+            }
+        }
+    };
+    // Reap: kill a still-running child (the response is already in
+    // hand, or the deadline hit), then collect stderr for error
+    // context.
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = stdout_thr.join();
+    let stderr_bytes = stderr_thr.join().unwrap_or_default();
+    match outcome {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            let tail = String::from_utf8_lossy(&stderr_bytes);
+            let tail = tail.trim();
+            if tail.is_empty() {
+                Err(e)
+            } else {
+                Err(Error::Failed(format!("{e} — stderr: {tail}")))
+            }
+        }
+    }
 }
 
 /// A convenience default cache eviction window re-exported for callers that
@@ -508,12 +750,23 @@ mod tests {
 
     #[test]
     fn dispatch_ops() {
+        // EnvGuard: `driver.list` reads PATH/TAMIAS_HOME, which
+        // sibling tests mutate — freeze env for the duration.
+        let _g = EnvGuard::new();
         let env = env();
         let list = dispatch(&env, r#"{"op":"list"}"#).unwrap();
         assert!(list.is_array());
         assert!(dispatch(&env, r#"{"op":"nope"}"#).is_err());
         assert!(dispatch(&env, "not json").is_err());
         assert!(dispatch(&env, r#"{"op":"install"}"#).is_err());
+        // driver.list never fails — an empty discovery is `[]`.
+        assert_eq!(
+            dispatch(&env, r#"{"op":"driver.list"}"#).unwrap()["drivers"]
+                .as_array()
+                .unwrap()
+                .len(),
+            tamias_driver::discovered_drivers().len()
+        );
     }
 
     #[test]
@@ -1101,5 +1354,179 @@ mod tests {
             Some(v) => std::env::set_var("TAMIAS_REGISTRY", v),
             None => std::env::remove_var("TAMIAS_REGISTRY"),
         }
+    }
+
+    /// A fake `tamias-driver-*` fixture: private `PATH` (fixture dir +
+    /// system dirs only, so real drivers can't leak into discovery)
+    /// and a private `TAMIAS_HOME`. Returns `(env, bindir)` — call
+    /// under [`EnvGuard`] after env mutations.
+    #[cfg(unix)]
+    fn driver_fixture(tmp: &Path) -> (Env, PathBuf) {
+        let bindir = tmp.join("bin");
+        let th = tmp.join("th");
+        std::fs::create_dir_all(&bindir).unwrap();
+        std::fs::create_dir_all(th.join("drivers")).unwrap();
+        std::env::set_var("TAMIAS_HOME", &th);
+        std::env::set_var("PATH", format!("{}:/usr/bin:/bin", bindir.display()));
+        let env = Env {
+            store_root: tmp.join("store"),
+            cache_root: tmp.join("cache"),
+            registry_root: tmp.join("registry"),
+            config_file: None,
+        };
+        (env, bindir)
+    }
+
+    /// Write an executable `tamias-driver-<name>` script into `dir`.
+    #[cfg(unix)]
+    fn write_driver(dir: &Path, name: &str, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(format!("tamias-driver-{name}"));
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    /// The fake driver's script: `capabilities` answers a manifest,
+    /// `serve` captures the request line into `$FAKE_CAPTURE` and
+    /// answers `ok:false` for queries containing `boom`, `emit-json`
+    /// prints a JSON doc for the `driver.exec` `json` field, anything
+    /// else echoes its argv.
+    #[cfg(unix)]
+    const FAKE_DRIVER: &str = r#"#!/bin/sh
+case "$1" in
+  capabilities) printf '%s\n' '{"name":"fake","verbs":["serve"],"types":[]}' ;;
+  serve)
+    IFS= read -r line
+    printf '%s\n' "$line" > "$FAKE_CAPTURE"
+    case "$line" in
+      *boom*) printf '%s\n' '{"ok":false,"error":"fake exploded"}' ;;
+      *) printf '%s\n' '{"ok":true,"result":{"query":"cli.fake.op","data":{"pong":true}}}' ;;
+    esac
+    ;;
+  emit-json) printf '%s\n' '{"code":0,"data":[1,2]}' ;;
+  *) printf '%s\n' "args:$*" ;;
+esac
+"#;
+
+    #[cfg(unix)]
+    #[test]
+    fn driver_ops_list_manifest_query_exec() {
+        let _g = EnvGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let (env, bindir) = driver_fixture(tmp.path());
+        write_driver(&bindir, "fake", FAKE_DRIVER);
+        // a driver whose capabilities probe fails → `error`, not a
+        // failed op
+        write_driver(&bindir, "broken", "#!/bin/sh\nexit 1\n");
+        let capture = tmp.path().join("capture.txt");
+        std::env::set_var("FAKE_CAPTURE", &capture);
+
+        // list — fake reports its manifest, broken degrades to error
+        let list = dispatch(&env, r#"{"op":"driver.list"}"#).unwrap();
+        let drivers = list["drivers"].as_array().unwrap();
+        assert_eq!(drivers.len(), 2);
+        let fake = drivers.iter().find(|d| d["name"] == "fake").unwrap();
+        assert_eq!(fake["manifest"]["name"], "fake");
+        assert!(fake["path"]
+            .as_str()
+            .unwrap()
+            .contains("tamias-driver-fake"));
+        let broken = drivers.iter().find(|d| d["name"] == "broken").unwrap();
+        assert!(broken["error"].is_string());
+        assert!(broken.get("manifest").is_none());
+
+        // manifest — the driver's capabilities JSON verbatim
+        let m = dispatch(&env, r#"{"op":"driver.manifest","driver":"fake"}"#).unwrap();
+        assert_eq!(m["name"], "fake");
+        assert_eq!(m["verbs"][0], "serve");
+
+        // query — the serve wire round-trips; the request line the
+        // driver saw is the pavo `{"op":"query",…}` shape
+        let q = dispatch(
+            &env,
+            r#"{"op":"driver.query","driver":"fake","query":"cli.fake.op","params":{"x":1}}"#,
+        )
+        .unwrap();
+        assert_eq!(q["ok"], true);
+        assert_eq!(q["result"]["data"]["pong"], true);
+        let sent = std::fs::read_to_string(&capture).unwrap();
+        assert!(sent.contains(r#""op":"query""#), "{sent}");
+        assert!(sent.contains(r#""query":"cli.fake.op""#), "{sent}");
+        assert!(sent.contains(r#""x":1"#), "{sent}");
+
+        // query — a driver-side ok:false is the op's error
+        let err = dispatch(
+            &env,
+            r#"{"op":"driver.query","driver":"fake","query":"boom","params":{}}"#,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("fake exploded"), "{err}");
+
+        // exec — argv passthrough; `json` parses stdout when possible
+        let ex = dispatch(
+            &env,
+            r#"{"op":"driver.exec","driver":"fake","argv":["emit-json"]}"#,
+        )
+        .unwrap();
+        assert_eq!(ex["code"], 0);
+        assert_eq!(ex["json"]["data"][0], 1);
+        let ex = dispatch(
+            &env,
+            r#"{"op":"driver.exec","driver":"fake","argv":["run","forge","pr","list"]}"#,
+        )
+        .unwrap();
+        assert!(ex["stdout"].as_str().unwrap().contains("run forge pr list"));
+        assert!(ex["json"].is_null());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn driver_ops_error_paths() {
+        let _g = EnvGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let (env, bindir) = driver_fixture(tmp.path());
+        write_driver(&bindir, "fake", FAKE_DRIVER);
+        write_driver(
+            &bindir,
+            "slow",
+            "#!/bin/sh\ncase \"$1\" in serve) sleep 30;; *) exit 0;; esac\n",
+        );
+        std::env::set_var("FAKE_CAPTURE", tmp.path().join("cap.txt"));
+
+        // unknown / hostile / missing-field driver names
+        assert!(dispatch(
+            &env,
+            r#"{"op":"driver.query","driver":"ghost","query":"x"}"#
+        )
+        .is_err());
+        assert!(dispatch(
+            &env,
+            r#"{"op":"driver.query","driver":"../evil","query":"x"}"#
+        )
+        .is_err());
+        assert!(dispatch(&env, r#"{"op":"driver.manifest","driver":"Ghost"}"#).is_err());
+        assert!(dispatch(&env, r#"{"op":"driver.manifest"}"#).is_err());
+        // missing/ill-typed query params
+        assert!(dispatch(&env, r#"{"op":"driver.query","driver":"fake"}"#).is_err());
+        assert!(dispatch(
+            &env,
+            r#"{"op":"driver.query","driver":"fake","query":"x","params":[]}"#
+        )
+        .is_err());
+        // exec arg validation
+        assert!(dispatch(&env, r#"{"op":"driver.exec","driver":"fake"}"#).is_err());
+        assert!(dispatch(
+            &env,
+            r#"{"op":"driver.exec","driver":"fake","argv":["x",1]}"#
+        )
+        .is_err());
+        // a driver that never answers hits the timeout bound
+        let t = dispatch(
+            &env,
+            r#"{"op":"driver.query","driver":"slow","query":"x","timeout_ms":200}"#,
+        )
+        .unwrap_err();
+        assert!(t.to_string().contains("timed out"), "{t}");
     }
 }

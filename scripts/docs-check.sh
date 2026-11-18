@@ -22,6 +22,14 @@
 # .hooks/pre-push or manually.
 set -euo pipefail
 
+# Hooks (pre-push) export GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE — left
+# set, every `git` call below (worktree add/remove, the docs drift
+# `git diff`) resolves against the *pushing* repo's index instead of
+# the materialized docs worktree, and the drift gate fails on a
+# phantom whole-tree diff. The check always wants plain discovery.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_PREFIX
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
