@@ -12,7 +12,7 @@ the merge (it alone knows the generated document’s shape):</p>
 <code>$XDG_CONFIG_HOME/tamias</code> (<code>~/.config/tamias</code> fallback), or
 <code>$TAMIAS_DEPLOY_D</code> when set. Every <code>*.yaml</code>/<code>*.yml</code>/<code>*.json</code> file
 in it is a partial document, merged in sorted-filename order —
-later files win — with <a href="../../tamias_core/overlay/fn.merge_values.html" title="fn tamias_core::overlay::merge_values"><code>tamias_core::merge_values</code></a> semantics
+later files win — with [<code>tamias_core::merge_values</code>] semantics
 (the same deep-merge <code>include:</code> overlays use: dicts per-key,
 arrays concat high-first with <code>id</code> dedupe).</li>
 <li><code>tamias deploy &lt;pkg&gt; --set key=value</code> (repeatable) edits the
@@ -40,7 +40,7 @@ fragments over generated config — see the module docs.</dd><dt><a class="const
 an escape hatch for tests and nonstandard config homes; overrides
 <code>$XDG_CONFIG_HOME</code>/<code>$HOME</code> discovery when set.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.clear_overrides.html" title="fn tamias_driver::overrides::clear_overrides">clear_<wbr>overrides</a></dt><dd>Drop the package’s whole drop-in dir — every fragment, <code>cli.yaml</code>
 included. <code>Ok(true)</code> when a dir was removed.</dd><dt><a class="fn" href="fn.merged_overrides.html" title="fn tamias_driver::overrides::merged_overrides">merged_<wbr>overrides</a></dt><dd>Fold every fragment in <code>dir</code> into one document — sorted by
-filename, later files higher priority, <a href="../../tamias_core/overlay/fn.merge_values.html" title="fn tamias_core::overlay::merge_values"><code>tamias_core::merge_values</code></a>
+filename, later files higher priority, [<code>tamias_core::merge_values</code>]
 per file (deep-merge: dicts per-key, arrays concat high-first with
 <code>id</code> dedupe). <code>Ok(None)</code> when the dir is absent or holds no
 fragments; a malformed fragment is an error, never silently skipped.</dd><dt><a class="fn" href="fn.overrides_root.html" title="fn tamias_driver::overrides::overrides_root">overrides_<wbr>root</a></dt><dd>The overrides root — <code>$TAMIAS_DEPLOY_D</code>, else
