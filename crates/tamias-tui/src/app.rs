@@ -1,8 +1,10 @@
 //! The TUI model — panes, cursor, modes, modals, and the store reads
 //! every key maps to. The Installed pane lists `tamias-store-local`
-//! entries with a client-side `/` filter; the Registry pane searches
-//! a registry as-you-type; Services/Manifest/Author stay placeholders
-//! until their phases land.
+//! entries with a client-side `/` filter; `Enter` opens the package
+//! page (`Detail`) on either the Installed row or a Registry result;
+//! the Registry pane searches a registry as-you-type; Services,
+//! Manifest, and Author cover provider lifecycle, the project `deps:`
+//! form, and pack/publish authoring.
 //!
 //! Mutations never run on the event loop: [`Model::spawn`] hands a
 //! [`Job`] to a worker thread that calls the same library functions
@@ -192,18 +194,115 @@ pub enum Msg {
     Done(Result<Outcome, String>),
 }
 
-/// The detail view — the selected entry plus its payload manifest,
-/// loaded once on `Enter` (a local file read, cheap enough to stay on
-/// the event loop).
+/// The package page — `Enter` on an Installed row or a Registry
+/// result opens it (the npm-inspired anatomy lives in
+/// `render::draw_detail`). Both sources share the layout; the variant
+/// decides which fields exist — a payload manifest + store
+/// provenance for installed entries, index metadata + the resolved
+/// install ref for registry results.
 #[derive(Debug)]
-pub struct Detail {
-    /// The entry the detail was opened on (a clone — selection may
-    /// move underneath without disturbing the view).
-    pub entry: StoreEntry,
-    /// `entry.manifest()` when the payload carries one.
-    pub manifest: Option<Manifest>,
-    /// Why the manifest is absent (`None` manifest + `Some` err).
-    pub manifest_err: Option<String>,
+pub enum Detail {
+    /// An installed package — the store entry plus its payload
+    /// manifest, loaded once on open (a local file read, cheap
+    /// enough to stay on the event loop).
+    Installed {
+        /// The entry the page was opened on (a clone — selection may
+        /// move underneath without disturbing the view).
+        entry: StoreEntry,
+        /// `entry.manifest()` when the payload carries one — boxed:
+        /// `Manifest` is the enum's size driver.
+        manifest: Option<Box<Manifest>>,
+        /// Why the manifest is absent (`None` manifest + `Some` err).
+        manifest_err: Option<String>,
+    },
+    /// A registry search result — no payload manifest exists until
+    /// install; the index entry carries display metadata and the
+    /// installable ref is resolved once on open (config read + ref
+    /// grammar, same cheap-file-read posture as the manifest).
+    Registry {
+        /// The index entry under the page.
+        entry: RegistryEntry,
+        /// `ops::entry_install_ref` — the `tamias install` argument.
+        install_ref: Option<String>,
+        /// Why the ref couldn't resolve (`None` ref + `Some` err).
+        install_err: Option<String>,
+    },
+}
+
+impl Detail {
+    /// Page title — `@scope/name@version` for both sources.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Installed { entry, .. } => entry.label(),
+            Self::Registry { entry, .. } => entry.label(),
+        }
+    }
+
+    /// The one-line description — payload manifest first, then the
+    /// install-time record snapshot or the index entry.
+    pub fn description(&self) -> Option<&str> {
+        match self {
+            Self::Installed {
+                entry, manifest, ..
+            } => manifest
+                .as_ref()
+                .and_then(|m| m.description.as_deref())
+                .or(entry.record.description.as_deref()),
+            Self::Registry { entry, .. } => entry.description.as_deref(),
+        }
+    }
+
+    /// Content-type chip — manifest `type:`/record `kind`/index
+    /// `kind`, in that precedence.
+    pub fn kind(&self) -> Option<&str> {
+        match self {
+            Self::Installed {
+                entry, manifest, ..
+            } => manifest
+                .as_ref()
+                .and_then(|m| m.kind.as_deref())
+                .or(entry.record.kind.as_deref()),
+            Self::Registry { entry, .. } => entry.kind.as_deref(),
+        }
+    }
+
+    /// Scope chip (`@scope` already sits inside `label()` — the chip
+    /// keeps it scannable in the header row).
+    pub fn scope(&self) -> Option<&str> {
+        match self {
+            Self::Installed { entry, .. } => entry.record.scope.as_deref(),
+            Self::Registry { entry, .. } => entry.scope.as_deref(),
+        }
+    }
+
+    /// License chip — manifest/record/index `license:`.
+    pub fn license(&self) -> Option<&str> {
+        match self {
+            Self::Installed {
+                entry, manifest, ..
+            } => manifest
+                .as_ref()
+                .and_then(|m| m.license.as_deref())
+                .or(entry.record.license.as_deref()),
+            Self::Registry { entry, .. } => entry.license.as_deref(),
+        }
+    }
+
+    /// Trust-tier word for the colored chip — the record's `trust`
+    /// spelling for installed entries; `signed` when the index entry
+    /// carries a signature (the install-time tier isn't known until
+    /// the package lands).
+    pub fn trust(&self) -> Option<String> {
+        match self {
+            Self::Installed { entry, .. } => entry.record.trust.clone(),
+            Self::Registry { entry, .. } => entry.signature.is_some().then(|| "signed".to_string()),
+        }
+    }
+
+    /// `sealed:` ciphertext-only badge — installed manifests only.
+    pub fn sealed(&self) -> bool {
+        matches!(self, Self::Installed { manifest: Some(m), .. } if m.sealed.is_some())
+    }
 }
 
 /// A parsed `:` command — separated from execution so the grammar is
@@ -465,6 +564,12 @@ pub struct Model {
     /// `:` command-line buffer — separate from `input` so a filter
     /// draft isn't clobbered.
     pub cmdline: String,
+    /// Live `:` completions for the token under the cursor
+    /// ([`crate::complete`]) — refreshed on every buffer edit.
+    pub cmd_completions: Vec<crate::complete::Candidate>,
+    /// Tab-selected candidate index — `usize::MAX` = none applied
+    /// yet, so the first `Tab` lands on candidate 0.
+    pub cmd_sel: usize,
     /// Prompt buffer (`p`/`i`/`:registry` text entry).
     pub prompt_buf: String,
     /// Status-bar message (last action / error) — expires after
@@ -507,8 +612,12 @@ pub struct Model {
     pub log: VecDeque<String>,
     /// Confirm/consent dialog, if any.
     pub modal: Option<Modal>,
-    /// Detail view (`Enter` on an Installed row).
+    /// Package page (`Enter` on an Installed row or Registry result)
+    /// — see [`Detail`].
     pub detail: Option<Detail>,
+    /// Page scroll offset — `j`/`k`/arrows move it while `detail` is
+    /// open; clamped to the body height each frame.
+    pub detail_scroll: usize,
 
     // --- registry pane ---
     /// Last search results.
@@ -579,6 +688,8 @@ impl Model {
             mode: Mode::Normal,
             input: String::new(),
             cmdline: String::new(),
+            cmd_completions: Vec::new(),
+            cmd_sel: usize::MAX,
             prompt_buf: String::new(),
             status: String::new(),
             status_at: Instant::now(),
@@ -596,6 +707,7 @@ impl Model {
             log: VecDeque::new(),
             modal: None,
             detail: None,
+            detail_scroll: 0,
             reg_results: Vec::new(),
             reg_sel: 0,
             reg_query: String::new(),
@@ -1017,6 +1129,7 @@ impl Model {
     fn switch_pane(&mut self, pane: Pane) {
         self.pane = pane;
         self.detail = None;
+        self.detail_scroll = 0;
         self.sel_label = self.selected().map(|r| r.entry.label());
         match pane {
             // Services entry marks the table stale — `tick` fires the
@@ -1069,26 +1182,50 @@ impl Model {
 
     // --- detail ---
 
-    /// `Enter` on an Installed row — open the detail view (or close
-    /// it when already open on that row).
+    /// `Enter` — open the package page for the cursor row (Installed)
+    /// or the registry result under the cursor (Registry); closes it
+    /// when already open.
     fn toggle_detail(&mut self) {
         if self.detail.is_some() {
             self.detail = None;
+            self.detail_scroll = 0;
             return;
         }
-        let Some(row) = self.selected() else {
-            return;
-        };
-        let entry = row.entry.clone();
-        let (manifest, manifest_err) = match entry.manifest() {
-            Ok(m) => (Some(m), None),
-            Err(e) => (None, Some(e.to_string())),
-        };
-        self.detail = Some(Detail {
-            entry,
-            manifest,
-            manifest_err,
-        });
+        match self.pane {
+            Pane::Registry => {
+                let Some(entry) = self.reg_selected().cloned() else {
+                    return;
+                };
+                // Resolve the installable ref once, on open — the page
+                // shows `tamias install <ref>` (or the failure inline).
+                let (install_ref, install_err) =
+                    match ops::entry_install_ref(&self.ctx, &entry, self.reg_target.as_deref()) {
+                        Ok(r) => (Some(r), None),
+                        Err(e) => (None, Some(e.to_string())),
+                    };
+                self.detail = Some(Detail::Registry {
+                    entry,
+                    install_ref,
+                    install_err,
+                });
+            }
+            _ => {
+                let Some(row) = self.selected() else {
+                    return;
+                };
+                let entry = row.entry.clone();
+                let (manifest, manifest_err) = match entry.manifest() {
+                    Ok(m) => (Some(Box::new(m)), None),
+                    Err(e) => (None, Some(e.to_string())),
+                };
+                self.detail = Some(Detail::Installed {
+                    entry,
+                    manifest,
+                    manifest_err,
+                });
+            }
+        }
+        self.detail_scroll = 0;
     }
 
     // --- confirms / prompts ---
@@ -1245,14 +1382,12 @@ impl Model {
         }
     }
 
-    /// Install the selected registry result — resolve its `.tgz` to
-    /// an installable ref (fs path for local registries, pinned http
-    /// url for http/cf), then the usual confirm modal.
-    fn install_registry_result(&mut self) {
-        let Some(entry) = self.reg_selected().cloned() else {
-            self.say_err("no registry result selected");
-            return;
-        };
+    /// Install a registry entry — resolve its `.tgz` to an installable
+    /// ref (fs path for local registries, pinned http url for
+    /// http/cf), then the usual confirm modal. `i` on an open package
+    /// page installs the entry the page shows, not the row cursor
+    /// underneath — what you see is what installs.
+    fn install_registry_entry(&mut self, entry: RegistryEntry) {
         match ops::entry_install_ref(&self.ctx, &entry, self.reg_target.as_deref()) {
             Ok(reference) => {
                 self.confirm_job(
@@ -1264,6 +1399,19 @@ impl Model {
                 );
             }
             Err(e) => self.say_err(e.to_string()),
+        }
+    }
+
+    /// `i` on the Registry pane — the open package page's entry wins
+    /// over the row cursor; otherwise the selected result installs.
+    fn install_registry_result(&mut self) {
+        let entry = match &self.detail {
+            Some(Detail::Registry { entry, .. }) => Some(entry.clone()),
+            _ => self.reg_selected().cloned(),
+        };
+        match entry {
+            Some(entry) => self.install_registry_entry(entry),
+            None => self.say_err("no registry result selected"),
         }
     }
 
@@ -1616,11 +1764,50 @@ impl Model {
         }
     }
 
-    /// `:` mode keys — `Enter` runs, `esc` drops the line.
+    /// Recompute the `:` completion candidates for the current
+    /// buffer; any edit resets the Tab selection to "none applied".
+    fn refresh_completions(&mut self) {
+        self.cmd_completions = crate::complete::complete(&self.cmdline);
+        self.cmd_sel = usize::MAX;
+    }
+
+    /// `Tab`/`BackTab` in `:` mode — cycle the candidate list and
+    /// replace the trailing token with the pick. The token boundary
+    /// is the last whitespace (or buffer start); a trailing space
+    /// means we're completing a fresh token, so `rfind` lands on it
+    /// and the replace is a pure append.
+    fn apply_completion(&mut self, forward: bool) {
+        let n = self.cmd_completions.len();
+        if n == 0 {
+            return;
+        }
+        self.cmd_sel = if forward {
+            if self.cmd_sel == usize::MAX || self.cmd_sel + 1 >= n {
+                0
+            } else {
+                self.cmd_sel + 1
+            }
+        } else if self.cmd_sel == usize::MAX || self.cmd_sel == 0 {
+            n - 1
+        } else {
+            self.cmd_sel - 1
+        };
+        let insert = match self.cmd_completions.get(self.cmd_sel) {
+            Some(c) => c.insert.clone(),
+            None => return,
+        };
+        let start = self.cmdline.rfind(char::is_whitespace).map_or(0, |i| i + 1);
+        self.cmdline.replace_range(start.., &insert);
+        self.refresh_completions();
+    }
+
+    /// `:` mode keys — `Enter` runs, `esc` drops the line, `Tab`
+    /// cycles [`crate::complete`] candidates into the buffer.
     fn key_command(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
                 self.mode = Mode::Normal;
+                self.cmd_completions.clear();
                 let quit = matches!(self.cmdline.trim(), "q" | "quit" | "q!");
                 if !quit {
                     self.run_command();
@@ -1630,14 +1817,25 @@ impl Model {
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
                 self.cmdline.clear();
+                self.cmd_completions.clear();
                 false
             }
             KeyCode::Backspace => {
                 self.cmdline.pop();
+                self.refresh_completions();
+                false
+            }
+            KeyCode::Tab => {
+                self.apply_completion(true);
+                false
+            }
+            KeyCode::BackTab => {
+                self.apply_completion(false);
                 false
             }
             KeyCode::Char(c) => {
                 self.cmdline.push(c);
+                self.refresh_completions();
                 false
             }
             _ => false,
@@ -1795,23 +1993,39 @@ impl Model {
             KeyCode::Char('3') => self.switch_pane(Pane::Services),
             KeyCode::Char('4') => self.switch_pane(Pane::Manifest),
             KeyCode::Char('5') => self.switch_pane(Pane::Author),
-            KeyCode::Enter if self.pane == Pane::Installed => self.toggle_detail(),
-            KeyCode::Esc | KeyCode::Left if self.detail.is_some() => self.detail = None,
+            KeyCode::Enter if matches!(self.pane, Pane::Installed | Pane::Registry) => {
+                self.toggle_detail()
+            }
+            KeyCode::Esc | KeyCode::Left if self.detail.is_some() => {
+                self.detail = None;
+                self.detail_scroll = 0;
+            }
             KeyCode::Char('h') | KeyCode::BackTab => {
                 if self.detail.is_some() {
                     self.detail = None;
+                    self.detail_scroll = 0;
                 } else {
                     self.step_pane(-1);
                 }
             }
             KeyCode::Tab | KeyCode::Char('l') => self.step_pane(1),
+            // With the package page open j/k scroll it; the row
+            // cursor (and the v/u/p/r/c/d verbs keyed off it) stays put.
             KeyCode::Char('j') | KeyCode::Down => {
-                self.move_sel(1);
-                self.sync_sel_label();
+                if self.detail.is_some() {
+                    self.detail_scroll += 1;
+                } else {
+                    self.move_sel(1);
+                    self.sync_sel_label();
+                }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.move_sel(-1);
-                self.sync_sel_label();
+                if self.detail.is_some() {
+                    self.detail_scroll = self.detail_scroll.saturating_sub(1);
+                } else {
+                    self.move_sel(-1);
+                    self.sync_sel_label();
+                }
             }
             KeyCode::Char('g') => match self.pane {
                 Pane::Registry => self.reg_sel = 0,
@@ -1848,6 +2062,7 @@ impl Model {
             KeyCode::Char(':') => {
                 self.mode = Mode::Command;
                 self.cmdline.clear();
+                self.refresh_completions();
             }
             KeyCode::Char('F') => {
                 self.filter.clear();

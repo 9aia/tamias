@@ -7,10 +7,10 @@
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table, Wrap};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap};
 use ratatui::Frame;
 
-use crate::app::{Modal, Mode, Model, Pane, PromptKind, SPINNER};
+use crate::app::{Detail, Modal, Mode, Model, Pane, PromptKind, SPINNER};
 
 const ACCENT: Color = Color::Indexed(69); // same nav blue as myco-tui
 const MUTED: Color = Color::Indexed(241);
@@ -135,25 +135,31 @@ fn short_sha(s: &str) -> String {
     bare.chars().take(12).collect()
 }
 
-/// Trust badge for a store record — `record.trust` carries the
-/// `tamias-sign` wire spelling (`official`/`signed`/`pinned`/
-/// `unpinned`/`bad`); `None` on records that predate trust tiers,
-/// which render no badge.
-fn trust_badge(rec: &tamias_core::StoreRecord) -> String {
-    rec.trust
-        .as_deref()
-        .map_or_else(String::new, |t| format!(" [{t}]"))
+/// Trust-tier color — `signed`/`official` green, `bad` red,
+/// `pinned`/`unpinned` warn yellow, anything else muted.
+fn trust_style(tier: &str) -> Style {
+    match tier {
+        "official" | "signed" => Style::default().fg(Color::Green),
+        "bad" => Style::default().fg(Color::Red),
+        "pinned" | "unpinned" => Style::default().fg(WARN),
+        _ => Style::default().fg(MUTED),
+    }
+}
+
+/// The `[tier]` badge span for a store record — colored by
+/// [`trust_style`]; `None` tier renders nothing (records that
+/// predate trust tiers carry none).
+fn trust_badge(tier: Option<&str>) -> Option<Span<'static>> {
+    tier.map(|t| Span::styled(format!(" [{t}]"), trust_style(t)))
 }
 
 fn draw_pane(f: &mut Frame, m: &mut Model, area: Rect) {
     match m.pane {
-        Pane::Installed => {
-            if m.detail.is_some() {
-                draw_detail(f, m, area);
-            } else {
-                draw_installed(f, m, area);
-            }
-        }
+        // The package page replaces whichever pane opened it — the
+        // model only sets `detail` on Installed/Registry and clears
+        // it on pane switches.
+        Pane::Installed | Pane::Registry if m.detail.is_some() => draw_detail(f, m, area),
+        Pane::Installed => draw_installed(f, m, area),
         Pane::Registry => draw_registry(f, m, area),
         Pane::Services => draw_services(f, m, area),
         Pane::Manifest => draw_manifest(f, m, area),
@@ -430,18 +436,22 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
         .map(|&i| {
             let r = &m.entries[i];
             let rec = &r.entry.record;
+            // Name cell carries styled spans — the trust badge is
+            // colored by tier, `[sealed]` stays muted.
+            let mut name = vec![Span::raw(r.entry.label())];
+            if let Some(badge) = trust_badge(rec.trust.as_deref()) {
+                name.push(badge);
+            }
+            if r.sealed {
+                name.push(Span::styled(" [sealed]", Style::default().fg(MUTED)));
+            }
             Row::new(vec![
-                format!(
-                    "{}{}{}",
-                    r.entry.label(),
-                    trust_badge(rec),
-                    if r.sealed { " [sealed]" } else { "" }
-                ),
-                rec.kind.clone().unwrap_or_else(|| "-".into()),
-                rec.source_ref.clone(),
-                short_sha(&rec.resolved),
-                short_sha(&rec.digest),
-                r.size.map_or("-".into(), human_size),
+                Cell::from(Line::from(name)),
+                Cell::from(rec.kind.clone().unwrap_or_else(|| "-".into())),
+                Cell::from(rec.source_ref.clone()),
+                Cell::from(short_sha(&rec.resolved)),
+                Cell::from(short_sha(&rec.digest)),
+                Cell::from(r.size.map_or("-".into(), human_size)),
             ])
         })
         .collect();
@@ -462,156 +472,326 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     note_table_area(m, area, state.offset());
 }
 
-/// The `Enter` detail view — record provenance plus the payload
-/// manifest's fields (provider/services/deps when present).
-fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
-    let Some(detail) = &m.detail else {
-        return;
-    };
-    let rec = &detail.entry.record;
-    let mut lines: Vec<Line> = vec![
-        Line::from(vec![
-            Span::styled("name:      ", Style::default().fg(ACCENT)),
-            Span::raw(rec.name.clone()),
-        ]),
-        Line::from(vec![
-            Span::styled("scope:     ", Style::default().fg(ACCENT)),
-            Span::raw(rec.scope.clone().unwrap_or_else(|| "-".into())),
-        ]),
-        Line::from(vec![
-            Span::styled("version:   ", Style::default().fg(ACCENT)),
-            Span::raw(rec.version.clone().unwrap_or_else(|| "-".into())),
-        ]),
-        Line::from(vec![
-            Span::styled("type:      ", Style::default().fg(ACCENT)),
-            Span::raw(rec.kind.clone().unwrap_or_else(|| "-".into())),
-        ]),
-        Line::from(vec![
-            Span::styled("source:    ", Style::default().fg(ACCENT)),
-            Span::raw(rec.source_ref.clone()),
-        ]),
-        Line::from(vec![
-            Span::styled("resolved:  ", Style::default().fg(ACCENT)),
-            Span::raw(rec.resolved.clone()),
-        ]),
-        Line::from(vec![
-            Span::styled("digest:    ", Style::default().fg(ACCENT)),
-            Span::raw(rec.digest.clone()),
-        ]),
-        Line::from(vec![
-            Span::styled("installed: ", Style::default().fg(ACCENT)),
-            Span::raw(format!(
-                "{} (unix {})",
-                detail.entry.dir.display(),
-                rec.installed_at
-            )),
-        ]),
-        Line::from(vec![
-            Span::styled("trust:      ", Style::default().fg(ACCENT)),
-            Span::raw(rec.trust.clone().unwrap_or_else(|| "-".into())),
-        ]),
-    ];
-    if let Some(signer) = &rec.signer {
-        lines.push(Line::from(vec![
-            Span::styled("signer:     ", Style::default().fg(ACCENT)),
-            Span::raw(signer.clone()),
-        ]));
+/// A muted `[chip]` for the page header — trust tiers pass their own
+/// [`trust_style`] color instead of this.
+fn chip(text: &str) -> Span<'static> {
+    Span::styled(format!(" [{text}]"), Style::default().fg(MUTED))
+}
+
+/// `── name ──` section rule inside the package page.
+fn rule(name: &str) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("── {name} ──"),
+        Style::default().fg(ACCENT),
+    ))
+}
+
+/// `key: value` line — the `key:` stays contiguous (tests and readers
+/// grep for it) and pads to a fixed column so values line up down the
+/// provenance/meta sections.
+fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("{:<11}", format!("{key}:")),
+            Style::default().fg(ACCENT),
+        ),
+        Span::raw(value.into()),
+    ])
+}
+
+/// Everything the package page renders, built from the [`Detail`]
+/// variant — owned `'static` lines so the borrow on `m.detail` ends
+/// before the frame's scroll offset is clamped. Layout follows the
+/// npm package-page anatomy: bold label + chips, a ≤3-line wrapped
+/// description (pinned strip), the `tamias install` command, then
+/// `── section ──` rules ordered by user value — deps/services/keywords
+/// + meta — with provenance last.
+///
+/// Versions are skipped: listing them would need a scoped
+/// `Job::Search` round-trip the page can't await.
+fn page_parts(
+    detail: &Detail,
+    registry_target: &str,
+) -> (String, Line<'static>, Option<String>, Vec<Line<'static>>) {
+    let label = detail.label();
+    // Header — bold label then muted/bracketed chips; the trust chip
+    // is the one colored span (tier → [`trust_style`]).
+    let mut head = vec![Span::styled(
+        label.clone(),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    )];
+    if let Some(kind) = detail.kind() {
+        head.push(chip(kind));
     }
-    match &detail.manifest {
-        Some(manifest) => {
-            if let Some(desc) = &manifest.description {
-                lines.push(Line::from(vec![
-                    Span::styled("desc:      ", Style::default().fg(ACCENT)),
-                    Span::raw(desc.clone()),
-                ]));
-            }
-            if !manifest.keywords.is_empty() {
-                lines.push(Line::from(vec![
-                    Span::styled("keywords:  ", Style::default().fg(ACCENT)),
-                    Span::raw(manifest.keywords.join(", ")),
-                ]));
-            }
-            if let Some(homepage) = &manifest.homepage {
-                lines.push(Line::from(vec![
-                    Span::styled("homepage:  ", Style::default().fg(ACCENT)),
-                    Span::raw(homepage.clone()),
-                ]));
-            }
-            if let Some(repository) = &manifest.repository {
-                lines.push(Line::from(vec![
-                    Span::styled("repository:", Style::default().fg(ACCENT)),
-                    Span::raw(repository.clone()),
-                ]));
-            }
-            if let Some(license) = &manifest.license {
-                lines.push(Line::from(vec![
-                    Span::styled("license:   ", Style::default().fg(ACCENT)),
-                    Span::raw(license.clone()),
-                ]));
-            }
-            if !manifest.authors.is_empty() {
-                lines.push(Line::from(vec![
-                    Span::styled("authors:   ", Style::default().fg(ACCENT)),
-                    Span::raw(manifest.authors.join(", ")),
-                ]));
-            }
-            if !manifest.include.is_empty() {
-                lines.push(Line::from(vec![
-                    Span::styled("include:   ", Style::default().fg(ACCENT)),
-                    Span::raw(manifest.include.join(", ")),
-                ]));
-            }
-            if !manifest.deps.is_empty() {
-                lines.push(Line::from(vec![
-                    Span::styled("deps:      ", Style::default().fg(ACCENT)),
-                    Span::raw(manifest.deps.join(", ")),
-                ]));
-            }
-            if let Some(sealed) = &manifest.sealed {
-                lines.push(Line::from(vec![
-                    Span::styled("sealed:    ", Style::default().fg(ACCENT)),
-                    Span::raw(format!(
-                        "{} — {} secret(s), ciphertext-only",
-                        sealed.format,
-                        sealed.files.len()
-                    )),
-                ]));
-            }
-            if let Some(provider) = &manifest.provider {
-                let services = provider
-                    .services
-                    .iter()
-                    .map(|s| s.name.clone())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                lines.push(Line::from(vec![
-                    Span::styled("provider:  ", Style::default().fg(ACCENT)),
-                    Span::raw(format!(
-                        "{} service(s){}",
-                        provider.services.len(),
-                        if services.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" — {services}")
-                        }
-                    )),
-                ]));
-            }
-        }
-        None => lines.push(Line::from(vec![
-            Span::styled("manifest:  ", Style::default().fg(WARN)),
-            Span::raw(detail.manifest_err.clone().unwrap_or_else(|| "none".into())),
+    if let Some(scope) = detail.scope() {
+        head.push(chip(&format!("@{scope}")));
+    }
+    if let Some(license) = detail.license() {
+        head.push(chip(license));
+    }
+    if let Some(tier) = detail.trust() {
+        head.push(Span::styled(format!(" [{tier}]"), trust_style(&tier)));
+    }
+    if detail.sealed() {
+        head.push(chip("sealed"));
+    }
+    let head = Line::from(head);
+    let desc = detail.description().map(str::to_string);
+
+    let mut body: Vec<Line> = Vec::new();
+    // Install command — the ref an installed entry recorded, or the
+    // registry entry's resolved install ref (error inline on failure).
+    match detail {
+        Detail::Installed { entry, .. } => body.push(Line::from(vec![
+            Span::styled("install  ", Style::default().fg(ACCENT)),
+            Span::styled("tamias install ", Style::default().fg(MUTED)),
+            Span::raw(entry.record.source_ref.clone()),
         ])),
+        Detail::Registry {
+            install_ref,
+            install_err,
+            ..
+        } => match (install_ref, install_err) {
+            (Some(reference), _) => body.push(Line::from(vec![
+                Span::styled("install  ", Style::default().fg(ACCENT)),
+                Span::styled("tamias install ", Style::default().fg(MUTED)),
+                Span::raw(reference.clone()),
+            ])),
+            (None, Some(err)) => body.push(Line::from(vec![
+                Span::styled("install  ", Style::default().fg(ACCENT)),
+                Span::styled("unavailable — ", Style::default().fg(WARN)),
+                Span::raw(err.clone()),
+            ])),
+            (None, None) => {}
+        },
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "esc/← back — v verify · u update · p pin · r remove · c cache clean · d doctor",
+
+    match detail {
+        Detail::Installed {
+            entry,
+            manifest,
+            manifest_err,
+        } => {
+            let rec = &entry.record;
+            if let Some(m) = manifest {
+                // deps — the manifest's direct dependency refs.
+                if !m.deps.is_empty() {
+                    body.push(Line::from(""));
+                    body.push(rule("deps"));
+                    for dep in &m.deps {
+                        body.push(Line::from(Span::raw(format!("  {dep}"))));
+                    }
+                }
+                // provider services — name + exec, the deploy surface.
+                if let Some(provider) = &m.provider {
+                    if !provider.services.is_empty() {
+                        body.push(Line::from(""));
+                        body.push(rule("services"));
+                        for s in &provider.services {
+                            body.push(Line::from(vec![
+                                Span::raw(format!("  {}", s.name)),
+                                Span::styled(format!("  {}", s.exec), Style::default().fg(MUTED)),
+                            ]));
+                        }
+                    }
+                }
+                // meta — the manifest's display fields the chips
+                // don't already carry.
+                let mut meta: Vec<Line> = Vec::new();
+                if !m.keywords.is_empty() {
+                    meta.push(kv("keywords", m.keywords.join(", ")));
+                }
+                if let Some(homepage) = &m.homepage {
+                    meta.push(kv("homepage", homepage.clone()));
+                }
+                if let Some(repository) = &m.repository {
+                    meta.push(kv("repository", repository.clone()));
+                }
+                if !m.authors.is_empty() {
+                    meta.push(kv("authors", m.authors.join(", ")));
+                }
+                if !m.include.is_empty() {
+                    meta.push(kv("include", m.include.join(", ")));
+                }
+                if let Some(sealed) = &m.sealed {
+                    meta.push(kv(
+                        "sealed",
+                        format!(
+                            "{} — {} secret(s), ciphertext-only",
+                            sealed.format,
+                            sealed.files.len()
+                        ),
+                    ));
+                }
+                if !meta.is_empty() {
+                    body.push(Line::from(""));
+                    body.push(rule("meta"));
+                    body.extend(meta);
+                }
+            } else if let Some(err) = manifest_err {
+                body.push(Line::from(vec![
+                    Span::styled("manifest ", Style::default().fg(WARN)),
+                    Span::raw(err.clone()),
+                ]));
+            }
+            // provenance — last, per the package-page anatomy.
+            body.push(Line::from(""));
+            body.push(rule("provenance"));
+            body.push(kv("source", rec.source_ref.clone()));
+            body.push(kv("resolved", rec.resolved.clone()));
+            body.push(kv("digest", rec.digest.clone()));
+            body.push(kv("installed", rec.installed_at.to_string()));
+            body.push(kv("dir", entry.dir.display().to_string()));
+            if let Some(signer) = &rec.signer {
+                body.push(kv("signer", signer.clone()));
+            }
+            body.push(kv("trust", rec.trust.clone().unwrap_or_else(|| "-".into())));
+        }
+        Detail::Registry { entry, .. } => {
+            // keywords — the index analogue of deps (search matches
+            // them, so they double as discovery terms).
+            if !entry.keywords.is_empty() {
+                body.push(Line::from(vec![
+                    Span::styled("keywords: ", Style::default().fg(ACCENT)),
+                    Span::raw(entry.keywords.join(", ")),
+                ]));
+            }
+            // meta — index-carried display fields (P-006).
+            let mut meta: Vec<Line> = Vec::new();
+            if let Some(homepage) = &entry.homepage {
+                meta.push(kv("homepage", homepage.clone()));
+            }
+            if let Some(repository) = &entry.repository {
+                meta.push(kv("repository", repository.clone()));
+            }
+            if !entry.authors.is_empty() {
+                meta.push(kv("authors", entry.authors.join(", ")));
+            }
+            if !meta.is_empty() {
+                body.push(Line::from(""));
+                body.push(rule("meta"));
+                body.extend(meta);
+            }
+            // provenance — index-side facts; the signature verifies
+            // at install time, not here.
+            body.push(Line::from(""));
+            body.push(rule("provenance"));
+            body.push(kv("registry", registry_target.to_string()));
+            body.push(kv("file", entry.file.clone()));
+            body.push(kv("digest", entry.digest.clone()));
+            if let Some(publisher) = &entry.publisher {
+                body.push(kv("publisher", publisher.clone()));
+            }
+            body.push(kv(
+                "signature",
+                if entry.signature.is_some() {
+                    "signed".to_string()
+                } else {
+                    "unsigned".to_string()
+                },
+            ));
+        }
+    }
+    body.push(Line::from(""));
+    body.push(Line::from(Span::styled(
+        match detail {
+            Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
+            Detail::Registry { .. } => "esc back · j/k scroll · i install",
+        },
         Style::default().fg(MUTED),
     )));
-    let title = format!(" {} ", detail.entry.label());
+    (label, head, desc, body)
+}
+
+/// Greedy word-wrap line count for `text` at `width` columns,
+/// capped at `max` — the package page's pinned strips measure
+/// themselves with this (`Paragraph::line_count` is unstable in
+/// ratatui 0.30). Overlong words count as filling their line; the
+/// estimate only sizes a strip, never clips content.
+fn wrapped_lines(text: &str, width: u16, max: usize) -> usize {
+    let width = (width as usize).max(1);
+    let mut lines = 1usize;
+    let mut col = 0usize;
+    for word in text.split_whitespace() {
+        let ww = Span::raw(word).width();
+        if col == 0 {
+            col = ww;
+        } else if col + 1 + ww <= width {
+            col += 1 + ww;
+        } else {
+            lines += 1;
+            col = ww;
+        }
+        if lines >= max {
+            return max;
+        }
+    }
+    lines.min(max)
+}
+
+/// The `Enter` package page — npm-inspired anatomy inside the
+/// bordered block. The header and the (≤3-line, wrapped) description
+/// stay pinned; the body — install command, sections, provenance —
+/// scrolls with `j`/`k` via `Model::detail_scroll`.
+fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
+    let Some(detail) = m.detail.as_ref() else {
+        return;
+    };
+    let (title, head, desc, body) = page_parts(detail, &m.reg_target_label);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {title} "));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.width == 0 || inner.height == 0 {
+        m.board_area = Rect::default();
+        m.viewport_top = 0;
+        return;
+    }
+    // Pinned strips — the header wraps to at most 3 lines, the
+    // description to at most 3 (overflow clips; the body below still
+    // scrolls).
+    let header_text: String = head.spans.iter().map(|s| s.content.as_ref()).collect();
+    let header_h = wrapped_lines(&header_text, inner.width, 3).min(inner.height as usize) as u16;
+    let desc_h = match &desc {
+        Some(d) => wrapped_lines(d, inner.width, 3)
+            .min(inner.height.saturating_sub(header_h) as usize) as u16,
+        None => 0,
+    };
+    let body_h = inner.height.saturating_sub(header_h).saturating_sub(desc_h);
+    let header_area = Rect {
+        height: header_h,
+        ..inner
+    };
+    let desc_area = Rect {
+        y: inner.y + header_h,
+        height: desc_h,
+        ..inner
+    };
+    let body_area = Rect {
+        y: inner.y + header_h + desc_h,
+        height: body_h,
+        ..inner
+    };
+    f.render_widget(Paragraph::new(head).wrap(Wrap { trim: true }), header_area);
+    if let Some(d) = &desc {
+        f.render_widget(
+            Paragraph::new(d.as_str())
+                .wrap(Wrap { trim: true })
+                .style(Style::default().fg(MUTED)),
+            desc_area,
+        );
+    }
+    // Clamp the scroll offset to the body, then render.
+    let max_scroll = body.len().saturating_sub(body_area.height as usize);
+    m.detail_scroll = m.detail_scroll.min(max_scroll);
     f.render_widget(
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title)),
-        area,
+        Paragraph::new(body)
+            .wrap(Wrap { trim: false })
+            .scroll((m.detail_scroll as u16, 0)),
+        body_area,
     );
     m.board_area = Rect::default();
     m.viewport_top = 0;
@@ -633,7 +813,8 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
         f.render_widget(
             Paragraph::new(
                 "registry search — `/` to type a query (name/scope substring), \
-                 `:registry <name>` picks the target, `i` installs a result",
+                 `:registry <name>` picks the target, Enter opens the package \
+                 page, `i` installs a result",
             )
             .style(Style::default().fg(MUTED)),
             area,
@@ -657,8 +838,16 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
         m.viewport_top = 0;
         return;
     }
-    let header = Row::new(vec!["NAME", "SCOPE", "TYPE", "VERSION", "DIGEST"])
-        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    let header = Row::new(vec![
+        "NAME",
+        "SCOPE",
+        "TYPE",
+        "VERSION",
+        "LICENSE",
+        "DIGEST",
+        "DESCRIPTION",
+    ])
+    .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = m
         .reg_results
         .iter()
@@ -668,16 +857,23 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
                 e.scope.clone().unwrap_or_else(|| "-".into()),
                 e.kind.clone().unwrap_or_else(|| "-".into()),
                 e.version.clone().unwrap_or_else(|| "-".into()),
+                e.license.clone().unwrap_or_else(|| "-".into()),
                 short_sha(&e.digest),
+                e.description.clone().unwrap_or_else(|| "-".into()),
             ])
         })
         .collect();
+    // DESCRIPTION is the flexible column — it absorbs leftover width
+    // and clips on narrow terminals; LICENSE stays a fixed narrow
+    // column so it survives degradation.
     let widths = [
-        Constraint::Min(16),
-        Constraint::Length(12),
-        Constraint::Length(12),
+        Constraint::Min(14),
         Constraint::Length(10),
-        Constraint::Length(14),
+        Constraint::Length(10),
+        Constraint::Length(8),
+        Constraint::Length(10),
+        Constraint::Length(12),
+        Constraint::Min(12),
     ];
     let title = format!(" registry — {} · /{} ", m.reg_target_label, m.reg_query);
     let table = Table::new(rows, widths)
@@ -723,7 +919,7 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
         match m.pane {
             Pane::Installed => {
                 if m.detail.is_some() {
-                    "detail — esc back".to_string()
+                    "package — esc back".to_string()
                 } else if m.filter.is_empty() {
                     format!("{} installed", m.entries.len())
                 } else {
@@ -731,7 +927,9 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                 }
             }
             Pane::Registry => {
-                if m.reg_query.is_empty() {
+                if m.detail.is_some() {
+                    "package — esc back".to_string()
+                } else if m.reg_query.is_empty() {
                     "registry — / search · :registry <name> · i install".to_string()
                 } else {
                     format!(
@@ -770,33 +968,65 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
     } else {
         Style::default().fg(MUTED)
     };
-    let hint = match m.pane {
-        Pane::Installed => {
-            if m.detail.is_some() {
-                "esc back · v/u/p/r/c/d act on the row"
-            } else {
-                "j/k · Enter detail · v verify · u update · p pin · r remove · i install · c clean · d doctor · / filter · : cmds · q quit"
+    // The package page's hint wins over the pane's while `detail` is
+    // open; either way the hint yields to the left status text —
+    // truncated with `…` to whatever width is left.
+    let hint = if m.detail.is_some() {
+        match &m.detail {
+            Some(Detail::Registry { .. }) => "esc back · j/k scroll · i install",
+            _ => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
+        }
+    } else {
+        match m.pane {
+            Pane::Installed => {
+                "j/k · Enter page · v verify · u update · p pin · r remove · i install · c clean · d doctor · / filter · : cmds · q quit"
             }
-        }
-        Pane::Registry => "j/k · i install · / query · : cmds · q quit",
-        Pane::Services => {
-            if m.stream_child.is_some() {
-                "streaming — x kill · q quit"
-            } else {
-                "j/k · s/S start/stop · r restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
+            Pane::Registry => "j/k · Enter page · i install · / query · : cmds · q quit",
+            Pane::Services => {
+                if m.stream_child.is_some() {
+                    "streaming — x kill · q quit"
+                } else {
+                    "j/k · s/S start/stop · r restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
+                }
             }
+            Pane::Manifest => {
+                "j/k · a add dep · d/x remove · e edit ref · s sync · S sync-lock · R reload · : cmds · q quit"
+            }
+            Pane::Author => "p pack · P publish · r registries · R reload · : cmds · q quit",
         }
-        Pane::Manifest => {
-            "j/k · a add dep · d/x remove · e edit ref · s sync · S sync-lock · R reload · : cmds · q quit"
-        }
-        Pane::Author => "p pack · P publish · r registries · R reload · : cmds · q quit",
     };
+    let left_w = Line::raw(left.as_str()).width();
+    let hint = fit_width(hint, (area.width as usize).saturating_sub(left_w + 2));
     let spans = vec![
         Span::styled(left, style),
         Span::raw("  "),
         Span::styled(hint, Style::default().fg(MUTED)),
     ];
     f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// `s` clipped to `max` display columns with a trailing `…` — the
+/// status bar's right-side hint yields to the left status text.
+fn fit_width(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    if Line::raw(s).width() <= max {
+        return s.to_string();
+    }
+    let budget = max - 1; // room for the ellipsis
+    let mut out = String::new();
+    let mut w = 0usize;
+    for ch in s.chars() {
+        let cw = Span::raw(ch.to_string()).width();
+        if w + cw > budget {
+            break;
+        }
+        w += cw;
+        out.push(ch);
+    }
+    out.push('…');
+    out
 }
 
 /// The `/`/`:`/prompt input line — drawn over the bottom of the pane
@@ -822,6 +1052,42 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
         _ => return,
     };
     let y = area.bottom().saturating_sub(2).max(area.y);
+    // `:` mode gets a candidates strip above the input line — the
+    // Tab-selected entry highlighted, the rest dimmed.
+    if matches!(m.mode, Mode::Command) && !m.cmd_completions.is_empty() {
+        let cy = y.saturating_sub(1);
+        if cy >= area.y {
+            let sel = (m.cmd_sel != usize::MAX).then(|| m.cmd_sel.min(m.cmd_completions.len() - 1));
+            let mut spans: Vec<Span> = Vec::new();
+            for (i, c) in m.cmd_completions.iter().take(14).enumerate() {
+                if i > 0 {
+                    spans.push(Span::raw("  "));
+                }
+                let shown = c.insert.trim_end();
+                let style = if sel == Some(i) {
+                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(MUTED)
+                };
+                spans.push(Span::styled(shown.to_string(), style));
+            }
+            if m.cmd_completions.len() > 14 {
+                spans.push(Span::styled(
+                    format!("  +{} more", m.cmd_completions.len() - 14),
+                    Style::default().fg(MUTED),
+                ));
+            }
+            f.render_widget(
+                Paragraph::new(Line::from(spans)),
+                Rect {
+                    x: area.x,
+                    y: cy,
+                    width: area.width,
+                    height: 1,
+                },
+            );
+        }
+    }
     let rect = Rect {
         x: area.x,
         y,
@@ -874,19 +1140,23 @@ fn draw_help(f: &mut Frame, area: Rect) {
 keys — installed pane
 
   j/k, ↑/↓      move selection        g/G    top/bottom
-  Enter         detail view           esc/←   back
+  Enter         package page          esc/←   back / close page
   v             verify (digest check) u       update selected
   U             update all            p       pin → new ref
   r             remove (confirm)      c/C     cache clean >30d / all
   d             doctor summary        i       install by ref
   Tab, h/l      cycle panes           1-5    jump to pane
   /             filter installed      Enter  keep filter
-  :             command line          esc    leave mode
+  :             command line          Tab   complete · esc leave mode
   R             reload store          F      clear filter
   ?             this help             q/C-c  quit
 
-registry pane:  / search-as-you-type (debounced) · i install result ·
-                :registry <name> target · :search <q>
+package page:  npm-style page — header chips · description · install
+               command · deps/services/meta · provenance last ·
+               j/k scroll · Enter/esc close · registry: i installs
+
+registry pane:  / search-as-you-type (debounced) · Enter package page ·
+                i install result · :registry <name> target · :search <q>
 
 commands:  :q  :r/:reload  :help  :install <ref>  :remove <name>
            :verify <name>  :update [name]  :pin <name> <ref>
