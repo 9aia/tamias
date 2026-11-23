@@ -2884,6 +2884,20 @@ impl Model {
         }
     }
 
+    /// Enter Search mode seeded from `reg_query` — the query and its
+    /// results are the Registry pane's persistent state, so re-entering
+    /// `/` resumes the last search. An empty query drops stale results.
+    fn enter_search(&mut self) {
+        self.mode = Mode::Search;
+        self.input = self.reg_query.clone();
+        self.input_cur = self.input.len();
+        if self.reg_query.is_empty() {
+            self.reg_results.clear();
+            self.reg_version_counts.clear();
+            self.reg_err = None;
+        }
+    }
+
     /// `/` mode keys on Registry — the query edits `reg_query` live;
     /// `tick` debounces the actual search, `Enter` fires it now.
     /// `esc` only leaves the mode — the query and results are the
@@ -3201,23 +3215,14 @@ impl Model {
             }
             KeyCode::Char('/') => match self.pane {
                 Pane::Home => {
-                    // Home has no filter of its own — `/` is the way
-                    // into registry search: switch panes and land in
-                    // Search mode with an empty query.
+                    // Home has no search of its own — `/` is the way
+                    // into registry search: switch panes and seed the
+                    // query like the Registry arm does, so a previous
+                    // search resumes instead of being wiped.
                     self.switch_pane(Pane::Registry);
-                    self.reg_query.clear();
-                    self.reg_results.clear();
-                    self.reg_version_counts.clear();
-                    self.reg_err = None;
-                    self.input.clear();
-                    self.input_cur = 0;
-                    self.mode = Mode::Search;
+                    self.enter_search();
                 }
-                Pane::Registry => {
-                    self.mode = Mode::Search;
-                    self.input = self.reg_query.clone();
-                    self.input_cur = self.input.len();
-                }
+                Pane::Registry => self.enter_search(),
                 Pane::Installed => {
                     self.mode = Mode::Filter;
                     self.input = self.filter.clone();
@@ -3235,10 +3240,16 @@ impl Model {
                 self.cmd_hist = None;
                 self.refresh_completions();
             }
-            KeyCode::Char('F') => {
-                self.filter.clear();
-                self.rebuild_sel(None, self.sel);
-            }
+            // `F` clears the `/` filter — Installed-only state, so on
+            // any other pane it would mutate hidden state; say where
+            // the filter lives instead (same posture as the `/` arm).
+            KeyCode::Char('F') => match self.pane {
+                Pane::Installed => {
+                    self.filter.clear();
+                    self.rebuild_sel(None, self.sel);
+                }
+                _ => self.say("filter is Installed-only — `2` jumps there"),
+            },
             KeyCode::Char('R') if matches!(self.pane, Pane::Installed | Pane::Registry) => {
                 self.reload();
                 self.say("reloaded");
@@ -3292,11 +3303,17 @@ impl Model {
             KeyCode::Char(c @ ('p' | 'P' | 'r' | 'R')) if self.pane == Pane::Author => {
                 self.author_verb(c)
             }
-            // Installed-only verbs pressed on a pane that doesn't
-            // bind them used to die silently (bare `v`/`u`/`p`/`x`/
-            // `c`/`d` on Registry, Home, Services' leftovers, …) —
-            // every pane-gated arm above already claimed its own.
-            KeyCode::Char(c @ ('v' | 'u' | 'U' | 'p' | 'x' | 'c' | 'C' | 'd')) => {
+            // Pane-gated verbs pressed on a pane that doesn't bind
+            // them used to die silently — every pane-gated arm above
+            // already claimed its own char (Services' `s S ! e E d x
+            // t T n R`, Project's `a x d e s S R`, Publish's `p P r R`,
+            // Installed's `v u U p x c C d`, Registry's detail `v`,
+            // the `R` reload). `i` is global (install prompt /
+            // registry-result install) and `F` reports its own gate.
+            KeyCode::Char(
+                c @ ('v' | 'u' | 'U' | 'p' | 'P' | 'x' | 'c' | 'C' | 'd' | 's' | 'S' | '!' | 'e'
+                | 'E' | 't' | 'T' | 'n' | 'R' | 'a' | 'r'),
+            ) => {
                 self.say(format!(
                     "no '{c}' on {} — ? lists the keys",
                     self.pane.label()
@@ -3643,6 +3660,29 @@ mod tests {
         m.key(key(KeyCode::Char('j')));
         assert_eq!(m.sel, 0);
         assert_eq!(m.pane, Pane::Home);
+        // `/` on Home resumes a previous registry search — the query,
+        // results, and counts survive the pane hop (only an empty
+        // query clears them, via `enter_search`).
+        m.reg_query = "wid".into();
+        m.reg_results = vec![reg_entry("1.0.0")];
+        m.reg_version_counts = vec![2];
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.pane, Pane::Registry);
+        assert_eq!(m.mode, Mode::Search);
+        assert_eq!(m.input, "wid");
+        assert_eq!(m.input_cur, 3);
+        assert_eq!(m.reg_query, "wid");
+        assert_eq!(m.reg_results.len(), 1);
+        assert_eq!(m.reg_version_counts, vec![2]);
+        // …but a fresh (empty) query still lands a clean search.
+        m.key(key(KeyCode::Esc));
+        m.reg_query.clear();
+        m.reg_results = vec![reg_entry("1.0.0")];
+        m.key(key(KeyCode::Char('1')));
+        m.key(key(KeyCode::Char('/')));
+        assert!(m.reg_results.is_empty());
+        assert!(m.reg_version_counts.is_empty());
+        assert!(m.input.is_empty());
     }
 
     /// A store row for cursor/ordering tests — `name` unscoped at
@@ -6286,29 +6326,113 @@ mod tests {
     }
 
     /// Dead keys say so: j/k/g/G on the listless Publish pane and
-    /// Installed-only verbs on panes that don't bind them land a
-    /// status hint instead of silence.
+    /// pane-gated verbs on panes that don't bind them land a status
+    /// hint instead of silence.
     #[test]
     fn dead_keys_get_a_status_hint() {
         let (_tmp, mut m) = bare_model();
         let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let dead = |m: &mut Model, pane: Pane, chars: &[char]| {
+            m.pane = pane;
+            m.status.clear();
+            for &c in chars {
+                m.key(key(KeyCode::Char(c)));
+                assert!(
+                    m.status.contains(&format!("no '{c}' on {}", pane.label())),
+                    "{pane:?} '{c}': {}",
+                    m.status
+                );
+                m.status.clear();
+            }
+        };
         m.pane = Pane::Author;
         m.sel = 2;
         m.key(key(KeyCode::Char('j')));
         assert!(m.status.contains("nothing to select"), "{}", m.status);
         m.key(key(KeyCode::Char('G')));
         assert!(m.status.contains("nothing to select"), "{}", m.status);
-        // Installed-only verbs on the bare Registry pane.
-        m.pane = Pane::Registry;
-        m.status.clear();
-        for c in ['v', 'u', 'p', 'x', 'c', 'd'] {
-            m.key(key(KeyCode::Char(c)));
-            assert!(m.status.contains(&format!("no '{c}'")), "{c}: {}", m.status);
-            m.status.clear();
-        }
+        // Every pane-gated verb char that the pane doesn't bind —
+        // Home binds none of them (`i` is global, `F` has its own
+        // gate, `R` reports here).
+        dead(
+            &mut m,
+            Pane::Home,
+            &[
+                'v', 'u', 'U', 'p', 'P', 'x', 'c', 'C', 'd', 's', 'S', '!', 'e', 'E', 't', 'T',
+                'n', 'R', 'a', 'r',
+            ],
+        );
+        // Registry binds `v` only with a detail page open and `R` as
+        // the reload — the rest of the verb set is dead there.
+        dead(
+            &mut m,
+            Pane::Registry,
+            &[
+                'v', 'u', 'U', 'p', 'P', 'x', 'c', 'C', 'd', 's', 'S', '!', 'e', 'E', 't', 'T',
+                'n', 'a', 'r',
+            ],
+        );
+        // Services' own set still claims its chars — only the
+        // Installed/Project/Publish leftovers are dead.
+        dead(
+            &mut m,
+            Pane::Services,
+            &['v', 'u', 'U', 'p', 'P', 'c', 'C', 'a', 'r'],
+        );
+        // Project binds `a x d e s S R` — the rest report.
+        dead(
+            &mut m,
+            Pane::Manifest,
+            &['v', 'u', 'U', 'p', 'P', 'c', 'C', '!', 't', 'T', 'n', 'r'],
+        );
+        // Publish binds `p P r R` — everything else reports.
+        dead(
+            &mut m,
+            Pane::Author,
+            &[
+                'v', 'u', 'U', 'x', 'c', 'C', 'd', 's', 'S', '!', 'e', 'E', 't', 'T', 'n', 'a',
+            ],
+        );
+        // Installed binds its own set + `R` reload — Services'/
+        // Project's/Publish's leftovers report.
+        dead(
+            &mut m,
+            Pane::Installed,
+            &['P', 's', 'S', '!', 'e', 'E', 't', 'T', 'n', 'a', 'r'],
+        );
         // …but the pane's own verbs still work — 'i' installs.
         m.key(key(KeyCode::Char('i')));
         assert!(m.status.is_empty() || !m.status.contains("no 'i'"));
+    }
+
+    /// `F` clears the `/` filter on Installed only — on any other
+    /// pane it says where the filter lives instead of mutating
+    /// hidden state (same gate as the `/` arm).
+    #[test]
+    fn clear_filter_is_installed_only() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        for pane in [
+            Pane::Home,
+            Pane::Registry,
+            Pane::Services,
+            Pane::Manifest,
+            Pane::Author,
+        ] {
+            m.pane = pane;
+            m.filter = "keep".into();
+            m.key(key(KeyCode::Char('F')));
+            assert_eq!(m.filter, "keep", "{pane:?}");
+            assert!(
+                m.status.contains("filter is Installed-only"),
+                "{pane:?}: {}",
+                m.status
+            );
+        }
+        m.pane = Pane::Installed;
+        m.filter = "keep".into();
+        m.key(key(KeyCode::Char('F')));
+        assert!(m.filter.is_empty());
     }
 
     /// The `/` filter matches what the row shows — label, kind,

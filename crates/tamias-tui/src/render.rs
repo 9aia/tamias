@@ -1421,7 +1421,10 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
         m.status.clone()
     } else {
         match m.pane {
-            Pane::Home => format!("home — {} installed", m.entries.len()),
+            // The body strip already carries the installed count,
+            // registry target, and store/cache roots — the status
+            // left only names the pane (busy/error still win above).
+            Pane::Home => "home".to_string(),
             Pane::Installed => {
                 if m.detail.is_some() {
                     "package — esc back".to_string()
