@@ -1,9 +1,7 @@
 name: tamias
-root: /home/luis/GitHub/9aia/workspace/repos/tamias
+root: /home/luis/.local/share/decoupling-chief/worktrees/pl-025/tamias
 purpose: '*Package & content manager for the agent factory — fetch, store,'
 modules:
-- docs
-- project
 - sturn-wal
 - tamias
 - tamias-bin
@@ -48,8 +46,8 @@ modules:
 commands:
 - cargo check
 - cargo test --workspace
-tree_digest: dd8c66cf2ff4bf7814bdcf652ecfafbb6b4954f9
-files_total: 235
+tree_digest: d85cd04b969fcd099f5562f2a75f4d7dbf2add0c
+files_total: 180
 provenance:
   files:
   - Cargo.toml
@@ -95,13 +93,13 @@ provenance:
   - fuzz/Cargo.toml
   - xtask/Cargo.toml
   hashes:
-  - f81d71a2376cab90d985fdca13502b30e272d26c
+  - 10af23ccfcc7b6173635296b55da917af56667a3
   - 8bbe5cfd5138fd30c1589ca7b43ee437a6e001a5
   - 445a59764f2c95491158650a1cbdd66a63271be3
   - d3af5c2636a8492ae8561db2d7eabe89a24c1deb
   - 95adcd142d2c55cd9d4e27639ed03ca898bbca04
   - 5b9a61b04a88f684b5ffe12c51bd26d10effcc7a
-  - 0e9a52d8e060fd49c8d6a24772282474eb62993d
+  - d9d11446fb24d9d0d850fee3387b1a7649b408cd
   - 632480163263ef27edab2d729003066436e1a9d5
   - e2354bf66bcc103954918876c89f75663f28633e
   - ea0b53562003a16213fbdc77d5703be0e3914475
@@ -137,6 +135,6 @@ provenance:
   - b6a235087c38037ce9ad4db4bddbfe7ee52a710d
   - 57ca36cf313852cc8f22ea5be173bded5d2f1ed6
   - f62c8bf5f2849fe1b7c68c4d37121f63802e4ec1
-  commit_sha: 59bfeb8644ba2218d2c97f572e06172bb111ec93
-  generated_at: '1794977521'
+  commit_sha: dda9fd329bc6c733b593257f89678365c7929c58
+  generated_at: '1795398321'
   generator: kuda/0.1.0
