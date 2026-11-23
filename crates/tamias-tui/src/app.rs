@@ -646,6 +646,15 @@ pub struct Model {
     /// Page scroll offset — `j`/`k`/arrows move it while `detail` is
     /// open; clamped to the body height each frame.
     pub detail_scroll: usize,
+    /// Versions-focus mode on a Registry package page — `v` toggles
+    /// it once the sibling-version list has landed; while set, `j`/`k`
+    /// move [`Model::versions_sel`] instead of scrolling the page and
+    /// `i` installs the selected version. Meaningless (and cleared)
+    /// for Installed pages.
+    pub versions_focus: bool,
+    /// Cursor into the page's `versions` list while `versions_focus`
+    /// is set — clamped to the list length on every move.
+    pub versions_sel: usize,
 
     // --- registry pane ---
     /// Last search results.
@@ -736,6 +745,8 @@ impl Model {
             modal: None,
             detail: None,
             detail_scroll: 0,
+            versions_focus: false,
+            versions_sel: 0,
             reg_results: Vec::new(),
             reg_sel: 0,
             reg_query: String::new(),
@@ -1203,6 +1214,8 @@ impl Model {
         self.pane = pane;
         self.detail = None;
         self.detail_scroll = 0;
+        self.versions_focus = false;
+        self.versions_sel = 0;
         self.sel_label = self.selected().map(|r| r.entry.label());
         match pane {
             // Services entry marks the table stale — `tick` fires the
@@ -1262,6 +1275,8 @@ impl Model {
         if self.detail.is_some() {
             self.detail = None;
             self.detail_scroll = 0;
+            self.versions_focus = false;
+            self.versions_sel = 0;
             return;
         }
         match self.pane {
@@ -1302,6 +1317,8 @@ impl Model {
             }
         }
         self.detail_scroll = 0;
+        self.versions_focus = false;
+        self.versions_sel = 0;
     }
 
     /// Kick off the background sibling-versions fetch for a registry
@@ -1511,6 +1528,116 @@ impl Model {
             Some(entry) => self.install_registry_entry(entry),
             None => self.say_err("no registry result selected"),
         }
+    }
+
+    // --- versions focus (registry package page) ---
+
+    /// `versions_focus` only means something on an open Registry
+    /// page — the flag clears with the page, so this also guards
+    /// against any stale state.
+    pub fn versions_focused(&self) -> bool {
+        self.versions_focus && matches!(self.detail, Some(Detail::Registry { .. }))
+    }
+
+    /// The landed sibling-version count on the open Registry page.
+    fn versions_len(&self) -> usize {
+        match &self.detail {
+            Some(Detail::Registry {
+                versions: Some(list),
+                ..
+            }) => list.len(),
+            _ => 0,
+        }
+    }
+
+    /// The version row under the versions cursor.
+    pub fn versions_selected(&self) -> Option<&RegistryEntry> {
+        match &self.detail {
+            Some(Detail::Registry {
+                versions: Some(list),
+                ..
+            }) => list.get(self.versions_sel),
+            _ => None,
+        }
+    }
+
+    /// `v` on a Registry package page — toggle versions focus (the
+    /// npm version-selector mode). Engages only once the background
+    /// fetch has landed a non-empty list; a pending or failed fetch
+    /// gets a muted status instead. The cursor starts on the page's
+    /// own entry (`← current`, matched by blob `file` — the same
+    /// rule the renderer uses).
+    fn toggle_versions_focus(&mut self) {
+        if self.versions_focused() {
+            self.versions_focus = false;
+            return;
+        }
+        // Decide before writing the status — the detail borrow ends
+        // ahead of `say`'s `&mut self`.
+        let (focus_at, note) = match &self.detail {
+            Some(Detail::Registry {
+                entry, versions, ..
+            }) => match versions {
+                Some(list) if !list.is_empty() => (
+                    Some(list.iter().position(|v| v.file == entry.file).unwrap_or(0)),
+                    None,
+                ),
+                Some(_) => (None, Some("no versions indexed")),
+                None => (None, Some("versions still loading…")),
+            },
+            _ => (None, None),
+        };
+        if let Some(i) = focus_at {
+            self.versions_focus = true;
+            self.versions_sel = i;
+        } else if let Some(note) = note {
+            self.say(note);
+        }
+    }
+
+    /// `j`/`k` inside versions focus — clamped to the landed list,
+    /// same posture as [`Model::move_sel`].
+    fn move_versions_sel(&mut self, delta: isize) {
+        let len = self.versions_len();
+        if len == 0 {
+            self.versions_sel = 0;
+            return;
+        }
+        self.versions_sel =
+            (self.versions_sel as isize + delta).clamp(0, len as isize - 1) as usize;
+    }
+
+    /// `i` inside versions focus — install the selected sibling
+    /// version through the same resolve→confirm path as the page
+    /// entry. A version already in the store gets an informational
+    /// toast instead of a reinstall confirm.
+    fn install_focused_version(&mut self) {
+        let Some(entry) = self.versions_selected().cloned() else {
+            return;
+        };
+        if self.version_installed(&entry) {
+            self.say(format!("{} already installed", entry.label()));
+            return;
+        }
+        self.install_registry_entry(entry);
+    }
+
+    /// Is this registry version already in the store? Matches on
+    /// (name, scope) plus version equality *or* digest equality —
+    /// the digest catches unversioned/re-published entries; an
+    /// absent version on either side never counts as a match.
+    fn version_installed(&self, entry: &RegistryEntry) -> bool {
+        self.entries.iter().any(|r| {
+            let rec = &r.entry.record;
+            let version_match = match (rec.version.as_deref(), entry.version.as_deref()) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            };
+            let digest_match = !entry.digest.is_empty() && rec.digest == entry.digest;
+            rec.name == entry.name
+                && rec.scope.as_deref() == entry.scope.as_deref()
+                && (version_match || digest_match)
+        })
     }
 
     // --- verbs on the selected installed row ---
@@ -2096,14 +2223,21 @@ impl Model {
             KeyCode::Enter if matches!(self.pane, Pane::Installed | Pane::Registry) => {
                 self.toggle_detail()
             }
+            // Versions focus eats esc first — one level out (back to
+            // page scroll) before the page itself closes.
+            KeyCode::Esc if self.versions_focused() => self.versions_focus = false,
             KeyCode::Esc | KeyCode::Left if self.detail.is_some() => {
                 self.detail = None;
                 self.detail_scroll = 0;
+                self.versions_focus = false;
+                self.versions_sel = 0;
             }
             KeyCode::Char('h') | KeyCode::BackTab => {
                 if self.detail.is_some() {
                     self.detail = None;
                     self.detail_scroll = 0;
+                    self.versions_focus = false;
+                    self.versions_sel = 0;
                 } else {
                     self.step_pane(-1);
                 }
@@ -2111,8 +2245,11 @@ impl Model {
             KeyCode::Tab | KeyCode::Char('l') => self.step_pane(1),
             // With the package page open j/k scroll it; the row
             // cursor (and the v/u/p/r/c/d verbs keyed off it) stays put.
+            // Versions focus reroutes them onto the version list.
             KeyCode::Char('j') | KeyCode::Down => {
-                if self.detail.is_some() {
+                if self.versions_focused() {
+                    self.move_versions_sel(1);
+                } else if self.detail.is_some() {
                     self.detail_scroll += 1;
                 } else {
                     self.move_sel(1);
@@ -2120,7 +2257,9 @@ impl Model {
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if self.detail.is_some() {
+                if self.versions_focused() {
+                    self.move_versions_sel(-1);
+                } else if self.detail.is_some() {
                     self.detail_scroll = self.detail_scroll.saturating_sub(1);
                 } else {
                     self.move_sel(-1);
@@ -2189,6 +2328,12 @@ impl Model {
             // dep) since a live child is the more urgent target.
             KeyCode::Char('x') if self.stream_child.is_some() => self.kill_stream(),
             // --- verbs ---
+            // `v` on an open Registry package page toggles versions
+            // focus — the npm version-selector mode. `v` on the bare
+            // Registry pane stays unbound.
+            KeyCode::Char('v') if self.pane == Pane::Registry && self.detail.is_some() => {
+                self.toggle_versions_focus()
+            }
             KeyCode::Char('v') if self.pane == Pane::Installed => self.verb_verify(),
             KeyCode::Char('u') if self.pane == Pane::Installed => self.verb_update(),
             KeyCode::Char('U') if self.pane == Pane::Installed => self.confirm_job(
@@ -2202,6 +2347,9 @@ impl Model {
             KeyCode::Char('c') if self.pane == Pane::Installed => self.verb_cache_clean(false),
             KeyCode::Char('C') if self.pane == Pane::Installed => self.verb_cache_clean(true),
             KeyCode::Char('d') if self.pane == Pane::Installed => self.verb_doctor(),
+            // Versions focus: `i` installs the selected sibling
+            // version, not the page's own entry.
+            KeyCode::Char('i') if self.versions_focused() => self.install_focused_version(),
             KeyCode::Char('i') => self.verb_install(),
             // Services-pane verbs route through `svc_verb` — the keys
             // don't collide with Installed's (pane-gated).
@@ -2601,5 +2749,148 @@ mod tests {
             }
             _ => panic!("no registry page"),
         }
+    }
+
+    /// A model on the Registry pane with `page` as its open package
+    /// page — `versions` preset, fetch already "landed".
+    fn registry_page_model(
+        ctx: &Ctx,
+        page: &RegistryEntry,
+        versions: Option<Vec<RegistryEntry>>,
+    ) -> Model {
+        let mut m = Model::open(ctx).unwrap();
+        m.pane = Pane::Registry;
+        m.detail = Some(Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions,
+            versions_err: None,
+        });
+        m
+    }
+
+    /// `v` toggles versions focus only once the fetch has landed;
+    /// while focused `j`/`k` move `versions_sel` (clamped, starting
+    /// on the page's own entry) and leave `detail_scroll` alone, and
+    /// `esc` backs out one level before closing the page.
+    #[test]
+    fn versions_focus_toggle_and_cursor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let page = reg_entry("1.0.0");
+        // Pending fetch — `v` is a muted no-op.
+        let mut m = registry_page_model(&ctx, &page, None);
+        m.key(key(KeyCode::Char('v')));
+        assert!(!m.versions_focused());
+        assert!(m.status.contains("loading"));
+        // Landed — focus engages, cursor starts on `← current`.
+        if let Some(Detail::Registry { versions, .. }) = &mut m.detail {
+            *versions = Some(vec![reg_entry("0.9.0"), page.clone(), reg_entry("1.1.0")]);
+        }
+        m.key(key(KeyCode::Char('v')));
+        assert!(m.versions_focused());
+        assert_eq!(m.versions_sel, 1);
+        assert_eq!(
+            m.versions_selected().and_then(|v| v.version.as_deref()),
+            Some("1.0.0")
+        );
+        // j/k move the version cursor, not the page scroll.
+        m.detail_scroll = 3;
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.versions_sel, 2);
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.versions_sel, 1);
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.versions_sel, 0);
+        m.key(key(KeyCode::Char('k'))); // clamps at the top
+        assert_eq!(m.versions_sel, 0);
+        m.key(key(KeyCode::Char('j')));
+        m.key(key(KeyCode::Char('j')));
+        m.key(key(KeyCode::Char('j'))); // clamps at the bottom
+        assert_eq!(m.versions_sel, 2);
+        assert_eq!(m.detail_scroll, 3);
+        // esc backs out to scroll mode — the page stays open.
+        m.key(key(KeyCode::Esc));
+        assert!(!m.versions_focused());
+        assert!(m.detail.is_some());
+        // `v` toggles back off too.
+        m.key(key(KeyCode::Char('v')));
+        assert!(m.versions_focused());
+        m.key(key(KeyCode::Char('v')));
+        assert!(!m.versions_focused());
+        // Closing the page (esc twice: focus, then page) resets.
+        m.key(key(KeyCode::Char('v')));
+        m.key(key(KeyCode::Esc));
+        m.key(key(KeyCode::Esc));
+        assert!(m.detail.is_none());
+        assert!(!m.versions_focused());
+        assert_eq!(m.versions_sel, 0);
+    }
+
+    /// `i` inside versions focus installs the *selected* sibling —
+    /// the confirm modal carries its resolved ref — and reports
+    /// "already installed" instead of reinstalling a stored version.
+    #[test]
+    fn versions_focus_install_selected() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let page = reg_entry("1.0.0");
+        let mut m = registry_page_model(&ctx, &page, Some(vec![reg_entry("0.9.0"), page.clone()]));
+        m.versions_focus = true;
+        m.versions_sel = 0; // 0.9.0 — not in the store
+        m.key(key(KeyCode::Char('i')));
+        match &m.modal {
+            Some(Modal::Confirm {
+                job: Job::Install { reference, .. },
+                ..
+            }) => assert!(reference.contains("0.9.0"), "ref: {reference}"),
+            other => panic!("expected install confirm, got {other:?}"),
+        }
+        // 1.0.0 installed at the same version → informational toast,
+        // no modal.
+        m.modal = None;
+        m.entries.push(crate::app::Row {
+            entry: tamias_core::StoreEntry {
+                dir: tmp.path().join("store/@s/w@1.0.0"),
+                record: tamias_core::StoreRecord {
+                    name: "w".into(),
+                    scope: Some("s".into()),
+                    version: Some("1.0.0".into()),
+                    kind: None,
+                    description: None,
+                    keywords: Vec::new(),
+                    homepage: None,
+                    repository: None,
+                    license: None,
+                    authors: Vec::new(),
+                    source_ref: "./x".into(),
+                    resolved: "sha256:0".into(),
+                    digest: "sha256:1.0.0".into(),
+                    signature: None,
+                    signer: None,
+                    trust: None,
+                    installed_at: 0,
+                },
+            },
+            size: None,
+            sealed: false,
+        });
+        m.versions_sel = 1;
+        m.key(key(KeyCode::Char('i')));
+        assert!(m.modal.is_none());
+        assert!(m.status.contains("already installed"), "{}", m.status);
     }
 }

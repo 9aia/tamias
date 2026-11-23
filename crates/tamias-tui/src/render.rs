@@ -643,10 +643,16 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
 /// section appears once the index read lands (index order, the page's
 /// own entry marked `← current`), and a fetch failure degrades to a
 /// muted line — never an error toast.
+///
+/// `versions_sel` is `Some(i)` while the versions-focus mode is
+/// active ([`Model::versions_focused`]) — row `i` gets the table's
+/// `Indexed(238)` row highlight plus an accent `›` marker, and the
+/// footer hint switches to the focus keys.
 fn page_parts(
     detail: &Detail,
     registry_target: &str,
     installed_ver: Option<&str>,
+    versions_sel: Option<usize>,
 ) -> (String, Line<'static>, Option<String>, Vec<Line<'static>>) {
     let label = detail.label();
     // Header — bold label then muted/bracketed chips; the trust chip
@@ -841,17 +847,30 @@ fn page_parts(
                             Style::default().fg(MUTED),
                         )));
                     }
-                    for v in list {
-                        let mut spans = vec![Span::raw(format!(
-                            "  {}",
-                            v.version.clone().unwrap_or_else(|| "-".into())
-                        ))];
+                    for (i, v) in list.iter().enumerate() {
+                        let ver = v.version.clone().unwrap_or_else(|| "-".into());
                         // `file` is the per-version blob path — the
                         // unique match even if version strings repeat.
-                        if v.file == entry.file {
-                            spans.push(Span::styled("  ← current", Style::default().fg(ACCENT)));
-                        }
-                        body.push(Line::from(spans));
+                        let current = v.file == entry.file;
+                        let line = if versions_sel == Some(i) {
+                            let mut spans = vec![
+                                Span::styled("› ", Style::default().fg(ACCENT)),
+                                Span::raw(ver),
+                            ];
+                            if current {
+                                spans
+                                    .push(Span::styled("  ← current", Style::default().fg(ACCENT)));
+                            }
+                            Line::from(spans).style(Style::default().bg(Color::Indexed(238)))
+                        } else {
+                            let mut spans = vec![Span::raw(format!("  {ver}"))];
+                            if current {
+                                spans
+                                    .push(Span::styled("  ← current", Style::default().fg(ACCENT)));
+                            }
+                            Line::from(spans)
+                        };
+                        body.push(line);
                     }
                 }
                 (None, Some(err)) => body.push(Line::from(vec![
@@ -887,6 +906,9 @@ fn page_parts(
     body.push(Line::from(Span::styled(
         match detail {
             Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
+            Detail::Registry { .. } if versions_sel.is_some() => {
+                "versions — j/k move · i install · v/esc back"
+            }
             Detail::Registry { .. } => "esc back · j/k scroll · i install",
         },
         Style::default().fg(MUTED),
@@ -936,8 +958,12 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
         }
         _ => None,
     };
-    let (title, head, desc, body) =
-        page_parts(detail, &m.reg_target_label, installed_ver.as_deref());
+    let (title, head, desc, body) = page_parts(
+        detail,
+        &m.reg_target_label,
+        installed_ver.as_deref(),
+        m.versions_focused().then_some(m.versions_sel),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" {title} "));
@@ -1185,6 +1211,9 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
     // truncated with `…` to whatever width is left.
     let hint = if m.detail.is_some() {
         match &m.detail {
+            Some(Detail::Registry { .. }) if m.versions_focused() => {
+                "versions — j/k move · i install · v/esc back"
+            }
             Some(Detail::Registry { .. }) => "esc back · j/k scroll · i install",
             _ => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
         }
@@ -1370,6 +1399,7 @@ home pane:    landing view — wordmark · stats · recently installed ·
 package page:  npm-style page — header chips · description · install
                command · deps/services/meta · provenance last ·
                j/k scroll · Enter/esc close · registry: i installs ·
+               v focuses versions — j/k pick · i installs that version ·
                `installed <pkg>@<ver>` line when already in the store
 
 registry pane:  / search-as-you-type (debounced) · Enter package page ·
@@ -1444,7 +1474,17 @@ mod tests {
 
     /// `body_text` with an installed-version marker for the page.
     fn body_text_installed(detail: &Detail, installed_ver: Option<&str>) -> String {
-        let (_, _, _, body) = page_parts(detail, "default", installed_ver);
+        body_text_full(detail, installed_ver, None)
+    }
+
+    /// `body_text` with the versions-focus cursor (`Some(i)` marks
+    /// row `i` and switches the footer hint).
+    fn body_text_full(
+        detail: &Detail,
+        installed_ver: Option<&str>,
+        versions_sel: Option<usize>,
+    ) -> String {
+        let (_, _, _, body) = page_parts(detail, "default", installed_ver, versions_sel);
         body.iter()
             .map(|l| {
                 l.spans
@@ -1487,6 +1527,30 @@ mod tests {
         let empty = body_text(&detail(Some(Vec::new()), None));
         assert!(empty.contains("── versions ──"));
         assert!(empty.contains("no versions indexed"));
+    }
+
+    /// Versions focus marks the cursor row with `›` and switches the
+    /// footer hint; unfocused rows keep the plain `  <ver>` shape.
+    #[test]
+    fn registry_page_versions_focus_marks_cursor() {
+        let page = reg_entry("1.0.0");
+        let detail = Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: Some(vec![reg_entry("0.9.0"), page.clone()]),
+            versions_err: None,
+        };
+        let focused = body_text_full(&detail, None, Some(0));
+        assert!(focused.contains("› 0.9.0"));
+        assert!(focused.contains("  1.0.0  ← current"));
+        assert!(focused.contains("versions — j/k move · i install · v/esc back"));
+        assert!(!focused.contains("esc back · j/k scroll · i install"));
+        // Cursor on the current entry keeps its `← current` marker.
+        let on_current = body_text_full(&detail, None, Some(1));
+        assert!(on_current.contains("› 1.0.0  ← current"));
+        // Unfocused stays byte-identical to the plain render.
+        assert_eq!(body_text(&detail), body_text_full(&detail, None, None));
     }
 
     /// The `installed <pkg>@<ver>` line appears on a Registry page
