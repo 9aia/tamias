@@ -72,8 +72,9 @@ pub struct Row {
 /// and tab labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
-    /// Home — wordmark, stats strip, recently-installed list. The
-    /// landing pane; informational only (no cursor).
+    /// Home — wordmark, stats strip, recently-installed list (the
+    /// landing pane; `j`/`k` cursor + `Enter` opens a package page
+    /// via the Installed pane — see [`Model::open_home_detail`]).
     Home,
     /// Store entries — name/type/source/resolved/digest/size.
     Installed,
@@ -579,6 +580,10 @@ pub struct Model {
     /// Index into the *filtered* installed row list (clamped on
     /// rebuild).
     pub sel: usize,
+    /// Cursor into the Home pane's recently-installed list
+    /// ([`Model::recent_installed`]) — `j`/`k`/wheel move it, `Enter`
+    /// opens the highlighted entry's package page.
+    pub home_sel: usize,
     /// Label of the selected row before the last rebuild — keeps the
     /// cursor on the same package across reloads.
     sel_label: Option<String>,
@@ -720,6 +725,7 @@ impl Model {
             load_err: None,
             pane: Pane::Home,
             sel: 0,
+            home_sel: 0,
             sel_label: None,
             filter: String::new(),
             mode: Mode::Normal,
@@ -797,6 +803,10 @@ impl Model {
             }
         }
         self.rebuild_sel(keep.as_deref(), at);
+        // The recent list shrank under the cursor (uninstall, or a
+        // fresh install reordering it) — clamp like every other sel.
+        let n = self.recent_installed().len();
+        self.home_sel = if n == 0 { 0 } else { self.home_sel.min(n - 1) };
         self.arm_watch();
         self.load_manifest();
     }
@@ -1118,6 +1128,30 @@ impl Model {
         self.reg_results.get(self.reg_sel)
     }
 
+    /// Indices into `entries` for the Home pane's "recently installed"
+    /// list — `installed_at` desc (stable, so ties keep the store's
+    /// label order), top 8. The renderer and the `home_sel` cursor
+    /// share this ordering so they can never disagree.
+    pub fn recent_installed(&self) -> Vec<usize> {
+        let mut idx: Vec<usize> = (0..self.entries.len()).collect();
+        idx.sort_by(|&a, &b| {
+            self.entries[b]
+                .entry
+                .record
+                .installed_at
+                .cmp(&self.entries[a].entry.record.installed_at)
+        });
+        idx.truncate(8);
+        idx
+    }
+
+    /// The recent-install row under the Home cursor, if any.
+    pub fn home_selected(&self) -> Option<&Row> {
+        self.recent_installed()
+            .get(self.home_sel)
+            .and_then(|&i| self.entries.get(i))
+    }
+
     /// The installed version label for a `(name, scope)` pair — the
     /// "already installed" marker registry rows and package pages
     /// show (`0.2.0`, or the resolved-sha short form when the record
@@ -1197,8 +1231,16 @@ impl Model {
                 }
                 self.man_sel = (self.man_sel as isize + delta).clamp(0, len as isize - 1) as usize;
             }
-            // Home has no cursor — j/k/wheel are no-ops there.
-            Pane::Home => {}
+            // Home's cursor walks the recent-installs list, not the
+            // filtered installed rows.
+            Pane::Home => {
+                let n = self.recent_installed().len();
+                self.home_sel = if n == 0 {
+                    0
+                } else {
+                    (self.home_sel as isize + delta).clamp(0, n as isize - 1) as usize
+                };
+            }
             _ => {
                 let len = self.visible().len();
                 if len == 0 {
@@ -1319,6 +1361,42 @@ impl Model {
         self.detail_scroll = 0;
         self.versions_focus = false;
         self.versions_sel = 0;
+    }
+
+    /// `Enter` on Home — open the highlighted recent install's package
+    /// page. The page verbs (`v`/`u`/`p`/`r`/`c`/`d`) key off `pane`,
+    /// and `toggle_detail` builds `Detail::Installed` from `selected()`
+    /// — so the clean route is the Installed pane itself: switch
+    /// there, park the row cursor on the entry (dropping a stale `/`
+    /// filter that would hide it), then run the normal detail path.
+    /// Esc-back lands on the Installed table rather than Home — the
+    /// deliberate trade-off for reusing the whole detail surface.
+    fn open_home_detail(&mut self) {
+        let Some(label) = self.home_selected().map(|r| r.entry.label()) else {
+            return;
+        };
+        let mut vis = self.visible();
+        let mut pos = vis.iter().position(|&i| {
+            self.entries
+                .get(i)
+                .is_some_and(|r| r.entry.label() == label)
+        });
+        if pos.is_none() && !self.filter.is_empty() {
+            // The filter is an Installed-pane artifact — Home can't
+            // show it hiding the target, so drop it and retry.
+            self.filter.clear();
+            self.input.clear();
+            vis = self.visible();
+            pos = vis.iter().position(|&i| {
+                self.entries
+                    .get(i)
+                    .is_some_and(|r| r.entry.label() == label)
+            });
+        }
+        let Some(pos) = pos else { return };
+        self.switch_pane(Pane::Installed);
+        self.sel = pos;
+        self.toggle_detail();
     }
 
     /// Kick off the background sibling-versions fetch for a registry
@@ -2220,9 +2298,13 @@ impl Model {
                     self.switch_pane(*p);
                 }
             }
-            KeyCode::Enter if matches!(self.pane, Pane::Installed | Pane::Registry) => {
-                self.toggle_detail()
-            }
+            KeyCode::Enter => match self.pane {
+                // Home's recent list opens through the Installed
+                // pane (see `open_home_detail`).
+                Pane::Home => self.open_home_detail(),
+                Pane::Installed | Pane::Registry => self.toggle_detail(),
+                _ => {}
+            },
             // Versions focus eats esc first — one level out (back to
             // page scroll) before the page itself closes.
             KeyCode::Esc if self.versions_focused() => self.versions_focus = false,
@@ -2267,12 +2349,16 @@ impl Model {
                 }
             }
             KeyCode::Char('g') => match self.pane {
+                Pane::Home => self.home_sel = 0,
                 Pane::Registry => self.reg_sel = 0,
                 Pane::Services => self.svc_sel = 0,
                 Pane::Manifest => self.man_sel = 0,
                 _ => self.sel = 0,
             },
             KeyCode::Char('G') => match self.pane {
+                Pane::Home => {
+                    self.home_sel = self.recent_installed().len().saturating_sub(1);
+                }
                 Pane::Registry => self.reg_sel = self.reg_results.len().saturating_sub(1),
                 Pane::Services => self.svc_sel = self.svc_rows.len().saturating_sub(1),
                 Pane::Manifest => {
@@ -2640,6 +2726,100 @@ mod tests {
         m.key(key(KeyCode::Char('j')));
         assert_eq!(m.sel, 0);
         assert_eq!(m.pane, Pane::Home);
+    }
+
+    /// A store row for cursor/ordering tests — `name` unscoped at
+    /// version `installed_at` so labels stay distinct.
+    fn store_row(name: &str, installed_at: u64) -> Row {
+        Row {
+            entry: tamias_core::StoreEntry {
+                dir: PathBuf::from(format!("/store/{name}")),
+                record: tamias_core::StoreRecord {
+                    name: name.into(),
+                    scope: None,
+                    version: Some(installed_at.to_string()),
+                    kind: None,
+                    description: None,
+                    keywords: Vec::new(),
+                    homepage: None,
+                    repository: None,
+                    license: None,
+                    authors: Vec::new(),
+                    source_ref: "./x".into(),
+                    resolved: format!("sha256:{installed_at}"),
+                    digest: format!("sha256:d{installed_at}"),
+                    signature: None,
+                    signer: None,
+                    trust: None,
+                    installed_at,
+                },
+            },
+            size: None,
+            sealed: false,
+        }
+    }
+
+    /// Home's recent list is a real cursor: `recent_installed`
+    /// orders `installed_at` desc capped at 8, j/k/g/G move
+    /// `home_sel` clamped, and `Enter` routes through the Installed
+    /// pane into the package page with the row cursor parked on it.
+    #[test]
+    fn home_recent_cursor_and_open() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        for i in 0..10u64 {
+            m.entries.push(store_row(&format!("p{i}"), i + 1));
+        }
+        // Newest first, capped at 8 — p0/p1 (oldest) fall off.
+        let recent = m.recent_installed();
+        assert_eq!(recent.len(), 8);
+        assert_eq!(m.entries[recent[0]].entry.record.name, "p9");
+        assert_eq!(m.entries[recent[7]].entry.record.name, "p2");
+        assert_eq!(
+            m.home_selected().map(|r| r.entry.record.name.as_str()),
+            Some("p9")
+        );
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        // j/k clamp at both ends; g/G jump.
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.home_sel, 0);
+        m.key(key(KeyCode::Char('j')));
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.home_sel, 2);
+        assert_eq!(
+            m.home_selected().map(|r| r.entry.record.name.as_str()),
+            Some("p7")
+        );
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.home_sel, 7);
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.home_sel, 0);
+        // Enter on p9 → Installed pane, package page open on that row.
+        m.key(key(KeyCode::Char('j'))); // p8
+        m.key(key(KeyCode::Enter));
+        assert_eq!(m.pane, Pane::Installed);
+        assert_eq!(m.sel, 8); // p8 is entries[8]; visible() keeps store order
+        match &m.detail {
+            Some(Detail::Installed { entry, .. }) => {
+                assert_eq!(entry.record.name, "p8");
+            }
+            other => panic!("expected installed page, got {other:?}"),
+        }
+        // Esc closes the page onto the Installed table (documented
+        // trade-off — back does not return to Home).
+        m.key(key(KeyCode::Esc));
+        assert!(m.detail.is_none());
+        assert_eq!(m.pane, Pane::Installed);
+        assert_eq!(
+            m.selected().map(|r| r.entry.record.name.as_str()),
+            Some("p8")
+        );
     }
 
     /// `installed_label_for` matches on (name, scope) regardless of

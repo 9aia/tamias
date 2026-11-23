@@ -202,9 +202,12 @@ fn draw_pane(f: &mut Frame, m: &mut Model, area: Rect) {
 /// The Home pane — the npm-home analog and the landing view:
 /// wordmark + version, a muted stats strip (installed count, registry
 /// target, store/cache roots), the key hints in two columns, and the
-/// recently-installed list (`installed_at` desc, top 8). Informational
-/// only — no cursor, so `board_area` stays empty and clicks/wheel do
-/// nothing here.
+/// recently-installed list (`installed_at` desc, top 8 — the same
+/// [`Model::recent_installed`] ordering the `home_sel` cursor walks).
+/// The highlighted row gets the versions-focus treatment — accent
+/// `›` marker + `Indexed(238)` row background — and `Enter` opens its
+/// package page via the Installed pane. Clicks don't hit-test here
+/// (`board_area` stays empty); the wheel still scrolls the cursor.
 fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
     // Wordmark — accent dot + bold white name; the crate version
@@ -239,11 +242,16 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
         Style::default().fg(MUTED),
     )));
     lines.push(Line::from(""));
-    // Hints — two columns like the Author pane's.
-    for (left, right) in [
+    // Hints — two columns like the Author pane's; the recent-list
+    // binds only appear when there's a list to walk.
+    let mut hint_rows = vec![
         ("/  search registry", "i  install by ref"),
         ("1-6  jump to a pane", ":  command line · ? help"),
-    ] {
+    ];
+    if !m.entries.is_empty() {
+        hint_rows.insert(1, ("j/k · Enter  open recent", "g/G  first/last"));
+    }
+    for (left, right) in hint_rows {
         lines.push(Line::from(vec![
             Span::styled(format!("{left:<22}"), Style::default().fg(MUTED)),
             Span::styled(right, Style::default().fg(MUTED)),
@@ -260,16 +268,19 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
             Style::default().fg(MUTED),
         )));
     } else {
-        let mut recent: Vec<_> = m.entries.iter().collect();
-        recent.sort_by(|a, b| {
-            b.entry
-                .record
-                .installed_at
-                .cmp(&a.entry.record.installed_at)
-        });
-        for row in recent.into_iter().take(8) {
+        for (pos, &i) in m.recent_installed().iter().enumerate() {
+            let row = &m.entries[i];
             let rec = &row.entry.record;
-            let mut spans = vec![Span::raw(format!("  {}", row.entry.label()))];
+            let cursor = pos == m.home_sel;
+            let mut spans = vec![Span::styled(
+                if cursor { "› " } else { "  " },
+                if cursor {
+                    Style::default().fg(ACCENT)
+                } else {
+                    Style::default()
+                },
+            )];
+            spans.push(Span::raw(row.entry.label()));
             if let Some(badge) = trust_badge(rec.trust.as_deref()) {
                 spans.push(badge);
             }
@@ -279,7 +290,12 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
                     Style::default().fg(MUTED),
                 ));
             }
-            lines.push(Line::from(spans));
+            let line = Line::from(spans);
+            lines.push(if cursor {
+                line.style(Style::default().bg(Color::Indexed(238)))
+            } else {
+                line
+            });
         }
     }
     f.render_widget(
@@ -1219,7 +1235,13 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
         }
     } else {
         match m.pane {
-            Pane::Home => "/ search registry · i install · : cmds · q quit",
+            Pane::Home => {
+                if m.entries.is_empty() {
+                    "/ search registry · i install · : cmds · q quit"
+                } else {
+                    "j/k recent · Enter open · / search · i install · : cmds · q quit"
+                }
+            }
             Pane::Installed => {
                 "j/k · Enter page · v verify · u update · p pin · r remove · i install · c clean · d doctor · / filter · : cmds · q quit"
             }
