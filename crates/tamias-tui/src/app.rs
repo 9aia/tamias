@@ -639,6 +639,11 @@ pub struct Model {
     pub viewport_top: usize,
     /// Tab-bar rect when the frame is tall enough to draw one.
     pub tabs_area: Option<Rect>,
+    /// Home's recent-list data-row rect from the last frame — `y`
+    /// is the first row, `height` the rendered rows; a click inside
+    /// maps onto [`Model::recent_installed`]. `Rect::default()` when
+    /// Home isn't the drawn pane or the list is empty.
+    pub home_area: Rect,
 
     // --- worker jobs (phase 2/3) ---
     /// Job → UI channel; one worker thread per `spawn`.
@@ -759,6 +764,7 @@ impl Model {
             board_area: Rect::default(),
             viewport_top: 0,
             tabs_area: None,
+            home_area: Rect::default(),
             work_tx,
             work_rx,
             busy: None,
@@ -2336,6 +2342,15 @@ impl Model {
         }
     }
 
+    /// Close the package page — the shared `esc`/`h`/`←`/`q` close;
+    /// also drops versions focus and resets both scroll/cursor state.
+    fn close_detail(&mut self) {
+        self.detail = None;
+        self.detail_scroll = 0;
+        self.versions_focus = false;
+        self.versions_sel = 0;
+    }
+
     /// One key event → `true` when the app should quit. Ctrl-C is
     /// the force-quit and works from every mode (even under a modal);
     /// quitting kills a running stream child first.
@@ -2358,9 +2373,17 @@ impl Model {
             Mode::Normal => {}
         }
         match k.code {
+            // `q` backs out of an open package page first (same
+            // close as esc/h/← — quitting from under a detail view
+            // is surprising); only at pane level is it the quit.
+            // Ctrl-C still force-quits from anywhere.
             KeyCode::Char('q') => {
-                self.kill_stream();
-                return true;
+                if self.detail.is_some() {
+                    self.close_detail();
+                } else {
+                    self.kill_stream();
+                    return true;
+                }
             }
             // `1`-`6` jump to the tab at that position in `Pane::ALL`
             // (Home is `1`); out-of-range digits fall through.
@@ -2379,18 +2402,10 @@ impl Model {
             // Versions focus eats esc first — one level out (back to
             // page scroll) before the page itself closes.
             KeyCode::Esc if self.versions_focused() => self.versions_focus = false,
-            KeyCode::Esc | KeyCode::Left if self.detail.is_some() => {
-                self.detail = None;
-                self.detail_scroll = 0;
-                self.versions_focus = false;
-                self.versions_sel = 0;
-            }
+            KeyCode::Esc | KeyCode::Left if self.detail.is_some() => self.close_detail(),
             KeyCode::Char('h') | KeyCode::BackTab => {
                 if self.detail.is_some() {
-                    self.detail = None;
-                    self.detail_scroll = 0;
-                    self.versions_focus = false;
-                    self.versions_sel = 0;
+                    self.close_detail();
                 } else {
                     self.step_pane(-1);
                 }
@@ -2559,6 +2574,21 @@ impl Model {
                         }
                         return;
                     }
+                }
+                // Home's recents are a wrapped Paragraph, not a
+                // table — `home_area` (recorded by `draw_home`) maps
+                // the click row onto `recent_installed()` →
+                // `home_sel`. Plain click selects only; `Enter`
+                // opens, same as the other panes.
+                if self.pane == Pane::Home {
+                    let area = self.home_area;
+                    if area.height > 0 && area.contains((ev.column, ev.row).into()) {
+                        let idx = (ev.row - area.y) as usize;
+                        if idx < self.recent_installed().len() {
+                            self.home_sel = idx;
+                        }
+                    }
+                    return;
                 }
                 let area = self.board_area;
                 if area.height > 0 && area.contains((ev.column, ev.row).into()) {
@@ -3234,5 +3264,79 @@ mod tests {
         empty.key(key(KeyCode::Char('L')));
         assert_eq!(empty.mode, Mode::Log);
         assert_eq!(empty.log_scroll, 0);
+    }
+
+    /// `q` with a package page open closes the page instead of
+    /// quitting — the second `q` (now at pane level) is the quit.
+    /// Ctrl-C still force-quits even with detail open.
+    #[test]
+    fn q_closes_detail_before_quitting() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let page = reg_entry("1.0.0");
+        let mut m = registry_page_model(&ctx, &page, None);
+        // Page open → `q` closes it, no quit.
+        assert!(!m.key(key(KeyCode::Char('q'))));
+        assert!(m.detail.is_none());
+        assert_eq!(m.pane, Pane::Registry);
+        // Pane level → `q` quits.
+        assert!(m.key(key(KeyCode::Char('q'))));
+        // Ctrl-C force-quits even with the page open.
+        let mut m = registry_page_model(&ctx, &page, None);
+        assert!(m.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+    }
+
+    /// A click inside `home_area` selects the matching
+    /// `recent_installed()` row (plain click selects only — `Enter`
+    /// opens); clicks outside the rect are no-ops.
+    #[test]
+    fn home_click_selects_recent_row() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            None,
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        for i in 0..4u64 {
+            m.entries.push(store_row(&format!("p{i}"), i + 1));
+        }
+        assert_eq!(m.pane, Pane::Home);
+        // As `draw_home` would report: rows start at y=3, 4 rows tall.
+        m.home_area = Rect::new(0, 3, 60, 4);
+        let click = |row: u16| MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 5,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+        // recent_installed is installed_at desc → row 0 is p3.
+        m.mouse(click(3));
+        assert_eq!(m.home_sel, 0);
+        assert_eq!(
+            m.home_selected().map(|r| r.entry.record.name.as_str()),
+            Some("p3")
+        );
+        m.mouse(click(5));
+        assert_eq!(m.home_sel, 2);
+        assert_eq!(
+            m.home_selected().map(|r| r.entry.record.name.as_str()),
+            Some("p1")
+        );
+        // Below the last row and above the rect: no-ops.
+        m.mouse(click(7));
+        m.mouse(click(2));
+        assert_eq!(m.home_sel, 2);
+        // Empty home_area (never drawn / empty list): no-op.
+        m.home_area = Rect::default();
+        m.mouse(click(4));
+        assert_eq!(m.home_sel, 2);
     }
 }
