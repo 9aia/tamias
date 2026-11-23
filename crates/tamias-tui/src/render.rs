@@ -1569,6 +1569,17 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
                     Style::default().fg(MUTED)
                 };
                 spans.push(Span::styled(shown.to_string(), style));
+                // The hint rides dimmed after the insert — capped so
+                // one verbose candidate can't eat the strip (the
+                // paragraph clips at the pane edge regardless).
+                let hint = c.hint.trim();
+                if !hint.is_empty() {
+                    let hint: String = hint.chars().take(48).collect();
+                    spans.push(Span::styled(
+                        format!(" — {hint}"),
+                        Style::default().fg(MUTED),
+                    ));
+                }
             }
             if m.cmd_completions.len() > 14 {
                 spans.push(Span::styled(
@@ -1685,12 +1696,15 @@ publish pane:   p bundle pack · P publish (confirm) · r registries ·
                 R reloads the registry list
 
 commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
-           :verify <name>  :update [name]  :pin <name> <ref>
+           :uninstall <name> (provider teardown)  :verify <name>
+           :update [name]  :pin <name> <ref>
            :search <q>  :registry <name>  :clean [all]  :doctor
            :services  :service <verb> <unit>  :run <pkg> [svc]
            :logs <pkg|unit> [-f]  :deploy <name>  :manifest
            :pack <dir> [out]  :publish <dir> [registry]  :registries
            :sync [--from-lock]
+           (: line editing — arrows · Home/End · Ctrl-A/E/U/W ·
+            Tab completes · Up/Down history)
 mouse:     wheel scrolls · click row selects · click tab switches";
     let width = area.width.min(72) as usize;
     let h = text.lines().count() as u16 + 2;
@@ -2018,6 +2032,35 @@ mod tests {
         assert!(screen[23].contains("home"), "{}", screen[23]);
         // And the log view was never drawn, so no hit rect was set.
         assert_eq!(m.log_area, Rect::default());
+    }
+
+    /// The `:` candidate strip renders `insert — hint`: the hint is
+    /// no longer dead data.
+    #[test]
+    fn completion_strip_shows_hints() {
+        let mut m = log_model(0);
+        m.mode = Mode::Command;
+        m.cmdline = "ins".into();
+        m.cmd_completions = vec![
+            crate::complete::Candidate {
+                insert: "install ".into(),
+                hint: "install a package by ref".into(),
+            },
+            crate::complete::Candidate {
+                insert: "i ".into(),
+                hint: String::new(), // hintless candidates render bare
+            },
+        ];
+        let screen = frame_text(&mut m, 80, 24);
+        assert!(
+            screen
+                .iter()
+                .any(|l| l.contains("install — install a package by ref")),
+            "{}",
+            screen.join("\n")
+        );
+        // The `i` alias shows without a dangling separator.
+        assert!(screen.iter().any(|l| l.contains(" i ")));
     }
 
     /// `L` at a normal width docks the log as a right sidebar: the

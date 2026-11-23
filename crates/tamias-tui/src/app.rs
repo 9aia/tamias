@@ -54,6 +54,13 @@ const LOG_CAP: usize = 300;
 /// keystroke fires the query (Enter fires immediately).
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(300);
 
+/// `:` history depth — session-scoped, most recent first.
+const CMD_HIST_CAP: usize = 50;
+
+/// Dynamic `:` completion cap — installed labels / registry names /
+/// unit names offered per arg position.
+const CMD_COMPLETION_CAP: usize = 20;
+
 /// Spinner frames for the busy indicator.
 pub(crate) const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -351,8 +358,14 @@ enum Cmd {
     Help,
     /// `:install <ref>`.
     Install(String),
-    /// `:remove <name>`.
+    /// `:remove <name>` — light store remove (driver `uninstall`
+    /// dispatch + `Store::remove`).
     Remove(String),
+    /// `:uninstall <name>` — full provider teardown
+    /// (`Job::ProviderUninstall`: driver uninstall, shared-unit
+    /// survivor re-render, unit removal, then store remove) — the
+    /// Services pane `x` equivalent.
+    Uninstall(String),
     /// `:verify <name>`.
     Verify(String),
     /// `:update [name]` — bare updates everything (`--all`).
@@ -435,6 +448,13 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
                 Err("usage: :remove <name>".into())
             } else {
                 Ok(Cmd::Remove(rest))
+            }
+        }
+        "uninstall" => {
+            if rest.is_empty() {
+                Err("usage: :uninstall <name>".into())
+            } else {
+                Ok(Cmd::Uninstall(rest))
             }
         }
         "verify" => {
@@ -573,6 +593,160 @@ fn chorded(k: &KeyEvent) -> bool {
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
 
+// --- shared single-line editing (`:`/`/`/prompt buffers) ---
+//
+// The cursor is a **byte** offset kept on a char boundary; every
+// helper below maintains that invariant, so callers can slice
+// `text[..cur]` freely. `line_edit` is the one key dispatcher the
+// four text modes share — Left/Right/Home/End, Backspace/Delete,
+// printable chars (inserted at the cursor), and the readline chords
+// Ctrl-A/E (line ends), Ctrl-U (clear), Ctrl-W (kill word back).
+
+/// Byte offset of the char boundary one char before `cur`.
+fn prev_boundary(text: &str, cur: usize) -> usize {
+    text[..cur]
+        .chars()
+        .next_back()
+        .map_or(0, |c| cur - c.len_utf8())
+}
+
+/// Byte offset of the char boundary one char after `cur`.
+fn next_boundary(text: &str, cur: usize) -> usize {
+    text[cur..]
+        .chars()
+        .next()
+        .map_or(text.len(), |c| cur + c.len_utf8())
+}
+
+/// Ctrl-W — delete from `cur` back over the whitespace run and the
+/// word before it (readline `unix-word-rubout`). Returns `true` when
+/// anything was deleted.
+fn kill_word_back(text: &mut String, cur: &mut usize) -> bool {
+    let start = {
+        let before = text[..*cur].trim_end();
+        before.rfind(char::is_whitespace).map_or(0, |i| {
+            i + before[i..].chars().next().map_or(1, |c| c.len_utf8())
+        })
+    };
+    if start < *cur {
+        text.drain(start..*cur);
+        *cur = start;
+        true
+    } else {
+        false
+    }
+}
+
+/// What [`line_edit`] did with a key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edit {
+    /// Not an editing key — the mode ignores it.
+    Ignored,
+    /// Consumed but the buffer is unchanged — a cursor move or an
+    /// edit at the boundary (Backspace on empty, Left at col 0).
+    /// `:` mode still refreshes completions (they're cursor-relative);
+    /// `/`-mode callers skip their post-edit hook so arrow keys don't
+    /// re-fire the debounced search.
+    Move,
+    /// The buffer contents changed.
+    Mutate,
+}
+
+/// One editing key against `(text, cur)`. Unhandled keys return
+/// [`Edit::Ignored`] and change nothing; callers run their post-edit
+/// hook on [`Edit::Mutate`] (and on `Move` where derived state is
+/// cursor-relative, like `:` completions).
+fn line_edit(text: &mut String, cur: &mut usize, k: &KeyEvent) -> Edit {
+    // Clamp + re-boundary: direct buffer writes (tests, paste
+    // callers) may leave the cursor mid-char.
+    *cur = (*cur).min(text.len());
+    while !text.is_char_boundary(*cur) {
+        *cur -= 1;
+    }
+    match k.code {
+        KeyCode::Char(c) => {
+            if k.modifiers.contains(KeyModifiers::CONTROL) {
+                match c {
+                    'a' | 'A' => *cur = 0,
+                    'e' | 'E' => *cur = text.len(),
+                    'u' | 'U' => {
+                        text.clear();
+                        *cur = 0;
+                        return Edit::Mutate;
+                    }
+                    'w' | 'W' => {
+                        return if kill_word_back(text, cur) {
+                            Edit::Mutate
+                        } else {
+                            Edit::Move
+                        };
+                    }
+                    _ => return Edit::Ignored,
+                }
+                Edit::Move
+            } else if k.modifiers.contains(KeyModifiers::ALT) {
+                Edit::Ignored
+            } else {
+                text.insert(*cur, c);
+                *cur += c.len_utf8();
+                Edit::Mutate
+            }
+        }
+        KeyCode::Backspace => {
+            if *cur > 0 {
+                let p = prev_boundary(text, *cur);
+                text.drain(p..*cur);
+                *cur = p;
+                Edit::Mutate
+            } else {
+                Edit::Move
+            }
+        }
+        KeyCode::Delete => {
+            if *cur < text.len() {
+                let n = next_boundary(text, *cur);
+                text.drain(*cur..n);
+                Edit::Mutate
+            } else {
+                Edit::Move
+            }
+        }
+        KeyCode::Left => {
+            *cur = prev_boundary(text, *cur);
+            Edit::Move
+        }
+        KeyCode::Right => {
+            *cur = next_boundary(text, *cur);
+            Edit::Move
+        }
+        KeyCode::Home => {
+            *cur = 0;
+            Edit::Move
+        }
+        KeyCode::End => {
+            *cur = text.len();
+            Edit::Move
+        }
+        _ => Edit::Ignored,
+    }
+}
+
+/// Byte offset where the token under `cur` starts — the char after
+/// the last whitespace before the cursor (0 at buffer start).
+fn token_start(text: &str, cur: usize) -> usize {
+    text[..cur].rfind(char::is_whitespace).map_or(0, |i| {
+        i + text[i..].chars().next().map_or(1, |c| c.len_utf8())
+    })
+}
+
+/// Byte offset where the token under `cur` ends — the next
+/// whitespace at/after the cursor, or buffer end.
+fn token_end(text: &str, cur: usize) -> usize {
+    text[cur..]
+        .find(char::is_whitespace)
+        .map_or(text.len(), |i| cur + i)
+}
+
 /// Collapse raw search hits to one row per package — the index
 /// returns every retained version, so without this a 3-version
 /// package renders 3 near-identical rows. Groups by `(name, scope)`
@@ -694,9 +868,24 @@ pub struct Model {
     pub mode: Mode,
     /// `/` input buffer (the filter text while typing).
     pub input: String,
+    /// Cursor into `input` — Filter and Search share the buffer, so
+    /// they share the cursor (only one is active at a time).
+    input_cur: usize,
     /// `:` command-line buffer — separate from `input` so a filter
     /// draft isn't clobbered.
     pub cmdline: String,
+    /// Cursor into `cmdline` — a byte offset kept on a char boundary
+    /// by the shared [`line_edit`] helpers.
+    cmd_cur: usize,
+    /// `:` history — most recent first, session-scoped, deduped
+    /// against consecutive repeats, capped at [`CMD_HIST_CAP`].
+    cmd_history: VecDeque<String>,
+    /// History recall cursor — `Some(i)` indexes `cmd_history`
+    /// (0 = newest); `None` = editing a fresh line.
+    cmd_hist: Option<usize>,
+    /// The buffer stashed when recall began — `Down` past the newest
+    /// entry restores it.
+    cmd_draft: String,
     /// Live `:` completions for the token under the cursor
     /// ([`crate::complete`]) — refreshed on every buffer edit.
     pub cmd_completions: Vec<crate::complete::Candidate>,
@@ -705,6 +894,8 @@ pub struct Model {
     pub cmd_sel: usize,
     /// Prompt buffer (`p`/`i`/`:registry` text entry).
     pub prompt_buf: String,
+    /// Cursor into `prompt_buf`.
+    prompt_cur: usize,
     /// Status-bar message (last action / error) — expires after
     /// [`STATUS_TTL`] unless it's an error (errors are sticky).
     pub status: String,
@@ -838,6 +1029,9 @@ pub struct Model {
     /// Configured registry names for the publish picker — loaded on
     /// pane entry (`ops::registry_names`).
     pub author_regs: Vec<(String, String)>,
+    /// Registry names for `:` completion (`:registry`, `:publish`'s
+    /// registry arg) — refreshed on every store `reload`.
+    reg_names: Vec<String>,
 }
 
 impl Model {
@@ -857,10 +1051,16 @@ impl Model {
             filter: String::new(),
             mode: Mode::Normal,
             input: String::new(),
+            input_cur: 0,
             cmdline: String::new(),
+            cmd_cur: 0,
+            cmd_history: VecDeque::new(),
+            cmd_hist: None,
+            cmd_draft: String::new(),
             cmd_completions: Vec::new(),
             cmd_sel: usize::MAX,
             prompt_buf: String::new(),
+            prompt_cur: 0,
             status: String::new(),
             status_at: Instant::now(),
             status_err: false,
@@ -907,6 +1107,7 @@ impl Model {
             man_err: None,
             man_sel: 0,
             author_regs: Vec::new(),
+            reg_names: Vec::new(),
         };
         m.reload();
         Ok(m)
@@ -945,6 +1146,15 @@ impl Model {
         self.home_sel = if n == 0 { 0 } else { self.home_sel.min(n - 1) };
         self.arm_watch();
         self.load_manifest();
+        // Registry names feed `:` completion — refresh with the rest
+        // of the reload so `:registry`/`:publish` args stay current.
+        self.reg_names = ops::registry_names(&self.ctx)
+            .into_iter()
+            .map(|(name, _)| name)
+            // The `publish.default → x`/`search.default → x` pseudo
+            // rows aren't registries a `:registry` target can name.
+            .filter(|n| !n.contains('→'))
+            .collect();
     }
 
     /// (Re)read the project manifest for the Project pane — a tiny
@@ -1594,6 +1804,7 @@ impl Model {
             // retry.
             self.filter.clear();
             self.input.clear();
+            self.input_cur = 0;
             vis = self.visible();
             pos = vis.iter().position(|&i| {
                 self.entries
@@ -1694,6 +1905,7 @@ impl Model {
         let text = self.prompt_buf.trim().to_string();
         self.mode = Mode::Normal;
         self.prompt_buf.clear();
+        self.prompt_cur = 0;
         match kind {
             PromptKind::Pin { name } => {
                 if text.is_empty() {
@@ -1959,6 +2171,7 @@ impl Model {
     fn verb_pin(&mut self) {
         if let Some(label) = self.selected_label() {
             self.prompt_buf.clear();
+            self.prompt_cur = 0;
             self.mode = Mode::Prompt(PromptKind::Pin { name: label });
         }
     }
@@ -1987,6 +2200,7 @@ impl Model {
             Pane::Registry => self.install_registry_result(),
             _ => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::InstallRef);
             }
         }
@@ -2022,6 +2236,7 @@ impl Model {
         match key {
             'd' => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::DeployConfig {
                     name: row.package.clone(),
                 });
@@ -2060,6 +2275,7 @@ impl Model {
         match key {
             'a' => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::AddDep);
             }
             // `s` reconciles the whole `deps:` set (`tamias sync`) —
@@ -2080,6 +2296,7 @@ impl Model {
             'e' => match self.dep_selected() {
                 Some(old) => {
                     self.prompt_buf.clear();
+                    self.prompt_cur = 0;
                     self.mode = Mode::Prompt(PromptKind::SetDep { old });
                 }
                 None => self.say_err("no dep selected"),
@@ -2096,10 +2313,12 @@ impl Model {
         match key {
             'p' => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::PackSpec);
             }
             'P' => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::PublishSpec);
             }
             'r' => self.spawn(Job::Registries),
@@ -2133,6 +2352,9 @@ impl Model {
             Ok(Cmd::Remove(name)) => {
                 self.confirm_job(Job::Remove(name));
             }
+            Ok(Cmd::Uninstall(name)) => {
+                self.confirm_job(Job::ProviderUninstall { name });
+            }
             Ok(Cmd::Verify(name)) => self.spawn(Job::Verify(name)),
             Ok(Cmd::Update(name)) => match name {
                 Some(name) => self.confirm_job(Job::Update {
@@ -2157,6 +2379,7 @@ impl Model {
                 self.switch_pane(Pane::Registry);
                 self.reg_query = query.clone();
                 self.input = query;
+                self.input_cur = self.input.len();
                 self.search_typed_at = None;
                 self.search_now();
             }
@@ -2170,6 +2393,7 @@ impl Model {
                 }
                 None => {
                     self.prompt_buf.clear();
+                    self.prompt_cur = 0;
                     self.mode = Mode::Prompt(PromptKind::RegistryTarget);
                 }
             },
@@ -2190,6 +2414,7 @@ impl Model {
             Ok(Cmd::Logs { name, follow }) => self.spawn(Job::Logs { name, follow }),
             Ok(Cmd::Deploy(name)) => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::DeployConfig { name });
             }
             Ok(Cmd::Pack(spec)) => {
@@ -2234,18 +2459,124 @@ impl Model {
         }
     }
 
-    /// Recompute the `:` completion candidates for the current
-    /// buffer; any edit resets the Tab selection to "none applied".
+    /// Recompute the `:` completion candidates for the buffer *up to
+    /// the cursor* (completion is cursor-relative, not whole-line);
+    /// any edit resets the Tab selection to "none applied".
     fn refresh_completions(&mut self) {
-        self.cmd_completions = crate::complete::complete(&self.cmdline);
+        let line = self.cmd_prefix();
+        let dynamic = self.dynamic_candidates();
+        self.cmd_completions = crate::complete::complete_with(&line, &dynamic);
         self.cmd_sel = usize::MAX;
     }
 
+    /// `cmdline[..cmd_cur]` clamped to a char boundary — the text the
+    /// completer sees (the token under the cursor is its last word).
+    fn cmd_prefix(&self) -> String {
+        let mut cur = self.cmd_cur.min(self.cmdline.len());
+        while !self.cmdline.is_char_boundary(cur) {
+            cur -= 1;
+        }
+        self.cmdline[..cur].to_string()
+    }
+
+    /// Dynamic completion candidates for the arg position under the
+    /// cursor — the model-backed half of [`crate::complete_with`].
+    /// Tokenizes the same way the completer does (verb = token 0,
+    /// token index = arg position) and picks a source per verb:
+    ///
+    /// - package-name verbs (`remove`/`verify`/`update`/`uninstall`/
+    ///   `deploy`/`install`/`run`/`logs`/`pin` first arg) → installed
+    ///   entry labels;
+    /// - `registry` and `publish`'s registry arg → configured
+    ///   registry names;
+    /// - `service`'s unit arg → unit base names, `run`'s service arg
+    ///   → that package's provider service names.
+    ///
+    /// Dedupe + [`CMD_COMPLETION_CAP`] cap; inserts carry a trailing
+    /// space so the next arg position is already open.
+    fn dynamic_candidates(&self) -> Vec<crate::complete::Candidate> {
+        use crate::complete::Candidate;
+        let body = self
+            .cmd_prefix()
+            .trim_start()
+            .trim_start_matches(':')
+            .trim_start()
+            .to_string();
+        let tokens: Vec<&str> = body.split_whitespace().collect();
+        if tokens.is_empty() {
+            return Vec::new();
+        }
+        let fresh = body.chars().last().is_none_or(|c| c.is_whitespace());
+        let position = if fresh {
+            tokens.len()
+        } else {
+            tokens.len() - 1
+        };
+        if position == 0 {
+            return Vec::new();
+        }
+        let verb = tokens[0].to_lowercase();
+        let labels = |hint: &str| -> Vec<Candidate> {
+            self.entries
+                .iter()
+                .map(|r| Candidate {
+                    insert: format!("{} ", r.entry.label()),
+                    hint: hint.to_string(),
+                })
+                .collect()
+        };
+        let names = |hint: &str, names: Vec<String>| -> Vec<Candidate> {
+            names
+                .into_iter()
+                .map(|n| Candidate {
+                    insert: format!("{n} "),
+                    hint: hint.to_string(),
+                })
+                .collect()
+        };
+        let out = match verb.as_str() {
+            // First-arg package positions.
+            "remove" | "uninstall" | "verify" | "update" | "u" | "deploy" | "install" | "i"
+            | "logs" | "pin" | "p"
+                if position == 1 =>
+            {
+                labels("installed")
+            }
+            // `:run <pkg> [service]` — arg 1 is the package, arg 2
+            // the provider service within it.
+            "run" if position == 1 => labels("installed"),
+            "run" if position == 2 => {
+                let pkg = tokens.get(1).copied().unwrap_or("");
+                let svcs: Vec<String> = self
+                    .svc_rows
+                    .iter()
+                    .filter(|r| r.package == pkg)
+                    .map(|r| r.service.clone())
+                    .collect();
+                names("provider service", svcs)
+            }
+            // `:service <verb> <unit>` — position 2 is the unit.
+            "service" if position >= 2 => names(
+                "unit",
+                self.svc_rows.iter().map(|r| r.unit.clone()).collect(),
+            ),
+            // `:registry <name>` and `:publish <dir> [registry]`.
+            "registry" if position == 1 => names("registry", self.reg_names.clone()),
+            "publish" if position == 2 => names("registry", self.reg_names.clone()),
+            _ => Vec::new(),
+        };
+        // Dedupe on insert, cap — prefix filtering is complete_with's.
+        let mut seen = std::collections::HashSet::new();
+        out.into_iter()
+            .filter(|c| seen.insert(c.insert.clone()))
+            .take(CMD_COMPLETION_CAP)
+            .collect()
+    }
+
     /// `Tab`/`BackTab` in `:` mode — cycle the candidate list and
-    /// replace the trailing token with the pick. The token boundary
-    /// is the last whitespace (or buffer start); a trailing space
-    /// means we're completing a fresh token, so `rfind` lands on it
-    /// and the replace is a pure append.
+    /// replace the token under the cursor with the pick. The token
+    /// bounds come from [`token_start`]/[`token_end`] at `cmd_cur`,
+    /// so completion works mid-line, not just at the end.
     fn apply_completion(&mut self, forward: bool) {
         let n = self.cmd_completions.len();
         if n == 0 {
@@ -2266,16 +2597,82 @@ impl Model {
             Some(c) => c.insert.clone(),
             None => return,
         };
-        let start = self.cmdline.rfind(char::is_whitespace).map_or(0, |i| i + 1);
-        self.cmdline.replace_range(start.., &insert);
+        let mut cur = self.cmd_cur.min(self.cmdline.len());
+        while !self.cmdline.is_char_boundary(cur) {
+            cur -= 1;
+        }
+        let start = token_start(&self.cmdline, cur);
+        let end = token_end(&self.cmdline, cur);
+        self.cmdline.replace_range(start..end, &insert);
+        self.cmd_cur = start + insert.len();
         self.refresh_completions();
     }
 
-    /// `:` mode keys — `Enter` runs, `esc` drops the line, `Tab`
-    /// cycles [`crate::complete`] candidates into the buffer.
+    /// Push the submitted line onto `:` history — non-empty only,
+    /// consecutive duplicates collapse (like readline).
+    fn record_command(&mut self) {
+        let line = self.cmdline.trim().to_string();
+        if line.is_empty() {
+            return;
+        }
+        if self.cmd_history.front().is_some_and(|f| *f == line) {
+            return;
+        }
+        self.cmd_history.push_front(line);
+        while self.cmd_history.len() > CMD_HIST_CAP {
+            self.cmd_history.pop_back();
+        }
+    }
+
+    /// `Up`/`Down` history recall — `Up` walks back (most recent
+    /// first), `Down` forward; stepping past the newest entry
+    /// restores the line that was being edited when recall began.
+    fn hist_move(&mut self, down: bool) {
+        if self.cmd_history.is_empty() {
+            return;
+        }
+        match self.cmd_hist {
+            None => {
+                if down {
+                    return;
+                }
+                self.cmd_draft = self.cmdline.clone();
+                self.cmd_hist = Some(0);
+            }
+            Some(i) => {
+                if down {
+                    if i == 0 {
+                        self.cmdline = std::mem::take(&mut self.cmd_draft);
+                        self.cmd_hist = None;
+                        self.cmd_cur = self.cmdline.len();
+                        self.refresh_completions();
+                        return;
+                    }
+                    self.cmd_hist = Some(i - 1);
+                } else {
+                    let last = self.cmd_history.len() - 1;
+                    self.cmd_hist = Some((i + 1).min(last));
+                }
+            }
+        }
+        if let Some(i) = self.cmd_hist {
+            if let Some(line) = self.cmd_history.get(i) {
+                self.cmdline = line.clone();
+            }
+        }
+        self.cmd_cur = self.cmdline.len();
+        self.refresh_completions();
+    }
+
+    /// `:` mode keys — `Enter` runs (and records history), `esc`
+    /// drops the line, `Tab`/`BackTab` cycle [`crate::complete`]
+    /// candidates into the buffer at the cursor, `Up`/`Down` recall
+    /// history, everything else is shared line editing.
     fn key_command(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
+                self.record_command();
+                self.cmd_hist = None;
                 self.mode = Mode::Normal;
                 self.cmd_completions.clear();
                 let quit = matches!(self.cmdline.trim(), "q" | "quit" | "q!");
@@ -2291,12 +2688,17 @@ impl Model {
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
                 self.cmdline.clear();
+                self.cmd_cur = 0;
+                self.cmd_hist = None;
                 self.cmd_completions.clear();
                 false
             }
-            KeyCode::Backspace => {
-                self.cmdline.pop();
-                self.refresh_completions();
+            KeyCode::Up => {
+                self.hist_move(false);
+                false
+            }
+            KeyCode::Down => {
+                self.hist_move(true);
                 false
             }
             KeyCode::Tab => {
@@ -2307,44 +2709,91 @@ impl Model {
                 self.apply_completion(false);
                 false
             }
-            KeyCode::Char(c) if !chorded(&k) => {
-                self.cmdline.push(c);
-                self.refresh_completions();
+            _ => {
+                // Any consumed edit — including cursor moves —
+                // refreshes completions (they're cursor-relative).
+                if line_edit(&mut self.cmdline, &mut self.cmd_cur, &k) != Edit::Ignored {
+                    self.refresh_completions();
+                }
                 false
             }
-            _ => false,
+        }
+    }
+
+    /// Post-edit hook shared by `key_filter`/`key_search`/`paste` —
+    /// push `input` into the mode's real field and refresh.
+    fn after_input_edit(&mut self) {
+        match self.mode {
+            Mode::Filter => {
+                self.filter = self.input.clone();
+                self.rebuild_sel(None, self.sel);
+            }
+            Mode::Search => {
+                self.reg_query = self.input.clone();
+                self.search_typed_at = Some(Instant::now());
+            }
+            _ => {}
+        }
+    }
+
+    /// Insert `text` at a char-boundary-clamped cursor.
+    fn insert_at(text: &mut String, cur: &mut usize, s: &str) {
+        *cur = (*cur).min(text.len());
+        while !text.is_char_boundary(*cur) {
+            *cur -= 1;
+        }
+        text.insert_str(*cur, s);
+        *cur += s.len();
+    }
+
+    /// Bracketed paste (`Event::Paste`) — insert the text at the
+    /// cursor of whichever text mode is active; a no-op elsewhere.
+    /// Newlines are kept verbatim (the modes are single-line — a
+    /// pasted `\n` just becomes part of the buffer text).
+    pub fn paste(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        match self.mode {
+            Mode::Command => {
+                Self::insert_at(&mut self.cmdline, &mut self.cmd_cur, text);
+                self.refresh_completions();
+            }
+            Mode::Filter | Mode::Search => {
+                Self::insert_at(&mut self.input, &mut self.input_cur, text);
+                self.after_input_edit();
+            }
+            Mode::Prompt(_) => {
+                Self::insert_at(&mut self.prompt_buf, &mut self.prompt_cur, text);
+            }
+            _ => {}
         }
     }
 
     /// `/` mode keys on Installed — live filter; `Enter` keeps it,
-    /// `esc` clears.
+    /// `esc` clears. Editing keys are the shared [`line_edit`] set.
     fn key_filter(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
                 self.mode = Mode::Normal;
                 self.input.clear();
+                self.input_cur = 0;
                 false
             }
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
                 self.input.clear();
+                self.input_cur = 0;
                 self.filter.clear();
                 self.rebuild_sel(None, self.sel);
                 false
             }
-            KeyCode::Backspace => {
-                self.input.pop();
-                self.filter = self.input.clone();
-                self.rebuild_sel(None, self.sel);
+            _ => {
+                if line_edit(&mut self.input, &mut self.input_cur, &k) == Edit::Mutate {
+                    self.after_input_edit();
+                }
                 false
             }
-            KeyCode::Char(c) if !chorded(&k) => {
-                self.input.push(c);
-                self.filter = self.input.clone();
-                self.rebuild_sel(None, self.sel);
-                false
-            }
-            _ => false,
         }
     }
 
@@ -2357,6 +2806,7 @@ impl Model {
             KeyCode::Enter => {
                 self.mode = Mode::Normal;
                 self.input.clear();
+                self.input_cur = 0;
                 self.search_now();
                 false
             }
@@ -2364,23 +2814,17 @@ impl Model {
                 self.mode = Mode::Normal;
                 false
             }
-            KeyCode::Backspace => {
-                self.input.pop();
-                self.reg_query = self.input.clone();
-                self.search_typed_at = Some(Instant::now());
+            _ => {
+                if line_edit(&mut self.input, &mut self.input_cur, &k) == Edit::Mutate {
+                    self.after_input_edit();
+                }
                 false
             }
-            KeyCode::Char(c) if !chorded(&k) => {
-                self.input.push(c);
-                self.reg_query = self.input.clone();
-                self.search_typed_at = Some(Instant::now());
-                false
-            }
-            _ => false,
         }
     }
 
     /// `p`/`i`/`:registry` prompt keys — text entry; `Enter` runs.
+    /// Editing keys are the shared [`line_edit`] set.
     fn key_prompt(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
@@ -2390,17 +2834,13 @@ impl Model {
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 false
             }
-            KeyCode::Backspace => {
-                self.prompt_buf.pop();
+            _ => {
+                let _ = line_edit(&mut self.prompt_buf, &mut self.prompt_cur, &k);
                 false
             }
-            KeyCode::Char(c) if !chorded(&k) => {
-                self.prompt_buf.push(c);
-                false
-            }
-            _ => false,
         }
     }
 
@@ -2626,15 +3066,18 @@ impl Model {
                     self.reg_version_counts.clear();
                     self.reg_err = None;
                     self.input.clear();
+                    self.input_cur = 0;
                     self.mode = Mode::Search;
                 }
                 Pane::Registry => {
                     self.mode = Mode::Search;
                     self.input = self.reg_query.clone();
+                    self.input_cur = self.input.len();
                 }
                 Pane::Installed => {
                     self.mode = Mode::Filter;
                     self.input = self.filter.clone();
+                    self.input_cur = self.input.len();
                 }
                 // The `/` filter only exists on Installed — anywhere
                 // else it would edit hidden state, so say where it
@@ -2644,6 +3087,8 @@ impl Model {
             KeyCode::Char(':') => {
                 self.mode = Mode::Command;
                 self.cmdline.clear();
+                self.cmd_cur = 0;
+                self.cmd_hist = None;
                 self.refresh_completions();
             }
             KeyCode::Char('F') => {
@@ -2825,6 +3270,11 @@ mod tests {
             Cmd::Install("git:x#main".into())
         );
         assert_eq!(parse_command("remove w").unwrap(), Cmd::Remove("w".into()));
+        assert_eq!(
+            parse_command("uninstall @s/w@1").unwrap(),
+            Cmd::Uninstall("@s/w@1".into())
+        );
+        assert!(parse_command("uninstall").is_err());
         assert_eq!(parse_command("verify w").unwrap(), Cmd::Verify("w".into()));
         assert_eq!(parse_command("update").unwrap(), Cmd::Update(None));
         assert_eq!(
@@ -3885,5 +4335,299 @@ mod tests {
             "{}",
             m.status
         );
+    }
+
+    // --- `:` line editing, history, dynamic completion ---
+
+    /// Type `s` into the `:` buffer char by char.
+    fn type_colon(m: &mut Model, s: &str) {
+        let key = |code, mods| KeyEvent::new(code, mods);
+        for c in s.chars() {
+            m.key(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+    }
+
+    /// `:` mode gets full line editing: arrows/Home/End move the
+    /// cursor, Backspace/Delete edit around it, Ctrl-A/E/U/W are the
+    /// readline chords — and unicode survives (cursor is a char
+    /// boundary, not a byte count).
+    #[test]
+    fn colon_line_editing() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "remove w");
+        assert_eq!(m.cmdline, "remove w");
+        assert_eq!(m.cmd_cur, 8);
+        // Left lands before 'w'; typing inserts there.
+        m.key(key(KeyCode::Left, none));
+        type_colon(&mut m, "X");
+        assert_eq!(m.cmdline, "remove Xw");
+        // Backspace removes before the cursor ('X'), not 'w'.
+        m.key(key(KeyCode::Backspace, none));
+        assert_eq!(m.cmdline, "remove w");
+        // Delete removes *at* the cursor — Left then Delete eats 'w'.
+        m.key(key(KeyCode::Delete, none));
+        assert_eq!(m.cmdline, "remove ");
+        // Home + type prepends; End jumps back.
+        m.key(key(KeyCode::Home, none));
+        type_colon(&mut m, ">");
+        assert_eq!(m.cmdline, ">remove ");
+        m.key(key(KeyCode::End, none));
+        assert_eq!(m.cmd_cur, m.cmdline.len());
+        // Ctrl-A is Home, Ctrl-E is End.
+        m.key(key(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        assert_eq!(m.cmd_cur, 0);
+        m.key(key(KeyCode::Char('e'), KeyModifiers::CONTROL));
+        assert_eq!(m.cmd_cur, m.cmdline.len());
+        // Ctrl-W kills back to the previous whitespace — ">remove "
+        // trims to ">remove" (no inner space), so the whole word goes.
+        m.key(key(KeyCode::Char('w'), KeyModifiers::CONTROL));
+        assert_eq!(m.cmdline, "");
+        // Ctrl-U clears the line outright.
+        m.key(key(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(m.cmdline, "");
+        assert_eq!(m.cmd_cur, 0);
+        // Unicode: 'é' is two bytes — Left/Right cross it as one
+        // char and Backspace at end eats it whole (no split char).
+        type_colon(&mut m, "café");
+        assert_eq!(m.cmdline, "café");
+        m.key(key(KeyCode::Left, none)); // cursor before 'é'
+        m.key(key(KeyCode::Right, none)); // back to end
+        m.key(key(KeyCode::Backspace, none));
+        assert_eq!(m.cmdline, "caf");
+        // Esc drops the line and resets the cursor.
+        m.key(key(KeyCode::Esc, none));
+        assert_eq!(m.mode, Mode::Normal);
+        assert_eq!(m.cmdline, "");
+    }
+
+    /// Ctrl-W word-kill semantics on a plain line.
+    #[test]
+    fn ctrl_w_kills_word_back() {
+        let mut text = String::from("foo bar baz");
+        let mut cur = text.len();
+        let k = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+        assert_eq!(line_edit(&mut text, &mut cur, &k('w')), Edit::Mutate);
+        assert_eq!(text, "foo bar ");
+        assert_eq!(cur, 8);
+        assert_eq!(line_edit(&mut text, &mut cur, &k('w')), Edit::Mutate);
+        assert_eq!(text, "foo ");
+        // Cursor mid-word kills only the fragment before it —
+        // "one two" with the cursor after 't' drops just the 't'.
+        let mut text = String::from("one two");
+        let mut cur = 5;
+        assert_eq!(line_edit(&mut text, &mut cur, &k('w')), Edit::Mutate);
+        assert_eq!(text, "one wo");
+        assert_eq!(cur, 4);
+    }
+
+    /// `:` history: Enter records, Up recalls newest-first, Down
+    /// walks forward and restores the in-progress draft.
+    #[test]
+    fn colon_history_recalls() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "r");
+        m.key(key(KeyCode::Enter, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "services");
+        m.key(key(KeyCode::Enter, none));
+        // Reopen — Up gives the most recent first.
+        m.key(key(KeyCode::Char(':'), none));
+        m.key(key(KeyCode::Up, none));
+        assert_eq!(m.cmdline, "services");
+        m.key(key(KeyCode::Up, none));
+        assert_eq!(m.cmdline, "r");
+        // Clamped at the oldest entry.
+        m.key(key(KeyCode::Up, none));
+        assert_eq!(m.cmdline, "r");
+        m.key(key(KeyCode::Down, none));
+        assert_eq!(m.cmdline, "services");
+        // Past the newest entry the draft (empty here) returns.
+        m.key(key(KeyCode::Down, none));
+        assert_eq!(m.cmdline, "");
+        // A typed draft is stashed and restored.
+        type_colon(&mut m, "draft");
+        m.key(key(KeyCode::Up, none));
+        assert_eq!(m.cmdline, "services");
+        m.key(key(KeyCode::Down, none));
+        assert_eq!(m.cmdline, "draft");
+        // Consecutive duplicates collapse.
+        m.key(key(KeyCode::Esc, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "services");
+        m.key(key(KeyCode::Enter, none));
+        assert_eq!(m.cmd_history.len(), 2);
+        assert_eq!(m.cmd_history[0].as_str(), "services");
+    }
+
+    /// Dynamic completion: `:remove <prefix>` offers installed
+    /// labels, `:service <verb> <u>` offers unit names, `:registry`
+    /// offers registry names — all prefix-filtered, Tab-spliced at
+    /// the cursor.
+    #[test]
+    fn colon_dynamic_completion() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.entries.push(store_row("widget", 1));
+        m.entries.push(store_row("gadget", 2));
+        m.svc_rows = vec![ServiceRow {
+            package: "widget@1".into(),
+            service: "web".into(),
+            unit: "tamias-widget-web".into(),
+            state: Some("active".into()),
+            exec: "w".into(),
+        }];
+        m.reg_names = vec!["mine".into(), "org".into()];
+        // Installed labels at a package arg position.
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "remove wid");
+        let inserts: Vec<String> = m.cmd_completions.iter().map(|c| c.insert.clone()).collect();
+        assert_eq!(inserts, vec!["widget@1 ".to_string()]);
+        // Tab splices at the cursor — replaces the partial token.
+        m.key(key(KeyCode::Tab, none));
+        assert_eq!(m.cmdline, "remove widget@1 ");
+        // `:uninstall` gets the same label candidates.
+        m.key(key(KeyCode::Esc, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "uninstall gad");
+        let inserts: Vec<String> = m.cmd_completions.iter().map(|c| c.insert.clone()).collect();
+        assert_eq!(inserts, vec!["gadget@2 ".to_string()]);
+        // `:service`'s unit position offers unit names.
+        m.key(key(KeyCode::Esc, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "service start tamias-w");
+        let inserts: Vec<String> = m.cmd_completions.iter().map(|c| c.insert.clone()).collect();
+        assert_eq!(inserts, vec!["tamias-widget-web ".to_string()]);
+        // `:registry` offers configured names.
+        m.key(key(KeyCode::Esc, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "registry m");
+        let inserts: Vec<String> = m.cmd_completions.iter().map(|c| c.insert.clone()).collect();
+        assert_eq!(inserts, vec!["mine ".to_string()]);
+    }
+
+    /// Completion works mid-line: the cursor, not the buffer end,
+    /// decides which token is completed and where the insert lands.
+    #[test]
+    fn colon_completion_at_cursor() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.entries.push(store_row("widget", 1));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "remove wid extra");
+        // Move the cursor back into the 'wid' token.
+        for _ in 0..6 {
+            m.key(key(KeyCode::Left, none)); // "extra" is 5 + space
+        }
+        // Now inside/at-end of 'wid' — completions reflect 'wid'.
+        assert!(
+            m.cmd_completions.iter().any(|c| c.insert == "widget@1 "),
+            "{:?}",
+            m.cmd_completions
+        );
+        m.key(key(KeyCode::Tab, none));
+        assert_eq!(m.cmdline, "remove widget@1  extra");
+    }
+
+    /// `:uninstall` dispatches `Job::ProviderUninstall` (full
+    /// teardown) while `:remove` keeps the light `Job::Remove`.
+    #[test]
+    fn colon_uninstall_dispatches_provider_teardown() {
+        let (_tmp, mut m) = bare_model();
+        m.cmdline = "uninstall w@1".into();
+        m.run_command();
+        match &m.modal {
+            Some(Modal::Confirm {
+                job: Job::ProviderUninstall { name },
+                ..
+            }) => assert_eq!(name, "w@1"),
+            other => panic!("expected ProviderUninstall confirm, got {other:?}"),
+        }
+        m.modal = None;
+        m.cmdline = "remove w@1".into();
+        m.run_command();
+        assert!(matches!(
+            m.modal,
+            Some(Modal::Confirm {
+                job: Job::Remove(_),
+                ..
+            })
+        ));
+    }
+
+    /// The shared [`line_edit`] set also drives `/` filter/search
+    /// and the prompts — cursor movement included.
+    #[test]
+    fn shared_line_editing_in_other_text_modes() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        // Prompt mode.
+        m.mode = Mode::Prompt(PromptKind::InstallRef);
+        for c in "abc".chars() {
+            m.key(key(KeyCode::Char(c), none));
+        }
+        m.key(key(KeyCode::Left, none));
+        m.key(key(KeyCode::Char('X'), none));
+        assert_eq!(m.prompt_buf, "abXc");
+        m.key(key(KeyCode::Esc, none));
+        assert_eq!(m.prompt_buf, "");
+        // Filter mode — editing rebuilds the filter live.
+        m.pane = Pane::Installed;
+        m.entries.push(store_row("widget", 1));
+        m.key(key(KeyCode::Char('/'), none));
+        assert_eq!(m.mode, Mode::Filter);
+        for c in "wid".chars() {
+            m.key(key(KeyCode::Char(c), none));
+        }
+        assert_eq!(m.filter, "wid");
+        // Mid-line edit: Left then 'g' → "wigd".
+        m.key(key(KeyCode::Left, none));
+        m.key(key(KeyCode::Char('g'), none));
+        assert_eq!(m.input, "wigd");
+        assert_eq!(m.filter, "wigd");
+        // Ctrl-U clears both buffer and filter.
+        m.key(key(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(m.input, "");
+        assert_eq!(m.filter, "");
+    }
+
+    /// Bracketed paste lands at the cursor in every text mode.
+    #[test]
+    fn paste_inserts_at_cursor() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "remove");
+        m.paste(" w");
+        assert_eq!(m.cmdline, "remove w");
+        m.key(key(KeyCode::Left, none));
+        m.paste("X");
+        assert_eq!(m.cmdline, "remove Xw");
+        // Filter mode.
+        m.mode = Mode::Filter;
+        m.input = "ab".into();
+        m.input_cur = 1;
+        m.paste("Z");
+        assert_eq!(m.input, "aZb");
+        assert_eq!(m.filter, "aZb");
+        // Prompt mode.
+        m.mode = Mode::Prompt(PromptKind::InstallRef);
+        m.prompt_buf = "ab".into();
+        m.prompt_cur = 2;
+        m.paste("cd");
+        assert_eq!(m.prompt_buf, "abcd");
+        // Normal mode swallows it.
+        m.mode = Mode::Normal;
+        m.paste("nope");
+        assert_eq!(m.prompt_buf, "abcd");
     }
 }

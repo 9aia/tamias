@@ -26,7 +26,9 @@
 //! be re-plumbed.
 
 mod app;
-mod complete;
+/// `:`-line completion — pure candidate engine (`complete` static,
+/// `complete_with` model-supplied dynamic args).
+pub mod complete;
 mod ops;
 mod render;
 
@@ -158,6 +160,9 @@ pub fn run(ctx: &Ctx) -> Result<(), String> {
                     }
                 }
                 Event::Mouse(m) => model.mouse(m),
+                // Bracketed paste — lands in whichever text mode is
+                // active (`:`/`/`/prompt); a no-op otherwise.
+                Event::Paste(text) => model.paste(&text),
                 Event::Resize(..) => {}
                 _ => {}
             }
