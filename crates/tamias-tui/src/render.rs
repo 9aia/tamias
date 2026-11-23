@@ -19,10 +19,10 @@ use crate::app::{Detail, Modal, Mode, Model, Pane, PromptKind, SPINNER};
 /// terminals (the old `Indexed(69)` navy read as near-background);
 /// also the active tab's background and the `›` cursor marker.
 const ACCENT: Color = Color::Indexed(75);
-/// Secondary text — mid gray: clearly above a dark terminal's
-/// background where `Indexed(241)` read as bg-colored, still a
-/// step dimmer than [`TEXT`].
-const MUTED: Color = Color::Indexed(245);
+/// Secondary text — light gray: `Indexed(245)` read as near-bg on
+/// dark themes (the "almost black" secondary copy); `Indexed(250)`
+/// stays clearly a step dimmer than [`TEXT`] without sinking.
+const MUTED: Color = Color::Indexed(250);
 /// Primary text — the explicit fg for spans that carry no style of
 /// their own; terminals' default fg can be near-black on dark
 /// themes, which is what made table cells and body copy vanish.
@@ -400,7 +400,7 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
         if m.svc_rows.is_empty() {
             f.render_widget(
                 Paragraph::new(format!(
-                    "services: {err} — `R` retries · `:doctor` diagnoses"
+                    "services: {err} — `:services` retries · `:doctor` diagnoses"
                 ))
                 .style(Style::default().fg(Color::Red)),
                 area,
@@ -414,7 +414,7 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
         let hint = if m.busy.is_some() {
             "loading services…"
         } else {
-            "no provider services — `i` installs a package with a `provider:` block"
+            "no provider services — a package's `provider:` block declares them"
         };
         f.render_widget(Paragraph::new(hint).style(Style::default().fg(MUTED)), area);
         m.board_area = Rect::default();
@@ -518,7 +518,7 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
         }
         (None, None) => {
             info.push(Line::from(Span::styled(
-                "no project manifest — `a` adds a dep (writes tamias.yaml + tamias.lock)",
+                "no project manifest — adding a dep writes tamias.yaml + tamias.lock",
                 Style::default().fg(MUTED),
             )));
         }
@@ -549,7 +549,8 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
         .unwrap_or_default();
     if deps.is_empty() {
         f.render_widget(
-            Paragraph::new("no deps — `a` adds a ref").style(Style::default().fg(MUTED)),
+            Paragraph::new("no deps — add refs under `deps:` in tamias.yaml")
+                .style(Style::default().fg(MUTED)),
             table_area,
         );
         m.board_area = Rect::default();
@@ -591,15 +592,15 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
 }
 
 /// The Publish pane — the npm-maintainer analog: a registries table
-/// (name/kind/target, `author_sel` cursor) over a hint strip that
-/// keeps the pack/publish verbs discoverable with their arg shapes.
-/// Same layout posture as Manifest: the info strip yields on short
-/// terminals, the table keeps the rest. Results land in the op log
-/// like every other job; `Enter` stays unbound — there is no
-/// publish-target verb to trigger from a row.
+/// (name/kind/target, `author_sel` cursor) under a small info strip.
+/// The verbs themselves live only in the status-bar hint — the body
+/// carries no key map. Same layout posture as Manifest: the info
+/// strip yields on short terminals, the table keeps the rest.
+/// Results land in the op log like every other job; `Enter` stays
+/// unbound — there is no publish-target verb to trigger from a row.
 fn draw_author(f: &mut Frame, m: &mut Model, area: Rect) {
-    // Hint strip — title plus the verb shapes the terse status-bar
-    // hint abbreviates. Always rendered when there's room.
+    // Info strip — title plus non-key context. Verb shapes are the
+    // status bar's job, not the body's.
     let info: Vec<Line> = vec![
         Line::from(vec![
             Span::styled(
@@ -610,20 +611,12 @@ fn draw_author(f: &mut Frame, m: &mut Model, area: Rect) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "p  pack <dir> [out.tgz]      P  publish <dir> [registry]",
-            Style::default().fg(MUTED),
-        )),
-        Line::from(Span::styled(
-            "r  :registries report        R  reload registry list",
-            Style::default().fg(MUTED),
-        )),
-        Line::from(Span::styled(
             "publish asks for confirmation; progress streams to the log",
             Style::default().fg(MUTED),
         )),
     ];
     let info_h = if area.height > 14 {
-        6.min(area.height / 3)
+        4.min(area.height / 3)
     } else {
         0
     };
@@ -707,8 +700,10 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     let vis = m.visible();
     if let Some(err) = &m.load_err {
         f.render_widget(
-            Paragraph::new(format!("store: {err} — `R` reloads · `:doctor` diagnoses"))
-                .style(Style::default().fg(Color::Red)),
+            Paragraph::new(format!(
+                "store: {err} — `:reload` retries · `:doctor` diagnoses"
+            ))
+            .style(Style::default().fg(Color::Red)),
             area,
         );
         m.board_area = Rect::default();
@@ -717,7 +712,7 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     }
     if m.entries.is_empty() {
         f.render_widget(
-            Paragraph::new("no packages installed — `i` installs by ref")
+            Paragraph::new("no packages installed — `:install <ref>` adds one")
                 .style(Style::default().fg(MUTED)),
             area,
         );
@@ -727,11 +722,8 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     }
     if vis.is_empty() {
         f.render_widget(
-            Paragraph::new(format!(
-                "no entries match /{} — `F` clears the filter",
-                m.filter
-            ))
-            .style(Style::default().fg(MUTED)),
+            Paragraph::new(format!("no entries match /{}", m.filter))
+                .style(Style::default().fg(MUTED)),
             area,
         );
         m.board_area = Rect::default();
@@ -990,7 +982,9 @@ fn page_parts(
             } else if let Some(err) = manifest_err {
                 body.push(Line::from(vec![
                     Span::styled("manifest ", Style::default().fg(WARN)),
-                    Span::raw(format!("{err} — `x` removes it; reinstall repairs")),
+                    Span::raw(format!(
+                        "{err} — `:remove <name>` deletes it; reinstall repairs"
+                    )),
                 ]));
             }
             // provenance — last, per the package-page anatomy.
@@ -1065,16 +1059,7 @@ fn page_parts(
             match (versions, versions_err) {
                 (Some(list), _) => {
                     body.push(Line::from(""));
-                    // Unfocused, the section advertises its `v` toggle
-                    // inline — the footer hint alone is easy to miss.
-                    if versions_sel.is_none() && !list.is_empty() {
-                        body.push(Line::from(vec![
-                            Span::styled("── versions ──", Style::default().fg(ACCENT)),
-                            Span::styled("  · v picks a version", Style::default().fg(MUTED)),
-                        ]));
-                    } else {
-                        body.push(rule("versions"));
-                    }
+                    body.push(rule("versions"));
                     if list.is_empty() {
                         body.push(Line::from(Span::styled(
                             "  no versions indexed",
@@ -1329,7 +1314,6 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
             Span::styled("registry search — ", Style::default().fg(MUTED)),
             Span::styled("target ", Style::default().fg(ACCENT)),
             Span::styled(m.reg_target_label.clone(), Style::default().fg(TEXT)),
-            Span::styled(" · `/` types a query", Style::default().fg(MUTED)),
         ])];
         if !m.reg_names.is_empty() {
             lines.push(Line::from(vec![
@@ -1342,7 +1326,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
             Span::styled("try      ", Style::default().fg(ACCENT)),
             Span::styled("myco · @scope/name · a keyword", Style::default().fg(MUTED)),
         ]));
-        f.render_widget(Paragraph::new(lines), area);
+        f.render_widget(Paragraph::new(lines).style(Style::default().fg(TEXT)), area);
         m.board_area = Rect::default();
         m.viewport_top = 0;
         return;
@@ -1352,7 +1336,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
             format!("searching… — /{}", m.reg_query)
         } else {
             format!(
-                "no results for /{} — `/` edits the query · `:registry <name>` switches target",
+                "no results for /{} — `:search <q>` edits · `:registry <name>` switches target",
                 m.reg_query
             )
         };
@@ -1481,14 +1465,7 @@ fn draw_log_view(f: &mut Frame, m: &mut Model, area: Rect) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(format!(" log — {} lines ", m.log.len()))
-                    .title_bottom(
-                        Line::from(Span::styled(
-                            " j/k scroll · PgUp/PgDn page · g/G ends · q/esc/L close ",
-                            Style::default().fg(MUTED),
-                        ))
-                        .centered(),
-                    ),
+                    .title(format!(" log — {} lines ", m.log.len())),
             )
             .style(Style::default().fg(Color::White))
             .scroll((m.log_scroll as u16, 0)),
@@ -1587,41 +1564,51 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
     } else {
         Style::default().fg(MUTED)
     };
-    // The package page's hint wins over the pane's while `detail` is
-    // open; either way the hint yields to the left status text —
-    // truncated with `…` to whatever width is left.
-    let hint = if let Some(d) = &m.detail {
-        detail_hint(d, m.versions_focused())
-    } else {
-        match m.pane {
-            Pane::Home => {
-                if m.entries.is_empty() {
-                    "/ search registry · i install · : cmds · q quit"
-                } else {
-                    "j/k recent · Enter open · / search · i install · : cmds · q quit"
+    // The Log/Help overlays swallow the pane keys, so the right-side
+    // hint names theirs instead — advertising the pane's would lie.
+    // `· L log` rides only the pane hints (it's a no-op behind the
+    // overlays it would advertise).
+    let hint = match m.mode {
+        Mode::Log => "j/k scroll · PgUp/PgDn · g/G ends · q/esc close".to_string(),
+        Mode::Help => "j/k scroll · g/G ends · esc/?/q close".to_string(),
+        _ => {
+            // The package page's hint wins over the pane's while
+            // `detail` is open; either way the hint yields to the
+            // left status text — truncated with `…` to whatever
+            // width is left.
+            let pane_hint = if let Some(d) = &m.detail {
+                detail_hint(d, m.versions_focused())
+            } else {
+                match m.pane {
+                    Pane::Home => {
+                        if m.entries.is_empty() {
+                            "/ search registry · i install · : cmds · q quit"
+                        } else {
+                            "j/k recent · Enter open · / search · i install · : cmds · q quit"
+                        }
+                    }
+                    Pane::Installed => {
+                        "j/k · Enter page · v verify · u update · p pin · x remove · i install · c clean · d doctor · / filter · : cmds · q quit"
+                    }
+                    Pane::Registry => "j/k · Enter page · i install · / query · : cmds · q quit",
+                    Pane::Services => {
+                        if m.stream_child.is_some() {
+                            "streaming — x kill · q quit"
+                        } else {
+                            "j/k · s/S start/stop · ! restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
+                        }
+                    }
+                    Pane::Manifest => {
+                        "j/k · a add dep · d/x remove · e edit ref · s sync · S sync-lock · R reload · : cmds · q quit"
+                    }
+                    Pane::Author => "p pack · P publish · r registries · R reload · : cmds · q quit",
                 }
-            }
-            Pane::Installed => {
-                "j/k · Enter page · v verify · u update · p pin · x remove · i install · c clean · d doctor · / filter · : cmds · q quit"
-            }
-            Pane::Registry => "j/k · Enter page · i install · / query · : cmds · q quit",
-            Pane::Services => {
-                if m.stream_child.is_some() {
-                    "streaming — x kill · q quit"
-                } else {
-                    "j/k · s/S start/stop · ! restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
-                }
-            }
-            Pane::Manifest => {
-                "j/k · a add dep · d/x remove · e edit ref · s sync · S sync-lock · R reload · : cmds · q quit"
-            }
-            Pane::Author => "p pack · P publish · r registries · R reload · : cmds · q quit",
+            };
+            // `L log` rides every pane's hint — the overlay works from
+            // any mode, so the affordance is global.
+            format!("{pane_hint} · L log")
         }
     };
-    // `L log` rides every pane's hint — the overlay works from any
-    // mode, so the affordance is global (and yields to `fit_width`
-    // like the rest of the hint).
-    let hint = format!("{hint} · L log");
     let left_w = Line::raw(left.as_str()).width();
     let hint = fit_width(&hint, (area.width as usize).saturating_sub(left_w + 2));
     let spans = vec![
@@ -1722,7 +1709,10 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
                 height: 1,
             };
             f.render_widget(Clear, strip);
-            f.render_widget(Paragraph::new(Line::from(spans)), strip);
+            f.render_widget(
+                Paragraph::new(Line::from(spans)).style(Style::default().fg(TEXT)),
+                strip,
+            );
         }
     }
     let rect = Rect {
@@ -1845,9 +1835,8 @@ mouse:     wheel scrolls (the package page when open) · click row
            selects · click tab switches (version rows aren't
            click-selectable — the page is one scrolling block)
 
-this help:  j/k · ↑/↓ step · PgUp/PgDn page · g/G jump ends ·
-            wheel scrolls · esc/?/q close — it scrolls too, the
-            bottom third is reachable on short terminals";
+(the overlay scrolls — j/k · PgUp/PgDn · g/G · wheel · esc/?/q
+close; the status bar repeats the keys while it's open)";
     let width = area.width.min(72) as usize;
     let w = (width as u16 + 2).min(area.width);
     // Height counts *wrapped* lines — at narrow widths the static
@@ -1962,12 +1951,12 @@ mod tests {
         assert!(pending.contains("versions …"));
         assert!(!pending.contains("── versions ──"));
         // Landed — the rule, every version in index order, `← current`
-        // on the page's own entry (matched by blob `file`), and the
-        // inline `v` affordance while unfocused. Key hints live in the
-        // status bar (`detail_hint`), not the scrolling body.
+        // on the page's own entry (matched by blob `file`). No inline
+        // key affordance — the status bar (`detail_hint`) is the only
+        // hint surface.
         let ready = body_text(&detail(Some(vec![reg_entry("0.9.0"), page.clone()]), None));
         assert!(ready.contains("── versions ──"));
-        assert!(ready.contains("· v picks a version"));
+        assert!(!ready.contains("v picks a version"));
         assert!(!ready.contains("esc back · j/k scroll"));
         assert!(ready.contains("  0.9.0"));
         assert!(ready.contains("  1.0.0  ← current"));
@@ -2389,9 +2378,10 @@ mod tests {
         assert!(s.contains("local"), "{s}");
         assert!(s.contains("cf-worker"), "{s}");
         assert!(s.contains("publish.default"), "{s}");
-        // the verb shapes stay visible below/above the table
-        assert!(s.contains("pack <dir>"), "{s}");
-        assert!(s.contains("publish <dir>"), "{s}");
+        // the info strip keeps its title + note; the verb shapes live
+        // only in the status-bar hint now — no in-body key map.
+        assert!(s.contains("publish asks for confirmation"), "{s}");
+        assert!(!s.contains("pack <dir>"), "{s}");
         // selection marker column
         assert!(s.contains("›"), "{s}");
     }
@@ -2677,6 +2667,30 @@ mod tests {
         m.pane = Pane::Author;
         let s = screen(&mut m, 80, 24);
         assert!(s.contains("publish — p pack"), "{s}");
+    }
+
+    /// The status bar's right-side hint follows the active mode: the
+    /// Log/Help overlays advertise their own scroll/close keys — the
+    /// pane's keys are swallowed while they're up, so showing them
+    /// would lie. Tall frame: the help box would otherwise cover the
+    /// status row entirely.
+    #[test]
+    fn status_hint_follows_overlay_mode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        // Normal → the Home pane hint plus the global `L log`.
+        let s = screen(&mut m, 120, 80);
+        assert!(s.contains("q quit · L log"), "{s}");
+        // Log mode → the log keys, and no `L log` self-advertisement.
+        m.mode = Mode::Log;
+        let s = screen(&mut m, 120, 80);
+        assert!(s.contains("q/esc close"), "{s}");
+        assert!(!s.contains("· L log"), "{s}");
+        // Help mode → the help keys.
+        m.mode = Mode::Help;
+        let s = screen(&mut m, 120, 80);
+        assert!(s.contains("esc/?/q close"), "{s}");
+        assert!(!s.contains("· L log"), "{s}");
     }
 
     /// Versions focus marks the cursor row with `›` and switches the
@@ -3095,13 +3109,13 @@ mod tests {
         assert!(screen.iter().any(|l| l.contains("keys — installed pane")));
         assert!(!screen
             .iter()
-            .any(|l| l.contains("bottom third is reachable")));
+            .any(|l| l.contains("status bar repeats the keys")));
         m.help_scroll = m.help_max_scroll;
         let screen = frame_text(&mut m, 80, 24);
         assert!(
             screen
                 .iter()
-                .any(|l| l.contains("bottom third is reachable")),
+                .any(|l| l.contains("status bar repeats the keys")),
             "{}",
             screen.join("\n")
         );

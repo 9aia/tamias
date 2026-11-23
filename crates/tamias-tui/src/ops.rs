@@ -427,7 +427,7 @@ fn verify(ctx: &Ctx, name: &str) -> Result<Outcome, Error> {
     let report = store.verify(name)?;
     if !report.ok {
         return Err(Error::Failed(format!(
-            "{}: digest mismatch — recorded {}, computed {} — `u`/`U` reinstalls",
+            "{}: digest mismatch — recorded {}, computed {} — `:update` reinstalls",
             report.name,
             short(&report.recorded),
             short(&report.computed)
