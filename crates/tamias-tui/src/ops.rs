@@ -1251,6 +1251,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+    use crate::testkit::EnvGuard;
 
     fn ctx(dir: &std::path::Path) -> Ctx {
         // A nonexistent explicit config file → `load_config` returns
@@ -1356,5 +1357,1257 @@ mod tests {
             Outcome::Text(t) => assert!(t.contains('0')),
             _ => panic!("expected text"),
         }
+    }
+
+    // --- end-to-end job coverage ---
+
+    /// A payload dir whose `tamias.yaml` is `manifest` verbatim plus
+    /// one payload file.
+    fn pkg(dir: &Path, name: &str, manifest: &str) -> PathBuf {
+        let p = dir.join(name);
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(p.join("tamias.yaml"), manifest).unwrap();
+        std::fs::write(p.join("a.txt"), "a").unwrap();
+        p
+    }
+
+    /// The record `Store::install` writes for a hand-placed entry —
+    /// `source_ref` points at `payload` so `update`/`sync` can
+    /// re-install it.
+    fn record(name: &str, payload: &Path, kind: Option<&str>) -> StoreRecord {
+        StoreRecord {
+            name: name.into(),
+            scope: None,
+            version: Some("1.0.0".into()),
+            kind: kind.map(str::to_string),
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
+            source_ref: payload.display().to_string(),
+            resolved: "sha256:0123456789abcdef".into(),
+            digest: String::new(),
+            signature: None,
+            signer: None,
+            trust: None,
+            installed_at: 0,
+        }
+    }
+
+    /// Place `payload` in `c`'s store directly (no pipeline) — the
+    /// fast fixture for ops that only need an entry to exist.
+    fn place(c: &Ctx, payload: &Path, name: &str, kind: Option<&str>) -> StoreEntry {
+        Store::new(&c.store_root)
+            .install(payload, record(name, payload, kind))
+            .unwrap()
+    }
+
+    /// `run` expecting `Outcome::Text` — panics with the error
+    /// otherwise.
+    fn text(ctx: &Ctx, job: &Job) -> String {
+        match run(ctx, job, &mut |_| {}) {
+            Ok(Outcome::Text(t)) => t,
+            other => panic!("{job:?} → {other:?}"),
+        }
+    }
+
+    /// install → verify → tamper → update → update-all → pin →
+    /// remove, including the warn arms (siblings, missing driver).
+    /// `tamias.lock` lands in the cwd — the guard owns it.
+    #[test]
+    fn install_verify_update_pin_remove_flow() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = ctx(tmp.path());
+        let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
+        let w_ref = w.display().to_string();
+
+        // install through the real pipeline — progress lines stream
+        let mut lines = Vec::new();
+        let out = run(
+            &c,
+            &Job::Install {
+                reference: w_ref.clone(),
+                allow_drivers: false,
+            },
+            &mut |l| lines.push(l),
+        )
+        .unwrap();
+        let Outcome::Text(t) = out else {
+            panic!("expected text")
+        };
+        assert!(t.contains("installed w@1.0.0"), "{t}");
+        assert!(lines.iter().any(|l| l.contains("fetching")));
+        assert!(lines.iter().any(|l| l.contains("installing")));
+        assert!(lines.iter().any(|l| l.contains("done")));
+        assert_eq!(Store::new(&c.store_root).entries().unwrap().len(), 1);
+
+        // verify — clean, then tampered, then restored
+        let t = text(&c, &Job::Verify("w".into()));
+        assert!(t.contains("w@1.0.0: ok"), "{t}");
+        assert!(t.contains("signature:"), "{t}");
+        let payload_file = c.store_root.join("w@1.0.0/a.txt");
+        std::fs::write(&payload_file, "b").unwrap();
+        let err = run(&c, &Job::Verify("w".into()), &mut |_| {})
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("digest mismatch"), "{err}");
+        std::fs::write(&payload_file, "a").unwrap();
+        assert!(run(&c, &Job::Verify("w".into()), &mut |_| {}).is_ok());
+
+        // a second installable entry for update-all; a third placed
+        // entry with a non-files kind for the missing-driver warn
+        let w2 = pkg(tmp.path(), "w2", "name: w2\nversion: 2.0.0\n");
+        place(&c, &w2, "w2", None);
+
+        // update --all re-installs every recorded ref
+        let t = text(
+            &c,
+            &Job::UpdateAll {
+                allow_drivers: false,
+            },
+        );
+        assert!(t.contains("updated 2 package(s)"), "{t}");
+        // empty-store arm
+        let tmp2 = tempfile::tempdir().unwrap();
+        let c2 = ctx(tmp2.path());
+        assert_eq!(
+            text(
+                &c2,
+                &Job::UpdateAll {
+                    allow_drivers: false
+                }
+            ),
+            "nothing installed"
+        );
+
+        // update one + pin — both sync tamias.lock in the cwd
+        let t = text(
+            &c,
+            &Job::Update {
+                name: "w".into(),
+                allow_drivers: false,
+            },
+        );
+        assert!(t.contains("updated w@1.0.0"), "{t}");
+        // pin retargets + syncs an existing lock — seed one first so
+        // `Lock::sync_record` takes its update path (it never creates
+        // the file; that's `add`'s job)
+        let rec = Store::new(&c.store_root).find("w").unwrap().record;
+        Lock::upsert_record(Path::new("tamias.lock"), &rec).unwrap();
+        let t = text(
+            &c,
+            &Job::Pin {
+                name: "w".into(),
+                reference: "./elsewhere".into(),
+            },
+        );
+        assert!(t.contains("pinned w → ./elsewhere"), "{t}");
+        let lock = std::fs::read_to_string(tmp.path().join("tamias.lock")).unwrap();
+        assert!(lock.contains("./elsewhere"), "{lock}");
+        // update on a missing entry errors
+        assert!(run(
+            &c,
+            &Job::Update {
+                name: "ghost".into(),
+                allow_drivers: false
+            },
+            &mut |_| {}
+        )
+        .is_err());
+
+        // remove — the non-files kind warns about leftover provider
+        // resources; a same-name sibling warns and skips dispatch.
+        // (`odd` is placed *after* update-all: the pipeline rewrites
+        // the record from the manifest, dropping the fixture `kind`.)
+        let odd = pkg(tmp.path(), "odd", "name: odd\nversion: 1.0.0\n");
+        place(&c, &odd, "odd", Some("weird"));
+        let mut warns = Vec::new();
+        let out = run(&c, &Job::Remove("odd".into()), &mut |l| warns.push(l)).unwrap();
+        assert!(matches!(out, Outcome::Text(ref t) if t.contains("removed odd")));
+        assert!(
+            warns
+                .iter()
+                .any(|l| l.contains("no driver for type 'weird'")),
+            "{warns:?}"
+        );
+        // second version of `w` — removing it leaves w@1.0.0 behind
+        let w3 = pkg(tmp.path(), "w3", "name: w\nversion: 3.0.0\n");
+        let mut rec = record("w", &w3, None);
+        rec.version = Some("3.0.0".into());
+        Store::new(&c.store_root).install(&w3, rec).unwrap();
+        let mut warns = Vec::new();
+        run(&c, &Job::Remove("w@3.0.0".into()), &mut |l| warns.push(l)).unwrap();
+        assert!(
+            warns.iter().any(|l| l.contains("sibling installs remain")),
+            "{warns:?}"
+        );
+        assert!(run(&c, &Job::Remove("ghost".into()), &mut |_| {}).is_err());
+    }
+
+    /// `project_manifest` discovery order + the dep-form jobs
+    /// (`add`/`remove`/`set`/`sync`) against a real cwd manifest.
+    #[test]
+    fn project_manifest_discovery() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        // nothing → the default tamias.yaml
+        let (path, m) = project_manifest().unwrap();
+        assert_eq!(path, PathBuf::from("tamias.yaml"));
+        assert!(m.deps.is_empty());
+        // a lone tamias.toml is refused — the form edits YAML only
+        std::fs::write(tmp.path().join("tamias.toml"), "[project]\n").unwrap();
+        assert!(project_manifest().unwrap_err().to_string().contains("YAML"));
+        std::fs::remove_file(tmp.path().join("tamias.toml")).unwrap();
+        // yml is picked up; yaml wins when both exist
+        std::fs::write(tmp.path().join("tamias.yml"), "name: y\ndeps: []\n").unwrap();
+        let (path, _) = project_manifest().unwrap();
+        assert_eq!(path, PathBuf::from("tamias.yml"));
+        std::fs::write(tmp.path().join("tamias.yaml"), "name: x\ndeps: []\n").unwrap();
+        let (path, m) = project_manifest().unwrap();
+        assert_eq!(path, PathBuf::from("tamias.yaml"));
+        assert_eq!(m.name, "x");
+    }
+
+    /// add/remove/set dep + sync — the manifest+lock write path.
+    #[test]
+    fn dep_form_ops() {
+        let tmp = tempfile::tempdir().unwrap();
+        let proj = tmp.path().join("proj");
+        std::fs::create_dir_all(&proj).unwrap();
+        let _g = EnvGuard::enter(&proj);
+        let c = ctx(tmp.path());
+        let dep = pkg(tmp.path(), "dep", "name: dep\nversion: 1.0.0\n");
+        let dep2 = pkg(tmp.path(), "dep2", "name: dep2\nversion: 1.0.0\n");
+        let dep_ref = dep.display().to_string();
+        let dep2_ref = dep2.display().to_string();
+        std::fs::write(
+            proj.join("tamias.yaml"),
+            "name: proj\nversion: 0.1.0\ndeps: []\n",
+        )
+        .unwrap();
+
+        // add — installs, records the dep, upserts tamias.lock
+        let t = text(
+            &c,
+            &Job::AddDep {
+                reference: dep_ref.clone(),
+                allow_drivers: false,
+            },
+        );
+        assert!(t.contains("added") && t.contains("tamias.yaml"), "{t}");
+        let (_, m) = project_manifest().unwrap();
+        assert_eq!(m.deps, [dep_ref.as_str()]);
+        assert!(proj.join("tamias.lock").is_file());
+        // re-adding dedups the deps entry
+        text(
+            &c,
+            &Job::AddDep {
+                reference: dep_ref.clone(),
+                allow_drivers: false,
+            },
+        );
+        let (_, m) = project_manifest().unwrap();
+        assert_eq!(m.deps.len(), 1);
+
+        // remove — missing ref errors; present ref drops manifest-only
+        assert!(run(
+            &c,
+            &Job::RemoveDep {
+                reference: "nope".into()
+            },
+            &mut |_| {}
+        )
+        .is_err());
+        let t = text(
+            &c,
+            &Job::RemoveDep {
+                reference: dep_ref.clone(),
+            },
+        );
+        assert!(t.contains("removed dep"), "{t}");
+        let (_, m) = project_manifest().unwrap();
+        assert!(m.deps.is_empty());
+
+        // set — identical refs and missing olds error; a real swap
+        // installs the new ref first, then rewrites deps + lock
+        assert!(run(
+            &c,
+            &Job::SetDep {
+                old: dep_ref.clone(),
+                new: dep_ref.clone(),
+                allow_drivers: false
+            },
+            &mut |_| {}
+        )
+        .is_err());
+        assert!(run(
+            &c,
+            &Job::SetDep {
+                old: "ghost".into(),
+                new: dep2_ref.clone(),
+                allow_drivers: false
+            },
+            &mut |_| {}
+        )
+        .is_err());
+        // re-add dep, then swap it for dep2 — dep2 is already listed?
+        // no: deps is empty now, so set still needs `old` present.
+        text(
+            &c,
+            &Job::AddDep {
+                reference: dep_ref.clone(),
+                allow_drivers: false,
+            },
+        );
+        let t = text(
+            &c,
+            &Job::SetDep {
+                old: dep_ref.clone(),
+                new: dep2_ref.clone(),
+                allow_drivers: false,
+            },
+        );
+        assert!(t.contains("dep"), "{t}");
+        let (_, m) = project_manifest().unwrap();
+        assert_eq!(m.deps, [dep2_ref.as_str()]);
+
+        // sync — deps already installed reconcile cleanly; --from-lock
+        // reads tamias.lock verbatim
+        let t = text(
+            &c,
+            &Job::Sync {
+                allow_drivers: false,
+                from_lock: false,
+            },
+        );
+        assert!(t.contains("sync:"), "{t}");
+        let t = text(
+            &c,
+            &Job::Sync {
+                allow_drivers: false,
+                from_lock: true,
+            },
+        );
+        assert!(t.contains("sync --from-lock:"), "{t}");
+        // a dep that can't install fails the sync after logging
+        std::fs::write(
+            proj.join("tamias.yaml"),
+            "name: proj\nversion: 0.1.0\ndeps: [/nonexistent-tamias-cov-dep]\n",
+        )
+        .unwrap();
+        let err = run(
+            &c,
+            &Job::Sync {
+                allow_drivers: false,
+                from_lock: false,
+            },
+            &mut |_| {},
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("dep(s) failed"), "{err}");
+        // --from-lock with no lock file → an empty lock, zero deps
+        let proj2 = tmp.path().join("proj2");
+        std::fs::create_dir_all(&proj2).unwrap();
+        std::env::set_current_dir(&proj2).unwrap();
+        let t = text(
+            &c,
+            &Job::Sync {
+                allow_drivers: false,
+                from_lock: true,
+            },
+        );
+        assert!(t.contains("0 dep(s)"), "{t}");
+    }
+
+    /// pack/publish/registries + the cache-clean/doctor/search jobs.
+    #[test]
+    fn authoring_and_read_jobs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let c = ctx(tmp.path());
+        let pkgdir = pkg(
+            tmp.path(),
+            "authorable",
+            "name: authorable\nversion: 1.0.0\n",
+        );
+
+        // pack → a real .tgz
+        let out_path = tmp.path().join("out.tgz");
+        let t = text(
+            &c,
+            &Job::Pack {
+                dir: pkgdir.display().to_string(),
+                out: Some(out_path.display().to_string()),
+            },
+        );
+        assert!(t.contains("packed") && out_path.is_file(), "{t}");
+        assert!(run(
+            &c,
+            &Job::Pack {
+                dir: "/nonexistent-tamias-cov".into(),
+                out: None
+            },
+            &mut |_| {}
+        )
+        .is_err());
+
+        // publish → the local registry root gains an index entry the
+        // search job then finds
+        let t = text(
+            &c,
+            &Job::Publish {
+                dir: pkgdir.display().to_string(),
+                registry: None,
+            },
+        );
+        assert!(t.contains("published authorable"), "{t}");
+        assert!(c.registry_root.join("index.json").is_file());
+        match run(
+            &c,
+            &Job::Search {
+                query: "authorable".into(),
+                target: None,
+            },
+            &mut |_| {},
+        )
+        .unwrap()
+        {
+            Outcome::Search { results, .. } => {
+                assert_eq!(results.len(), 1);
+                assert_eq!(results[0].name, "authorable");
+            }
+            other => panic!("expected search outcome: {other:?}"),
+        }
+        // publish failure — no manifest in the dir
+        let empty = tempfile::tempdir().unwrap();
+        assert!(run(
+            &c,
+            &Job::Publish {
+                dir: empty.path().display().to_string(),
+                registry: None
+            },
+            &mut |_| {}
+        )
+        .is_err());
+        // registries — no config → the empty report
+        assert_eq!(text(&c, &Job::Registries), "no registries configured");
+
+        // cache clean — both windows on an empty cache
+        for all in [false, true] {
+            let t = text(&c, &Job::CacheClean { all });
+            assert!(t.contains("evicted 0"), "{t}");
+        }
+
+        // doctor — all four checks ok on a healthy fixture
+        let t = text(&c, &Job::Doctor);
+        for needle in ["store:", "cache:", "registry:", "drivers:"] {
+            assert!(t.contains(needle), "{t}");
+        }
+        assert!(t.contains("ok "), "{t}");
+
+        // doctor failure arms — unwritable store dir + unparseable
+        // registry index each fail a check
+        let c_bad = ctx(&tmp.path().join("bad"));
+        std::fs::create_dir_all(&c_bad.store_root).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&c_bad.store_root, std::fs::Permissions::from_mode(0o555))
+                .unwrap();
+            let err = run(&c_bad, &Job::Doctor, &mut |_| {})
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("check(s) failed"), "{err}");
+            std::fs::set_permissions(&c_bad.store_root, std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+        }
+        std::fs::create_dir_all(&c_bad.registry_root).unwrap();
+        std::fs::write(c_bad.registry_root.join("index.json"), "not json").unwrap();
+        let err = run(&c_bad, &Job::Doctor, &mut |_| {})
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("registry"), "{err}");
+        // search against the broken index errors too
+        assert!(run(
+            &c_bad,
+            &Job::Search {
+                query: "x".into(),
+                target: None
+            },
+            &mut |_| {}
+        )
+        .is_err());
+        // a broken config file warns and falls back to defaults —
+        // doctor still runs (the env_config error arm)
+        let bad_cfg = tmp.path().join("bad.yml");
+        std::fs::write(&bad_cfg, "registries: [unclosed\n").unwrap();
+        let c_badcfg = Ctx::new(
+            tmp.path().join("s2"),
+            tmp.path().join("c2"),
+            tmp.path().join("r2"),
+            Some(bad_cfg),
+        );
+        assert!(run(&c_badcfg, &Job::Doctor, &mut |_| {}).is_ok());
+    }
+
+    /// Named-registry routing: `entry_install_ref`'s kind arms,
+    /// `registry_names`, `versions` with a target override.
+    #[test]
+    fn named_registry_routing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let localdir = tmp.path().join("localdir");
+        std::fs::create_dir_all(&localdir).unwrap();
+        std::fs::write(
+            localdir.join("index.json"),
+            r#"[{"name":"w","version":"1.0.0","digest":"sha256:a","file":"w/1.0.0.tgz"}]"#,
+        )
+        .unwrap();
+        let cfg = tmp.path().join("tamias.yml");
+        std::fs::write(
+            &cfg,
+            format!(
+                "registries:\n  \
+                 localdir:\n    kind: local\n    url: {}\n  \
+                 localnou:\n    kind: local\n  \
+                 httpr:\n    kind: http\n    url: http://reg.example.com/r\n  \
+                 cfreg:\n    kind: cf\n    url: https://cf.example.com\n  \
+                 weird:\n    kind: bogus\n    url: ./rel\n  \
+                 nourl:\n    kind: http\npublish:\n  default: httpr\nsearch:\n  default: localdir\n",
+                localdir.display()
+            ),
+        )
+        .unwrap();
+        let c = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(cfg),
+        );
+        let hex = "b".repeat(64);
+        let e = entry("w/1.0.0.tgz", &format!("sha256:{hex}"));
+
+        // named local with a url → that dir; without → registry_root
+        let r = entry_install_ref(&c, &e, Some("localdir")).unwrap();
+        assert_eq!(r, localdir.join("w/1.0.0.tgz").display().to_string());
+        let r = entry_install_ref(&c, &e, Some("localnou")).unwrap();
+        assert_eq!(r, c.registry_root.join("w/1.0.0.tgz").display().to_string());
+        // http + cf share the Http base — digest pins the url
+        for name in ["httpr", "cfreg"] {
+            let r = entry_install_ref(&c, &e, Some(name)).unwrap();
+            assert!(r.ends_with(&format!("w/1.0.0.tgz#sha256:{hex}")), "{r}");
+        }
+        // an unrecognized kind falls back to ref-grammar parsing
+        let r = entry_install_ref(&c, &e, Some("weird")).unwrap();
+        assert_eq!(
+            r,
+            PathBuf::from("./rel")
+                .join("w/1.0.0.tgz")
+                .display()
+                .to_string()
+        );
+        // http/cf without a url is a hard error
+        assert!(entry_install_ref(&c, &e, Some("nourl")).is_err());
+
+        // registry_names — sorted names+kinds plus the routing defaults
+        let names = registry_names(&c);
+        let got: Vec<&str> = names.iter().map(|(n, _)| n.as_str()).collect();
+        for want in [
+            "cfreg",
+            "httpr",
+            "localdir",
+            "localnou",
+            "nourl",
+            "publish.default → httpr",
+            "search.default → localdir",
+            "weird",
+        ] {
+            assert!(got.contains(&want), "{got:?}");
+        }
+        assert!(names.iter().any(|(n, k)| n == "httpr" && k == "http"));
+        // :registries report renders name (kind) lines
+        let t = text(&c, &Job::Registries);
+        assert!(t.contains("httpr (http)"), "{t}");
+        assert!(t.contains("publish.default → httpr"), "{t}");
+
+        // versions against the named target reads that registry's index
+        let list = versions(&c, "w", None, Some("localdir")).unwrap();
+        assert_eq!(list.len(), 1);
+        // and the default routing (search.default → localdir) agrees
+        let list = versions(&c, "w", None, None).unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    /// Provider lifecycle: services refresh, deploy, uninstall, unit
+    /// actions (real `systemd --user` when available), and the
+    /// `run`/`logs` stream jobs.
+    #[test]
+    fn provider_lifecycle_jobs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = ctx(tmp.path());
+        // a provider package — one good service + ingress hooks so
+        // deploy's warning arm fires too
+        let prov = pkg(
+            tmp.path(),
+            "prov",
+            "name: prov\nversion: 1.0.0\nprovider:\n  name: provprov\n  \
+             services:\n    - name: web\n      exec: \"/bin/echo hi-from-service\"\n  \
+             ingress:\n    - public_url: https://ci.example.com\n      path: /hook\n      \
+             hooks:\n        - forge: github\n          repo: o/r\n          events: [push]\n",
+        );
+        place(&c, &prov, "prov", None);
+        // a second provider pkg whose services can't exec — the
+        // stream jobs' error arms
+        let svc = pkg(
+            tmp.path(),
+            "svc",
+            "name: svc\nversion: 1.0.0\nprovider:\n  name: svcp\n  \
+             services:\n    - name: web\n      exec: \"/bin/echo svc-web\"\n    - name: void\n      exec: \"''\"\n    - name: bad\n      exec: \"/nonexistent-tamias-cov-bin\"\n",
+        );
+        place(&c, &svc, "svc", None);
+        // a provider-less package — `run`/`logs` error arms
+        let plain = pkg(tmp.path(), "plain", "name: plain\nversion: 1.0.0\n");
+        place(&c, &plain, "plain", None);
+
+        // services refresh — rows for both packages' services
+        match run(&c, &Job::ServicesRefresh, &mut |_| {}).unwrap() {
+            Outcome::Services(rows) => {
+                assert!(rows.iter().any(|r| r.package == "prov@1.0.0"), "{rows:?}");
+                assert!(rows.iter().any(|r| r.unit == "provprov-web"), "{rows:?}");
+            }
+            other => panic!("expected services: {other:?}"),
+        }
+        // empty store → empty rows
+        let c_empty = ctx(&tmp.path().join("empty"));
+        match run(&c_empty, &Job::ServicesRefresh, &mut |_| {}).unwrap() {
+            Outcome::Services(rows) => assert!(rows.is_empty()),
+            _ => panic!("expected services"),
+        }
+
+        // deploy — writes the unit under the guarded XDG dir and
+        // reports the ingress-hook warning
+        let mut lines = Vec::new();
+        let out = run(
+            &c,
+            &Job::ProviderDeploy {
+                name: "prov".into(),
+                config: None,
+            },
+            &mut |l| lines.push(l),
+        )
+        .unwrap();
+        assert!(matches!(out, Outcome::Text(ref t) if t.contains("deploy prov done")));
+        assert!(
+            tmp.path()
+                .join("xdg/systemd/user/provprov-web.service")
+                .is_file(),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains("ingress hook")),
+            "{lines:?}"
+        );
+        // deploy errors — missing package (the config arg rides along)
+        assert!(run(
+            &c,
+            &Job::ProviderDeploy {
+                name: "ghost".into(),
+                config: None
+            },
+            &mut |_| {}
+        )
+        .is_err());
+        assert!(run(
+            &c_empty,
+            &Job::ProviderDeploy {
+                name: "ghost".into(),
+                config: Some("/dev/null".into()),
+            },
+            &mut |_| {}
+        )
+        .is_err());
+
+        // unit action — error path always; the success path rides a
+        // real transient `systemd-run --user` unit when the user bus
+        // answers (skipped silently elsewhere)
+        assert!(run(
+            &c,
+            &Job::UnitAction {
+                unit: "tamias-cov-no-such-unit".into(),
+                action: tamias_provider::UnitAction::Start,
+            },
+            &mut |_| {}
+        )
+        .is_err());
+        let unit = format!("tamias-cov-{}", std::process::id());
+        // a sleep keeps the transient unit alive long enough for the
+        // start/stop round-trip (`/bin/true` exits before `start` lands)
+        let spawned = std::process::Command::new("systemd-run")
+            .args(["--user", "--unit", &unit, "/bin/sleep", "60"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if spawned {
+            // the transient unit exists — start/stop really run
+            let out = run(
+                &c,
+                &Job::UnitAction {
+                    unit: unit.clone(),
+                    action: tamias_provider::UnitAction::Start,
+                },
+                &mut |_| {},
+            );
+            assert!(out.is_ok(), "{out:?}");
+            let t = text(
+                &c,
+                &Job::UnitAction {
+                    unit: unit.clone(),
+                    action: tamias_provider::UnitAction::Stop,
+                },
+            );
+            assert!(t.contains("stop"), "{t}");
+            let _ = std::process::Command::new("systemctl")
+                .args(["--user", "stop", &unit])
+                .status();
+        }
+
+        // uninstall — provider teardown + store drop; the unit file
+        // the deploy wrote is gone afterwards
+        let out = run(
+            &c,
+            &Job::ProviderUninstall {
+                name: "prov".into(),
+            },
+            &mut |_| {},
+        )
+        .unwrap();
+        assert!(matches!(out, Outcome::Text(ref t) if t.contains("uninstalled prov")));
+        assert!(!tmp
+            .path()
+            .join("xdg/systemd/user/provprov-web.service")
+            .exists());
+        assert!(Store::new(&c.store_root).find("prov").is_err());
+        assert!(run(
+            &c,
+            &Job::ProviderUninstall {
+                name: "ghost".into()
+            },
+            &mut |_| {}
+        )
+        .is_err());
+
+        // --- stream jobs ---
+        // run <pkg> <svc> — echo exits immediately; its line pumps
+        // through Msg::Log and the StreamChild handle arrives
+        let (tx, rx) = std::sync::mpsc::channel();
+        let out = stream(
+            &c,
+            &Job::RunService {
+                package: "svc".into(),
+                service: Some("web".into()),
+            },
+            &tx,
+        )
+        .unwrap();
+        assert!(
+            matches!(out, Outcome::Text(ref t) if t.contains("exited ok")),
+            "{out:?}"
+        );
+        let mut saw_child = false;
+        let mut saw_line = false;
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                Msg::StreamChild(_) => saw_child = true,
+                Msg::Log(l) if l.contains("svc-web") => saw_line = true,
+                _ => {}
+            }
+        }
+        assert!(saw_child && saw_line);
+        // service: None is ambiguous (3 services) → the choices error
+        assert!(stream(
+            &c,
+            &Job::RunService {
+                package: "svc".into(),
+                service: None
+            },
+            &tx
+        )
+        .is_err());
+        // empty exec argv, unknown service, missing provider, missing
+        // package, and a spawn failure all error before/at spawn
+        for (pkg_name, svc_name) in [
+            ("svc", "void"),
+            ("svc", "ghost-svc"),
+            ("plain", "web"),
+            ("ghost", "web"),
+            ("svc", "bad"),
+        ] {
+            assert!(
+                stream(
+                    &c,
+                    &Job::RunService {
+                        package: pkg_name.into(),
+                        service: Some(svc_name.into())
+                    },
+                    &tx
+                )
+                .is_err(),
+                "{pkg_name}/{svc_name} should fail"
+            );
+        }
+        // logs — bare unit tail exits; an invalid unit name fails
+        // validation; a store entry's provider units resolve too
+        let out = stream(
+            &c,
+            &Job::Logs {
+                name: "tamias-cov-no-such-unit".into(),
+                follow: false,
+            },
+            &tx,
+        )
+        .unwrap();
+        assert!(
+            matches!(out, Outcome::Text(ref t) if t.contains("exited")),
+            "{out:?}"
+        );
+        assert!(stream(
+            &c,
+            &Job::Logs {
+                name: "bad name!".into(),
+                follow: false
+            },
+            &tx
+        )
+        .is_err());
+        // `svc` was uninstalled? no — only `prov` was; svc's units
+        // tail through units_of
+        let out = stream(
+            &c,
+            &Job::Logs {
+                name: "svc".into(),
+                follow: false,
+            },
+            &tx,
+        )
+        .unwrap();
+        assert!(matches!(out, Outcome::Text(_)), "{out:?}");
+        // a provider-less store entry errors in units_of
+        assert!(stream(
+            &c,
+            &Job::Logs {
+                name: "plain".into(),
+                follow: false
+            },
+            &tx
+        )
+        .is_err());
+        // follow mode runs until killed — journalctl -f never exits
+        // on its own; the StreamChild handle is the kill path
+        let journalctl = std::process::Command::new("journalctl")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if journalctl {
+            let (tx2, rx2) = std::sync::mpsc::channel();
+            let c2 = c.clone();
+            let handle = std::thread::spawn(move || {
+                stream(
+                    &c2,
+                    &Job::Logs {
+                        name: "tamias-cov-follow".into(),
+                        follow: true,
+                    },
+                    &tx2,
+                )
+            });
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            let child = loop {
+                match rx2.try_recv() {
+                    Ok(Msg::StreamChild(ch)) => break ch,
+                    Ok(_) => {}
+                    Err(_) => {
+                        assert!(std::time::Instant::now() < deadline, "no stream child");
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                }
+            };
+            child.lock().unwrap().kill().unwrap();
+            let out = handle.join().unwrap().unwrap();
+            assert!(
+                matches!(out, Outcome::Text(ref t) if t.contains("exited")),
+                "{out:?}"
+            );
+        }
+        // non-stream jobs refuse the stream entry point; stream jobs
+        // refuse run()
+        assert!(stream(&c, &Job::Verify("svc".into()), &tx).is_err());
+        assert!(run(
+            &c,
+            &Job::Logs {
+                name: "x".into(),
+                follow: false
+            },
+            &mut |_| {}
+        )
+        .is_err());
+    }
+
+    /// The install/sync progress closures' deep arms — `include:`
+    /// base recursion, bundled-driver consent (refusal, then granted
+    /// → registration), and the declared-`bins[]` deploy report.
+    #[test]
+    fn install_progress_deep_arms() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = ctx(tmp.path());
+        let base = pkg(tmp.path(), "base", "name: base\nversion: 1.0.0\n");
+        let base_ref = base.display().to_string();
+        // A package exercising every progress arm: an `include:` ref
+        // (recursion), a portable bundled driver (consent gate), and
+        // a `bins[]` shim decl (post-commit deploy).
+        let rich = |name: &str, bin: &str| {
+            let p = pkg(
+                tmp.path(),
+                name,
+                &format!(
+                    "name: {name}\nversion: 1.0.0\ninclude: [\"{base_ref}\"]\n\
+                     bins:\n  - name: {bin}\n    shim: cli\n    driver: files\n"
+                ),
+            );
+            std::fs::create_dir_all(p.join("drivers")).unwrap();
+            std::fs::write(p.join("drivers/tamias-driver-x"), "#!/bin/sh\n").unwrap();
+            p
+        };
+        let top = rich("top", "topbin");
+        let top2 = rich("top2", "top2bin");
+        let top_ref = top.display().to_string();
+        let top2_ref = top2.display().to_string();
+
+        // no consent → the refusal the UI's modal detects
+        let err = run(
+            &c,
+            &Job::Install {
+                reference: top_ref.clone(),
+                allow_drivers: false,
+            },
+            &mut |_| {},
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("refusing to install"), "{err}");
+
+        // `:sync` over a project manifest dep — the sync closure's
+        // progress arms fire identically (install is the shared tail)
+        std::fs::write(
+            tmp.path().join("tamias.yaml"),
+            format!("name: proj\ndeps: [\"{top2_ref}\"]\n"),
+        )
+        .unwrap();
+        let mut lines = Vec::new();
+        let out = run(
+            &c,
+            &Job::Sync {
+                allow_drivers: true,
+                from_lock: false,
+            },
+            &mut |l| lines.push(l),
+        )
+        .unwrap();
+        assert!(
+            matches!(out, Outcome::Text(ref t) if t.contains("sync:")),
+            "{out:?}"
+        );
+        assert!(lines.iter().any(|l| l.contains("including")), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("driver:")), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("bin:")), "{lines:?}");
+        // the include base committed to the store; the bundled driver
+        // registered under the guarded tamias home; the shim deployed
+        // into the guarded bin dir
+        assert!(Store::new(&c.store_root).find("base").is_ok());
+        assert!(tmp.path().join("home/drivers/tamias-driver-x").exists());
+        assert!(tmp.path().join("bin/top2bin").exists());
+
+        // the same arms through the plain install job
+        let mut lines = Vec::new();
+        let out = run(
+            &c,
+            &Job::Install {
+                reference: top_ref,
+                allow_drivers: true,
+            },
+            &mut |l| lines.push(l),
+        )
+        .unwrap();
+        assert!(matches!(out, Outcome::Text(ref t) if t.contains("installed top@1.0.0")));
+        assert!(lines.iter().any(|l| l.contains("including")), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("bin:")), "{lines:?}");
+        assert!(tmp.path().join("bin/topbin").exists());
+    }
+
+    /// `label`/`is_stream`/`with_drivers_allowed` over every variant —
+    /// the status-bar words and consent re-run mapping.
+    #[test]
+    fn job_labels_all_variants() {
+        let jobs = vec![
+            Job::Verify("w".into()),
+            Job::Remove("w".into()),
+            Job::Update {
+                name: "w".into(),
+                allow_drivers: false,
+            },
+            Job::UpdateAll {
+                allow_drivers: false,
+            },
+            Job::Pin {
+                name: "w".into(),
+                reference: "r".into(),
+            },
+            Job::CacheClean { all: false },
+            Job::CacheClean { all: true },
+            Job::Doctor,
+            Job::Search {
+                query: "q".into(),
+                target: Some("t".into()),
+            },
+            Job::Install {
+                reference: "r".into(),
+                allow_drivers: false,
+            },
+            Job::ServicesRefresh,
+            Job::UnitAction {
+                unit: "u".into(),
+                action: tamias_provider::UnitAction::Start,
+            },
+            Job::UnitAction {
+                unit: "u".into(),
+                action: tamias_provider::UnitAction::Stop,
+            },
+            Job::UnitAction {
+                unit: "u".into(),
+                action: tamias_provider::UnitAction::Restart,
+            },
+            Job::UnitAction {
+                unit: "u".into(),
+                action: tamias_provider::UnitAction::Enable,
+            },
+            Job::UnitAction {
+                unit: "u".into(),
+                action: tamias_provider::UnitAction::Disable,
+            },
+            Job::ProviderDeploy {
+                name: "w".into(),
+                config: Some("c".into()),
+            },
+            Job::ProviderUninstall { name: "w".into() },
+            Job::RunService {
+                package: "w".into(),
+                service: Some("s".into()),
+            },
+            Job::RunService {
+                package: "w".into(),
+                service: None,
+            },
+            Job::Logs {
+                name: "w".into(),
+                follow: true,
+            },
+            Job::Logs {
+                name: "w".into(),
+                follow: false,
+            },
+            Job::AddDep {
+                reference: "r".into(),
+                allow_drivers: false,
+            },
+            Job::RemoveDep {
+                reference: "r".into(),
+            },
+            Job::SetDep {
+                old: "o".into(),
+                new: "n".into(),
+                allow_drivers: false,
+            },
+            Job::Sync {
+                allow_drivers: false,
+                from_lock: true,
+            },
+            Job::Pack {
+                dir: "d".into(),
+                out: Some("o".into()),
+            },
+            Job::Publish {
+                dir: "d".into(),
+                registry: Some("r".into()),
+            },
+            Job::Registries,
+        ];
+        for j in &jobs {
+            assert!(!j.label().is_empty(), "{j:?}");
+        }
+        assert!(Job::RunService {
+            package: "w".into(),
+            service: None
+        }
+        .is_stream());
+        assert!(Job::Logs {
+            name: "w".into(),
+            follow: true
+        }
+        .is_stream());
+        assert!(!Job::Verify("w".into()).is_stream());
+        // consent mapping — every install-family job flips, the rest
+        // pass through
+        for j in jobs {
+            let allowed = j.clone().with_drivers_allowed();
+            let flipped = match (&j, &allowed) {
+                (
+                    Job::Update {
+                        allow_drivers: a, ..
+                    }
+                    | Job::Install {
+                        allow_drivers: a, ..
+                    }
+                    | Job::AddDep {
+                        allow_drivers: a, ..
+                    },
+                    Job::Update {
+                        allow_drivers: b, ..
+                    }
+                    | Job::Install {
+                        allow_drivers: b, ..
+                    }
+                    | Job::AddDep {
+                        allow_drivers: b, ..
+                    },
+                ) => *b && !*a,
+                (Job::UpdateAll { allow_drivers: a }, Job::UpdateAll { allow_drivers: b }) => {
+                    *b && !*a
+                }
+                (
+                    Job::SetDep {
+                        allow_drivers: a, ..
+                    },
+                    Job::SetDep {
+                        allow_drivers: b, ..
+                    },
+                ) => *b && !*a,
+                (
+                    Job::Sync {
+                        allow_drivers: a, ..
+                    },
+                    Job::Sync {
+                        allow_drivers: b, ..
+                    },
+                ) => *b && !*a,
+                _ => matches!(
+                    allowed,
+                    Job::Verify(_)
+                        | Job::Remove(_)
+                        | Job::Pin { .. }
+                        | Job::CacheClean { .. }
+                        | Job::Doctor
+                        | Job::Search { .. }
+                        | Job::ServicesRefresh
+                        | Job::UnitAction { .. }
+                        | Job::ProviderDeploy { .. }
+                        | Job::ProviderUninstall { .. }
+                        | Job::RunService { .. }
+                        | Job::Logs { .. }
+                        | Job::RemoveDep { .. }
+                        | Job::Pack { .. }
+                        | Job::Publish { .. }
+                        | Job::Registries
+                ),
+            };
+            assert!(flipped, "{j:?} → {allowed:?}");
+        }
+    }
+
+    /// Label arms the all-variants sweep doesn't spell out, doctor
+    /// error branches, empty-store update-all, a failing update, and
+    /// a bad-signature verify.
+    #[test]
+    fn label_edges_doctor_and_error_arms() {
+        // label() arms outside the variants sweep
+        assert_eq!(
+            Job::Sync {
+                allow_drivers: false,
+                from_lock: false
+            }
+            .label(),
+            "sync deps"
+        );
+        assert_eq!(
+            Job::Publish {
+                dir: "d".into(),
+                registry: None
+            }
+            .label(),
+            "publish d"
+        );
+
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        // doctor with file-instead-of-dir roots → the store/cache/
+        // registry `Err` check arms all fire
+        let f = tmp.path().join("afile");
+        std::fs::write(&f, b"x").unwrap();
+        let c_bad = Ctx::new(&f, &f, &f, Some(tmp.path().join("no-cfg.yml")));
+        let err = run(&c_bad, &Job::Doctor, &mut |_| {})
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("store"), "{err}");
+        assert!(err.contains("cache"), "{err}");
+
+        // update-all over an empty store → the early "nothing
+        // installed" return
+        let c = ctx(tmp.path());
+        let t = text(
+            &c,
+            &Job::UpdateAll {
+                allow_drivers: false,
+            },
+        );
+        assert!(t.contains("nothing installed"), "{t}");
+
+        // update whose recorded ref no longer exists → install_ref
+        // error propagates through update()
+        let payload = pkg(tmp.path(), "gone", "name: gone\nversion: 1.0.0\n");
+        place(&c, &payload, "gone", None);
+        std::fs::remove_dir_all(&payload).unwrap();
+        assert!(run(
+            &c,
+            &Job::Update {
+                name: "gone".into(),
+                allow_drivers: false
+            },
+            &mut |_| {}
+        )
+        .is_err());
+
+        // verify on a record carrying a bogus signature → the
+        // signature-status arm errors (or propagates) either way
+        let mut rec = record("signed", Path::new("/x"), Some("files"));
+        rec.signature = Some("not-a-real-signature".into());
+        let signed_payload = pkg(tmp.path(), "signed", "name: signed\nversion: 1.0.0\n");
+        Store::new(&c.store_root)
+            .install(&signed_payload, rec)
+            .unwrap();
+        assert!(run(&c, &Job::Verify("signed".into()), &mut |_| {}).is_err());
+
+        // doctor with no discoverable drivers → the `none` arm in
+        // the drivers check line (PATH emptied under the env guard)
+        std::env::set_var("PATH", "");
+        let res = run(&c, &Job::Doctor, &mut |_| {});
+        let rendered = format!("{res:?}");
+        assert!(rendered.contains("drivers"), "{rendered}");
     }
 }

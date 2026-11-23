@@ -2164,7 +2164,9 @@ impl Model {
                 c @ ('s' | 'S' | 'r' | 'e' | 'E' | 'd' | 'x' | 't' | 'T' | 'n' | 'R'),
             ) if self.pane == Pane::Services => self.svc_verb(c),
             // Manifest pane: add/remove/edit dep + sync + reload.
-            KeyCode::Char(c @ ('a' | 'x' | 'd' | 'e' | 's' | 'R'))
+            // (`S` is the `sync --from-lock` variant — `man_verb`
+            // handles it; the route must let it through.)
+            KeyCode::Char(c @ ('a' | 'x' | 'd' | 'e' | 's' | 'S' | 'R'))
                 if self.pane == Pane::Manifest =>
             {
                 self.man_verb(c)
@@ -2465,6 +2467,1303 @@ mod tests {
                 assert_eq!(versions_err.as_deref(), Some("index gone"))
             }
             _ => panic!("no registry page"),
+        }
+    }
+
+    // --- model-level coverage: keys, modes, workers, panes ---
+
+    use crate::testkit::EnvGuard;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use tamias_core::StoreRecord;
+
+    /// Roots under `tmp` — nothing needs to exist for model tests.
+    fn tctx(tmp: &Path) -> Ctx {
+        Ctx::new(
+            tmp.join("store"),
+            tmp.join("cache"),
+            tmp.join("registry"),
+            Some(tmp.join("cfg.yml")),
+        )
+    }
+
+    fn open(tmp: &Path) -> Model {
+        Model::open(&tctx(tmp)).unwrap()
+    }
+
+    fn key(m: &mut Model, code: KeyCode) {
+        m.key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    fn chr(m: &mut Model, c: char) {
+        key(m, KeyCode::Char(c));
+    }
+
+    /// Drain worker messages until `busy` clears — bounded so a
+    /// stuck job can't hang the suite.
+    fn settle(m: &mut Model) {
+        for _ in 0..400 {
+            m.drain_work();
+            if m.busy.is_none() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Run a `:` command line end-to-end — mode + buffer + Enter.
+    fn run_cmd(m: &mut Model, line: &str) -> bool {
+        m.mode = Mode::Command;
+        m.cmdline = line.into();
+        m.refresh_completions();
+        m.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+    }
+
+    /// A payload dir whose `tamias.yaml` is `manifest` verbatim plus
+    /// one payload file.
+    fn pkg(dir: &Path, name: &str, manifest: &str) -> PathBuf {
+        let p = dir.join(name);
+        std::fs::create_dir_all(&p).unwrap();
+        std::fs::write(p.join("tamias.yaml"), manifest).unwrap();
+        std::fs::write(p.join("a.txt"), "a").unwrap();
+        p
+    }
+
+    /// The record `Store::install` writes for a hand-placed entry.
+    fn record(name: &str, payload: &Path, kind: Option<&str>) -> StoreRecord {
+        StoreRecord {
+            name: name.into(),
+            scope: None,
+            version: Some("1.0.0".into()),
+            kind: kind.map(str::to_string),
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
+            source_ref: payload.display().to_string(),
+            resolved: "sha256:0123456789abcdef".into(),
+            digest: String::new(),
+            signature: None,
+            signer: None,
+            trust: None,
+            installed_at: 0,
+        }
+    }
+
+    /// Place `payload` in `root`'s store directly (no pipeline).
+    fn place_at(root: &Path, payload: &Path, name: &str, kind: Option<&str>) -> StoreEntry {
+        Store::new(root)
+            .install(payload, record(name, payload, kind))
+            .unwrap()
+    }
+
+    /// Place `payload` in the model's store + reload.
+    fn place(m: &mut Model, payload: &Path, name: &str, kind: Option<&str>) {
+        place_at(&m.store_root, payload, name, kind);
+        m.reload();
+    }
+
+    /// A provider service row for the Services pane.
+    fn svc_row(package: &str, service: &str) -> ServiceRow {
+        ServiceRow {
+            package: package.into(),
+            service: service.into(),
+            unit: format!("{package}-{service}"),
+            state: Some("active".into()),
+            exec: "/bin/echo hi".into(),
+        }
+    }
+
+    /// Set a prompt's buffer and hit Enter.
+    fn run_prompt(m: &mut Model, kind: PromptKind, buf: &str) {
+        m.mode = Mode::Prompt(kind);
+        m.prompt_buf = buf.into();
+        key(m, KeyCode::Enter);
+    }
+
+    #[test]
+    fn command_parsing_extras() {
+        assert!(parse_command("remove").is_err());
+        assert!(parse_command("verify").is_err());
+        assert!(parse_command("run").is_err());
+        assert!(parse_command("run a b c").is_err());
+        assert!(parse_command("logs").is_err());
+        assert!(parse_command("deploy").is_err());
+        assert!(parse_command("pack").is_err());
+        assert!(parse_command("publish").is_err());
+        assert!(matches!(
+            parse_command("logs u --follow").unwrap(),
+            Cmd::Logs { follow: true, .. }
+        ));
+        assert!(matches!(
+            parse_command("logs u -F").unwrap(),
+            Cmd::Logs { follow: true, .. }
+        ));
+        assert!(matches!(
+            parse_command("clean --all").unwrap(),
+            Cmd::Clean(true)
+        ));
+        assert!(matches!(
+            parse_command("cache all").unwrap(),
+            Cmd::Clean(true)
+        ));
+        assert!(matches!(
+            parse_command("u w").unwrap(),
+            Cmd::Update(Some(_))
+        ));
+        assert!(matches!(parse_command("i x").unwrap(), Cmd::Install(_)));
+        assert!(matches!(parse_command("d").unwrap(), Cmd::Doctor));
+        assert!(matches!(parse_command("s").unwrap(), Cmd::Sync { .. }));
+        assert!(matches!(
+            parse_command("registry-list").unwrap(),
+            Cmd::Registries
+        ));
+        // the typed word → action bridge
+        for (w, ok) in [
+            ("start", true),
+            ("stop", true),
+            ("restart", true),
+            ("enable", true),
+            ("disable", true),
+            ("bogus", false),
+        ] {
+            assert_eq!(unit_action_from_word(w).is_some(), ok, "{w}");
+        }
+        for a in [
+            tamias_provider::UnitAction::Start,
+            tamias_provider::UnitAction::Stop,
+            tamias_provider::UnitAction::Restart,
+            tamias_provider::UnitAction::Enable,
+            tamias_provider::UnitAction::Disable,
+        ] {
+            assert!(!unit_action_word(a).is_empty());
+        }
+    }
+
+    #[test]
+    fn keys_modes_mouse_and_quit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = open(tmp.path());
+        // pane digits + h/l/Tab/BackTab stepping
+        for c in ['2', '3', '4', '5', '1'] {
+            chr(&mut m, c);
+        }
+        assert_eq!(m.pane, Pane::Installed);
+        key(&mut m, KeyCode::Tab);
+        assert_eq!(m.pane, Pane::Registry);
+        key(&mut m, KeyCode::BackTab);
+        assert_eq!(m.pane, Pane::Installed);
+        chr(&mut m, 'l');
+        assert_eq!(m.pane, Pane::Registry);
+        chr(&mut m, 'h');
+        assert_eq!(m.pane, Pane::Installed);
+        // g/G on empty lists
+        for c in ['g', 'G', 'j', 'k'] {
+            chr(&mut m, c);
+        }
+        // `/` filter on Installed — type, edit, keep, reopen+esc
+        chr(&mut m, '/');
+        assert_eq!(m.mode, Mode::Filter);
+        for c in "xy".chars() {
+            chr(&mut m, c);
+        }
+        assert_eq!(m.input, "xy");
+        assert_eq!(m.filter, "xy");
+        key(&mut m, KeyCode::Backspace);
+        assert_eq!(m.filter, "x");
+        key(&mut m, KeyCode::Enter);
+        assert_eq!(m.mode, Mode::Normal);
+        chr(&mut m, '/');
+        key(&mut m, KeyCode::Esc);
+        assert_eq!(m.mode, Mode::Normal);
+        assert!(m.filter.is_empty());
+        // `F` clears the filter outright
+        m.filter = "z".into();
+        chr(&mut m, 'F');
+        assert!(m.filter.is_empty());
+        // `:` command mode — typing, completions, Tab cycling, esc
+        chr(&mut m, ':');
+        assert_eq!(m.mode, Mode::Command);
+        for c in "ver".chars() {
+            chr(&mut m, c);
+        }
+        assert_eq!(m.cmdline, "ver");
+        assert!(!m.cmd_completions.is_empty());
+        key(&mut m, KeyCode::Tab);
+        // Tab replaced the trailing token with the picked candidate
+        // (and refresh reset the selection to "none applied")
+        assert_ne!(m.cmdline, "ver");
+        assert_eq!(m.cmd_sel, usize::MAX);
+        key(&mut m, KeyCode::BackTab);
+        key(&mut m, KeyCode::Backspace);
+        assert_eq!(m.mode, Mode::Command);
+        key(&mut m, KeyCode::Esc);
+        assert_eq!(m.mode, Mode::Normal);
+        assert!(m.cmdline.is_empty());
+        // `?` help overlay — most keys swallowed, ?/esc/q close
+        chr(&mut m, '?');
+        assert_eq!(m.mode, Mode::Help);
+        key(&mut m, KeyCode::Char('j'));
+        assert_eq!(m.mode, Mode::Help);
+        chr(&mut m, '?');
+        assert_eq!(m.mode, Mode::Normal);
+        chr(&mut m, '?');
+        chr(&mut m, 'q');
+        assert_eq!(m.mode, Mode::Normal);
+        // R reload + verbs on an empty selection → error toast
+        // (`p`/`i` open prompts — esc between so later keys stay verbs)
+        chr(&mut m, 'R');
+        assert_eq!(m.status, "reloaded");
+        for c in ['v', 'u', 'r'] {
+            chr(&mut m, c);
+        }
+        // cache cleans confirm unconditionally (no selection needed)
+        for c in ['c', 'C'] {
+            chr(&mut m, c);
+            assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+            chr(&mut m, 'n');
+        }
+        chr(&mut m, 'd');
+        settle(&mut m); // the doctor job lands
+        chr(&mut m, 'p'); // no selection → verb_pin is a no-op
+        assert_eq!(m.mode, Mode::Normal);
+        // 'i' on Installed opens the InstallRef prompt — esc closes
+        chr(&mut m, 'i');
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::InstallRef)));
+        key(&mut m, KeyCode::Esc);
+        // Enter/Esc/Left with no detail and no selection — harmless
+        key(&mut m, KeyCode::Enter);
+        key(&mut m, KeyCode::Esc);
+        key(&mut m, KeyCode::Left);
+        chr(&mut m, 'x'); // no stream child — not the kill arm
+        chr(&mut m, 'z'); // unmapped — `_` arm
+        key(&mut m, KeyCode::Up); // unmapped in Normal
+                                  // mouse — wheel, tab click, board clicks
+        m.tabs_area = Some(Rect::new(0, 0, 100, 1));
+        m.board_area = Rect::new(0, 2, 80, 10);
+        m.viewport_top = 0;
+        let mouse = |kind, column, row| MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+        m.mouse(mouse(MouseEventKind::ScrollUp, 1, 1));
+        m.mouse(mouse(MouseEventKind::ScrollDown, 1, 1));
+        // click the SERVICES tab (find a column tab_hit maps to it)
+        let col = (1..100u16)
+            .find(|&x| crate::render::tab_hit(100, x) == Some(2))
+            .unwrap();
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), col, 0));
+        assert_eq!(m.pane, Pane::Services);
+        // board clicks with empty rows — out-of-range guards
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 3));
+        // quit paths
+        let mut m2 = open(tmp.path());
+        assert!(m2.key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)));
+        let mut m3 = open(tmp.path());
+        assert!(m3.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+    }
+
+    #[test]
+    fn installed_rows_detail_and_verbs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = tctx(tmp.path());
+        let mut m = Model::open(&c).unwrap();
+        // bare first alphabetically — its payload has no manifest, so
+        // the detail page takes the manifest_err arm
+        let bare = tmp.path().join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::fs::write(bare.join("a.txt"), "a").unwrap();
+        place(&mut m, &bare, "bare", None);
+        let w = pkg(
+            tmp.path(),
+            "w",
+            "name: w\nversion: 1.0.0\ndescription: the w package\nlicense: MIT\ntype: stuff\nkeywords: [a, b]\n",
+        );
+        place(&mut m, &w, "w", Some("stuff"));
+        // a non-files kind for the remove-confirm teardown warning
+        let s = pkg(tmp.path(), "s", "name: s\nversion: 1.0.0\n");
+        place(&mut m, &s, "s", Some("weird"));
+        // a manifest with a sealed: block for the badge arm
+        let sec = pkg(
+            tmp.path(),
+            "sec",
+            "name: sec\nversion: 1.0.0\nsealed:\n  format: age/v1\n  recipients: recipients.txt\n  files:\n    k: v.age\n",
+        );
+        place(&mut m, &sec, "sec", None);
+        assert_eq!(m.entries.len(), 4);
+        // visible() + the / filter over label/kind/ref/sha/sealed
+        assert_eq!(m.visible().len(), 4);
+        m.filter = "w@".into();
+        assert_eq!(m.visible().len(), 1);
+        m.filter = "sealed".into();
+        let sealed_vis = m.visible();
+        m.filter.clear();
+        m.rebuild_sel(None, 0);
+        assert!(sealed_vis
+            .iter()
+            .any(|&i| m.entries[i].entry.label() == "sec@1.0.0"));
+        // selection accessors
+        m.sel = 0;
+        m.sync_sel_label();
+        assert!(m.selected().is_some());
+        assert!(m.reg_selected().is_none());
+        assert!(m.svc_selected().is_none());
+        assert!(m.dep_selected().is_none());
+        // detail on `bare` — manifest_err arm
+        key(&mut m, KeyCode::Enter);
+        match &m.detail {
+            Some(Detail::Installed {
+                manifest,
+                manifest_err,
+                ..
+            }) => {
+                assert!(manifest.is_none());
+                assert!(manifest_err.is_some());
+            }
+            _ => panic!("expected installed detail"),
+        }
+        let d = m.detail.as_ref().unwrap();
+        assert!(d.description().is_none());
+        assert!(d.kind().is_none());
+        assert!(!d.sealed());
+        key(&mut m, KeyCode::Esc);
+        assert!(m.detail.is_none());
+        // detail on `w` — full manifest path
+        let wi = m
+            .entries
+            .iter()
+            .position(|r| r.entry.label() == "w@1.0.0")
+            .unwrap();
+        m.sel = wi;
+        m.sync_sel_label();
+        key(&mut m, KeyCode::Enter);
+        let d = m.detail.as_ref().unwrap();
+        assert!(matches!(d, Detail::Installed { .. }));
+        assert_eq!(d.description(), Some("the w package"));
+        assert_eq!(d.kind(), Some("stuff"));
+        assert_eq!(d.license(), Some("MIT"));
+        assert_eq!(d.scope(), None);
+        assert_eq!(d.trust(), None);
+        // j/k scroll the page; Enter toggles it closed
+        chr(&mut m, 'j');
+        assert!(m.detail_scroll >= 1);
+        chr(&mut m, 'k');
+        key(&mut m, KeyCode::Enter);
+        assert!(m.detail.is_none());
+        // h/BackTab with a page open closes it instead of stepping
+        key(&mut m, KeyCode::Enter);
+        assert!(m.detail.is_some());
+        chr(&mut m, 'h');
+        assert!(m.detail.is_none());
+        key(&mut m, KeyCode::Enter);
+        key(&mut m, KeyCode::BackTab);
+        assert!(m.detail.is_none());
+        // verbs — verify spawns for real; the rest open modals/prompts
+        chr(&mut m, 'v');
+        settle(&mut m);
+        assert!(m.status.contains("w@1.0.0: ok") || m.status.contains("ok"));
+        chr(&mut m, 'u');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        chr(&mut m, 'U');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        chr(&mut m, 'p');
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::Pin { .. })));
+        key(&mut m, KeyCode::Esc);
+        // remove on the `weird`-kind entry → teardown warning body
+        let si = m
+            .entries
+            .iter()
+            .position(|r| r.entry.label() == "s@1.0.0")
+            .unwrap();
+        m.sel = si;
+        m.sync_sel_label();
+        chr(&mut m, 'r');
+        match &m.modal {
+            Some(Modal::Confirm { body, .. }) => {
+                assert!(body.iter().any(|b| b.contains("type 'weird'")));
+            }
+            _ => panic!("expected confirm"),
+        }
+        chr(&mut m, 'n');
+        // cache cleans + doctor
+        chr(&mut m, 'c');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'y'); // modal_yes → spawn CacheClean → real run
+        settle(&mut m);
+        chr(&mut m, 'C');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        chr(&mut m, 'd');
+        settle(&mut m);
+        // filter to nothing → selected_label's error arm
+        m.filter = "zzz".into();
+        m.rebuild_sel(None, m.sel);
+        chr(&mut m, 'v');
+        assert!(m.status_err);
+        assert!(m.status.contains("nothing selected"));
+        m.filter.clear();
+        m.rebuild_sel(None, 0);
+    }
+
+    #[test]
+    fn registry_pane_search_detail_install() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = tctx(tmp.path());
+        let mut m = Model::open(&c).unwrap();
+        chr(&mut m, '2');
+        assert_eq!(m.pane, Pane::Registry);
+        // moves on empty results
+        for c in ['j', 'k', 'g', 'G'] {
+            chr(&mut m, c);
+        }
+        assert!(m.reg_selected().is_none());
+        // a named registry with kind http but no url → install_ref Err
+        std::fs::write(
+            tmp.path().join("cfg.yml"),
+            "registries:\n  bad:\n    kind: http\n",
+        )
+        .unwrap();
+        m.reg_results = vec![reg_entry("1.0.0"), reg_entry("2.0.0")];
+        m.reg_query = "w".into();
+        m.reg_sel = 0;
+        for c in ['j', 'k', 'G', 'g'] {
+            chr(&mut m, c);
+        }
+        assert!(m.reg_selected().is_some());
+        // `/` on Registry → Search mode editing reg_query live
+        chr(&mut m, '/');
+        assert_eq!(m.mode, Mode::Search);
+        assert_eq!(m.input, "w");
+        for c in "id".chars() {
+            chr(&mut m, c);
+        }
+        assert_eq!(m.reg_query, "wid");
+        key(&mut m, KeyCode::Backspace);
+        assert_eq!(m.reg_query, "wi");
+        // Esc clears the query + results + debounce state
+        key(&mut m, KeyCode::Esc);
+        assert_eq!(m.mode, Mode::Normal);
+        assert!(m.reg_query.is_empty());
+        assert!(m.reg_results.is_empty());
+        // retype + Enter → immediate search (real job, empty registry)
+        m.reg_query = "w".into();
+        m.reg_results = vec![reg_entry("1.0.0")];
+        chr(&mut m, '/');
+        key(&mut m, KeyCode::Enter);
+        assert_eq!(m.mode, Mode::Normal);
+        settle(&mut m);
+        // repopulate for the detail/install flow
+        m.reg_results = vec![reg_entry("1.0.0")];
+        m.reg_sel = 0;
+        // registry target that can't resolve an install ref
+        m.reg_target = Some("bad".into());
+        key(&mut m, KeyCode::Enter);
+        match &m.detail {
+            Some(Detail::Registry {
+                install_ref,
+                install_err,
+                ..
+            }) => {
+                assert!(install_ref.is_none());
+                assert!(install_err.is_some());
+            }
+            _ => panic!("expected registry detail"),
+        }
+        // the versions fetch thread lands its Msg::Versions (Ok or Err)
+        settle(&mut m);
+        assert!(matches!(m.detail, Some(Detail::Registry { .. })));
+        chr(&mut m, 'j');
+        key(&mut m, KeyCode::Esc);
+        assert!(m.detail.is_none());
+        m.reg_target = None;
+        // `i` on a selected result → install confirm modal
+        chr(&mut m, 'i');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        // `i` with the package page open installs the page's entry —
+        // and a failed ref resolution toasts instead
+        key(&mut m, KeyCode::Enter);
+        assert!(matches!(m.detail, Some(Detail::Registry { .. })));
+        settle(&mut m);
+        m.reg_target = Some("bad".into());
+        chr(&mut m, 'i');
+        assert!(m.status_err);
+        m.reg_target = None;
+        key(&mut m, KeyCode::Esc);
+        assert!(m.detail.is_none());
+        // `i` with nothing selected → error toast
+        m.reg_results.clear();
+        m.reg_sel = 0;
+        chr(&mut m, 'i');
+        assert!(m.status_err);
+        assert!(m.status.contains("no registry result selected"));
+        // stale vs fresh Done(Search) outcomes
+        m.search_inflight = Some("other".into());
+        m.reg_query = "w".into();
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Search {
+                target: "t".into(),
+                results: vec![reg_entry("9.9.9")],
+            })))
+            .unwrap();
+        m.drain_work();
+        assert!(m.reg_results.is_empty());
+        m.search_inflight = Some("w".into());
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Search {
+                target: "t".into(),
+                results: vec![reg_entry("9.9.9")],
+            })))
+            .unwrap();
+        m.drain_work();
+        assert_eq!(m.reg_results.len(), 1);
+        assert_eq!(m.reg_target_label, "t");
+        // Done(Err) on the Services pane records svc_err
+        m.pane = Pane::Services;
+        m.work_tx.send(Msg::Done(Err("boom".into()))).unwrap();
+        m.drain_work();
+        assert_eq!(m.svc_err.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn pane_specific_verbs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = tctx(tmp.path());
+        // a project manifest for the Manifest pane
+        std::fs::write(
+            tmp.path().join("tamias.yaml"),
+            "name: proj\ndeps:\n  - ./a\n  - ./b\n",
+        )
+        .unwrap();
+        let mut m = Model::open(&c).unwrap();
+        // --- Manifest pane ---
+        chr(&mut m, '4');
+        assert_eq!(m.pane, Pane::Manifest);
+        assert_eq!(m.project.as_ref().map(|p| p.deps.len()), Some(2));
+        assert_eq!(m.dep_selected().as_deref(), Some("./a"));
+        for c in ['j', 'k', 'G', 'g'] {
+            chr(&mut m, c);
+        }
+        chr(&mut m, 'a');
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::AddDep)));
+        key(&mut m, KeyCode::Esc);
+        chr(&mut m, 'x');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        chr(&mut m, 'd');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        chr(&mut m, 'e');
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::SetDep { .. })));
+        key(&mut m, KeyCode::Esc);
+        chr(&mut m, 's');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        chr(&mut m, 'S');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        chr(&mut m, 'R'); // reload manifest
+        assert!(m.project.is_some());
+        // out-of-range dep selection → error arms
+        m.man_sel = 99;
+        chr(&mut m, 'x');
+        assert!(m.status_err);
+        chr(&mut m, 'e');
+        assert!(m.status_err);
+        m.man_sel = 0;
+        // --- Services pane ---
+        chr(&mut m, '3');
+        assert_eq!(m.pane, Pane::Services);
+        assert!(m.svc_stale);
+        m.svc_rows = vec![svc_row("pkg", "web"), svc_row("pkg2", "api")];
+        m.svc_sel = 0;
+        assert!(m.svc_selected().is_some());
+        for c in ['j', 'k', 'G', 'g'] {
+            chr(&mut m, c);
+        }
+        for c in ['s', 'S', 'r', 'e', 'E'] {
+            chr(&mut m, c);
+            assert!(matches!(m.modal, Some(Modal::Confirm { .. })), "{c}");
+            chr(&mut m, 'n');
+        }
+        chr(&mut m, 'd');
+        assert!(matches!(
+            m.mode,
+            Mode::Prompt(PromptKind::DeployConfig { .. })
+        ));
+        key(&mut m, KeyCode::Esc);
+        chr(&mut m, 'x');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        for c in ['t', 'T', 'n'] {
+            chr(&mut m, c);
+            settle(&mut m);
+        }
+        chr(&mut m, 'R');
+        assert!(m.svc_stale);
+        assert_eq!(m.status, "services refresh queued");
+        // 'i' on Services → install-by-ref prompt (not registry)
+        chr(&mut m, 'i');
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::InstallRef)));
+        key(&mut m, KeyCode::Esc);
+        // empty rows → "no service selected"
+        m.svc_rows.clear();
+        chr(&mut m, 's');
+        assert!(m.status_err);
+        // --- Author pane ---
+        chr(&mut m, '5');
+        assert_eq!(m.pane, Pane::Author);
+        chr(&mut m, 'p');
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::PackSpec)));
+        key(&mut m, KeyCode::Esc);
+        chr(&mut m, 'P');
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::PublishSpec)));
+        key(&mut m, KeyCode::Esc);
+        chr(&mut m, 'r');
+        settle(&mut m);
+        chr(&mut m, 'R');
+        // --- Installed verbs with a real selection ---
+        chr(&mut m, '1');
+        let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
+        place(&mut m, &w, "w", Some("weird"));
+        for c in ['v', 'u', 'p', 'r', 'c', 'C', 'd', 'i', 'U'] {
+            chr(&mut m, c);
+            match c {
+                'v' | 'd' => settle(&mut m),
+                'i' => {
+                    assert!(matches!(m.mode, Mode::Prompt(PromptKind::InstallRef)));
+                    key(&mut m, KeyCode::Esc);
+                }
+                'p' => {
+                    assert!(matches!(m.mode, Mode::Prompt(PromptKind::Pin { .. })));
+                    key(&mut m, KeyCode::Esc);
+                }
+                _ => {
+                    if m.modal.is_some() {
+                        chr(&mut m, 'n');
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prompt_kinds_run_their_jobs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = tctx(tmp.path());
+        let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
+        let w_ref = w.display().to_string();
+        let w2 = pkg(tmp.path(), "w2", "name: w2\nversion: 2.0.0\n");
+        let w2_ref = w2.display().to_string();
+        let mut m = Model::open(&c).unwrap();
+        // Pin — empty errs, text confirms
+        run_prompt(&mut m, PromptKind::Pin { name: "w".into() }, "");
+        assert!(m.status_err);
+        run_prompt(&mut m, PromptKind::Pin { name: "w".into() }, "./r");
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        // InstallRef — same shape
+        run_prompt(&mut m, PromptKind::InstallRef, "");
+        assert!(m.status_err);
+        run_prompt(&mut m, PromptKind::InstallRef, "./x");
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        // RegistryTarget — empty resets, text sets + refires the query
+        m.reg_query = "q".into();
+        run_prompt(&mut m, PromptKind::RegistryTarget, "");
+        assert_eq!(m.reg_target, None);
+        assert_eq!(m.status, "registry target: default routing");
+        run_prompt(&mut m, PromptKind::RegistryTarget, "mine");
+        assert_eq!(m.reg_target.as_deref(), Some("mine"));
+        settle(&mut m); // the refired search lands
+                        // AddDep — empty errs; a real ref installs + writes the manifest
+        run_prompt(&mut m, PromptKind::AddDep, "");
+        assert!(m.status_err);
+        run_prompt(&mut m, PromptKind::AddDep, &w_ref);
+        settle(&mut m);
+        assert!(
+            m.project
+                .as_ref()
+                .is_some_and(|p| p.deps.iter().any(|d| d == &w_ref)),
+            "deps: {:?}",
+            m.project.as_ref().map(|p| &p.deps)
+        );
+        // SetDep — empty errs; a real ref swaps the dep on confirm-yes
+        run_prompt(&mut m, PromptKind::SetDep { old: w_ref.clone() }, "");
+        assert!(m.status_err);
+        run_prompt(&mut m, PromptKind::SetDep { old: w_ref.clone() }, &w2_ref);
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'y');
+        settle(&mut m);
+        assert!(
+            m.project
+                .as_ref()
+                .is_some_and(|p| p.deps.iter().any(|d| d == &w2_ref)),
+            "deps: {:?}",
+            m.project.as_ref().map(|p| &p.deps)
+        );
+        // DeployConfig — empty means no driver config
+        run_prompt(&mut m, PromptKind::DeployConfig { name: "w".into() }, "");
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        run_prompt(
+            &mut m,
+            PromptKind::DeployConfig { name: "w".into() },
+            "/tmp/cfg.yml",
+        );
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        // PackSpec / PublishSpec — empty errs, spec confirms/spawns
+        run_prompt(&mut m, PromptKind::PackSpec, "");
+        assert!(m.status_err);
+        run_prompt(&mut m, PromptKind::PackSpec, &format!("{w_ref} out.tgz"));
+        settle(&mut m);
+        run_prompt(&mut m, PromptKind::PublishSpec, "");
+        assert!(m.status_err);
+        run_prompt(&mut m, PromptKind::PublishSpec, "./d reg");
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        // prompt-mode keys — chars, backspace, esc, unmapped
+        m.mode = Mode::Prompt(PromptKind::InstallRef);
+        for c in "ab".chars() {
+            chr(&mut m, c);
+        }
+        assert_eq!(m.prompt_buf, "ab");
+        key(&mut m, KeyCode::Backspace);
+        assert_eq!(m.prompt_buf, "a");
+        key(&mut m, KeyCode::Up);
+        key(&mut m, KeyCode::Esc);
+        assert_eq!(m.mode, Mode::Normal);
+        assert!(m.prompt_buf.is_empty());
+    }
+
+    #[test]
+    fn modal_consent_stream_and_worker_msgs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = tctx(tmp.path());
+        let mut m = Model::open(&c).unwrap();
+        let confirm = || Modal::Confirm {
+            title: "t".into(),
+            body: vec!["b".into()],
+            job: Job::Verify("ghost".into()),
+        };
+        // Confirm — swallowed key, n/N/esc cancel, y spawns
+        m.modal = Some(confirm());
+        chr(&mut m, 'j');
+        assert!(m.modal.is_some());
+        chr(&mut m, 'n');
+        assert!(m.modal.is_none());
+        m.modal = Some(confirm());
+        chr(&mut m, 'N');
+        assert!(m.modal.is_none());
+        m.modal = Some(confirm());
+        key(&mut m, KeyCode::Esc);
+        assert!(m.modal.is_none());
+        m.modal = Some(confirm());
+        chr(&mut m, 'y');
+        assert!(m.modal.is_none());
+        settle(&mut m); // the Verify job errors — ghost isn't installed
+                        // spawn while busy → the busy-refusal arm
+        m.busy = Some("job".into());
+        m.spawn(Job::Doctor);
+        assert!(m.status_err);
+        assert!(m.status.contains("busy"));
+        m.busy = None;
+        // Consent — n cancels; y re-runs with drivers allowed (a real
+        // bundled-driver install under the guarded TAMIAS_HOME)
+        let drv = pkg(tmp.path(), "drv", "name: drv\nversion: 1.0.0\n");
+        let drv_dir = drv.join("drivers");
+        std::fs::create_dir_all(&drv_dir).unwrap();
+        let driver = drv_dir.join("tamias-driver-x");
+        std::fs::write(&driver, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&driver, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let drv_ref = drv.display().to_string();
+        let consent = || Modal::Consent {
+            job: Job::Install {
+                reference: drv_ref.clone(),
+                allow_drivers: false,
+            },
+            reason: "ships drivers/".into(),
+        };
+        m.modal = Some(consent());
+        chr(&mut m, 'n');
+        assert!(m.modal.is_none());
+        m.modal = Some(consent());
+        chr(&mut m, 'y');
+        settle(&mut m);
+        assert!(m.modal.is_none());
+        assert!(
+            m.entries.iter().any(|r| r.entry.label() == "drv@1.0.0"),
+            "entries: {:?}",
+            m.entries
+                .iter()
+                .map(|r| r.entry.label())
+                .collect::<Vec<_>>()
+        );
+        // Msg::StreamChild lands the killable handle; `x` kills it
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        let arc = Arc::new(Mutex::new(child));
+        m.work_tx.send(Msg::StreamChild(arc)).unwrap();
+        m.drain_work();
+        assert!(m.stream_child.is_some());
+        chr(&mut m, 'x');
+        assert!(m.stream_child.is_none());
+        assert!(m.log.iter().any(|l| l.contains("killed stream")));
+        // ctrl-c with a live child kills it, then quits
+        let child = Command::new("sleep").arg("30").spawn().unwrap();
+        m.stream_child = Some(Arc::new(Mutex::new(child)));
+        assert!(m.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        // the log ring caps at LOG_CAP
+        for i in 0..(LOG_CAP + 5) {
+            m.work_tx.send(Msg::Log(format!("l{i}"))).unwrap();
+        }
+        m.drain_work();
+        assert_eq!(m.log.len(), LOG_CAP);
+        // Done(Services) fills the table; Done(Text) toasts + reloads
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Services(vec![svc_row("p", "s")]))))
+            .unwrap();
+        m.drain_work();
+        assert_eq!(m.svc_rows.len(), 1);
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Text("done-thing".into()))))
+            .unwrap();
+        m.drain_work();
+        assert_eq!(m.status, "done-thing");
+    }
+
+    #[test]
+    fn colon_commands_end_to_end() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = tctx(tmp.path());
+        let mut m = Model::open(&c).unwrap();
+        let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
+        place(&mut m, &w, "w", None);
+        // read-only + modal commands
+        assert!(!run_cmd(&mut m, "reload"));
+        assert_eq!(m.status, "reloaded");
+        run_cmd(&mut m, "help");
+        assert_eq!(m.mode, Mode::Help);
+        chr(&mut m, 'q'); // help's own close key
+        assert_eq!(m.mode, Mode::Normal);
+        run_cmd(&mut m, "install ./x");
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        run_cmd(&mut m, "remove w@1.0.0");
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        // verify runs for real against the placed entry
+        run_cmd(&mut m, "verify w@1.0.0");
+        settle(&mut m);
+        assert!(m.status.contains("ok"), "{}", m.status);
+        for line in [
+            "update w@1.0.0",
+            "update",
+            "pin w@1.0.0 ./r",
+            "clean",
+            "clean all",
+            "cache",
+            "service restart w-unit",
+            "sync",
+            "sync --from-lock",
+            "publish ./d mine",
+        ] {
+            run_cmd(&mut m, line);
+            assert!(
+                matches!(m.modal, Some(Modal::Confirm { .. })),
+                "{line} → {:?}",
+                m.modal
+            );
+            chr(&mut m, 'n');
+        }
+        // search jumps panes + fires; registry target sets + refires
+        run_cmd(&mut m, "search qq");
+        assert_eq!(m.pane, Pane::Registry);
+        settle(&mut m);
+        m.reg_query = "q".into();
+        run_cmd(&mut m, "registry mine");
+        assert_eq!(m.reg_target.as_deref(), Some("mine"));
+        settle(&mut m);
+        run_cmd(&mut m, "registry");
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::RegistryTarget)));
+        key(&mut m, KeyCode::Esc);
+        // spawns that error or succeed against the tmp roots
+        for line in [
+            "doctor",
+            "service bogus u", // parse error, not a spawn
+            "run w@1.0.0 web",
+            "logs w-unit -f",
+            "pack ./d out.tgz",
+            "registries",
+            "manifest",
+            "bogus",
+            "sync bogus",
+            "pack",
+            "publish",
+        ] {
+            run_cmd(&mut m, line);
+        }
+        settle(&mut m);
+        assert!(m.status_err || !m.status.is_empty());
+        // `:deploy <name>` opens the config prompt
+        run_cmd(&mut m, "deploy w@1.0.0");
+        assert!(matches!(
+            m.mode,
+            Mode::Prompt(PromptKind::DeployConfig { .. })
+        ));
+        key(&mut m, KeyCode::Esc);
+        // `update` on an empty store → the nothing-installed arm
+        let tmp2 = tempfile::tempdir().unwrap();
+        let mut m2 = open(tmp2.path());
+        run_cmd(&mut m2, "update");
+        assert!(m2.status_err);
+        assert!(m2.status.contains("nothing installed"));
+        // `q`/`quit`/`q!` through the command line quits
+        for q in ["q", "quit", "q!"] {
+            let mut mq = open(tmp.path());
+            assert!(run_cmd(&mut mq, q), "{q}");
+        }
+    }
+
+    #[test]
+    fn tick_drain_watch_and_status() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        std::fs::create_dir_all(tmp.path().join("store")).unwrap();
+        let c = tctx(tmp.path());
+        let mut m = Model::open(&c).unwrap();
+        // the watcher is armed on the existing store root; a write
+        // lands as a dirty flag → reload on the next tick
+        std::thread::sleep(Duration::from_millis(50));
+        std::fs::write(tmp.path().join("store/f"), "x").unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        m.tick();
+        // status TTL — normal toasts expire, errors are sticky
+        m.status = "hello".into();
+        m.status_at = Instant::now() - Duration::from_secs(10);
+        m.status_err = false;
+        m.tick();
+        assert!(m.status.is_empty());
+        m.status = "err".into();
+        m.status_err = true;
+        m.status_at = Instant::now() - Duration::from_secs(10);
+        m.tick();
+        assert_eq!(m.status, "err");
+        m.status_err = false;
+        // the rescan fallback boundary reloads too
+        m.tick_n = RESCAN_TICKS - 1;
+        m.tick();
+        // debounced search: Registry pane + settled query + free worker
+        m.pane = Pane::Registry;
+        m.reg_query = "deb".into();
+        m.search_typed_at = Some(Instant::now() - Duration::from_millis(500));
+        m.tick(); // maybe_search → fire_search → spawn
+        settle(&mut m);
+        // the Services stale-flag → refresh job on tick
+        m.pane = Pane::Services;
+        m.svc_stale = true;
+        m.tick();
+        settle(&mut m);
+        // busy gates the refresh
+        m.busy = Some("job".into());
+        m.svc_stale = true;
+        m.tick();
+        assert!(m.busy.is_some());
+        m.busy = None;
+    }
+
+    #[test]
+    fn load_error_and_manifest_error_states() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        // an unreadable store root → entries() fails → load_err
+        let store = tmp.path().join("store");
+        std::fs::create_dir_all(&store).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o000)).unwrap();
+        }
+        let c = Ctx::new(
+            &store,
+            tmp.path().join("cache"),
+            tmp.path().join("reg"),
+            None,
+        );
+        let mut m = Model::open(&c).unwrap();
+        assert!(m.load_err.is_some());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        // a lone tamias.toml → the YAML-only refusal arm
+        std::fs::write(tmp.path().join("tamias.toml"), "x = 1\n").unwrap();
+        m.load_manifest();
+        assert!(m.man_err.is_some());
+        assert!(m.project.is_none());
+    }
+
+    /// Edge arms: stream kill, modal yes (both kinds), prompt kinds
+    /// not yet driven, per-pane empty moves, mouse row/tab clicks,
+    /// command/parser leftovers, completion wrap edges.
+    #[test]
+    fn edge_arms_keys_prompts_mouse() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = open(tmp.path());
+
+        // --- kill_stream with a live child ---
+        let child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        m.stream_child = Some(Arc::new(Mutex::new(child)));
+        chr(&mut m, 'x');
+        assert!(m.stream_child.is_none());
+        assert!(m.log.iter().any(|l| l == "killed stream"));
+
+        // --- modal yes: Confirm spawns, Consent re-runs allowed ---
+        m.modal = Some(Modal::Confirm {
+            title: "t".into(),
+            body: vec![],
+            job: Job::Doctor,
+        });
+        chr(&mut m, 'y');
+        assert!(m.busy.is_some());
+        settle(&mut m);
+        m.modal = Some(Modal::Consent {
+            job: Job::Doctor,
+            reason: "r".into(),
+        });
+        m.modal_yes(); // direct — same arm the 'y' key routes to
+        assert!(m.busy.is_some());
+        settle(&mut m);
+        // run_prompt with no prompt mode → early return
+        m.mode = Mode::Normal;
+        m.run_prompt();
+        assert_eq!(m.mode, Mode::Normal);
+
+        // --- RegistryTarget prompt: empty re-runs the query, text
+        //     sets the target and re-fires ---
+        m.pane = Pane::Registry;
+        m.reg_query = "w".into();
+        m.search_typed_at = None;
+        run_prompt(&mut m, PromptKind::RegistryTarget, "");
+        assert!(m.busy.is_some()); // fire_search spawned
+        settle(&mut m);
+        run_prompt(&mut m, PromptKind::RegistryTarget, "named");
+        assert_eq!(m.reg_target.as_deref(), Some("named"));
+        settle(&mut m);
+        // empty query → fire_search takes the clear arm
+        m.reg_query = "   ".into();
+        run_prompt(&mut m, PromptKind::RegistryTarget, "x");
+        settle(&mut m);
+
+        // --- Enter opens the registry detail page (install-ref
+        //     resolution + versions fetch thread) ---
+        m.reg_results = vec![reg_entry("1.0.0")];
+        m.reg_sel = 0;
+        key(&mut m, KeyCode::Enter);
+        assert!(matches!(m.detail, Some(Detail::Registry { .. })));
+        settle(&mut m);
+        key(&mut m, KeyCode::Esc);
+        assert!(m.detail.is_none());
+
+        // --- per-pane empty moves (j/k/g/G on zero rows) ---
+        m.reg_results.clear();
+        m.svc_rows.clear();
+        m.project = None;
+        for pane in [
+            Pane::Registry,
+            Pane::Services,
+            Pane::Manifest,
+            Pane::Author,
+            Pane::Installed,
+        ] {
+            m.pane = pane;
+            m.detail = None;
+            for c in ['j', 'k', 'g', 'G'] {
+                chr(&mut m, c);
+            }
+        }
+        // non-empty moves on the row panes
+        m.svc_rows = vec![svc_row("p", "s"), svc_row("p", "t")];
+        m.reg_results = vec![reg_entry("1.0.0"), reg_entry("2.0.0")];
+        m.project = Some(Manifest {
+            deps: vec!["a".into(), "b".into()],
+            ..Default::default()
+        });
+        for pane in [Pane::Registry, Pane::Services, Pane::Manifest] {
+            m.pane = pane;
+            for c in ['j', 'k', 'g', 'G'] {
+                chr(&mut m, c);
+            }
+        }
+        // 'R' on Services marks stale + toasts
+        m.pane = Pane::Services;
+        chr(&mut m, 'R');
+        assert_eq!(m.status, "services refresh queued");
+        // Manifest 'R' reloads the project manifest
+        m.pane = Pane::Manifest;
+        chr(&mut m, 'R');
+        // Author 'r' spawns Registries, 'R' re-reads names
+        m.pane = Pane::Author;
+        chr(&mut m, 'r');
+        settle(&mut m);
+        chr(&mut m, 'R');
+
+        // --- `:` command leftovers ---
+        run_cmd(&mut m, "registry"); // bare → target prompt
+        assert!(matches!(m.mode, Mode::Prompt(PromptKind::RegistryTarget)));
+        key(&mut m, KeyCode::Esc);
+        run_cmd(&mut m, "registry named"); // named target arm
+        assert_eq!(m.reg_target.as_deref(), Some("named"));
+        run_cmd(&mut m, "service bogus x"); // parse whitelist rejects
+        assert!(m.status.contains("usage: :service"));
+        run_cmd(&mut m, "pack"); // bare verb → usage error
+        assert!(m.status.contains("usage: :pack"));
+        run_cmd(&mut m, "publish"); // bare verb → usage error
+        assert!(m.status.contains("usage: :publish"));
+        run_cmd(&mut m, "pack /tmp out.tgz"); // spawns Pack
+        settle(&mut m);
+        run_cmd(&mut m, "publish /tmp reg"); // Confirm modal → yes spawns
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'y');
+        settle(&mut m);
+        run_cmd(&mut m, ""); // parse edge — empty/whitespace
+                             // unmapped keys inside Command/Filter/Search modes
+        m.mode = Mode::Command;
+        key(&mut m, KeyCode::Up);
+        m.mode = Mode::Filter;
+        key(&mut m, KeyCode::Up);
+        m.mode = Mode::Search;
+        m.input.clear(); // '/' seeds input from reg_query; mimic that
+        key(&mut m, KeyCode::Up);
+        // Search typing arms — chars + backspace update the query
+        chr(&mut m, 'q');
+        assert_eq!(m.reg_query, "q");
+        key(&mut m, KeyCode::Backspace);
+        assert!(m.reg_query.is_empty());
+        // Enter fires the (empty→clear) search now
+        key(&mut m, KeyCode::Enter);
+        assert_eq!(m.mode, Mode::Normal);
+
+        // --- completion wrap edges ---
+        // `apply_completion` recomputes candidates + resets `cmd_sel`
+        // to MAX on every pick, so the cycle position itself is never
+        // observable — drive every arm (MAX/first/last, both
+        // directions) and assert the buffer mutation instead.
+        m.mode = Mode::Command;
+        m.cmdline = "ver".into();
+        m.refresh_completions();
+        let before = m.cmdline.clone();
+        for _ in 0..2 {
+            key(&mut m, KeyCode::Tab);
+        }
+        assert_ne!(m.cmdline, before);
+        for _ in 0..2 {
+            key(&mut m, KeyCode::BackTab);
+        }
+        // manual sel seeds still exercise the wrap arithmetic even
+        // though refresh hides the result
+        m.cmdline = "ver".into();
+        m.refresh_completions();
+        m.cmd_sel = usize::MAX;
+        key(&mut m, KeyCode::BackTab);
+        m.cmd_sel = 0;
+        key(&mut m, KeyCode::BackTab);
+        m.mode = Mode::Normal;
+
+        // --- debounced search early-return (query still fresh) ---
+        m.pane = Pane::Registry;
+        m.busy = None;
+        m.reg_query = "fresh".into();
+        m.search_typed_at = Some(Instant::now());
+        m.tick();
+        assert!(m.search_typed_at.is_some()); // not yet due
+                                              // due → fires; empty query takes the clear arm
+        m.search_typed_at = Some(Instant::now() - SEARCH_DEBOUNCE - Duration::from_millis(1));
+        m.tick();
+        settle(&mut m);
+        m.reg_query = String::new();
+        m.search_typed_at = Some(Instant::now() - SEARCH_DEBOUNCE - Duration::from_millis(1));
+        m.tick();
+        assert!(m.reg_results.is_empty());
+
+        // --- mouse: tab click + per-pane row clicks ---
+        m.entries = vec![test_row("alpha"), test_row("beta")];
+        m.reg_results = vec![reg_entry("1.0.0"), reg_entry("2.0.0")];
+        m.svc_rows = vec![svc_row("p", "s"), svc_row("p", "t")];
+        m.project = Some(Manifest {
+            deps: vec!["a".into(), "b".into()],
+            ..Default::default()
+        });
+        m.man_sel = 0;
+        m.tabs_area = Some(Rect::new(0, 0, 100, 1));
+        m.board_area = Rect::new(0, 2, 80, 10);
+        m.viewport_top = 0;
+        let mouse = |kind, column, row| MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+        // click the SERVICES tab (col inside its label span)
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 25, 0));
+        assert_eq!(m.pane, Pane::Services);
+        // row click on the services table → svc_sel
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 4));
+        assert_eq!(m.svc_sel, 1);
+        // header row click → ignored (checked_sub(1) → None)
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 3));
+        // outside the board → ignored
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 30));
+        // manifest pane row click
+        m.pane = Pane::Manifest;
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 4));
+        assert_eq!(m.man_sel, 1);
+        // registry pane row click
+        m.pane = Pane::Registry;
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 4));
+        assert_eq!(m.reg_sel, 1);
+        // installed pane row click → sel + sel_label sync
+        m.pane = Pane::Installed;
+        m.filter.clear();
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 4));
+        assert_eq!(m.sel, 1);
+        assert!(m.sel_label.is_some());
+        // tab-bar click past the last label → tab_hit None → no-op
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 95, 0));
+        assert_eq!(m.pane, Pane::Installed);
+    }
+
+    /// An installed-pane [`Row`] without touching disk — the dir is
+    /// display-only (detail/manifest reads would fail, which is fine
+    /// for selection tests).
+    fn test_row(name: &str) -> Row {
+        Row {
+            entry: StoreEntry {
+                dir: PathBuf::from("/store").join(name),
+                record: record(name, Path::new("/store"), Some("files")),
+            },
+            size: Some(1024),
+            sealed: false,
         }
     }
 }

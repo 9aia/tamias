@@ -191,3 +191,66 @@ mod tests {
         assert!(ctx.config_file.is_none());
     }
 }
+
+/// Test-only scaffolding shared by the module test suites. Tests run
+/// in one process, so anything mutating process env or the cwd must
+/// serialize on [`ENV_LOCK`] — [`EnvGuard`] is the RAII half.
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+#[allow(clippy::unwrap_used)]
+pub(crate) mod testkit {
+    use std::ffi::OsString;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, MutexGuard};
+
+    /// One process-wide lock — every env/cwd-mutating test holds it
+    /// for its whole body via [`EnvGuard`].
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Snapshots env + cwd on [`Self::enter`], points the
+    /// host-touching vars (`TAMIAS_HOME`, `TAMIAS_BIN_DIR`,
+    /// `XDG_CONFIG_HOME`) at throwaway dirs inside `dir`, chdirs into
+    /// `dir`, and restores everything on drop.
+    pub struct EnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        cwd: PathBuf,
+        env: Vec<(OsString, OsString)>,
+    }
+
+    impl EnvGuard {
+        /// Take the lock, snapshot, redirect, chdir.
+        pub fn enter(dir: &Path) -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let env = std::env::vars_os().collect();
+            let cwd = std::env::current_dir().unwrap();
+            for (k, v) in [
+                ("TAMIAS_HOME", dir.join("home")),
+                ("TAMIAS_BIN_DIR", dir.join("bin")),
+                ("XDG_CONFIG_HOME", dir.join("xdg")),
+            ] {
+                std::env::set_var(k, v);
+            }
+            std::env::set_current_dir(dir).unwrap();
+            Self {
+                _lock: lock,
+                cwd,
+                env,
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            let keys: Vec<_> = std::env::vars_os().map(|(k, _)| k).collect();
+            for k in keys {
+                if !self.env.iter().any(|(sk, _)| *sk == k) {
+                    std::env::remove_var(&k);
+                }
+            }
+            for (k, v) in &self.env {
+                std::env::set_var(k, v);
+            }
+            let _ = std::env::set_current_dir(&self.cwd);
+        }
+    }
+}

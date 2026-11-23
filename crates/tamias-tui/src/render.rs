@@ -1242,6 +1242,11 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use std::path::{Path, PathBuf};
+    use tamias_core::{Manifest, Provider, ProviderService, Sealed, StoreEntry, StoreRecord};
+    use tamias_provider::ServiceRow;
     use tamias_registry::RegistryEntry;
 
     /// A registry index entry — `w@<ver>` unscoped.
@@ -1309,5 +1314,627 @@ mod tests {
         let empty = body_text(&detail(Some(Vec::new()), None));
         assert!(empty.contains("── versions ──"));
         assert!(empty.contains("no versions indexed"));
+    }
+
+    // --- frame-level coverage: every pane, mode, modal, and the
+    //     chrome budget branches, rendered into a TestBackend ---
+
+    /// Roots under `tmp` — nothing needs to exist for render tests.
+    fn tctx(tmp: &Path) -> crate::Ctx {
+        crate::Ctx::new(
+            tmp.join("store"),
+            tmp.join("cache"),
+            tmp.join("registry"),
+            Some(tmp.join("cfg.yml")),
+        )
+    }
+
+    fn model(tmp: &Path) -> Model {
+        Model::open(&tctx(tmp)).unwrap()
+    }
+
+    /// A store record — `name@1.0.0`, `sha256:`-prefixed digests.
+    fn rec(name: &str) -> StoreRecord {
+        StoreRecord {
+            name: name.into(),
+            scope: None,
+            version: Some("1.0.0".into()),
+            kind: Some("files".into()),
+            description: Some(format!("the {name} package")),
+            keywords: vec!["demo".into()],
+            homepage: None,
+            repository: None,
+            license: Some("MIT".into()),
+            authors: Vec::new(),
+            source_ref: format!("./{name}"),
+            resolved: "sha256:0123456789abcdef".into(),
+            digest: "sha256:fedcba9876543210".into(),
+            signature: None,
+            signer: None,
+            trust: Some("signed".into()),
+            installed_at: 1_700_000_000,
+        }
+    }
+
+    /// A store entry without touching disk — `dir` is display-only.
+    fn entry(name: &str) -> StoreEntry {
+        StoreEntry {
+            dir: PathBuf::from("/store").join(name),
+            record: rec(name),
+        }
+    }
+
+    /// An installed-pane row.
+    fn row(name: &str, sealed: bool) -> crate::app::Row {
+        crate::app::Row {
+            entry: entry(name),
+            size: Some(2048),
+            sealed,
+        }
+    }
+
+    /// Draw one frame and flatten the buffer to text (trailing spaces
+    /// trimmed per line so assertions read naturally).
+    fn screen(m: &mut Model, w: u16, h: u16) -> String {
+        let backend = TestBackend::new(w, h);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| draw(f, m)).unwrap();
+        let buf = term.backend().buffer();
+        let area = buf.area;
+        let mut out = String::new();
+        for y in 0..area.height {
+            let mut line = String::new();
+            for x in 0..area.width {
+                line.push_str(buf[(x, y)].symbol());
+            }
+            out.push_str(line.trim_end());
+            out.push('\n');
+        }
+        out
+    }
+
+    /// A rich payload manifest for the Installed detail page — deps,
+    /// provider services, and every meta field.
+    fn full_manifest() -> Manifest {
+        Manifest {
+            name: "w".into(),
+            description: Some("a widget".into()),
+            keywords: vec!["ui".into(), "demo".into()],
+            homepage: Some("https://example.com".into()),
+            repository: Some("git@example.com:w.git".into()),
+            authors: vec!["ann".into()],
+            kind: Some("demo-type".into()),
+            include: vec!["base-pkg".into()],
+            deps: vec!["./dep-a".into(), "other@2.0.0".into()],
+            provider: Some(Provider {
+                services: vec![ProviderService {
+                    name: "web".into(),
+                    exec: "/bin/serve".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    /// A sealed-pack manifest for the meta `sealed` kv line.
+    fn sealed_manifest() -> Manifest {
+        Manifest {
+            name: "s".into(),
+            sealed: Some(Sealed {
+                format: "age/v1".into(),
+                recipients: "recipients.txt".into(),
+                files: [("db".to_string(), "db.age".to_string())]
+                    .into_iter()
+                    .collect(),
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn pure_helpers() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(2048), "2.0 KiB");
+        assert_eq!(human_size(5 * 1024 * 1024), "5.0 MiB");
+        assert_eq!(human_size(3 * 1024 * 1024 * 1024), "3.0 GiB");
+        assert_eq!(human_size(2 * 1024u64.pow(4)), "2.0 TiB");
+        assert_eq!(short_sha("sha256:0123456789abcdef"), "0123456789ab");
+        assert_eq!(short_sha("deadbeef"), "deadbeef");
+        // every trust tier maps somewhere; unknown falls to muted
+        for t in ["official", "signed", "bad", "pinned", "unpinned", "weird"] {
+            let _ = trust_style(t);
+        }
+        assert!(trust_badge(None).is_none());
+        assert!(trust_badge(Some("signed")).is_some());
+        // chrome budget: tabs ≥3 rows, status ≥5
+        assert_eq!(chrome(2), (false, false));
+        assert_eq!(chrome(3), (true, false));
+        assert_eq!(chrome(5), (true, true));
+        // fit_width: zero budget, fits, and ellipsis truncation
+        assert_eq!(fit_width("abc", 0), "");
+        assert_eq!(fit_width("abc", 10), "abc");
+        let cut = fit_width("abcdefghijklmnopqrstuvwxyz", 10);
+        assert!(cut.ends_with('…') && cut.chars().count() == 10);
+        // wrapped_lines: single line, wrap, max cap, degenerate width
+        assert_eq!(wrapped_lines("", 10, 3), 1);
+        assert_eq!(wrapped_lines("a b c d e f", 5, 10), 2);
+        let long = "x ".repeat(50);
+        assert_eq!(wrapped_lines(&long, 10, 3), 3);
+        assert_eq!(wrapped_lines("one two", 0, 2), 2);
+    }
+
+    #[test]
+    fn tab_bar_hit_testing() {
+        // wide enough for full labels
+        let wide = tab_labels(200);
+        assert_eq!(wide.len(), 5);
+        assert!(wide[0].contains("INSTALLED"));
+        assert_eq!(tab_hit(200, 0), None); // leading space
+        assert_eq!(tab_hit(200, 1), Some(0));
+        // narrow → initials, hit-test still resolves
+        let narrow = tab_labels(20);
+        assert!(narrow.iter().all(|l| l.chars().count() == 1));
+        assert!(tab_hit(20, 30).is_none());
+        let _ = tab_hit(20, 2);
+    }
+
+    #[test]
+    fn empty_pane_states() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        // Installed — no packages
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("no packages installed"), "{s}");
+        assert!(s.contains("INSTALLED"), "{s}");
+        // Registry — no query yet
+        m.pane = Pane::Registry;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("registry search"), "{s}");
+        // Services — no rows, not busy
+        m.pane = Pane::Services;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("no provider services"), "{s}");
+        // Manifest — no project (open() discovers ./tamias.yml from
+        // the repo root, so clear it explicitly for the empty state)
+        m.pane = Pane::Manifest;
+        m.project = None;
+        m.man_err = None;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("no project manifest"), "{s}");
+        // Author — no registries
+        m.pane = Pane::Author;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("authoring"), "{s}");
+        assert!(s.contains("no registries configured"), "{s}");
+    }
+
+    #[test]
+    fn installed_pane_rows_states() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.entries = vec![row("alpha", false), row("beta", true)];
+        m.entries[1].entry.record.trust = Some("bad".into());
+        m.entries[1].entry.record.kind = None;
+        let s = screen(&mut m, 100, 24);
+        assert!(s.contains("alpha@1.0.0"), "{s}");
+        // the name cell clips `[sealed]` on narrow tables — the badge
+        // prefix is enough proof it rendered
+        assert!(s.contains("[seal"), "{s}");
+        assert!(s.contains("[bad]"), "{s}");
+        assert!(s.contains("2.0 KiB"), "{s}");
+        // filter with no matches
+        m.filter = "zzz".into();
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("no entries match"), "{s}");
+        // load error wins over everything
+        m.load_err = Some("store gone".into());
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("store: store gone"), "{s}");
+    }
+
+    #[test]
+    fn registry_pane_states() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Registry;
+        m.reg_err = Some("index 404".into());
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("registry: index 404"), "{s}");
+        m.reg_err = None;
+        m.reg_query = "w".into();
+        // empty results, not busy vs busy
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("no results"), "{s}");
+        m.busy = Some("searching".into());
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("searching…"), "{s}");
+        // populated table — plus a sparse entry exercising the "-"
+        // fallback cells (no scope/kind/version/license/description)
+        m.busy = None;
+        let mut sparse = reg_entry("0.5.0");
+        sparse.version = None;
+        m.reg_results = vec![reg_entry("1.0.0"), sparse];
+        let s = screen(&mut m, 100, 24);
+        assert!(s.contains("w@1.0.0"), "{s}");
+        assert!(s.contains("registry — default · /w"), "{s}");
+    }
+
+    #[test]
+    fn services_pane_states() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Services;
+        // error with no rows → red error paragraph
+        m.svc_err = Some("systemctl missing".into());
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("services: systemctl missing"), "{s}");
+        // rows present — error tolerated, table renders
+        m.svc_rows = vec![ServiceRow {
+            package: "pkg@1.0.0".into(),
+            service: "web".into(),
+            unit: "pkg-web".into(),
+            state: Some("active".into()),
+            exec: "/bin/serve --port 9".into(),
+        }];
+        m.svc_err = None;
+        let s = screen(&mut m, 100, 24);
+        assert!(s.contains("pkg-web"), "{s}");
+        assert!(s.contains("active"), "{s}");
+        // busy → refreshing title + the empty-rows loading hint
+        m.svc_rows.clear();
+        m.busy = Some("services refresh".into());
+        let s = screen(&mut m, 100, 24);
+        assert!(s.contains("loading services…"), "{s}");
+        // rows back + busy → the refreshing title variant
+        m.svc_rows = vec![ServiceRow {
+            package: "pkg@1.0.0".into(),
+            service: "web".into(),
+            unit: "pkg-web".into(),
+            state: Some("active".into()),
+            exec: "/bin/serve --port 9".into(),
+        }];
+        let s = screen(&mut m, 100, 24);
+        assert!(s.contains("refreshing"), "{s}");
+        m.busy = None;
+        m.svc_stale = true;
+        let s = screen(&mut m, 100, 24);
+        assert!(s.contains("refreshing"), "{s}");
+    }
+
+    #[test]
+    fn manifest_pane_states() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Manifest;
+        m.manifest_path = PathBuf::from("/proj/tamias.yaml");
+        // error state — project must be None for the err arm to win
+        // (open() discovered the repo's own tamias.yml)
+        m.project = None;
+        m.man_err = Some("bad yaml".into());
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("bad yaml"), "{s}");
+        // manifest with deps → table; version/description/include/
+        // provider all land in the read-only info strip
+        let mut man = full_manifest();
+        man.name = "proj".into();
+        man.version = Some("0.2.0".into());
+        m.project = Some(man);
+        m.man_err = None;
+        let s = screen(&mut m, 100, 30);
+        assert!(s.contains("manifest:"), "{s}");
+        assert!(s.contains("./dep-a"), "{s}");
+        // short terminal → info strip yields, deps-only hint
+        let s = screen(&mut m, 80, 10);
+        assert!(s.contains("deps"), "{s}");
+        // project with zero deps → empty-deps hint; then no project
+        // at all → the create hint
+        m.project = Some(Manifest::default());
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("no deps"), "{s}");
+        m.project = None;
+        m.man_err = None;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("no project manifest"), "{s}");
+    }
+
+    #[test]
+    fn author_pane_registries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Author;
+        m.author_regs = vec![
+            ("local".into(), String::new()),
+            ("cf".into(), "cf-worker".into()),
+        ];
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("local"), "{s}");
+        assert!(s.contains("cf  (cf-worker)"), "{s}");
+    }
+
+    #[test]
+    fn detail_pages_render() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        // Installed detail — full manifest: deps/services/meta/
+        // provenance all land; description pins under the header.
+        m.pane = Pane::Installed;
+        m.detail = Some(Detail::Installed {
+            entry: entry("w"),
+            manifest: Some(Box::new(full_manifest())),
+            manifest_err: None,
+        });
+        let s = screen(&mut m, 100, 30);
+        assert!(s.contains("── deps ──"), "{s}");
+        assert!(s.contains("── services ──"), "{s}");
+        assert!(s.contains("── meta ──"), "{s}");
+        assert!(s.contains("── provenance ──"), "{s}");
+        assert!(s.contains("tamias install ./w"), "{s}");
+        assert!(s.contains("homepage:"), "{s}");
+        assert!(s.contains("include:"), "{s}");
+        // sealed meta line
+        m.detail = Some(Detail::Installed {
+            entry: entry("s"),
+            manifest: Some(Box::new(sealed_manifest())),
+            manifest_err: None,
+        });
+        let s = screen(&mut m, 100, 30);
+        assert!(s.contains("sealed"), "{s}");
+        assert!(s.contains("ciphertext-only"), "{s}");
+        // manifest error line
+        m.detail = Some(Detail::Installed {
+            entry: entry("w"),
+            manifest: None,
+            manifest_err: Some("no tamias.yaml".into()),
+        });
+        let s = screen(&mut m, 100, 30);
+        assert!(s.contains("manifest no tamias.yaml"), "{s}");
+        // no manifest, no error → provenance only; signer Some covers
+        // the extra kv line
+        let mut signed = entry("w");
+        signed.record.signer = Some("key-1".into());
+        m.detail = Some(Detail::Installed {
+            entry: signed,
+            manifest: None,
+            manifest_err: None,
+        });
+        let s = screen(&mut m, 100, 30);
+        assert!(s.contains("── provenance ──"), "{s}");
+        assert!(s.contains("signer"), "{s}");
+        // Registry detail — install ref + versions pending
+        m.pane = Pane::Registry;
+        let page = reg_entry("1.0.0");
+        m.detail = Some(Detail::Registry {
+            entry: page.clone(),
+            install_ref: Some("./w@1.0.0".into()),
+            install_err: None,
+            versions: None,
+            versions_err: None,
+        });
+        let s = screen(&mut m, 100, 30);
+        assert!(s.contains("tamias install ./w@1.0.0"), "{s}");
+        assert!(s.contains("versions …"), "{s}");
+        assert!(s.contains("esc back · j/k scroll · i install"), "{s}");
+        // install resolution error + versions landed
+        m.detail = Some(Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: Some("no registry".into()),
+            versions: Some(vec![reg_entry("0.9.0"), page.clone()]),
+            versions_err: None,
+        });
+        let s = screen(&mut m, 100, 30);
+        assert!(s.contains("unavailable — no registry"), "{s}");
+        assert!(s.contains("← current"), "{s}");
+        // keywords/meta/provenance on the registry page
+        let mut rich = page.clone();
+        rich.keywords = vec!["k1".into()];
+        rich.homepage = Some("https://h".into());
+        rich.authors = vec!["a".into()];
+        rich.publisher = Some("pub".into());
+        rich.signature = Some("ssh-sig".into());
+        m.detail = Some(Detail::Registry {
+            entry: rich,
+            install_ref: None,
+            install_err: None,
+            versions: None,
+            versions_err: Some("index gone".into()),
+        });
+        let s = screen(&mut m, 100, 30);
+        assert!(s.contains("keywords:"), "{s}");
+        assert!(s.contains("── meta ──"), "{s}");
+        assert!(s.contains("publisher"), "{s}");
+        assert!(s.contains("signature"), "{s}");
+        assert!(s.contains("index gone"), "{s}");
+        // 4x4 — inner collapses to 2x2, scroll offset clamps; 2x2 —
+        // inner is empty, the early return fires. Neither may panic.
+        m.detail_scroll = 99;
+        let s = screen(&mut m, 4, 4);
+        assert!(s.contains("w@"), "{s}");
+        let _ = screen(&mut m, 2, 2);
+    }
+
+    #[test]
+    fn input_modes_and_completions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        // filter + search share the "/" label
+        m.mode = Mode::Filter;
+        m.input = "abc".into();
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("/abc"), "{s}");
+        m.mode = Mode::Search;
+        m.pane = Pane::Registry;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("/abc"), "{s}");
+        // command line with a completion strip
+        m.mode = Mode::Command;
+        m.cmdline = "ver".into();
+        m.cmd_completions = vec![
+            crate::complete::Candidate {
+                insert: "verify ".into(),
+                hint: "check digests".into(),
+            },
+            crate::complete::Candidate {
+                insert: "version".into(),
+                hint: String::new(),
+            },
+        ];
+        m.cmd_sel = 0;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains(":ver"), "{s}");
+        assert!(s.contains("verify"), "{s}");
+        // >14 candidates → "+N more" tail
+        m.cmd_completions = (0..20)
+            .map(|i| crate::complete::Candidate {
+                insert: format!("c{i} "),
+                hint: String::new(),
+            })
+            .collect();
+        let s = screen(&mut m, 120, 24);
+        assert!(s.contains("+6 more"), "{s}");
+        // every prompt kind label
+        for (kind, label) in [
+            (PromptKind::Pin { name: "w".into() }, "pin > "),
+            (PromptKind::InstallRef, "install > "),
+            (PromptKind::RegistryTarget, "registry > "),
+            (PromptKind::AddDep, "dep+ > "),
+            (PromptKind::SetDep { old: "x".into() }, "dep→ > "),
+            (
+                PromptKind::DeployConfig { name: "w".into() },
+                "deploy cfg > ",
+            ),
+            (PromptKind::PackSpec, "pack dir [out] > "),
+            (PromptKind::PublishSpec, "publish dir [registry] > "),
+        ] {
+            m.mode = Mode::Prompt(kind);
+            m.prompt_buf = "arg".into();
+            let s = screen(&mut m, 80, 24);
+            assert!(s.contains(label), "{label} missing: {s}");
+            assert!(s.contains("arg"), "{s}");
+        }
+        m.mode = Mode::Normal;
+    }
+
+    #[test]
+    fn modals_help_and_overlays() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        // Confirm modal
+        m.modal = Some(Modal::Confirm {
+            title: "remove w@1.0.0?".into(),
+            body: vec!["warning: tears down provider units".into()],
+            job: crate::ops::Job::Doctor,
+        });
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("remove w@1.0.0?"), "{s}");
+        assert!(s.contains("tears down provider units"), "{s}");
+        assert!(s.contains("y = yes"), "{s}");
+        // Consent modal
+        m.modal = Some(Modal::Consent {
+            job: crate::ops::Job::Doctor,
+            reason: "ships drivers/ — consent required".into(),
+        });
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("bundled drivers — consent?"), "{s}");
+        assert!(s.contains("consent required"), "{s}");
+        m.modal = None;
+        // Help overlay — drawn over whatever pane is active
+        m.mode = Mode::Help;
+        let s = screen(&mut m, 80, 40);
+        assert!(s.contains("keys — installed pane"), "{s}");
+        assert!(s.contains("package page:"), "{s}");
+        // tiny terminal — modal/help clamp to the frame
+        m.mode = Mode::Normal;
+        m.modal = Some(Modal::Confirm {
+            title: "t".into(),
+            body: vec!["b".into()],
+            job: crate::ops::Job::Doctor,
+        });
+        let s = screen(&mut m, 30, 6);
+        assert!(s.contains('t'), "{s}");
+    }
+
+    #[test]
+    fn status_log_and_chrome_budgets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        // busy spinner + status error styling paths
+        m.busy = Some("installing w".into());
+        m.tick_n = 3;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("installing w"), "{s}");
+        m.busy = None;
+        m.status = "removed w".into();
+        m.status_err = true;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("removed w"), "{s}");
+        // log strip: ≥12 rows and non-empty; error/warning styling
+        // five lines → tail-4 keeps warning/error/done/extra1 inside
+        // the strip's three visible rows
+        m.log.push_back("phase fetch".into());
+        m.log.push_back("warning: drift".into());
+        m.log.push_back("error: boom".into());
+        m.log.push_back("done".into());
+        m.log.push_back("extra1".into());
+        let s = screen(&mut m, 80, 16);
+        assert!(s.contains(" log "), "{s}");
+        assert!(s.contains("warning: drift"), "{s}");
+        assert!(s.contains("error: boom"), "{s}");
+        assert!(!s.contains("phase fetch"), "{s}"); // tail-4 window
+                                                    // 4 rows: tabs stay (≥3), status bar yields (<5), no log (<12)
+        let s = screen(&mut m, 80, 4);
+        assert!(s.contains("INSTALLED"), "{s}");
+        assert!(!s.contains("removed w"), "{s}");
+        // 2 rows: all chrome gone
+        let s = screen(&mut m, 80, 2);
+        assert!(!s.contains("INSTALLED"), "{s}");
+        // detail-open status hints per pane
+        m.log.clear();
+        m.status.clear();
+        m.status_err = false;
+        m.entries = vec![row("w", false)];
+        m.detail = Some(Detail::Installed {
+            entry: entry("w"),
+            manifest: None,
+            manifest_err: None,
+        });
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("esc back · j/k scroll · v/u/p/r/c/d"), "{s}");
+        // services status rows + stream hint
+        m.detail = None;
+        m.pane = Pane::Services;
+        m.svc_rows = vec![ServiceRow {
+            package: "p".into(),
+            service: "s".into(),
+            unit: "u".into(),
+            state: None,
+            exec: "e".into(),
+        }];
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("1 service row(s)"), "{s}");
+        // narrow width → hint truncates with ellipsis, no panic
+        let s = screen(&mut m, 30, 24);
+        assert!(s.contains('…'), "{s}");
+        // registry status with query
+        m.pane = Pane::Registry;
+        m.reg_query = "w".into();
+        m.reg_results = vec![reg_entry("1.0.0")];
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("1/1 · /w"), "{s}");
+        // manifest + author status lines
+        m.pane = Pane::Manifest;
+        m.project = Some(Manifest {
+            deps: vec!["a".into()],
+            ..Default::default()
+        });
+        m.manifest_path = PathBuf::from("tamias.yaml");
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("1 dep(s)"), "{s}");
+        m.pane = Pane::Author;
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("author — p pack"), "{s}");
     }
 }
