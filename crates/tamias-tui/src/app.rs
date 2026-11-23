@@ -1433,10 +1433,24 @@ impl Model {
                         ));
                     }
                 }
-                Msg::Done(Ok(Outcome::Services(rows))) => {
+                Msg::Done(Ok(Outcome::Services(mut rows))) => {
                     self.busy = None;
                     self.busy_job = None;
                     self.svc_err = None;
+                    // The Services pane groups by package — blanking
+                    // repeat cells only works when same-package rows
+                    // are consecutive. Rows arrive in store order,
+                    // which happens to sort by label today but isn't
+                    // a `service_rows` contract, so sort defensively.
+                    // Stable sort by (package, service, unit);
+                    // `svc_sel` is index-based and rows rebuild
+                    // wholesale, so the cursor stays valid.
+                    rows.sort_by(|a, b| {
+                        a.package
+                            .cmp(&b.package)
+                            .then_with(|| a.service.cmp(&b.service))
+                            .then_with(|| a.unit.cmp(&b.unit))
+                    });
                     self.svc_rows = rows;
                     self.svc_sel = self.svc_sel.min(self.svc_rows.len().saturating_sub(1));
                     self.push_log(format!("services: {} row(s)", self.svc_rows.len()));
@@ -4768,6 +4782,29 @@ mod tests {
             .unwrap();
         m.drain_work();
         assert_eq!(m.status, "done-thing");
+    }
+
+    #[test]
+    fn services_ingest_sorts_by_package() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let mut m = Model::open(&tctx(tmp.path())).unwrap();
+        // Unsorted ingest — the pane's package grouping only blanks
+        // repeat cells when same-package rows land consecutively.
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Services(vec![
+                svc_row("b-pkg", "s1"),
+                svc_row("a-pkg", "s2"),
+                svc_row("b-pkg", "s1b"),
+            ]))))
+            .unwrap();
+        m.drain_work();
+        let order: Vec<(&str, &str)> = m
+            .svc_rows
+            .iter()
+            .map(|r| (r.package.as_str(), r.service.as_str()))
+            .collect();
+        assert_eq!(order, [("a-pkg", "s2"), ("b-pkg", "s1"), ("b-pkg", "s1b")]);
     }
 
     #[test]
