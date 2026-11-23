@@ -1,8 +1,9 @@
-//! Drawing — tab bar on top, the active pane filling the frame, an
-//! optional op-log strip, status bar at the bottom, and modal/prompt
-//! overlays. Chrome bars yield to the pane on short terminals, same
-//! budget rule as myco-tui: tabs need height ≥3, the status bar ≥5,
-//! the log strip ≥12 (and only while the log has lines).
+//! Drawing — tab bar on top, the active pane filling the frame, a
+//! status bar at the bottom, and modal/prompt overlays. Chrome bars
+//! yield to the pane on short terminals, same budget rule as
+//! myco-tui: tabs need height ≥3, the status bar ≥5. `L`/`:log`
+//! docks the op log as a right-hand sidebar (a centered overlay on
+//! terminals too narrow for one) — there is no permanent log strip.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -38,20 +39,32 @@ fn chrome(height: u16) -> (bool, bool) {
 /// next mouse event can hit-test against where rows landed.
 pub fn draw(f: &mut Frame, m: &mut Model) {
     let area = f.area();
-    let (show_tabs, show_status) = chrome(area.height);
-    let show_log = area.height >= 12 && !m.log.is_empty();
-    let mut constraints = Vec::with_capacity(4);
+    // `L` docks the op log as a right-hand sidebar — the pane chrome
+    // lays out inside the shrunken main rect, so `tabs_area`/
+    // `board_area`/`home_area` and the status bar all describe what
+    // is actually on screen (the status bar shrinks with the pane,
+    // it doesn't span under the sidebar). Below ~50 cols the sidebar
+    // would starve the pane, so the centered overlay takes over.
+    let split = if m.mode == Mode::Log && area.width >= 50 {
+        let side_w = (area.width / 4)
+            .clamp(24, 48)
+            .min(area.width.saturating_sub(20));
+        let c = Layout::horizontal([Constraint::Min(0), Constraint::Length(side_w)]).split(area);
+        Some((c[0], c[1]))
+    } else {
+        None
+    };
+    let main = split.map_or(area, |(main, _)| main);
+    let (show_tabs, show_status) = chrome(main.height);
+    let mut constraints = Vec::with_capacity(3);
     if show_tabs {
         constraints.push(Constraint::Length(1));
     }
     constraints.push(Constraint::Min(0));
-    if show_log {
-        constraints.push(Constraint::Length(4));
-    }
     if show_status {
         constraints.push(Constraint::Length(1));
     }
-    let chunks = Layout::vertical(constraints).split(area);
+    let chunks = Layout::vertical(constraints).split(main);
 
     let mut next = 0;
     if show_tabs {
@@ -63,10 +76,6 @@ pub fn draw(f: &mut Frame, m: &mut Model) {
     }
     draw_pane(f, m, chunks[next]);
     next += 1;
-    if show_log {
-        draw_log(f, m, chunks[next]);
-        next += 1;
-    }
     if show_status {
         draw_status(f, m, chunks[next]);
     }
@@ -75,9 +84,12 @@ pub fn draw(f: &mut Frame, m: &mut Model) {
         Mode::Filter | Mode::Search | Mode::Command | Mode::Prompt(_) => draw_input(f, m, area),
         Mode::Normal | Mode::Log => {}
     }
-    // The log overlay needs `&mut Model` (it clamps `log_scroll` and
-    // reports `log_view_h`), so it can't ride the `&m.mode` match.
-    if m.mode == Mode::Log {
+    // The log view needs `&mut Model` (it clamps `log_scroll` and
+    // reports `log_view_h`/`log_area`), so it can't ride the
+    // `&m.mode` match.
+    if let Some((_, side)) = split {
+        draw_log_view(f, m, side);
+    } else if m.mode == Mode::Log {
         draw_log_overlay(f, m, area);
     }
     if let Some(modal) = &m.modal {
@@ -1306,7 +1318,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
 }
 
 /// Style for one op-log line — errors red, warnings amber, the rest
-/// muted. Shared by the strip and the `L` overlay.
+/// muted.
 fn log_style(line: &str) -> Style {
     if line.starts_with("error") || line.starts_with("!!") {
         Style::default().fg(Color::Red)
@@ -1317,38 +1329,15 @@ fn log_style(line: &str) -> Style {
     }
 }
 
-/// The op log — last few phase/result lines, tail-scroll.
-fn draw_log(f: &mut Frame, m: &Model, area: Rect) {
-    let skip = m.log.len().saturating_sub(4);
-    let text: Vec<Line> = m
-        .log
-        .iter()
-        .skip(skip)
-        .map(|l| Line::from(Span::styled(format!(" {l}"), log_style(l))))
-        .collect();
-    f.render_widget(
-        Paragraph::new(text).block(Block::default().borders(Borders::TOP).title(" log ")),
-        area,
-    );
-}
-
-/// The op-log overlay (`L`/`:log`) — the full retained history
-/// (up to `LOG_CAP` lines), newest at the bottom. `j`/`k` scroll,
-/// `g`/`G` jump the ends; the key handling lives in
-/// `Model::key_log`. Drawn like the help overlay — centered box over
-/// a cleared frame.
-fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
-    let w = (area.width * 4 / 5).clamp(30, area.width.max(30));
-    let h = (area.height * 4 / 5).clamp(5, area.height.max(5));
-    let w = w.min(area.width);
-    let h = h.min(area.height);
-    let x = area.x + area.width.saturating_sub(w) / 2;
-    let y = area.y + area.height.saturating_sub(h) / 2;
-    let rect = Rect::new(x, y, w, h);
-    f.render_widget(Clear, rect);
-    // Report the text area (inside the border) so PgUp/PgDn page by
-    // it and the scroll clamp matches what's on screen.
-    m.log_view_h = h.saturating_sub(2) as usize;
+/// The scrollable op-log body — the full retained history (up to
+/// `LOG_CAP` lines), newest at the bottom. Reports the text height
+/// into `log_view_h` (so `PgUp`/`PgDn` page by what's on screen and
+/// `open_log` aims the tail) and the block rect into `log_area` (for
+/// mouse hit-tests). Shared by the right-docked sidebar and the
+/// narrow-terminal centered overlay.
+fn draw_log_view(f: &mut Frame, m: &mut Model, area: Rect) {
+    m.log_area = area;
+    m.log_view_h = area.height.saturating_sub(2) as usize;
     let max_scroll = m.log.len().saturating_sub(m.log_view_h);
     m.log_scroll = m.log_scroll.min(max_scroll);
     let lines: Vec<Line> = if m.log.is_empty() {
@@ -1378,8 +1367,24 @@ fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
             )
             .style(Style::default().fg(Color::White))
             .scroll((m.log_scroll as u16, 0)),
-        rect,
+        area,
     );
+}
+
+/// The narrow-terminal fallback for `L`/`:log` — the same scrollable
+/// body centered over a cleared frame, used when the frame is too
+/// narrow (<50 cols) for a right sidebar to leave the pane usable.
+/// Key handling lives in `Model::key_log`.
+fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
+    let w = (area.width * 4 / 5).clamp(30, area.width.max(30));
+    let h = (area.height * 4 / 5).clamp(5, area.height.max(5));
+    let w = w.min(area.width);
+    let h = h.min(area.height);
+    let x = area.x + area.width.saturating_sub(w) / 2;
+    let y = area.y + area.height.saturating_sub(h) / 2;
+    let rect = Rect::new(x, y, w, h);
+    f.render_widget(Clear, rect);
+    draw_log_view(f, m, rect);
 }
 
 fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
@@ -1647,7 +1652,7 @@ keys — installed pane
   Tab, h/l      cycle panes           1-6    jump to pane
   /             filter installed      F       clear filter
   :             command line          Tab    complete · esc leave
-  L/:log       full op-log overlay    j/k    scroll · g/G ends · q close
+  L/:log       op-log sidebar         j/k    scroll · g/G ends · q close
   R             reload store          ?       this help
   q             quit — closes an open page first · C-c quits anywhere
 
@@ -1959,5 +1964,95 @@ mod tests {
         // A future stamp (clock skew) reads as "just now", not a
         // negative duration.
         assert_eq!(ago_at(now + 60, now), "just now");
+    }
+
+    // --- frame-level layout tests (TestBackend) ---
+
+    /// A model with `n` op-log lines, ready to draw.
+    fn log_model(n: usize) -> Model {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = crate::Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            None,
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        for i in 0..n {
+            m.log.push_back(format!("op line {i}"));
+        }
+        m
+    }
+
+    /// Render one frame of `m` at `w`×`h` and flatten the buffer to
+    /// text lines for assertions.
+    fn frame_text(m: &mut Model, w: u16, h: u16) -> Vec<String> {
+        let backend = ratatui::backend::TestBackend::new(w, h);
+        let mut term = ratatui::Terminal::new(backend).unwrap();
+        term.draw(|f| draw(f, m)).unwrap();
+        let buf = term.backend().buffer();
+        (0..h)
+            .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>())
+            .collect()
+    }
+
+    /// There is no permanent log strip: with op-log lines present
+    /// and `Mode::Normal`, no ` log ` chrome renders and the pane
+    /// owns the row the strip used to take.
+    #[test]
+    fn no_permanent_log_strip() {
+        let mut m = log_model(10);
+        let screen = frame_text(&mut m, 80, 24);
+        // The strip's ` log ` title appears nowhere above the status
+        // bar (the bar's own `· L log` hint is exempt); the log
+        // history only exists behind `L`.
+        assert!(
+            !screen[..22].iter().any(|l| l.contains(" log ")),
+            "permanent log strip still drawn:\n{}",
+            screen.join("\n")
+        );
+        // The freed row belongs to the pane — the Home block's bottom
+        // border now sits on the last row above the status bar (the
+        // strip used to eat four rows there).
+        assert!(screen[22].contains('─'), "{}", screen[22]);
+        assert!(screen[23].contains("home"), "{}", screen[23]);
+        // And the log view was never drawn, so no hit rect was set.
+        assert_eq!(m.log_area, Rect::default());
+    }
+
+    /// `L` at a normal width docks the log as a right sidebar: the
+    /// main chrome shrinks to the left column, the bordered log panel
+    /// takes the right ~quarter, and the pane stays on screen.
+    #[test]
+    fn log_mode_docks_right_sidebar() {
+        let mut m = log_model(50);
+        m.mode = Mode::Log;
+        m.log_view_h = 20;
+        m.log_scroll = m.log.len() - 20; // tail, as `open_log` aims
+        let screen = frame_text(&mut m, 80, 24);
+        // 80/4 = 20 → clamped to 24 cols; the main column keeps 56.
+        assert_eq!(m.log_area.width, 24);
+        assert_eq!(m.log_area.x, 56);
+        assert_eq!(m.log_view_h, 22); // block height minus borders
+        assert_eq!(m.tabs_area.map(|r| r.width), Some(56));
+        // The sidebar shows history; the pane (Home) is still drawn
+        // in the left column.
+        assert!(screen.iter().any(|l| l.contains("log — 50 lines")));
+        assert!(screen.iter().any(|l| l.contains("op line 49")));
+        assert!(screen.iter().any(|l| l.contains("home")));
+    }
+
+    /// Under ~50 cols the sidebar would starve the pane — the log
+    /// falls back to the centered overlay instead.
+    #[test]
+    fn log_mode_narrow_falls_back_to_overlay() {
+        let mut m = log_model(10);
+        m.mode = Mode::Log;
+        let screen = frame_text(&mut m, 40, 20);
+        // Centered box: narrower than the frame, inset on both sides.
+        assert!(m.log_area.width < 40);
+        assert!(m.log_area.x > 0);
+        assert!(m.log_area.x + m.log_area.width < 40);
+        assert!(screen.iter().any(|l| l.contains("log — 10 lines")));
     }
 }

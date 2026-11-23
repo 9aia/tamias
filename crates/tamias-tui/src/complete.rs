@@ -98,7 +98,7 @@ const VERBS: &[VerbSpec] = &[
     VerbSpec {
         alias: "log",
         kind: ArgKind::None,
-        hint: "op-log overlay",
+        hint: "op-log sidebar",
     },
     VerbSpec {
         alias: "install",

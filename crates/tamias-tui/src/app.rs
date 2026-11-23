@@ -166,8 +166,10 @@ pub enum Mode {
     Prompt(PromptKind),
     /// `?` — keybind overlay; `esc`/`?`/`q` closes.
     Help,
-    /// `L`/`:log` — full op-log overlay; `j`/`k` scroll, `g`/`G` jump
-    /// the ends, `esc`/`q`/`L` closes. Swallows every other key.
+    /// `L`/`:log` — the op-log view: a right-docked sidebar (centered
+    /// overlay under ~50 cols); `j`/`k` scroll, `g`/`G` jump the
+    /// ends, `esc`/`q`/`L` closes. Swallows every other key — it's a
+    /// view, not split focus.
     Log,
 }
 
@@ -406,7 +408,7 @@ enum Cmd {
         /// Install `tamias.lock` entries verbatim.
         from_lock: bool,
     },
-    /// `:log` — open the op-log overlay (`L`).
+    /// `:log` — open the op-log sidebar (`L`).
     Log,
 }
 
@@ -735,6 +737,10 @@ pub struct Model {
     /// maps onto [`Model::recent_installed`]. `Rect::default()` when
     /// Home isn't the drawn pane or the list is empty.
     pub home_area: Rect,
+    /// The log view's block rect from the last frame (sidebar or
+    /// overlay) — wheel events inside it scroll the log while
+    /// `mode` is [`Mode::Log`]. `Rect::default()` until drawn.
+    pub log_area: Rect,
 
     // --- worker jobs (phase 2/3) ---
     /// Job → UI channel; one worker thread per `spawn`.
@@ -747,8 +753,8 @@ pub struct Model {
     /// whether the store/services views need a refresh (read-only
     /// jobs skip both). Cleared alongside `busy`.
     busy_job: Option<Job>,
-    /// Op log — phase lines, warnings, results; the log strip shows
-    /// the tail.
+    /// Op log — phase lines, warnings, results; the `L` sidebar
+    /// (or its narrow-terminal overlay fallback) shows the history.
     pub log: VecDeque<String>,
     /// Confirm/consent dialog, if any.
     pub modal: Option<Modal>,
@@ -767,11 +773,11 @@ pub struct Model {
     /// Cursor into the page's `versions` list while `versions_focus`
     /// is set — clamped to the list length on every move.
     pub versions_sel: usize,
-    /// Log-overlay scroll offset — the top line of `log` on screen
+    /// Log-view scroll offset — the top line of `log` on screen
     /// while `mode` is [`Mode::Log`]; clamped to the view each frame
     /// like `detail_scroll`.
     pub log_scroll: usize,
-    /// Inner height of the log overlay as last drawn — `PgUp`/`PgDn`
+    /// Inner height of the log view as last drawn — `PgUp`/`PgDn`
     /// page by it and `open_log` aims the tail at it (0 until the
     /// first frame).
     pub(crate) log_view_h: usize,
@@ -866,6 +872,7 @@ impl Model {
             viewport_top: 0,
             tabs_area: None,
             home_area: Rect::default(),
+            log_area: Rect::default(),
             work_tx,
             work_rx,
             busy: None,
@@ -1249,7 +1256,7 @@ impl Model {
         self.fire_search();
     }
 
-    /// One line into the op log (capped). While the log overlay is
+    /// One line into the op log (capped). While the log view is
     /// parked at the tail it follows new lines; scrolled up it stays
     /// put (`G` jumps back down).
     fn push_log(&mut self, line: String) {
@@ -2411,24 +2418,25 @@ impl Model {
         }
     }
 
-    /// Open the op-log overlay (`L`/`:log`) scrolled to the newest
-    /// lines — the strip only ever shows the tail, so the overlay
-    /// opens there too.
+    /// Open the op-log view (`L`/`:log`) scrolled to the newest
+    /// lines — it docks as a right sidebar (centered overlay under
+    /// ~50 cols), so it opens on the tail either way.
     fn open_log(&mut self) {
         self.mode = Mode::Log;
         self.log_scroll = self.log_max_scroll();
     }
 
     /// Top-line scroll offset that puts the log tail on screen —
-    /// `log.len() - 1` until `draw` reports the overlay's inner
+    /// `log.len() - 1` until `draw` reports the view's inner
     /// height, then the true bottom.
     fn log_max_scroll(&self) -> usize {
         self.log.len().saturating_sub(self.log_view_h.max(1))
     }
 
-    /// Log-overlay keys — scroll the op log; `esc`/`q`/`L` closes.
-    /// Everything else is swallowed while the overlay is up (same
-    /// posture as `key_help`).
+    /// Log-view keys — scroll the op log; `esc`/`q`/`L` closes.
+    /// Everything else is swallowed while the view is up (same
+    /// posture as `key_help`): the pane stays visible behind the
+    /// sidebar but takes no input — it's a view, not split focus.
     fn key_log(&mut self, k: KeyEvent) -> bool {
         if chorded(&k) {
             return false;
@@ -2703,8 +2711,25 @@ impl Model {
     }
 
     /// Mouse — wheel scrolls the selection, a click on the tab bar
-    /// switches panes, a click on a row selects it.
+    /// switches panes, a click on a row selects it. While the log
+    /// view is up it owns the pointer instead: the wheel inside its
+    /// rect scrolls the history and every other event is swallowed
+    /// (same posture as the swallowed keys).
     pub fn mouse(&mut self, ev: MouseEvent) {
+        if self.mode == Mode::Log {
+            if self.log_area.contains((ev.column, ev.row).into()) {
+                match ev.kind {
+                    MouseEventKind::ScrollUp => {
+                        self.log_scroll = self.log_scroll.saturating_sub(1);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        self.log_scroll = (self.log_scroll + 1).min(self.log_max_scroll());
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
         match ev.kind {
             MouseEventKind::ScrollUp => {
                 self.move_sel(-3);
@@ -3334,12 +3359,13 @@ mod tests {
         assert!(m.status.contains("already installed"), "{}", m.status);
     }
 
-    /// `L`/`:log` opens the op-log overlay on the tail; j/k and the
+    /// `L`/`:log` opens the op-log view (right sidebar, centered
+    /// overlay on narrow terminals) on the tail; j/k and the
     /// PgUp/PgDn page by the drawn view height, g/G jump the ends,
     /// and every other key is swallowed while it's up. New log lines
     /// follow only while parked at the bottom.
     #[test]
-    fn log_overlay_toggle_scroll_and_gating() {
+    fn log_view_toggle_scroll_and_gating() {
         let tmp = tempfile::tempdir().unwrap();
         let ctx = Ctx::new(
             tmp.path().join("store"),
@@ -3352,7 +3378,7 @@ mod tests {
         for i in 0..50 {
             m.push_log(format!("line {i}"));
         }
-        m.log_view_h = 10; // as `draw_log_overlay` would report
+        m.log_view_h = 10; // as `draw_log_view` would report
                            // `L` opens at the bottom (newest last).
         m.key(key(KeyCode::Char('L')));
         assert_eq!(m.mode, Mode::Log);
@@ -3399,7 +3425,7 @@ mod tests {
         m.key(key(KeyCode::Esc));
         assert_eq!(m.mode, Mode::Normal);
         // `:log` opens it through the command line — and `L` typed
-        // inside `:` is just text, not the overlay.
+        // inside `:` is just text, not the log view.
         m.key(key(KeyCode::Char(':')));
         assert_eq!(m.mode, Mode::Command);
         m.key(key(KeyCode::Char('L')));
@@ -3408,7 +3434,7 @@ mod tests {
         m.cmdline = "log".to_string();
         m.run_command();
         assert_eq!(m.mode, Mode::Log);
-        // An empty log still opens — the overlay draws its muted
+        // An empty log still opens — the view draws its muted
         // "no operations yet" line.
         let mut empty = Model::open(&ctx).unwrap();
         empty.key(key(KeyCode::Char('L')));
