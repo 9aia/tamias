@@ -712,6 +712,49 @@ pub fn entry_install_ref(
     }
 }
 
+/// Sibling versions of a registry page entry — the index's
+/// `entries()` filtered to the same `(name, scope)`, in index order
+/// (the local adapter sorts by scope/name/version; http registries
+/// return their own order — both keep every retained version, so no
+/// `search` substring query is needed). `target` is the `:registry`
+/// override; `None` → the same `search.default` → `publish.default`
+/// → local-root routing [`search`] uses, so the list always comes
+/// from the registry the page's install ref resolved against.
+///
+/// This is a plain read for the detail page's dedicated fetch
+/// thread — deliberately not a [`Job`]: it must never occupy `busy`
+/// or queue ahead of a user op.
+///
+/// # Errors
+/// Fails on registry resolution or the index read.
+pub fn versions(
+    ctx: &Ctx,
+    name: &str,
+    scope: Option<&str>,
+    target: Option<&str>,
+) -> Result<Vec<RegistryEntry>, Error> {
+    let config = env_config(ctx);
+    let value = ro::registry_target(
+        target,
+        &[
+            config.search.default.as_deref(),
+            config.publish.default.as_deref(),
+        ],
+    );
+    let registry = ro::open_registry(
+        &ctx.registry_root,
+        Some(&config),
+        value.as_deref(),
+        None,
+        None,
+    )?;
+    Ok(registry
+        .entries()?
+        .into_iter()
+        .filter(|e| e.name == name && e.scope.as_deref() == scope)
+        .collect())
+}
+
 /// Services-pane rows — `tamias-provider`'s service table (store
 /// entries → provider manifests → unit state probes).
 fn services_refresh(ctx: &Ctx) -> Result<Outcome, Error> {
@@ -1270,6 +1313,35 @@ mod tests {
         let e2 = entry("w/1.0.0.tgz", "sha256:short");
         let r2 = entry_install_ref(&c, &e2, Some("http://reg.example.com/r")).unwrap();
         assert_eq!(r2, "http://reg.example.com/r/w/1.0.0.tgz");
+    }
+
+    #[test]
+    fn versions_filters_to_name_and_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let c = ctx(tmp.path());
+        // A hand-written local index — `entries()` reads it verbatim,
+        // every retained version included (no publish needed).
+        std::fs::create_dir_all(&c.registry_root).unwrap();
+        std::fs::write(
+            c.registry_root.join("index.json"),
+            r#"[
+                {"name":"w","version":"0.1.0","digest":"sha256:a","file":"w/0.1.0.tgz"},
+                {"name":"w","version":"0.2.0","digest":"sha256:b","file":"w/0.2.0.tgz"},
+                {"name":"w","scope":"s","version":"1.0.0","digest":"sha256:c","file":"@s/w/1.0.0.tgz"},
+                {"name":"other","version":"1.0.0","digest":"sha256:d","file":"other/1.0.0.tgz"}
+            ]"#,
+        )
+        .unwrap();
+        // Unscoped `w` → both unscoped versions, index order; the
+        // scoped twin and `other` stay out.
+        let list = versions(&c, "w", None, None).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].version.as_deref(), Some("0.1.0"));
+        assert_eq!(list[1].version.as_deref(), Some("0.2.0"));
+        let scoped = versions(&c, "w", Some("s"), None).unwrap();
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].file, "@s/w/1.0.0.tgz");
+        assert!(versions(&c, "ghost", None, None).unwrap().is_empty());
     }
 
     #[test]

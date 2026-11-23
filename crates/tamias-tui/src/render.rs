@@ -505,10 +505,14 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
 /// npm package-page anatomy: bold label + chips, a ≤3-line wrapped
 /// description (pinned strip), the `tamias install` command, then
 /// `── section ──` rules ordered by user value — deps/services/keywords
-/// + meta — with provenance last.
+/// + meta + versions — with provenance last.
 ///
-/// Versions are skipped: listing them would need a scoped
-/// `Job::Search` round-trip the page can't await.
+/// The Registry page's `── versions ──` section is fed by the
+/// background fetch [`Model::fetch_versions`] kicks off on open: a
+/// muted `versions …` placeholder shows while it's in flight, the
+/// section appears once the index read lands (index order, the page's
+/// own entry marked `← current`), and a fetch failure degrades to a
+/// muted line — never an error toast.
 fn page_parts(
     detail: &Detail,
     registry_target: &str,
@@ -649,7 +653,12 @@ fn page_parts(
             }
             body.push(kv("trust", rec.trust.clone().unwrap_or_else(|| "-".into())));
         }
-        Detail::Registry { entry, .. } => {
+        Detail::Registry {
+            entry,
+            versions,
+            versions_err,
+            ..
+        } => {
             // keywords — the index analogue of deps (search matches
             // them, so they double as discovery terms).
             if !entry.keywords.is_empty() {
@@ -673,6 +682,42 @@ fn page_parts(
                 body.push(Line::from(""));
                 body.push(rule("meta"));
                 body.extend(meta);
+            }
+            // versions — the background index fetch; pending shows a
+            // subtle placeholder, the section renders once data lands
+            // (a lone current version still lists — the header already
+            // carries it, so no "no other versions" special-case).
+            match (versions, versions_err) {
+                (Some(list), _) => {
+                    body.push(Line::from(""));
+                    body.push(rule("versions"));
+                    if list.is_empty() {
+                        body.push(Line::from(Span::styled(
+                            "  no versions indexed",
+                            Style::default().fg(MUTED),
+                        )));
+                    }
+                    for v in list {
+                        let mut spans = vec![Span::raw(format!(
+                            "  {}",
+                            v.version.clone().unwrap_or_else(|| "-".into())
+                        ))];
+                        // `file` is the per-version blob path — the
+                        // unique match even if version strings repeat.
+                        if v.file == entry.file {
+                            spans.push(Span::styled("  ← current", Style::default().fg(ACCENT)));
+                        }
+                        body.push(Line::from(spans));
+                    }
+                }
+                (None, Some(err)) => body.push(Line::from(vec![
+                    Span::styled("versions ", Style::default().fg(ACCENT)),
+                    Span::styled(format!("— {err}"), Style::default().fg(WARN)),
+                ])),
+                (None, None) => body.push(Line::from(vec![
+                    Span::styled("versions ", Style::default().fg(ACCENT)),
+                    Span::styled("…", Style::default().fg(MUTED)),
+                ])),
             }
             // provenance — index-side facts; the signature verifies
             // at install time, not here.
@@ -1189,4 +1234,80 @@ author pane:    p bundle pack · P publish (confirm) · r registries";
             .wrap(Wrap { trim: false }),
         rect,
     );
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage, coverage(off))]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use tamias_registry::RegistryEntry;
+
+    /// A registry index entry — `w@<ver>` unscoped.
+    fn reg_entry(version: &str) -> RegistryEntry {
+        RegistryEntry {
+            name: "w".into(),
+            scope: None,
+            version: Some(version.into()),
+            kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
+            digest: format!("sha256:{version}"),
+            signature: None,
+            publisher: None,
+            file: format!("w/{version}.tgz"),
+        }
+    }
+
+    /// Flatten a `page_parts` body to plain text for assertions.
+    fn body_text(detail: &Detail) -> String {
+        let (_, _, _, body) = page_parts(detail, "default");
+        body.iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// The versions section's three states: pending placeholder, the
+    /// rendered list with the page's own entry marked, and the
+    /// degraded error line.
+    #[test]
+    fn registry_page_versions_states() {
+        let page = reg_entry("1.0.0");
+        let detail = |versions, versions_err| Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions,
+            versions_err,
+        };
+        // Pending — the subtle placeholder, no section rule yet.
+        let pending = body_text(&detail(None, None));
+        assert!(pending.contains("versions …"));
+        assert!(!pending.contains("── versions ──"));
+        // Landed — the rule, every version in index order, `← current`
+        // on the page's own entry (matched by blob `file`).
+        let ready = body_text(&detail(Some(vec![reg_entry("0.9.0"), page.clone()]), None));
+        assert!(ready.contains("── versions ──"));
+        assert!(ready.contains("  0.9.0"));
+        assert!(ready.contains("  1.0.0  ← current"));
+        // Failed — the error line, still no rule.
+        let failed = body_text(&detail(None, Some("index gone".into())));
+        assert!(failed.contains("— index gone"));
+        assert!(!failed.contains("── versions ──"));
+        // Empty index result still renders the section's empty note.
+        let empty = body_text(&detail(Some(Vec::new()), None));
+        assert!(empty.contains("── versions ──"));
+        assert!(empty.contains("no versions indexed"));
+    }
 }

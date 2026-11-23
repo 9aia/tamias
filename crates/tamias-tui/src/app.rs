@@ -190,6 +190,17 @@ pub enum Msg {
     /// A stream job (`run`/`logs`) spawned its child — the handle
     /// `x` kills. Readers keep pumping lines after this arrives.
     StreamChild(Arc<Mutex<Child>>),
+    /// The package page's background versions fetch landed — `key`
+    /// is the entry label it was spawned for; [`Model::drain_work`]
+    /// drops it when the page moved on. Carries its own result (not
+    /// an [`Outcome`]) because it runs on a dedicated thread outside
+    /// `spawn`/`busy` — it must never clear or wait on a user job.
+    Versions {
+        /// `entry.label()` of the page that asked.
+        key: String,
+        /// The sibling-version list, or the fetch error.
+        result: Result<Vec<RegistryEntry>, String>,
+    },
     /// The job finished — summary text or typed search results.
     Done(Result<Outcome, String>),
 }
@@ -216,9 +227,11 @@ pub enum Detail {
         manifest_err: Option<String>,
     },
     /// A registry search result — no payload manifest exists until
-    /// install; the index entry carries display metadata and the
+    /// install; the index entry carries display metadata, the
     /// installable ref is resolved once on open (config read + ref
-    /// grammar, same cheap-file-read posture as the manifest).
+    /// grammar, same cheap-file-read posture as the manifest), and
+    /// the sibling versions arrive asynchronously (a dedicated
+    /// fetch thread — see [`Model::fetch_versions`]).
     Registry {
         /// The index entry under the page.
         entry: RegistryEntry,
@@ -226,6 +239,14 @@ pub enum Detail {
         install_ref: Option<String>,
         /// Why the ref couldn't resolve (`None` ref + `Some` err).
         install_err: Option<String>,
+        /// Every indexed version of this `(name, scope)` — `None`
+        /// while the fetch is in flight (the page shows a `versions
+        /// …` placeholder); `Some` once it lands, possibly just this
+        /// entry.
+        versions: Option<Vec<RegistryEntry>>,
+        /// Why the fetch failed (`None` versions + `Some` err renders
+        /// a muted line — the page itself stays usable).
+        versions_err: Option<String>,
     },
 }
 
@@ -918,6 +939,27 @@ impl Model {
                 Msg::StreamChild(child) => {
                     self.stream_child = Some(child);
                 }
+                Msg::Versions { key, result } => {
+                    // Apply only to the page that asked — a closed or
+                    // replaced page drops the result (the same
+                    // staleness rule as `search_inflight`). This arm
+                    // never touches `busy`: the fetch ran outside
+                    // `spawn`, so a user job may be in flight.
+                    if let Some(Detail::Registry {
+                        entry,
+                        versions,
+                        versions_err,
+                        ..
+                    }) = &mut self.detail
+                    {
+                        if entry.label() == key {
+                            match result {
+                                Ok(list) => *versions = Some(list),
+                                Err(e) => *versions_err = Some(e),
+                            }
+                        }
+                    }
+                }
                 Msg::Done(Ok(Outcome::Text(text))) => {
                     self.busy = None;
                     self.stream_child = None;
@@ -1203,10 +1245,13 @@ impl Model {
                         Ok(r) => (Some(r), None),
                         Err(e) => (None, Some(e.to_string())),
                     };
+                self.fetch_versions(&entry);
                 self.detail = Some(Detail::Registry {
                     entry,
                     install_ref,
                     install_err,
+                    versions: None,
+                    versions_err: None,
                 });
             }
             _ => {
@@ -1226,6 +1271,28 @@ impl Model {
             }
         }
         self.detail_scroll = 0;
+    }
+
+    /// Kick off the background sibling-versions fetch for a registry
+    /// package page. A dedicated thread — *not* `spawn`: the fetch is
+    /// a read-only index lookup that must never occupy `busy` (a user
+    /// pressing `i` mid-fetch can't be told "busy") nor queue behind
+    /// an in-flight op. The result comes back as [`Msg::Versions`]
+    /// keyed by the entry label; [`Model::drain_work`] drops it when
+    /// the page closed or moved to a different package. Re-opening
+    /// the same package simply refetches — each page owns its fetch.
+    fn fetch_versions(&mut self, entry: &RegistryEntry) {
+        let key = entry.label();
+        let ctx = self.ctx.clone();
+        let tx = self.work_tx.clone();
+        let name = entry.name.clone();
+        let scope = entry.scope.clone();
+        let target = self.reg_target.clone();
+        std::thread::spawn(move || {
+            let result = ops::versions(&ctx, &name, scope.as_deref(), target.as_deref())
+                .map_err(|e| e.to_string());
+            let _ = tx.send(Msg::Versions { key, result });
+        });
     }
 
     // --- confirms / prompts ---
@@ -2319,5 +2386,85 @@ mod tests {
         }
         let v = Job::Verify("w".into());
         assert!(matches!(v.with_drivers_allowed(), Job::Verify(_)));
+    }
+
+    /// A registry index entry for the versions tests — `@s/w@<ver>`.
+    fn reg_entry(version: &str) -> RegistryEntry {
+        RegistryEntry {
+            name: "w".into(),
+            scope: Some("s".into()),
+            version: Some(version.into()),
+            kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
+            digest: format!("sha256:{version}"),
+            signature: None,
+            publisher: None,
+            file: format!("@s/w/{version}.tgz"),
+        }
+    }
+
+    /// `Msg::Versions` applies only to the page whose entry label it
+    /// was keyed with — a closed or replaced page drops the result,
+    /// and the arm never touches `busy`.
+    #[test]
+    fn versions_result_lands_only_on_the_matching_page() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        let page = reg_entry("1.0.0");
+        m.detail = Some(Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: None,
+            versions_err: None,
+        });
+        let tx = m.work_tx.clone();
+        let versions_of = |m: &Model| match &m.detail {
+            Some(Detail::Registry { versions, .. }) => versions.clone(),
+            _ => panic!("no registry page"),
+        };
+        // A result keyed to a different label is stale — dropped.
+        tx.send(Msg::Versions {
+            key: "@s/w@2.0.0".into(),
+            result: Ok(vec![reg_entry("2.0.0")]),
+        })
+        .unwrap();
+        m.drain_work();
+        assert!(versions_of(&m).is_none());
+        // The matching key lands; `busy` is untouched either way.
+        m.busy = Some("install x".into());
+        tx.send(Msg::Versions {
+            key: page.label(),
+            result: Ok(vec![reg_entry("0.9.0"), page.clone()]),
+        })
+        .unwrap();
+        m.drain_work();
+        assert_eq!(m.busy.as_deref(), Some("install x"));
+        let list = versions_of(&m).unwrap();
+        assert_eq!(list.len(), 2);
+        // An error lands as `versions_err`, not a busy-clearing Done.
+        tx.send(Msg::Versions {
+            key: page.label(),
+            result: Err("index gone".into()),
+        })
+        .unwrap();
+        m.drain_work();
+        match &m.detail {
+            Some(Detail::Registry { versions_err, .. }) => {
+                assert_eq!(versions_err.as_deref(), Some("index gone"))
+            }
+            _ => panic!("no registry page"),
+        }
     }
 }
