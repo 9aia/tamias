@@ -141,8 +141,10 @@ enum Command {
     /// `uninstall` (provider units re-rendered from survivors, bins
     /// cleanup, version-aware driver dispatch, store drop). Entries
     /// without a semver `version:` are never touched — they are
-    /// reported as skipped instead. Never runs automatically on
-    /// `install`/`update`/`sync`: old versions are rollback targets.
+    /// reported as skipped instead. `install`/`sync` never prune;
+    /// `update` prunes the packages it touched by default
+    /// (`--no-prune` opts out) — until then old versions are rollback
+    /// targets.
     Prune {
         /// Keep this many newest versions per package.
         #[arg(long, default_value_t = 1)]
@@ -184,6 +186,11 @@ enum Command {
         require_official: bool,
     },
     /// Re-resolve + re-install a package from its recorded ref.
+    ///
+    /// Afterwards the superseded same-name store versions of the
+    /// packages that updated are pruned — newest kept, the same path
+    /// and rules as `tamias prune --yes --keep 1`. `--no-prune` opts
+    /// out; old versions stay as rollback targets until then.
     Update {
         /// `@scope/name` or `name` (omit with `--all`).
         name: Option<String>,
@@ -198,6 +205,10 @@ enum Command {
         /// Don't deploy declared `bins[]` on re-install.
         #[arg(long)]
         no_bins: bool,
+        /// Don't prune superseded store versions of the updated
+        /// packages — `update` prunes them by default.
+        #[arg(long)]
+        no_prune: bool,
         /// JSON output.
         #[arg(long)]
         json: bool,
@@ -1460,6 +1471,7 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
             all,
             allow_drivers,
             no_bins,
+            no_prune,
             json,
         }) => {
             let store = Store::new(&env.store_root);
@@ -1475,18 +1487,49 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
             };
             eprintln!("tamias: updating {} package(s)", refs.len());
             let mut updated = Vec::new();
+            // `(scope, name)` of every package whose re-install landed —
+            // the auto-prune set. A mid-loop failure stops the updates
+            // but the packages already updated still prune (only they
+            // did) before the error returns.
+            let mut touched: std::collections::BTreeSet<(Option<String>, String)> =
+                std::collections::BTreeSet::new();
+            let mut failure = None;
             for r in refs {
-                let entry = install(&env, &r, allow_drivers, no_bins)?;
-                sync_lock(&entry.record)?;
-                let label = entry.label();
-                if json {
-                    updated.push(label);
-                } else {
-                    println!("updated {label}");
+                match install(&env, &r, allow_drivers, no_bins) {
+                    Ok(entry) => {
+                        touched.insert((entry.record.scope.clone(), entry.record.name.clone()));
+                        if let Err(e) = sync_lock(&entry.record) {
+                            failure = Some(e);
+                            break;
+                        }
+                        let label = entry.label();
+                        if json {
+                            updated.push(label);
+                        } else {
+                            println!("updated {label}");
+                        }
+                    }
+                    Err(e) => {
+                        failure = Some(e);
+                        break;
+                    }
                 }
             }
+            // Superseded same-name versions of the touched packages
+            // prune by default; `--no-prune` opts out.
+            let pruned = if no_prune {
+                Vec::new()
+            } else {
+                prune_updated(&env, &touched, json)?
+            };
+            if let Some(e) = failure {
+                return Err(e);
+            }
             if json {
-                print_json(&serde_json::json!({ "updated": updated }))?;
+                print_json(&serde_json::json!({
+                    "updated": updated,
+                    "pruned": pruned,
+                }))?;
             }
         }
         Some(Command::Pin { name, reference }) => {
@@ -2130,6 +2173,50 @@ fn prune(env: &Env, keep: usize, yes: bool, json: bool) -> Result<(), Error> {
         eprintln!("tamias: skipped {} — {}", s.label, s.reason);
     }
     Ok(())
+}
+
+/// The prune half of `update` — superseded same-name versions of the
+/// packages the update just touched, removed through the same
+/// uninstall path [`prune`]/`uninstall` use. [`tamias_core::plan_prune`]
+/// runs at keep=1 over only the touched `(scope, name)` groups, so
+/// unrelated store entries are never candidates; the plan's
+/// conservative rules keep non-semver/unversioned entries untouched.
+/// Returns the removed labels for `--json`; human mode prints a
+/// one-line summary. A failing removal warns and keeps its entry —
+/// cleanup never fails an update that already landed.
+fn prune_updated(
+    env: &Env,
+    touched: &std::collections::BTreeSet<(Option<String>, String)>,
+    json: bool,
+) -> Result<Vec<String>, Error> {
+    if touched.is_empty() {
+        return Ok(Vec::new());
+    }
+    let scoped: Vec<StoreEntry> = Store::new(&env.store_root)
+        .entries()?
+        .into_iter()
+        .filter(|e| touched.contains(&(e.record.scope.clone(), e.record.name.clone())))
+        .collect();
+    let plan = tamias_core::plan_prune(&scoped, 1);
+    let mut removed = Vec::new();
+    for r in &plan.removals {
+        let label = r.entry.label();
+        match uninstall_package(env, &label) {
+            Ok(()) => removed.push(label),
+            Err(e) => eprintln!("tamias: warning — could not prune {label}: {e}"),
+        }
+    }
+    for s in &plan.skipped {
+        eprintln!("tamias: skipped {} — {}", s.label, s.reason);
+    }
+    if !json && !removed.is_empty() {
+        println!(
+            "pruned {} superseded version(s): {}",
+            removed.len(),
+            removed.join(", ")
+        );
+    }
+    Ok(removed)
 }
 
 // ---- `tamias bin` — payload `bin/` files onto the bin dir ----
@@ -4080,6 +4167,77 @@ mod tests {
         store_seed(tmp.path(), "solo", Some("1.0.0"));
         run_args(e.clone(), &["tamias", "prune", "--yes"]).unwrap();
         assert_eq!(store_labels(&e), ["solo@1.0.0"]);
+    }
+
+    /// A payload dir `update` can re-resolve — rewriting the manifest
+    /// between install and update simulates an upstream version bump.
+    fn upd_pkg(root: &std::path::Path, name: &str, version: &str) -> std::path::PathBuf {
+        let dir = root.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            format!("name: {name}\nversion: {version}\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        dir
+    }
+
+    #[test]
+    fn update_prunes_superseded_versions_by_default() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = upd_pkg(tmp.path(), "w", "1.0.0");
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        // An unrelated package with two store versions — update must
+        // never touch it (its recorded ref wouldn't even resolve).
+        store_seed(tmp.path(), "u", Some("1.0.0"));
+        store_seed(tmp.path(), "u", Some("2.0.0"));
+        // Bump the source → `update` lands w@2.0.0 and prunes w@1.0.0.
+        upd_pkg(tmp.path(), "w", "2.0.0");
+        run_args(e.clone(), &["tamias", "update", "w"]).unwrap();
+        assert_eq!(store_labels(&e), ["u@1.0.0", "u@2.0.0", "w@2.0.0"]);
+        // The --json path reports the same prune.
+        upd_pkg(tmp.path(), "w", "3.0.0");
+        run_args(e.clone(), &["tamias", "update", "w", "--json"]).unwrap();
+        assert_eq!(store_labels(&e), ["u@1.0.0", "u@2.0.0", "w@3.0.0"]);
+    }
+
+    #[test]
+    fn update_no_prune_keeps_superseded_and_default_drops_all_but_newest() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = upd_pkg(tmp.path(), "w", "1.0.0");
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        // --no-prune: the superseded version stays as a rollback target.
+        upd_pkg(tmp.path(), "w", "1.5.0");
+        run_args(e.clone(), &["tamias", "update", "w", "--no-prune"]).unwrap();
+        assert_eq!(store_labels(&e), ["w@1.0.0", "w@1.5.0"]);
+        // Default update by label: both older versions prune, newest
+        // survives (bare `update w` would be ambiguous with two
+        // installs — the label picks one, like `prune` removals do).
+        upd_pkg(tmp.path(), "w", "2.0.0");
+        run_args(e.clone(), &["tamias", "update", "w@1.5.0"]).unwrap();
+        assert_eq!(store_labels(&e), ["w@2.0.0"]);
+    }
+
+    #[test]
+    fn update_failure_prunes_only_what_updated() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        let dir = upd_pkg(tmp.path(), "a", "1.0.0");
+        run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        // `z` sorts after `a`, so --all updates `a` first, then fails
+        // on z's unresolvable recorded ref — `a`'s superseded version
+        // still prunes, `z` is untouched, the verb still errors.
+        store_seed(tmp.path(), "z", Some("1.0.0"));
+        store_seed(tmp.path(), "z", Some("2.0.0"));
+        upd_pkg(tmp.path(), "a", "2.0.0");
+        assert!(run_args(e.clone(), &["tamias", "update", "--all"]).is_err());
+        assert_eq!(store_labels(&e), ["a@2.0.0", "z@1.0.0", "z@2.0.0"]);
     }
 
     #[test]
