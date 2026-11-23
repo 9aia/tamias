@@ -174,7 +174,7 @@ Drop a store entry (cache untouched)
 
 ## `tamias prune`
 
-Prune superseded store versions — **dry-run by default**. Groups installed entries by package (`@scope/name`) and reports every version older than the newest `keep` semver releases — the store keeps every version ever installed, so this is the explicit garbage-collection verb. Nothing is removed without `--yes`; removals run through the same teardown path as `uninstall` (provider units re-rendered from survivors, bins cleanup, version-aware driver dispatch, store drop). Entries without a semver `version:` are never touched — they are reported as skipped instead. Never runs automatically on `install`/`update`/`sync`: old versions are rollback targets.
+Prune superseded store versions — **dry-run by default**. Groups installed entries by package (`@scope/name`) and reports every version older than the newest `keep` semver releases — the store keeps every version ever installed, so this is the explicit garbage-collection verb. Nothing is removed without `--yes`; removals run through the same teardown path as `uninstall` (provider units re-rendered from survivors, bins cleanup, version-aware driver dispatch, store drop). Entries without a semver `version:` are never touched — they are reported as skipped instead. `install`/`sync` never prune; `update` prunes the packages it touched by default (`--no-prune` opts out) — until then old versions are rollback targets.
 
 **Usage:** `tamias prune [OPTIONS]`
 
@@ -230,7 +230,7 @@ Digest-check a package against its record
 
 ## `tamias update`
 
-Re-resolve + re-install a package from its recorded ref
+Re-resolve + re-install a package from its recorded ref. Afterwards the superseded same-name store versions of the packages that updated are pruned — newest kept, the same path and rules as `tamias prune --yes --keep 1`. `--no-prune` opts out; old versions stay as rollback targets until then.
 
 **Usage:** `tamias update [OPTIONS] [NAME]`
 
@@ -243,8 +243,9 @@ Re-resolve + re-install a package from its recorded ref
 * `--all` — Update every installed package
 * `--allow-drivers` — Consent to register + run bundled `drivers/` on re-install. Equivalent: `TAMIAS_ALLOW_DRIVERS=1` — a global env bypass honored by every surface (CLI, serve, TUI)
 * `--no-bins` — Don't deploy declared `bins[]` on re-install
+* `--no-prune` — Don't prune superseded store versions of the updated packages — `update` prunes them by default
 * `--json` — JSON output
-* `-h, --help` — Print help
+* `-h, --help` — Print help (see a summary with '-h')
 
 ## `tamias pin`
 
