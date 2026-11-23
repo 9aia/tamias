@@ -709,12 +709,23 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
 /// active ([`Model::versions_focused`]) — row `i` gets the table's
 /// `Indexed(238)` row highlight plus an accent `›` marker, and the
 /// footer hint switches to the focus keys.
+///
+/// The fifth return value is the body line index of the focused
+/// version row (`None` unless focus is active and the list landed) —
+/// [`draw_detail`] feeds it to [`scroll_to_show`] so the cursor row
+/// stays on screen past one page of versions.
 fn page_parts(
     detail: &Detail,
     registry_target: &str,
     installed_ver: Option<&str>,
     versions_sel: Option<usize>,
-) -> (String, Line<'static>, Option<String>, Vec<Line<'static>>) {
+) -> (
+    String,
+    Line<'static>,
+    Option<String>,
+    Vec<Line<'static>>,
+    Option<usize>,
+) {
     let label = detail.label();
     // Header — bold label then muted/bracketed chips; the trust chip
     // is the one colored span (tier → [`trust_style`]).
@@ -743,6 +754,9 @@ fn page_parts(
     let desc = detail.description().map(str::to_string);
 
     let mut body: Vec<Line> = Vec::new();
+    // Body index of the versions-focus row — set by the Registry
+    // arm below; `draw_detail` scrolls it into view.
+    let mut versions_row: Option<usize> = None;
     // Install command — the ref an installed entry recorded, or the
     // registry entry's resolved install ref (error inline on failure).
     match detail {
@@ -901,13 +915,28 @@ fn page_parts(
             match (versions, versions_err) {
                 (Some(list), _) => {
                     body.push(Line::from(""));
-                    body.push(rule("versions"));
+                    // Unfocused, the section advertises its `v` toggle
+                    // inline — the footer hint alone is easy to miss.
+                    if versions_sel.is_none() && !list.is_empty() {
+                        body.push(Line::from(vec![
+                            Span::styled("── versions ──", Style::default().fg(ACCENT)),
+                            Span::styled("  · v picks a version", Style::default().fg(MUTED)),
+                        ]));
+                    } else {
+                        body.push(rule("versions"));
+                    }
                     if list.is_empty() {
                         body.push(Line::from(Span::styled(
                             "  no versions indexed",
                             Style::default().fg(MUTED),
                         )));
                     }
+                    // The focused row's body index — `draw_detail`
+                    // scrolls it into view while versions focus is on.
+                    let rows_start = body.len();
+                    versions_row = versions_sel
+                        .filter(|&s| s < list.len())
+                        .map(|s| rows_start + s);
                     for (i, v) in list.iter().enumerate() {
                         let ver = v.version.clone().unwrap_or_else(|| "-".into());
                         // `file` is the per-version blob path — the
@@ -968,16 +997,47 @@ fn page_parts(
     }
     body.push(Line::from(""));
     body.push(Line::from(Span::styled(
-        match detail {
-            Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
-            Detail::Registry { .. } if versions_sel.is_some() => {
-                "versions — j/k move · i install · v/esc back"
-            }
-            Detail::Registry { .. } => "esc back · j/k scroll · i install",
-        },
+        detail_hint(detail, versions_sel.is_some()),
         Style::default().fg(MUTED),
     )));
-    (label, head, desc, body)
+    (label, head, desc, body, versions_row)
+}
+
+/// The package page's footer/status hint — shared by `page_parts`'s
+/// last body line and `draw_status`'s right-side hint so the two
+/// can't drift. `versions_focused` is the caller's focus state
+/// (`versions_sel.is_some()` inside `page_parts`,
+/// [`Model::versions_focused`] in the status bar).
+fn detail_hint(detail: &Detail, versions_focused: bool) -> &'static str {
+    match detail {
+        Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
+        Detail::Registry { .. } if versions_focused => {
+            "versions — j/k move · i install · v/esc back"
+        }
+        // Landed, non-empty sibling list — advertise the `v` toggle.
+        Detail::Registry {
+            versions: Some(list),
+            ..
+        } if !list.is_empty() => "esc back · j/k scroll · i install · v versions",
+        Detail::Registry { .. } => "esc back · j/k scroll · i install",
+    }
+}
+
+/// Scroll offset that keeps body line `row` inside a `view_h`-line
+/// window — scrolls the minimum amount (up when the row is above the
+/// window, down when below); the caller still clamps to `max_scroll`.
+/// `view_h == 0` leaves the offset alone.
+fn scroll_to_show(row: usize, scroll: usize, view_h: usize) -> usize {
+    if view_h == 0 {
+        return scroll;
+    }
+    if row < scroll {
+        row
+    } else if row >= scroll + view_h {
+        row + 1 - view_h
+    } else {
+        scroll
+    }
 }
 
 /// Greedy word-wrap line count for `text` at `width` columns,
@@ -1022,7 +1082,7 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
         }
         _ => None,
     };
-    let (title, head, desc, body) = page_parts(
+    let (title, head, desc, body, versions_row) = page_parts(
         detail,
         &m.reg_target_label,
         installed_ver.as_deref(),
@@ -1071,6 +1131,13 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
                 .style(Style::default().fg(MUTED)),
             desc_area,
         );
+    }
+    // Versions focus keeps its cursor row on screen — the body is a
+    // scrolling Paragraph, so aim `detail_scroll` at the row before
+    // the usual max_scroll clamp (body-line approximation, same
+    // posture as the clamp itself under wrapped lines).
+    if let Some(row) = versions_row {
+        m.detail_scroll = scroll_to_show(row, m.detail_scroll, body_area.height as usize);
     }
     // Clamp the scroll offset to the body, then render.
     let max_scroll = body.len().saturating_sub(body_area.height as usize);
@@ -1148,10 +1215,12 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     let rows: Vec<Row> = m
         .reg_results
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             // Name cell carries styled spans — `[signed]` green for
             // signed index entries, `· installed <ver>` muted when
-            // the store already has this (name, scope) at any version.
+            // the store already has this (name, scope) at any version,
+            // `· N versions` muted when the row collapsed siblings.
             let mut name = vec![Span::raw(e.label())];
             if e.signature.is_some() {
                 name.push(Span::styled(" [signed]", trust_style("signed")));
@@ -1159,6 +1228,13 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
             if let Some(ver) = m.installed_label_for(&e.name, e.scope.as_deref()) {
                 name.push(Span::styled(
                     format!(" · installed {ver}"),
+                    Style::default().fg(MUTED),
+                ));
+            }
+            let versions = m.reg_version_counts.get(i).copied().unwrap_or(1);
+            if versions > 1 {
+                name.push(Span::styled(
+                    format!(" · {versions} versions"),
                     Style::default().fg(MUTED),
                 ));
             }
@@ -1344,14 +1420,8 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
     // The package page's hint wins over the pane's while `detail` is
     // open; either way the hint yields to the left status text —
     // truncated with `…` to whatever width is left.
-    let hint = if m.detail.is_some() {
-        match &m.detail {
-            Some(Detail::Registry { .. }) if m.versions_focused() => {
-                "versions — j/k move · i install · v/esc back"
-            }
-            Some(Detail::Registry { .. }) => "esc back · j/k scroll · i install",
-            _ => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
-        }
+    let hint = if let Some(d) = &m.detail {
+        detail_hint(d, m.versions_focused())
     } else {
         match m.pane {
             Pane::Home => {
@@ -1550,7 +1620,7 @@ package page:  npm-style page — header chips · description · install
 
 registry pane:  / search-as-you-type (debounced) · Enter package page ·
                 i install result · :registry <name> target · :search <q>
-                results mark [signed] and · installed <ver>
+                results mark [signed] · installed <ver> · N versions
 
 commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
            :verify <name>  :update [name]  :pin <name> <ref>
@@ -1630,7 +1700,7 @@ mod tests {
         installed_ver: Option<&str>,
         versions_sel: Option<usize>,
     ) -> String {
-        let (_, _, _, body) = page_parts(detail, "default", installed_ver, versions_sel);
+        let (_, _, _, body, _) = page_parts(detail, "default", installed_ver, versions_sel);
         body.iter()
             .map(|l| {
                 l.spans
@@ -1660,9 +1730,12 @@ mod tests {
         assert!(pending.contains("versions …"));
         assert!(!pending.contains("── versions ──"));
         // Landed — the rule, every version in index order, `← current`
-        // on the page's own entry (matched by blob `file`).
+        // on the page's own entry (matched by blob `file`), and the
+        // inline `v` affordance while unfocused.
         let ready = body_text(&detail(Some(vec![reg_entry("0.9.0"), page.clone()]), None));
         assert!(ready.contains("── versions ──"));
+        assert!(ready.contains("· v picks a version"));
+        assert!(ready.contains("esc back · j/k scroll · i install · v versions"));
         assert!(ready.contains("  0.9.0"));
         assert!(ready.contains("  1.0.0  ← current"));
         // Failed — the error line, still no rule.
@@ -1692,11 +1765,58 @@ mod tests {
         assert!(focused.contains("  1.0.0  ← current"));
         assert!(focused.contains("versions — j/k move · i install · v/esc back"));
         assert!(!focused.contains("esc back · j/k scroll · i install"));
+        // Focused — the inline `v` affordance steps aside.
+        assert!(!focused.contains("v picks a version"));
         // Cursor on the current entry keeps its `← current` marker.
         let on_current = body_text_full(&detail, None, Some(1));
         assert!(on_current.contains("› 1.0.0  ← current"));
         // Unfocused stays byte-identical to the plain render.
         assert_eq!(body_text(&detail), body_text_full(&detail, None, None));
+    }
+
+    /// `page_parts` reports the focused version row's body index so
+    /// `draw_detail` can scroll it into view — `None` when unfocused,
+    /// unfetched, or the selection is out of range.
+    #[test]
+    fn versions_focus_row_index_for_scroll() {
+        let page = reg_entry("1.0.0");
+        let detail = Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: Some(vec![reg_entry("0.9.0"), page.clone(), reg_entry("1.1.0")]),
+            versions_err: None,
+        };
+        let (_, _, _, body, row) = page_parts(&detail, "default", None, Some(2));
+        let row = row.expect("focused row index");
+        assert!(
+            body[row].spans.iter().any(|s| s.content.contains("1.1.0")),
+            "row {row} should be the focused 1.1.0 line"
+        );
+        assert!(page_parts(&detail, "default", None, None).4.is_none());
+        assert!(page_parts(&detail, "default", None, Some(9)).4.is_none());
+        // Pending fetch — no rows, no target.
+        let pending = Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: None,
+            versions_err: None,
+        };
+        assert!(page_parts(&pending, "default", None, Some(0)).4.is_none());
+    }
+
+    /// `scroll_to_show` scrolls the minimum to keep `row` inside the
+    /// `view_h` window — up when above, down when below, untouched
+    /// when already visible or the view is empty.
+    #[test]
+    fn scroll_to_show_minimal_adjustment() {
+        assert_eq!(scroll_to_show(5, 0, 10), 0); // already visible
+        assert_eq!(scroll_to_show(3, 5, 10), 3); // above → scroll up
+        assert_eq!(scroll_to_show(20, 0, 10), 11); // below → scroll down
+        assert_eq!(scroll_to_show(9, 0, 10), 0); // last visible row
+        assert_eq!(scroll_to_show(10, 0, 10), 1); // first hidden row
+        assert_eq!(scroll_to_show(4, 7, 0), 7); // empty view: untouched
     }
 
     /// The `installed <pkg>@<ver>` line appears on a Registry page

@@ -20,6 +20,7 @@
 //! slow periodic rescan covers events a watcher can miss. `R` and
 //! `:reload` force one.
 
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Child;
@@ -568,6 +569,97 @@ fn chorded(k: &KeyEvent) -> bool {
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
 
+/// Collapse raw search hits to one row per package — the index
+/// returns every retained version, so without this a 3-version
+/// package renders 3 near-identical rows. Groups by `(name, scope)`
+/// in first-seen order and keeps the newest version
+/// ([`version_cmp`]); the survivor is a real index entry, so
+/// `reg_selected`, `installed_label_for`, and the detail page's
+/// versions-focus (`file`-matched `← current`) all keep working.
+/// Returns the rows plus a parallel per-package version count —
+/// `>1` renders `· N versions` in the name cell.
+fn dedupe_search_results(results: Vec<RegistryEntry>) -> (Vec<RegistryEntry>, Vec<usize>) {
+    let mut rows: Vec<RegistryEntry> = Vec::new();
+    let mut counts: Vec<usize> = Vec::new();
+    let mut slots: std::collections::HashMap<(String, Option<String>), usize> =
+        std::collections::HashMap::new();
+    for e in results {
+        let key = (e.name.clone(), e.scope.clone());
+        match slots.get(&key).copied() {
+            Some(i) => {
+                counts[i] += 1;
+                if version_cmp(e.version.as_deref(), rows[i].version.as_deref())
+                    == Ordering::Greater
+                {
+                    rows[i] = e;
+                }
+            }
+            None => {
+                slots.insert(key, rows.len());
+                rows.push(e);
+                counts.push(1);
+            }
+        }
+    }
+    (rows, counts)
+}
+
+/// Order two version labels for "newest wins" — `None` sorts lowest;
+/// parseable versions go through [`version_str_cmp`].
+fn version_cmp(a: Option<&str>, b: Option<&str>) -> Ordering {
+    match (a, b) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (Some(x), Some(y)) => version_str_cmp(x, y),
+    }
+}
+
+/// Split a version label into `(numeric core, prerelease tail)` —
+/// `+build` metadata is dropped per semver; the `-` tail keeps its
+/// leading dash for the string compare.
+fn version_split(v: &str) -> (&str, &str) {
+    let no_build = v.split('+').next().unwrap_or(v);
+    match no_build.find('-') {
+        Some(i) => (&no_build[..i], &no_build[i..]),
+        None => (no_build, ""),
+    }
+}
+
+/// A small semver approximation for version ordering — the `semver`
+/// crate isn't a tamias-tui dep, and the index itself only
+/// string-sorts versions (where `0.9.0` would wrongly beat
+/// `0.10.0`). The numeric core compares segment-wise; a bare release
+/// outranks its `-prerelease`; remaining tails compare as strings.
+fn version_str_cmp(a: &str, b: &str) -> Ordering {
+    let (ac, at) = version_split(a);
+    let (bc, bt) = version_split(b);
+    let mut ai = ac.split('.');
+    let mut bi = bc.split('.');
+    loop {
+        match (ai.next(), bi.next()) {
+            (None, None) => break,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) => {
+                let ord = match (x.parse::<u64>(), y.parse::<u64>()) {
+                    (Ok(p), Ok(q)) => p.cmp(&q),
+                    _ => x.cmp(y),
+                };
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+        }
+    }
+    match (at.is_empty(), bt.is_empty()) {
+        (true, false) => return Ordering::Greater,
+        (false, true) => return Ordering::Less,
+        _ => {}
+    }
+    at.cmp(bt)
+}
+
 /// The whole TUI state.
 pub struct Model {
     /// Roots the ops run against (cloned into every worker) —
@@ -683,10 +775,15 @@ pub struct Model {
     pub(crate) log_view_h: usize,
 
     // --- registry pane ---
-    /// Last search results.
+    /// Last search results — deduped to one row per `(name, scope)`
+    /// package (the newest version survives; see
+    /// [`dedupe_search_results`]).
     pub reg_results: Vec<RegistryEntry>,
     /// Cursor into `reg_results`.
     pub reg_sel: usize,
+    /// Version multiplicity per `reg_results` row — parallel vec;
+    /// `>1` renders `· N versions` in the name cell.
+    pub reg_version_counts: Vec<usize>,
     /// The live query — `/` edits it via `input`; debounced search.
     pub reg_query: String,
     /// `:registry` override — `None` → config/env routing.
@@ -781,6 +878,7 @@ impl Model {
             log_view_h: 0,
             reg_results: Vec::new(),
             reg_sel: 0,
+            reg_version_counts: Vec::new(),
             reg_query: String::new(),
             reg_target: None,
             reg_target_label: "default".to_string(),
@@ -1057,11 +1155,17 @@ impl Model {
                     self.search_inflight = None;
                     if fresh {
                         self.reg_target_label = target;
-                        self.reg_results = results;
+                        let (rows, counts) = dedupe_search_results(results);
+                        self.reg_results = rows;
+                        self.reg_version_counts = counts;
                         self.reg_sel = 0;
                         self.reg_err = None;
                         let n = self.reg_results.len();
-                        self.push_log(format!("search {:?}: {n} result(s)", self.reg_query));
+                        let versions: usize = self.reg_version_counts.iter().sum();
+                        self.push_log(format!(
+                            "search {:?}: {n} package(s) · {versions} version(s)",
+                            self.reg_query
+                        ));
                     }
                 }
                 Msg::Done(Ok(Outcome::Services(rows))) => {
@@ -1124,6 +1228,7 @@ impl Model {
         let query = self.reg_query.trim().to_string();
         if query.is_empty() {
             self.reg_results.clear();
+            self.reg_version_counts.clear();
             self.reg_err = None;
             self.search_inflight = None;
             return;
@@ -1437,17 +1542,37 @@ impl Model {
     }
 
     /// `Enter` on Home — open the highlighted recent install's package
-    /// page. The page verbs (`v`/`u`/`p`/`r`/`c`/`d`) key off `pane`,
-    /// and `toggle_detail` builds `Detail::Installed` from `selected()`
-    /// — so the clean route is the Installed pane itself: switch
-    /// there, park the row cursor on the entry (dropping a stale `/`
-    /// filter that would hide it), then run the normal detail path.
-    /// Esc-back lands on the Installed table rather than Home — the
-    /// deliberate trade-off for reusing the whole detail surface.
+    /// page through [`Model::open_label_detail`].
     fn open_home_detail(&mut self) {
         let Some(label) = self.home_selected().map(|r| r.entry.label()) else {
             return;
         };
+        self.open_label_detail(&label);
+    }
+
+    /// `Enter` on a Services row — open the owning package's page.
+    /// Same route as Home's recents: the detail verbs are pane-gated
+    /// to Installed, so the pane switches and the normal detail path
+    /// runs. A package missing from the store gets a hint instead of
+    /// a page (rows come from the store, so this is a stale-table
+    /// edge, not the common path).
+    fn open_service_detail(&mut self) {
+        let Some(label) = self.svc_selected().map(|r| r.package.clone()) else {
+            return;
+        };
+        if !self.open_label_detail(&label) {
+            self.say("package not in the installed list — `R` refreshes services");
+        }
+    }
+
+    /// Shared tail of the Home/Services `Enter` paths — park the
+    /// Installed cursor on `label`'s row (dropping a stale `/`
+    /// filter that would hide it) and open its package page through
+    /// [`Model::toggle_detail`]. Returns `false` when no visible row
+    /// matches; the caller decides what to say. Esc-back lands on
+    /// the Installed table rather than the origin pane — the
+    /// deliberate trade-off for reusing the whole detail surface.
+    fn open_label_detail(&mut self, label: &str) -> bool {
         let mut vis = self.visible();
         let mut pos = vis.iter().position(|&i| {
             self.entries
@@ -1455,8 +1580,9 @@ impl Model {
                 .is_some_and(|r| r.entry.label() == label)
         });
         if pos.is_none() && !self.filter.is_empty() {
-            // The filter is an Installed-pane artifact — Home can't
-            // show it hiding the target, so drop it and retry.
+            // The filter is an Installed-pane artifact — the origin
+            // pane can't show it hiding the target, so drop it and
+            // retry.
             self.filter.clear();
             self.input.clear();
             vis = self.visible();
@@ -1466,10 +1592,13 @@ impl Model {
                     .is_some_and(|r| r.entry.label() == label)
             });
         }
-        let Some(pos) = pos else { return };
+        let Some(pos) = pos else {
+            return false;
+        };
         self.switch_pane(Pane::Installed);
         self.sel = pos;
         self.toggle_detail();
+        true
     }
 
     /// Kick off the background sibling-versions fetch for a registry
@@ -2409,10 +2538,12 @@ impl Model {
                 }
             }
             KeyCode::Enter => match self.pane {
-                // Home's recent list opens through the Installed
-                // pane (see `open_home_detail`).
+                // Home's recent list and Services rows both resolve
+                // to an installed package's page (see
+                // `open_home_detail`/`open_service_detail`).
                 Pane::Home => self.open_home_detail(),
                 Pane::Installed | Pane::Registry => self.toggle_detail(),
+                Pane::Services => self.open_service_detail(),
                 _ => {}
             },
             // Versions focus eats esc first — one level out (back to
@@ -2482,6 +2613,7 @@ impl Model {
                     self.switch_pane(Pane::Registry);
                     self.reg_query.clear();
                     self.reg_results.clear();
+                    self.reg_version_counts.clear();
                     self.reg_err = None;
                     self.input.clear();
                     self.mode = Mode::Search;
@@ -3619,5 +3751,111 @@ mod tests {
         assert_eq!(m.reg_query, "wid");
         assert_eq!(m.reg_results.len(), 1);
         assert_eq!(m.reg_err.as_deref(), Some("warn"));
+    }
+
+    /// A raw search hit for the dedupe tests — `name`/`scope`/
+    /// `version` parameterized, everything else empty.
+    fn hit(name: &str, scope: Option<&str>, version: Option<&str>) -> RegistryEntry {
+        RegistryEntry {
+            name: name.into(),
+            scope: scope.map(str::to_string),
+            version: version.map(str::to_string),
+            kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
+            digest: String::new(),
+            signature: None,
+            publisher: None,
+            file: format!("{name}@{}", version.unwrap_or("?")),
+        }
+    }
+
+    /// Search hits collapse to one row per `(name, scope)` — the
+    /// newest version wins with numeric-aware ordering (`0.10.0` >
+    /// `0.9.0`, a bare release > its prerelease), first-seen row order
+    /// holds, and the parallel count feeds the `· N versions` cell.
+    #[test]
+    fn search_results_dedupe_to_latest_per_package() {
+        let results = vec![
+            hit("w", Some("s"), Some("0.9.0")),
+            hit("w", Some("s"), Some("0.10.0")),
+            hit("w", Some("s"), Some("0.10.0-rc.1")),
+            hit("x", None, Some("1.0.0")),
+            hit("w", None, Some("2.0.0")), // unscoped w — a different package
+        ];
+        let (rows, counts) = dedupe_search_results(results);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(counts, vec![3, 1, 1]);
+        assert_eq!(rows[0].scope.as_deref(), Some("s"));
+        assert_eq!(rows[0].version.as_deref(), Some("0.10.0"));
+        assert_eq!(rows[1].name, "x");
+        assert_eq!(rows[2].name, "w");
+        assert_eq!(rows[2].scope, None);
+        // A versionless hit loses to any versioned sibling.
+        let (rows, counts) =
+            dedupe_search_results(vec![hit("a", None, None), hit("a", None, Some("1.0.0"))]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(counts, vec![2]);
+        assert_eq!(rows[0].version.as_deref(), Some("1.0.0"));
+        // Empty input stays empty.
+        assert!(dedupe_search_results(Vec::new()).0.is_empty());
+    }
+
+    /// `Enter` on a Services row opens the owning package's detail
+    /// page — through the Installed pane, since the detail verbs are
+    /// pane-gated — with the row cursor parked on the package. A row
+    /// whose package isn't in the store gets a hint and stays put.
+    #[test]
+    fn services_enter_opens_package_detail() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let pkg = store_row("w", 1);
+        let label = pkg.entry.label();
+        m.entries.push(pkg);
+        m.pane = Pane::Services;
+        m.svc_rows = vec![
+            ServiceRow {
+                package: label,
+                service: "web".into(),
+                unit: "tamias-w.service".into(),
+                state: Some("active".into()),
+                exec: "w serve".into(),
+            },
+            ServiceRow {
+                package: "@s/ghost@9.9.9".into(),
+                service: "x".into(),
+                unit: "ghost.service".into(),
+                state: None,
+                exec: String::new(),
+            },
+        ];
+        // Row 0 → the installed package's page on the Installed pane.
+        m.key(key(KeyCode::Enter));
+        assert_eq!(m.pane, Pane::Installed);
+        match &m.detail {
+            Some(Detail::Installed { entry, .. }) => assert_eq!(entry.record.name, "w"),
+            other => panic!("expected installed page, got {other:?}"),
+        }
+        // Esc back lands on the Installed table (same trade-off as
+        // the Home path).
+        m.key(key(KeyCode::Esc));
+        assert!(m.detail.is_none());
+        assert_eq!(m.pane, Pane::Installed);
+        // A service row whose package isn't installed says so and
+        // stays on Services.
+        m.pane = Pane::Services;
+        m.svc_sel = 1;
+        m.key(key(KeyCode::Enter));
+        assert_eq!(m.pane, Pane::Services);
+        assert!(m.detail.is_none());
+        assert!(
+            m.status.contains("not in the installed list"),
+            "{}",
+            m.status
+        );
     }
 }
