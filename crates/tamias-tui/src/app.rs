@@ -1067,9 +1067,11 @@ pub struct Model {
     pub man_sel: usize,
 
     // --- publish pane (phase 6) ---
-    /// Configured registry names for the publish picker — loaded on
-    /// pane entry (`ops::registry_names`).
-    pub author_regs: Vec<(String, String)>,
+    /// Configured registries for the publish pane's table — loaded on
+    /// pane entry (`ops::registry_rows`).
+    pub author_regs: Vec<ops::RegistryRow>,
+    /// Cursor into `author_regs`.
+    pub author_sel: usize,
     /// Registry names for `:` completion (`:registry`, `:publish`'s
     /// registry arg) — refreshed on every store `reload`; the
     /// Registry pane's empty-query browse list reads it too.
@@ -1158,6 +1160,7 @@ impl Model {
             man_err: None,
             man_sel: 0,
             author_regs: Vec::new(),
+            author_sel: 0,
             reg_names: Vec::new(),
         };
         m.reload();
@@ -1735,9 +1738,17 @@ impl Model {
                     (self.home_sel as isize + delta).clamp(0, n as isize - 1) as usize
                 };
             }
-            // Publish has no list — j/k used to slide the hidden
-            // Installed cursor; say so instead of moving nothing.
-            Pane::Author => self.say("nothing to select on this pane"),
+            // Publish walks its registries table; an unconfigured
+            // pane has nothing to select — say so.
+            Pane::Author => {
+                let len = self.author_regs.len();
+                if len == 0 {
+                    self.say("nothing to select on this pane");
+                    return;
+                }
+                self.author_sel =
+                    (self.author_sel as isize + delta).clamp(0, len as isize - 1) as usize;
+            }
             _ => {
                 let len = self.visible().len();
                 if len == 0 {
@@ -1766,7 +1777,12 @@ impl Model {
             // file read, same posture as the detail view.
             Pane::Manifest => self.load_manifest(),
             // Publish entry refreshes the configured-registry list.
-            Pane::Author => self.author_regs = ops::registry_names(&self.ctx),
+            Pane::Author => {
+                self.author_regs = ops::registry_rows(&self.ctx);
+                self.author_sel = self
+                    .author_sel
+                    .min(self.author_regs.len().saturating_sub(1));
+            }
             _ => {}
         }
         // Leaving the registry pane mid-search keeps the query —
@@ -2430,7 +2446,10 @@ impl Model {
             }
             'r' => self.spawn(Job::Registries),
             'R' => {
-                self.author_regs = ops::registry_names(&self.ctx);
+                self.author_regs = ops::registry_rows(&self.ctx);
+                self.author_sel = self
+                    .author_sel
+                    .min(self.author_regs.len().saturating_sub(1));
             }
             _ => {}
         }
@@ -3218,7 +3237,13 @@ impl Model {
                         Pane::Registry => self.reg_sel = 0,
                         Pane::Services => self.svc_sel = 0,
                         Pane::Manifest => self.man_sel = 0,
-                        Pane::Author => self.say("nothing to select on this pane"),
+                        Pane::Author => {
+                            if self.author_regs.is_empty() {
+                                self.say("nothing to select on this pane");
+                            } else {
+                                self.author_sel = 0;
+                            }
+                        }
                         _ => self.sel = 0,
                     }
                 }
@@ -3245,7 +3270,13 @@ impl Model {
                                 .as_ref()
                                 .map_or(0, |m| m.deps.len().saturating_sub(1));
                         }
-                        Pane::Author => self.say("nothing to select on this pane"),
+                        Pane::Author => {
+                            if self.author_regs.is_empty() {
+                                self.say("nothing to select on this pane");
+                            } else {
+                                self.author_sel = self.author_regs.len() - 1;
+                            }
+                        }
                         _ => {
                             self.sel = self.visible().len().saturating_sub(1);
                             self.sync_sel_label();
@@ -3478,6 +3509,11 @@ impl Model {
                             let n = self.project.as_ref().map_or(0, |m| m.deps.len());
                             if idx < n {
                                 self.man_sel = idx;
+                            }
+                        }
+                        Pane::Author => {
+                            if idx < self.author_regs.len() {
+                                self.author_sel = idx;
                             }
                         }
                         _ => {
@@ -6559,5 +6595,43 @@ mod tests {
         // And the label.
         m.filter = "wid".into();
         assert_eq!(m.visible(), vec![0]);
+    }
+
+    /// The Publish pane's registries table is selectable: j/k/g/G
+    /// walk `author_regs` (clamped), a board-area row click selects,
+    /// and `R` reloads the list without losing the cursor position.
+    #[test]
+    fn author_pane_selection() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let reg = |name: &str| ops::RegistryRow {
+            name: name.into(),
+            kind: "local".into(),
+            target: String::new(),
+        };
+        m.pane = Pane::Author;
+        m.author_regs = vec![reg("a"), reg("b"), reg("c")];
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.author_sel, 1);
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.author_sel, 0);
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.author_sel, 2);
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.author_sel, 0);
+        // Row click — board_area row 0 is the header, data starts at 1.
+        m.board_area = Rect::new(0, 2, 80, 10);
+        m.viewport_top = 0;
+        m.mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 5,
+            row: 4,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(m.author_sel, 1);
+        // `R` reloads from config (empty here) and clamps the cursor.
+        m.key(key(KeyCode::Char('R')));
+        assert!(m.author_regs.is_empty());
+        assert_eq!(m.author_sel, 0);
     }
 }

@@ -590,59 +590,105 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
     note_table_area(m, table_area, state.offset());
 }
 
-/// The Publish pane — configured registries plus the pack/publish
-/// entry points; results land in the op log like every other job.
-/// The pane carries no cursor, so its body legitimately lists the
-/// key shapes (with args) the terse status-bar hint abbreviates.
+/// The Publish pane — the npm-maintainer analog: a registries table
+/// (name/kind/target, `author_sel` cursor) over a hint strip that
+/// keeps the pack/publish verbs discoverable with their arg shapes.
+/// Same layout posture as Manifest: the info strip yields on short
+/// terminals, the table keeps the rest. Results land in the op log
+/// like every other job; `Enter` stays unbound — there is no
+/// publish-target verb to trigger from a row.
 fn draw_author(f: &mut Frame, m: &mut Model, area: Rect) {
-    let mut lines: Vec<Line> = vec![Line::from(vec![
-        Span::styled(
-            "publishing",
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" — bundle pack/publish"),
-    ])];
-    lines.push(Line::from(""));
-    if m.author_regs.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "no registries configured — `registries:` in tamias.yml adds them · publish → default local root",
+    // Hint strip — title plus the verb shapes the terse status-bar
+    // hint abbreviates. Always rendered when there's room.
+    let info: Vec<Line> = vec![
+        Line::from(vec![
+            Span::styled(
+                "publishing",
+                Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" — bundle pack/publish"),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "p  pack <dir> [out.tgz]      P  publish <dir> [registry]",
             Style::default().fg(MUTED),
-        )));
+        )),
+        Line::from(Span::styled(
+            "r  :registries report        R  reload registry list",
+            Style::default().fg(MUTED),
+        )),
+        Line::from(Span::styled(
+            "publish asks for confirmation; progress streams to the log",
+            Style::default().fg(MUTED),
+        )),
+    ];
+    let info_h = if area.height > 14 {
+        6.min(area.height / 3)
     } else {
-        lines.push(Line::from(Span::styled(
-            "registries:",
-            Style::default().fg(ACCENT),
-        )));
-        for (name, kind) in &m.author_regs {
-            let label = if kind.is_empty() {
-                name.clone()
-            } else {
-                format!("{name}  ({kind})")
-            };
-            lines.push(Line::from(Span::raw(format!("  {label}"))));
-        }
+        0
+    };
+    let (info_area, table_area) = if info_h > 0 {
+        let chunks = Layout::vertical([Constraint::Length(info_h), Constraint::Min(0)]).split(area);
+        (chunks[0], chunks[1])
+    } else {
+        (Rect::default(), area)
+    };
+    if info_h > 0 {
+        f.render_widget(
+            Paragraph::new(info).style(Style::default().fg(TEXT)),
+            info_area,
+        );
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "p  pack <dir> [out.tgz]      P  publish <dir> [registry]",
-        Style::default().fg(MUTED),
-    )));
-    lines.push(Line::from(Span::styled(
-        "r  :registries report        R  reload registry list",
-        Style::default().fg(MUTED),
-    )));
-    lines.push(Line::from(Span::styled(
-        "publish asks for confirmation; progress streams to the log",
-        Style::default().fg(MUTED),
-    )));
-    f.render_widget(
-        Paragraph::new(lines)
-            .style(Style::default().fg(TEXT))
+    if m.author_regs.is_empty() {
+        f.render_widget(
+            Paragraph::new(
+                "no registries configured — `registries:` in tamias.yml adds them · publish → default local root",
+            )
+            .style(Style::default().fg(MUTED))
             .block(Block::default().borders(Borders::ALL).title(" publish ")),
-        area,
-    );
-    m.board_area = Rect::default();
-    m.viewport_top = 0;
+            table_area,
+        );
+        m.board_area = Rect::default();
+        m.viewport_top = 0;
+        return;
+    }
+    let header = Row::new(vec!["", "NAME", "KIND", "TARGET"])
+        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    let rows: Vec<Row> = m
+        .author_regs
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            Row::new(vec![
+                sel_cell(i, m.author_sel),
+                Cell::from(r.name.clone()),
+                // The `*.default` routing rows carry no kind — a muted
+                // dash keeps the column grid honest.
+                Cell::from(if r.kind.is_empty() {
+                    "-".to_string()
+                } else {
+                    r.kind.clone()
+                }),
+                Cell::from(r.target.clone()),
+            ])
+        })
+        .collect();
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(2),
+            Constraint::Min(12),
+            Constraint::Length(10),
+            Constraint::Min(16),
+        ],
+    )
+    .header(header)
+    .block(Block::default().borders(Borders::ALL).title(" registries "))
+    .style(Style::default().fg(TEXT))
+    .row_highlight_style(Style::default().bg(Color::Indexed(238)));
+    let mut state = ratatui::widgets::TableState::default().with_selected(Some(m.author_sel));
+    f.render_stateful_widget(table, table_area, &mut state);
+    note_table_area(m, table_area, state.offset());
 }
 
 /// Record where a bordered table's data rows landed — the border
@@ -2320,12 +2366,34 @@ mod tests {
         let mut m = model(tmp.path());
         m.pane = Pane::Author;
         m.author_regs = vec![
-            ("local".into(), String::new()),
-            ("cf".into(), "cf-worker".into()),
+            crate::ops::RegistryRow {
+                name: "local".into(),
+                kind: String::new(),
+                target: "/reg/root".into(),
+            },
+            crate::ops::RegistryRow {
+                name: "cf".into(),
+                kind: "cf-worker".into(),
+                target: "https://cf.example.com".into(),
+            },
+            crate::ops::RegistryRow {
+                name: "publish.default".into(),
+                kind: String::new(),
+                target: "cf".into(),
+            },
         ];
-        let s = screen(&mut m, 80, 24);
+        let s = screen(&mut m, 100, 24);
+        // table header + rows; the routing row's blank kind renders "-"
+        assert!(s.contains("NAME"), "{s}");
+        assert!(s.contains("TARGET"), "{s}");
         assert!(s.contains("local"), "{s}");
-        assert!(s.contains("cf  (cf-worker)"), "{s}");
+        assert!(s.contains("cf-worker"), "{s}");
+        assert!(s.contains("publish.default"), "{s}");
+        // the verb shapes stay visible below/above the table
+        assert!(s.contains("pack <dir>"), "{s}");
+        assert!(s.contains("publish <dir>"), "{s}");
+        // selection marker column
+        assert!(s.contains("›"), "{s}");
     }
 
     #[test]

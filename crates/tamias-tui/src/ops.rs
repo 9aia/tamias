@@ -1094,6 +1094,63 @@ pub fn registry_names(ctx: &Ctx) -> Vec<(String, String)> {
     out
 }
 
+/// One row of the Publish pane's registries table — a configured
+/// `registries:` entry or a routing default. Richer than the
+/// `(name, kind)` pairs [`registry_names`] returns for `:` completion.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RegistryRow {
+    pub name: String,
+    /// `local`/`http`/`cf` — empty on the synthetic default rows.
+    pub kind: String,
+    /// `url` (or the resolved root for url-less locals); the pointed-at
+    /// registry name on the `*.default` rows.
+    pub target: String,
+}
+
+/// The Publish pane's registries table — each configured registry
+/// with its kind and url/root target, plus the `publish.default`/
+/// `search.default` routing rows (blank kind, target = the registry
+/// they point at). Same BTreeMap ordering as [`registry_names`].
+pub fn registry_rows(ctx: &Ctx) -> Vec<RegistryRow> {
+    let config = env_config(ctx);
+    let mut out: Vec<RegistryRow> = config
+        .registries
+        .iter()
+        .map(|(name, reg)| {
+            let kind = reg.effective_kind();
+            RegistryRow {
+                name: name.clone(),
+                kind: kind.clone(),
+                // Url-less locals resolve to the default registry root;
+                // http/cf without a url is a config error `open_registry`
+                // reports — the table just shows an empty target.
+                target: reg.url.clone().unwrap_or_else(|| {
+                    if kind == "local" {
+                        ctx.registry_root.display().to_string()
+                    } else {
+                        String::new()
+                    }
+                }),
+            }
+        })
+        .collect();
+    if let Some(d) = &config.publish.default {
+        out.push(RegistryRow {
+            name: "publish.default".into(),
+            kind: String::new(),
+            target: d.clone(),
+        });
+    }
+    if let Some(d) = &config.search.default {
+        out.push(RegistryRow {
+            name: "search.default".into(),
+            kind: String::new(),
+            target: d.clone(),
+        });
+    }
+    out
+}
+
 /// `:registries`/the Publish pane's list — names + kinds, one per
 /// line, defaults annotated.
 fn registries(ctx: &Ctx) -> Result<Outcome, Error> {
@@ -1963,6 +2020,22 @@ mod tests {
         let t = text(&c, &Job::Registries);
         assert!(t.contains("httpr (http)"), "{t}");
         assert!(t.contains("publish.default → httpr"), "{t}");
+
+        // registry_rows — the Publish pane's table: kind + target per
+        // entry, routing defaults as blank-kind rows pointing at their
+        // target. Url-less locals resolve to the registry root.
+        let rows = registry_rows(&c);
+        let row = |name: &str| rows.iter().find(|r| r.name == name).unwrap();
+        assert_eq!(row("httpr").kind, "http");
+        assert_eq!(row("httpr").target, "http://reg.example.com/r");
+        assert_eq!(row("localdir").target, localdir.display().to_string());
+        assert_eq!(
+            row("localnou").target,
+            c.registry_root.display().to_string()
+        );
+        assert_eq!(row("publish.default").kind, "");
+        assert_eq!(row("publish.default").target, "httpr");
+        assert_eq!(row("search.default").target, "localdir");
 
         // versions against the named target reads that registry's index
         let list = versions(&c, "w", None, Some("localdir")).unwrap();
