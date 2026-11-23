@@ -4,8 +4,10 @@
 //! `tamias-store-local` entries with a client-side `/` filter; `Enter` opens the package
 //! page (`Detail`) on either the Installed row or a Registry result;
 //! the Registry pane searches a registry as-you-type; Services,
-//! Manifest, and Author cover provider lifecycle, the project `deps:`
-//! form, and pack/publish authoring.
+//! Project, and Publish cover provider lifecycle, the project `deps:`
+//! form, and pack/publish authoring. (`Pane::Manifest`/`Pane::Author`
+//! keep their enum names — only the tab labels and docs say
+//! PROJECT/PUBLISH.)
 //!
 //! Mutations never run on the event loop: [`Model::spawn`] hands a
 //! [`Job`] to a worker thread that calls the same library functions
@@ -20,6 +22,7 @@
 //! slow periodic rescan covers events a watcher can miss. `R` and
 //! `:reload` force one.
 
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Child;
@@ -50,6 +53,13 @@ const LOG_CAP: usize = 300;
 /// Registry search debounce — a pause this long after the last
 /// keystroke fires the query (Enter fires immediately).
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(300);
+
+/// `:` history depth — session-scoped, most recent first.
+const CMD_HIST_CAP: usize = 50;
+
+/// Dynamic `:` completion cap — installed labels / registry names /
+/// unit names offered per arg position.
+const CMD_COMPLETION_CAP: usize = 20;
 
 /// Spinner frames for the busy indicator.
 pub(crate) const SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -97,8 +107,8 @@ impl Pane {
             Pane::Installed => "INSTALLED",
             Pane::Registry => "REGISTRY",
             Pane::Services => "SERVICES",
-            Pane::Manifest => "MANIFEST",
-            Pane::Author => "AUTHOR",
+            Pane::Manifest => "PROJECT",
+            Pane::Author => "PUBLISH",
         }
     }
 
@@ -126,10 +136,10 @@ pub enum PromptKind {
     InstallRef,
     /// `:registry <name>` — the search/install target override.
     RegistryTarget,
-    /// Manifest pane `a` — a dep ref to install + record (`tamias
+    /// Project pane `a` — a dep ref to install + record (`tamias
     /// add` equivalent).
     AddDep,
-    /// Manifest pane `e` — a new ref replacing dep `old`.
+    /// Project pane `e` — a new ref replacing dep `old`.
     SetDep {
         /// The dep ref being replaced.
         old: String,
@@ -140,9 +150,9 @@ pub enum PromptKind {
         /// Store label being deployed.
         name: String,
     },
-    /// Author pane `p` — `bundle pack` spec: `dir [out.tgz]`.
+    /// Publish pane `p` — `bundle pack` spec: `dir [out.tgz]`.
     PackSpec,
-    /// Author pane `P` — `publish` spec: `dir [registry]`.
+    /// Publish pane `P` — `publish` spec: `dir [registry]`.
     PublishSpec,
 }
 
@@ -163,8 +173,10 @@ pub enum Mode {
     Prompt(PromptKind),
     /// `?` — keybind overlay; `esc`/`?`/`q` closes.
     Help,
-    /// `L`/`:log` — full op-log overlay; `j`/`k` scroll, `g`/`G` jump
-    /// the ends, `esc`/`q`/`L` closes. Swallows every other key.
+    /// `L`/`:log` — the op-log view: a right-docked sidebar (centered
+    /// overlay under ~50 cols); `j`/`k` scroll, `g`/`G` jump the
+    /// ends, `esc`/`q`/`L` closes. Swallows every other key — it's a
+    /// view, not split focus.
     Log,
 }
 
@@ -346,8 +358,14 @@ enum Cmd {
     Help,
     /// `:install <ref>`.
     Install(String),
-    /// `:remove <name>`.
+    /// `:remove <name>` — light store remove (driver `uninstall`
+    /// dispatch + `Store::remove`).
     Remove(String),
+    /// `:uninstall <name>` — full provider teardown
+    /// (`Job::ProviderUninstall`: driver uninstall, shared-unit
+    /// survivor re-render, unit removal, then store remove) — the
+    /// Services pane `x` equivalent.
+    Uninstall(String),
     /// `:verify <name>`.
     Verify(String),
     /// `:update [name]` — bare updates everything (`--all`).
@@ -397,13 +415,13 @@ enum Cmd {
     /// `:manifest` — (re)load the project manifest.
     Manifest,
     /// `:sync [--from-lock]` — reconcile the project dep set
-    /// (`--from-lock` treats `tamias.lock` as the spec; Manifest pane
+    /// (`--from-lock` treats `tamias.lock` as the spec; Project pane
     /// `s`/`S` too).
     Sync {
         /// Install `tamias.lock` entries verbatim.
         from_lock: bool,
     },
-    /// `:log` — open the op-log overlay (`L`).
+    /// `:log` — open the op-log sidebar (`L`).
     Log,
 }
 
@@ -430,6 +448,13 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
                 Err("usage: :remove <name>".into())
             } else {
                 Ok(Cmd::Remove(rest))
+            }
+        }
+        "uninstall" => {
+            if rest.is_empty() {
+                Err("usage: :uninstall <name>".into())
+            } else {
+                Ok(Cmd::Uninstall(rest))
             }
         }
         "verify" => {
@@ -545,18 +570,6 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
     }
 }
 
-/// Display word for a [`tamias_provider::UnitAction`] — confirm-modal
-/// titles and `:service` feedback.
-fn unit_action_word(action: tamias_provider::UnitAction) -> &'static str {
-    match action {
-        tamias_provider::UnitAction::Start => "start",
-        tamias_provider::UnitAction::Stop => "stop",
-        tamias_provider::UnitAction::Restart => "restart",
-        tamias_provider::UnitAction::Enable => "enable",
-        tamias_provider::UnitAction::Disable => "disable",
-    }
-}
-
 /// `:service <verb>` word → action (`parse_command` already
 /// whitelists, this is the typed bridge).
 fn unit_action_from_word(word: &str) -> Option<tamias_provider::UnitAction> {
@@ -569,6 +582,260 @@ fn unit_action_from_word(word: &str) -> Option<tamias_provider::UnitAction> {
         "disable" => A::Disable,
         _ => return None,
     })
+}
+
+/// Ctrl/Alt chords are never verb or text input — Shift is fine
+/// (it arrives as the shifted char itself, e.g. `Char('G')` +
+/// `SHIFT`). Ctrl-C force-quit is handled before this gate in
+/// [`Model::key`].
+fn chorded(k: &KeyEvent) -> bool {
+    k.modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+}
+
+// --- shared single-line editing (`:`/`/`/prompt buffers) ---
+//
+// The cursor is a **byte** offset kept on a char boundary; every
+// helper below maintains that invariant, so callers can slice
+// `text[..cur]` freely. `line_edit` is the one key dispatcher the
+// four text modes share — Left/Right/Home/End, Backspace/Delete,
+// printable chars (inserted at the cursor), and the readline chords
+// Ctrl-A/E (line ends), Ctrl-U (clear), Ctrl-W (kill word back).
+
+/// Byte offset of the char boundary one char before `cur`.
+fn prev_boundary(text: &str, cur: usize) -> usize {
+    text[..cur]
+        .chars()
+        .next_back()
+        .map_or(0, |c| cur - c.len_utf8())
+}
+
+/// Byte offset of the char boundary one char after `cur`.
+fn next_boundary(text: &str, cur: usize) -> usize {
+    text[cur..]
+        .chars()
+        .next()
+        .map_or(text.len(), |c| cur + c.len_utf8())
+}
+
+/// Ctrl-W — delete from `cur` back over the whitespace run and the
+/// word before it (readline `unix-word-rubout`). Returns `true` when
+/// anything was deleted.
+fn kill_word_back(text: &mut String, cur: &mut usize) -> bool {
+    let start = {
+        let before = text[..*cur].trim_end();
+        before.rfind(char::is_whitespace).map_or(0, |i| {
+            i + before[i..].chars().next().map_or(1, |c| c.len_utf8())
+        })
+    };
+    if start < *cur {
+        text.drain(start..*cur);
+        *cur = start;
+        true
+    } else {
+        false
+    }
+}
+
+/// What [`line_edit`] did with a key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edit {
+    /// Not an editing key — the mode ignores it.
+    Ignored,
+    /// Consumed but the buffer is unchanged — a cursor move or an
+    /// edit at the boundary (Backspace on empty, Left at col 0).
+    /// `:` mode still refreshes completions (they're cursor-relative);
+    /// `/`-mode callers skip their post-edit hook so arrow keys don't
+    /// re-fire the debounced search.
+    Move,
+    /// The buffer contents changed.
+    Mutate,
+}
+
+/// One editing key against `(text, cur)`. Unhandled keys return
+/// [`Edit::Ignored`] and change nothing; callers run their post-edit
+/// hook on [`Edit::Mutate`] (and on `Move` where derived state is
+/// cursor-relative, like `:` completions).
+fn line_edit(text: &mut String, cur: &mut usize, k: &KeyEvent) -> Edit {
+    // Clamp + re-boundary: direct buffer writes (tests, paste
+    // callers) may leave the cursor mid-char.
+    *cur = (*cur).min(text.len());
+    while !text.is_char_boundary(*cur) {
+        *cur -= 1;
+    }
+    match k.code {
+        KeyCode::Char(c) => {
+            if k.modifiers.contains(KeyModifiers::CONTROL) {
+                match c {
+                    'a' | 'A' => *cur = 0,
+                    'e' | 'E' => *cur = text.len(),
+                    'u' | 'U' => {
+                        text.clear();
+                        *cur = 0;
+                        return Edit::Mutate;
+                    }
+                    'w' | 'W' => {
+                        return if kill_word_back(text, cur) {
+                            Edit::Mutate
+                        } else {
+                            Edit::Move
+                        };
+                    }
+                    _ => return Edit::Ignored,
+                }
+                Edit::Move
+            } else if k.modifiers.contains(KeyModifiers::ALT) {
+                Edit::Ignored
+            } else {
+                text.insert(*cur, c);
+                *cur += c.len_utf8();
+                Edit::Mutate
+            }
+        }
+        KeyCode::Backspace => {
+            if *cur > 0 {
+                let p = prev_boundary(text, *cur);
+                text.drain(p..*cur);
+                *cur = p;
+                Edit::Mutate
+            } else {
+                Edit::Move
+            }
+        }
+        KeyCode::Delete => {
+            if *cur < text.len() {
+                let n = next_boundary(text, *cur);
+                text.drain(*cur..n);
+                Edit::Mutate
+            } else {
+                Edit::Move
+            }
+        }
+        KeyCode::Left => {
+            *cur = prev_boundary(text, *cur);
+            Edit::Move
+        }
+        KeyCode::Right => {
+            *cur = next_boundary(text, *cur);
+            Edit::Move
+        }
+        KeyCode::Home => {
+            *cur = 0;
+            Edit::Move
+        }
+        KeyCode::End => {
+            *cur = text.len();
+            Edit::Move
+        }
+        _ => Edit::Ignored,
+    }
+}
+
+/// Byte offset where the token under `cur` starts — the char after
+/// the last whitespace before the cursor (0 at buffer start).
+fn token_start(text: &str, cur: usize) -> usize {
+    text[..cur].rfind(char::is_whitespace).map_or(0, |i| {
+        i + text[i..].chars().next().map_or(1, |c| c.len_utf8())
+    })
+}
+
+/// Byte offset where the token under `cur` ends — the next
+/// whitespace at/after the cursor, or buffer end.
+fn token_end(text: &str, cur: usize) -> usize {
+    text[cur..]
+        .find(char::is_whitespace)
+        .map_or(text.len(), |i| cur + i)
+}
+
+/// Collapse raw search hits to one row per package — the index
+/// returns every retained version, so without this a 3-version
+/// package renders 3 near-identical rows. Groups by `(name, scope)`
+/// in first-seen order and keeps the newest version
+/// ([`version_cmp`]); the survivor is a real index entry, so
+/// `reg_selected`, `installed_label_for`, and the detail page's
+/// versions-focus (`file`-matched `← current`) all keep working.
+/// Returns the rows plus a parallel per-package version count —
+/// `>1` renders `· N versions` in the name cell.
+fn dedupe_search_results(results: Vec<RegistryEntry>) -> (Vec<RegistryEntry>, Vec<usize>) {
+    let mut rows: Vec<RegistryEntry> = Vec::new();
+    let mut counts: Vec<usize> = Vec::new();
+    let mut slots: std::collections::HashMap<(String, Option<String>), usize> =
+        std::collections::HashMap::new();
+    for e in results {
+        let key = (e.name.clone(), e.scope.clone());
+        match slots.get(&key).copied() {
+            Some(i) => {
+                counts[i] += 1;
+                if version_cmp(e.version.as_deref(), rows[i].version.as_deref())
+                    == Ordering::Greater
+                {
+                    rows[i] = e;
+                }
+            }
+            None => {
+                slots.insert(key, rows.len());
+                rows.push(e);
+                counts.push(1);
+            }
+        }
+    }
+    (rows, counts)
+}
+
+/// Order two version labels for "newest wins" — `None` sorts lowest;
+/// parseable versions go through [`version_str_cmp`].
+fn version_cmp(a: Option<&str>, b: Option<&str>) -> Ordering {
+    match (a, b) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (Some(x), Some(y)) => version_str_cmp(x, y),
+    }
+}
+
+/// Split a version label into `(numeric core, prerelease tail)` —
+/// `+build` metadata is dropped per semver; the `-` tail keeps its
+/// leading dash for the string compare.
+fn version_split(v: &str) -> (&str, &str) {
+    let no_build = v.split('+').next().unwrap_or(v);
+    match no_build.find('-') {
+        Some(i) => (&no_build[..i], &no_build[i..]),
+        None => (no_build, ""),
+    }
+}
+
+/// A small semver approximation for version ordering — the `semver`
+/// crate isn't a tamias-tui dep, and the index itself only
+/// string-sorts versions (where `0.9.0` would wrongly beat
+/// `0.10.0`). The numeric core compares segment-wise; a bare release
+/// outranks its `-prerelease`; remaining tails compare as strings.
+fn version_str_cmp(a: &str, b: &str) -> Ordering {
+    let (ac, at) = version_split(a);
+    let (bc, bt) = version_split(b);
+    let mut ai = ac.split('.');
+    let mut bi = bc.split('.');
+    loop {
+        match (ai.next(), bi.next()) {
+            (None, None) => break,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(x), Some(y)) => {
+                let ord = match (x.parse::<u64>(), y.parse::<u64>()) {
+                    (Ok(p), Ok(q)) => p.cmp(&q),
+                    _ => x.cmp(y),
+                };
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+        }
+    }
+    match (at.is_empty(), bt.is_empty()) {
+        (true, false) => return Ordering::Greater,
+        (false, true) => return Ordering::Less,
+        _ => {}
+    }
+    at.cmp(bt)
 }
 
 /// The whole TUI state.
@@ -591,6 +858,13 @@ pub struct Model {
     /// ([`Model::recent_installed`]) — `j`/`k`/wheel move it, `Enter`
     /// opens the highlighted entry's package page.
     pub home_sel: usize,
+    /// `recent_installed` cache — the `installed_at`-desc top-8 index
+    /// order, rebuilt on reload instead of re-sorted per call/frame.
+    recent: Vec<usize>,
+    /// `(name, scope)` → installed version label, sorted by key —
+    /// rebuilt on reload; the Registry pane's per-row `· installed`
+    /// marker and the package page's marker query it per frame.
+    installed_labels: Vec<((String, Option<String>), String)>,
     /// Label of the selected row before the last rebuild — keeps the
     /// cursor on the same package across reloads.
     sel_label: Option<String>,
@@ -601,9 +875,24 @@ pub struct Model {
     pub mode: Mode,
     /// `/` input buffer (the filter text while typing).
     pub input: String,
+    /// Cursor into `input` — Filter and Search share the buffer, so
+    /// they share the cursor (only one is active at a time).
+    input_cur: usize,
     /// `:` command-line buffer — separate from `input` so a filter
     /// draft isn't clobbered.
     pub cmdline: String,
+    /// Cursor into `cmdline` — a byte offset kept on a char boundary
+    /// by the shared [`line_edit`] helpers.
+    cmd_cur: usize,
+    /// `:` history — most recent first, session-scoped, deduped
+    /// against consecutive repeats, capped at [`CMD_HIST_CAP`].
+    cmd_history: VecDeque<String>,
+    /// History recall cursor — `Some(i)` indexes `cmd_history`
+    /// (0 = newest); `None` = editing a fresh line.
+    cmd_hist: Option<usize>,
+    /// The buffer stashed when recall began — `Down` past the newest
+    /// entry restores it.
+    cmd_draft: String,
     /// Live `:` completions for the token under the cursor
     /// ([`crate::complete`]) — refreshed on every buffer edit.
     pub cmd_completions: Vec<crate::complete::Candidate>,
@@ -612,6 +901,8 @@ pub struct Model {
     pub cmd_sel: usize,
     /// Prompt buffer (`p`/`i`/`:registry` text entry).
     pub prompt_buf: String,
+    /// Cursor into `prompt_buf`.
+    prompt_cur: usize,
     /// Status-bar message (last action / error) — expires after
     /// [`STATUS_TTL`] unless it's an error (errors are sticky).
     pub status: String,
@@ -644,6 +935,10 @@ pub struct Model {
     /// maps onto [`Model::recent_installed`]. `Rect::default()` when
     /// Home isn't the drawn pane or the list is empty.
     pub home_area: Rect,
+    /// The log view's block rect from the last frame (sidebar or
+    /// overlay) — wheel events inside it scroll the log while
+    /// `mode` is [`Mode::Log`]. `Rect::default()` until drawn.
+    pub log_area: Rect,
 
     // --- worker jobs (phase 2/3) ---
     /// Job → UI channel; one worker thread per `spawn`.
@@ -652,17 +947,31 @@ pub struct Model {
     work_rx: Receiver<Msg>,
     /// The running job's label (`None` = idle) — drives the spinner.
     pub busy: Option<String>,
-    /// Op log — phase lines, warnings, results; the log strip shows
-    /// the tail.
+    /// The running [`Job`] itself — `Done` arms read it to decide
+    /// whether the store/services views need a refresh (read-only
+    /// jobs skip both). Cleared alongside `busy`.
+    busy_job: Option<Job>,
+    /// Op log — phase lines, warnings, results; the `L` sidebar
+    /// (or its narrow-terminal overlay fallback) shows the history.
     pub log: VecDeque<String>,
     /// Confirm/consent dialog, if any.
     pub modal: Option<Modal>,
     /// Package page (`Enter` on an Installed row or Registry result)
     /// — see [`Detail`].
     pub detail: Option<Detail>,
-    /// Page scroll offset — `j`/`k`/arrows move it while `detail` is
-    /// open; clamped to the body height each frame.
+    /// The pane an `open_label_detail` page was opened from (Home or
+    /// Services) — [`Model::close_detail`] restores it so Esc lands
+    /// back where `Enter` was pressed, not always on Installed.
+    /// `None` for pages opened on their own pane (Installed/Registry
+    /// `Enter`) and cleared by every pane switch.
+    detail_origin: Option<Pane>,
+    /// Page scroll offset — `j`/`k`/arrows/wheel move it while
+    /// `detail` is open; clamped to the body height each frame.
     pub detail_scroll: usize,
+    /// Last frame's max `detail_scroll` (body lines minus the body
+    /// area) — `G` jumps straight to the bottom; `draw_detail`
+    /// refreshes it every frame the page is open.
+    pub(crate) detail_max_scroll: usize,
     /// Versions-focus mode on a Registry package page — `v` toggles
     /// it once the sibling-version list has landed; while set, `j`/`k`
     /// move [`Model::versions_sel`] instead of scrolling the page and
@@ -672,20 +981,25 @@ pub struct Model {
     /// Cursor into the page's `versions` list while `versions_focus`
     /// is set — clamped to the list length on every move.
     pub versions_sel: usize,
-    /// Log-overlay scroll offset — the top line of `log` on screen
+    /// Log-view scroll offset — the top line of `log` on screen
     /// while `mode` is [`Mode::Log`]; clamped to the view each frame
     /// like `detail_scroll`.
     pub log_scroll: usize,
-    /// Inner height of the log overlay as last drawn — `PgUp`/`PgDn`
+    /// Inner height of the log view as last drawn — `PgUp`/`PgDn`
     /// page by it and `open_log` aims the tail at it (0 until the
     /// first frame).
     pub(crate) log_view_h: usize,
 
     // --- registry pane ---
-    /// Last search results.
+    /// Last search results — deduped to one row per `(name, scope)`
+    /// package (the newest version survives; see
+    /// [`dedupe_search_results`]).
     pub reg_results: Vec<RegistryEntry>,
     /// Cursor into `reg_results`.
     pub reg_sel: usize,
+    /// Version multiplicity per `reg_results` row — parallel vec;
+    /// `>1` renders `· N versions` in the name cell.
+    pub reg_version_counts: Vec<usize>,
     /// The live query — `/` edits it via `input`; debounced search.
     pub reg_query: String,
     /// `:registry` override — `None` → config/env routing.
@@ -707,8 +1021,9 @@ pub struct Model {
     pub svc_rows: Vec<ServiceRow>,
     /// Cursor into `svc_rows`.
     pub svc_sel: usize,
-    /// Services rows are stale — pane entry, unit mutations, and
-    /// `:services` set it; `tick` turns it into a refresh job.
+    /// Services rows are stale — pane entry, unit mutations,
+    /// `:services`, and mutating-job completions set it; `tick`
+    /// turns it into a refresh job from any pane.
     pub svc_stale: bool,
     /// Last services-refresh failure.
     pub svc_err: Option<String>,
@@ -716,7 +1031,7 @@ pub struct Model {
     /// kills it; quitting the app kills it too.
     pub stream_child: Option<Arc<Mutex<Child>>>,
 
-    // --- manifest pane (phase 5) ---
+    // --- project pane (phase 5) ---
     /// The project manifest path the deps form edits.
     pub manifest_path: PathBuf,
     /// The parsed project manifest (`deps:` editable; the rest is
@@ -727,10 +1042,13 @@ pub struct Model {
     /// Cursor into `project.deps`.
     pub man_sel: usize,
 
-    // --- author pane (phase 6) ---
+    // --- publish pane (phase 6) ---
     /// Configured registry names for the publish picker — loaded on
     /// pane entry (`ops::registry_names`).
     pub author_regs: Vec<(String, String)>,
+    /// Registry names for `:` completion (`:registry`, `:publish`'s
+    /// registry arg) — refreshed on every store `reload`.
+    reg_names: Vec<String>,
 }
 
 impl Model {
@@ -746,14 +1064,22 @@ impl Model {
             pane: Pane::Home,
             sel: 0,
             home_sel: 0,
+            recent: Vec::new(),
+            installed_labels: Vec::new(),
             sel_label: None,
             filter: String::new(),
             mode: Mode::Normal,
             input: String::new(),
+            input_cur: 0,
             cmdline: String::new(),
+            cmd_cur: 0,
+            cmd_history: VecDeque::new(),
+            cmd_hist: None,
+            cmd_draft: String::new(),
             cmd_completions: Vec::new(),
             cmd_sel: usize::MAX,
             prompt_buf: String::new(),
+            prompt_cur: 0,
             status: String::new(),
             status_at: Instant::now(),
             status_err: false,
@@ -765,19 +1091,24 @@ impl Model {
             viewport_top: 0,
             tabs_area: None,
             home_area: Rect::default(),
+            log_area: Rect::default(),
             work_tx,
             work_rx,
             busy: None,
+            busy_job: None,
             log: VecDeque::new(),
             modal: None,
             detail: None,
+            detail_origin: None,
             detail_scroll: 0,
+            detail_max_scroll: 0,
             versions_focus: false,
             versions_sel: 0,
             log_scroll: 0,
             log_view_h: 0,
             reg_results: Vec::new(),
             reg_sel: 0,
+            reg_version_counts: Vec::new(),
             reg_query: String::new(),
             reg_target: None,
             reg_target_label: "default".to_string(),
@@ -786,7 +1117,10 @@ impl Model {
             search_inflight: None,
             svc_rows: Vec::new(),
             svc_sel: 0,
-            svc_stale: true,
+            // Lazy: pane entry, `:services`, unit mutations, and
+            // mutating-job completions set it — `tick` fires the
+            // refresh wherever the user happens to be.
+            svc_stale: false,
             svc_err: None,
             stream_child: None,
             manifest_path: PathBuf::from("tamias.yaml"),
@@ -794,6 +1128,7 @@ impl Model {
             man_err: None,
             man_sel: 0,
             author_regs: Vec::new(),
+            reg_names: Vec::new(),
         };
         m.reload();
         Ok(m)
@@ -826,15 +1161,25 @@ impl Model {
             }
         }
         self.rebuild_sel(keep.as_deref(), at);
+        self.rebuild_derived();
         // The recent list shrank under the cursor (uninstall, or a
         // fresh install reordering it) — clamp like every other sel.
         let n = self.recent_installed().len();
         self.home_sel = if n == 0 { 0 } else { self.home_sel.min(n - 1) };
         self.arm_watch();
         self.load_manifest();
+        // Registry names feed `:` completion — refresh with the rest
+        // of the reload so `:registry`/`:publish` args stay current.
+        self.reg_names = ops::registry_names(&self.ctx)
+            .into_iter()
+            .map(|(name, _)| name)
+            // The `publish.default → x`/`search.default → x` pseudo
+            // rows aren't registries a `:registry` target can name.
+            .filter(|n| !n.contains('→'))
+            .collect();
     }
 
-    /// (Re)read the project manifest for the Manifest pane — a tiny
+    /// (Re)read the project manifest for the Project pane — a tiny
     /// file read, cheap enough for the event loop (same posture as the
     /// detail view's `entry.manifest()`). Runs on every reload so
     /// dep edits — ours or another `tamias add`'s — show up without a
@@ -878,9 +1223,10 @@ impl Model {
         }
         self.drain_work();
         // A stale Services table becomes a refresh job — pane entry,
-        // unit mutations, and `:services` all set the flag; `busy`
-        // gates it so refreshes never queue behind ops.
-        if self.pane == Pane::Services && self.svc_stale && self.busy.is_none() {
+        // unit mutations, `:services`, and mutating-job completions
+        // all set the flag; `busy` serializes it so refreshes never
+        // queue behind ops, and the refresh runs from any pane.
+        if self.svc_stale && self.busy.is_none() {
             self.svc_stale = false;
             self.spawn(Job::ServicesRefresh);
         }
@@ -945,9 +1291,10 @@ impl Model {
             return;
         }
         self.busy = Some(job.label());
+        self.busy_job = Some(job.clone());
         let ctx = self.ctx.clone();
         let tx = self.work_tx.clone();
-        let j = job.clone();
+        let j = job;
         if j.is_stream() {
             // Stream jobs own a child + reader threads; the handle
             // comes back as Msg::StreamChild for `x` to kill.
@@ -985,6 +1332,7 @@ impl Model {
                 Msg::Log(line) => self.push_log(line),
                 Msg::Consent(job, reason) => {
                     self.busy = None;
+                    self.busy_job = None;
                     self.modal = Some(Modal::Consent { job, reason });
                 }
                 Msg::StreamChild(child) => {
@@ -1012,15 +1360,33 @@ impl Model {
                     }
                 }
                 Msg::Done(Ok(Outcome::Text(text))) => {
+                    // Only mutating jobs invalidate the store/services
+                    // views — verify/doctor/registries/pack/publish/
+                    // stream exits are read-only and skip the reload.
+                    let mutating = self.busy_job.as_ref().is_some_and(Job::mutates);
                     self.busy = None;
+                    self.busy_job = None;
                     self.stream_child = None;
-                    self.svc_stale = true;
-                    self.push_log(format!("ok — {text}"));
-                    self.say(text);
-                    self.reload();
+                    if mutating {
+                        self.svc_stale = true;
+                    }
+                    // Reports (doctor, registries) arrive `\n`-joined —
+                    // first line to the status bar, every line its own
+                    // log entry instead of one giant wrapped row.
+                    let mut lines = text.lines();
+                    let first = lines.next().unwrap_or("done");
+                    self.push_log(format!("ok — {first}"));
+                    self.say(first.to_string());
+                    for line in lines {
+                        self.push_log(line.to_string());
+                    }
+                    if mutating {
+                        self.reload();
+                    }
                 }
                 Msg::Done(Ok(Outcome::Search { target, results })) => {
                     self.busy = None;
+                    self.busy_job = None;
                     // Drop stale hits — the query moved on while the
                     // search was in flight; the debounce will refire.
                     let fresh = self
@@ -1030,24 +1396,39 @@ impl Model {
                     self.search_inflight = None;
                     if fresh {
                         self.reg_target_label = target;
-                        self.reg_results = results;
+                        let (rows, counts) = dedupe_search_results(results);
+                        self.reg_results = rows;
+                        self.reg_version_counts = counts;
                         self.reg_sel = 0;
                         self.reg_err = None;
                         let n = self.reg_results.len();
-                        self.push_log(format!("search {:?}: {n} result(s)", self.reg_query));
+                        let versions: usize = self.reg_version_counts.iter().sum();
+                        self.push_log(format!(
+                            "search {:?}: {n} package(s) · {versions} version(s)",
+                            self.reg_query
+                        ));
                     }
                 }
                 Msg::Done(Ok(Outcome::Services(rows))) => {
                     self.busy = None;
+                    self.busy_job = None;
                     self.svc_err = None;
                     self.svc_rows = rows;
                     self.svc_sel = self.svc_sel.min(self.svc_rows.len().saturating_sub(1));
                     self.push_log(format!("services: {} row(s)", self.svc_rows.len()));
                 }
                 Msg::Done(Err(e)) => {
+                    // A failed mutating job may have changed provider
+                    // state before erroring — mark services stale;
+                    // read-only failures (incl. a failed refresh
+                    // itself) must not re-arm the refresh.
+                    let mutating = self.busy_job.as_ref().is_some_and(Job::mutates);
                     self.busy = None;
+                    self.busy_job = None;
                     self.stream_child = None;
-                    self.svc_stale = true;
+                    if mutating {
+                        self.svc_stale = true;
+                    }
                     if self.pane == Pane::Services {
                         self.svc_err = Some(e.clone());
                     }
@@ -1076,11 +1457,19 @@ impl Model {
     }
 
     /// Spawn the current `reg_query` search (skips empty queries —
-    /// the pane shows its hint instead).
+    /// the pane shows its hint instead). While a job holds `busy`,
+    /// `spawn` would refuse and the query would be lost — re-arm the
+    /// debounce instead so [`Model::maybe_search`] retries once the
+    /// job lands.
     fn fire_search(&mut self) {
+        if self.busy.is_some() {
+            self.search_typed_at = Some(Instant::now());
+            return;
+        }
         let query = self.reg_query.trim().to_string();
         if query.is_empty() {
             self.reg_results.clear();
+            self.reg_version_counts.clear();
             self.reg_err = None;
             self.search_inflight = None;
             return;
@@ -1099,7 +1488,7 @@ impl Model {
         self.fire_search();
     }
 
-    /// One line into the op log (capped). While the log overlay is
+    /// One line into the op log (capped). While the log view is
     /// parked at the tail it follows new lines; scrolled up it stays
     /// put (`G` jumps back down).
     fn push_log(&mut self, line: String) {
@@ -1117,8 +1506,10 @@ impl Model {
     // --- selection ---
 
     /// Indices of the rows passing the `/` filter, in store order.
-    /// The filter is a case-insensitive substring over the label,
-    /// source ref, kind, and resolved sha — everything the row shows.
+    /// The filter is a case-insensitive substring over what the row
+    /// shows — label, kind, source ref, description, sealed badge.
+    /// Provenance (`resolved`/`digest`) is deliberately excluded:
+    /// hex fragments would match nearly everything.
     pub fn visible(&self) -> Vec<usize> {
         let needle = self.filter.to_lowercase();
         self.entries
@@ -1131,12 +1522,11 @@ impl Model {
                 let rec = &r.entry.record;
                 let sealed = if r.sealed { " sealed" } else { "" };
                 let hay = format!(
-                    "{} {} {} {} {}{}",
+                    "{} {} {} {}{}",
                     r.entry.label(),
                     rec.kind.as_deref().unwrap_or(""),
                     rec.source_ref,
-                    rec.resolved,
-                    rec.digest,
+                    rec.description.as_deref().unwrap_or(""),
                     sealed
                 )
                 .to_lowercase();
@@ -1160,19 +1550,11 @@ impl Model {
 
     /// Indices into `entries` for the Home pane's "recently installed"
     /// list — `installed_at` desc (stable, so ties keep the store's
-    /// label order), top 8. The renderer and the `home_sel` cursor
-    /// share this ordering so they can never disagree.
-    pub fn recent_installed(&self) -> Vec<usize> {
-        let mut idx: Vec<usize> = (0..self.entries.len()).collect();
-        idx.sort_by(|&a, &b| {
-            self.entries[b]
-                .entry
-                .record
-                .installed_at
-                .cmp(&self.entries[a].entry.record.installed_at)
-        });
-        idx.truncate(8);
-        idx
+    /// label order), top 8. Cached by [`Model::rebuild_derived`] on
+    /// reload; the renderer and the `home_sel` cursor share this
+    /// ordering so they can never disagree.
+    pub fn recent_installed(&self) -> &[usize] {
+        &self.recent
     }
 
     /// The recent-install row under the Home cursor, if any.
@@ -1187,21 +1569,59 @@ impl Model {
     /// show (`0.2.0`, or the resolved-sha short form when the record
     /// is unversioned). `None` when no store entry matches; version
     /// may differ from the registry row's — that's the point.
+    /// Binary-searches the [`Model::installed_labels`] cache rebuilt
+    /// on reload — O(log n), no per-row scan per frame.
     pub fn installed_label_for(&self, name: &str, scope: Option<&str>) -> Option<String> {
-        self.entries.iter().find_map(|r| {
-            let rec = &r.entry.record;
-            if rec.name == name && rec.scope.as_deref() == scope {
-                Some(rec.version.clone().unwrap_or_else(|| {
+        self.installed_labels
+            .binary_search_by(|probe| {
+                probe
+                    .0
+                     .0
+                    .as_str()
+                    .cmp(name)
+                    .then_with(|| probe.0 .1.as_deref().cmp(&scope))
+            })
+            .ok()
+            .map(|i| self.installed_labels[i].1.clone())
+    }
+
+    /// Rebuild the per-reload derived caches — the sorted
+    /// `(name, scope)` → version-label table [`Model::installed_label_for`]
+    /// searches and the [`Model::recent`] ordering. Called at the end
+    /// of `reload`; tests that plant `entries` directly call it too.
+    fn rebuild_derived(&mut self) {
+        // Every (name, scope) → label pair, sorted by key; the stable
+        // sort keeps store order inside equal keys and `dedup_by`
+        // keeps the first — the same row the old linear `find_map`
+        // returned.
+        let mut labels: Vec<((String, Option<String>), String)> = self
+            .entries
+            .iter()
+            .map(|r| {
+                let rec = &r.entry.record;
+                let label = rec.version.clone().unwrap_or_else(|| {
                     let sha = rec
                         .resolved
                         .strip_prefix("sha256:")
                         .unwrap_or(&rec.resolved);
                     sha.chars().take(12).collect()
-                }))
-            } else {
-                None
-            }
-        })
+                });
+                ((rec.name.clone(), rec.scope.clone()), label)
+            })
+            .collect();
+        labels.sort_by(|a, b| a.0.cmp(&b.0));
+        labels.dedup_by(|a, b| a.0 == b.0);
+        self.installed_labels = labels;
+        let mut idx: Vec<usize> = (0..self.entries.len()).collect();
+        idx.sort_by(|&a, &b| {
+            self.entries[b]
+                .entry
+                .record
+                .installed_at
+                .cmp(&self.entries[a].entry.record.installed_at)
+        });
+        idx.truncate(8);
+        self.recent = idx;
     }
 
     /// The Services row under the cursor.
@@ -1271,6 +1691,9 @@ impl Model {
                     (self.home_sel as isize + delta).clamp(0, n as isize - 1) as usize
                 };
             }
+            // Publish has no list — j/k used to slide the hidden
+            // Installed cursor; say so instead of moving nothing.
+            Pane::Author => self.say("nothing to select on this pane"),
             _ => {
                 let len = self.visible().len();
                 if len == 0 {
@@ -1285,7 +1708,9 @@ impl Model {
     fn switch_pane(&mut self, pane: Pane) {
         self.pane = pane;
         self.detail = None;
+        self.detail_origin = None;
         self.detail_scroll = 0;
+        self.detail_max_scroll = 0;
         self.versions_focus = false;
         self.versions_sel = 0;
         self.sel_label = self.selected().map(|r| r.entry.label());
@@ -1293,10 +1718,10 @@ impl Model {
             // Services entry marks the table stale — `tick` fires the
             // refresh once the worker frees up.
             Pane::Services => self.svc_stale = true,
-            // Manifest entry re-reads the project manifest — a tiny
+            // Project entry re-reads the project manifest — a tiny
             // file read, same posture as the detail view.
             Pane::Manifest => self.load_manifest(),
-            // Author entry refreshes the configured-registry list.
+            // Publish entry refreshes the configured-registry list.
             Pane::Author => self.author_regs = ops::registry_names(&self.ctx),
             _ => {}
         }
@@ -1345,10 +1770,9 @@ impl Model {
     /// when already open.
     fn toggle_detail(&mut self) {
         if self.detail.is_some() {
-            self.detail = None;
-            self.detail_scroll = 0;
-            self.versions_focus = false;
-            self.versions_sel = 0;
+            // Same close as esc/h/← — restores the origin pane a
+            // Home/Services `Enter` recorded.
+            self.close_detail();
             return;
         }
         match self.pane {
@@ -1389,22 +1813,44 @@ impl Model {
             }
         }
         self.detail_scroll = 0;
+        self.detail_max_scroll = 0;
         self.versions_focus = false;
         self.versions_sel = 0;
     }
 
     /// `Enter` on Home — open the highlighted recent install's package
-    /// page. The page verbs (`v`/`u`/`p`/`r`/`c`/`d`) key off `pane`,
-    /// and `toggle_detail` builds `Detail::Installed` from `selected()`
-    /// — so the clean route is the Installed pane itself: switch
-    /// there, park the row cursor on the entry (dropping a stale `/`
-    /// filter that would hide it), then run the normal detail path.
-    /// Esc-back lands on the Installed table rather than Home — the
-    /// deliberate trade-off for reusing the whole detail surface.
+    /// page through [`Model::open_label_detail`].
     fn open_home_detail(&mut self) {
         let Some(label) = self.home_selected().map(|r| r.entry.label()) else {
             return;
         };
+        self.open_label_detail(&label);
+    }
+
+    /// `Enter` on a Services row — open the owning package's page.
+    /// Same route as Home's recents: the detail verbs are pane-gated
+    /// to Installed, so the pane switches and the normal detail path
+    /// runs. A package missing from the store gets a hint instead of
+    /// a page (rows come from the store, so this is a stale-table
+    /// edge, not the common path).
+    fn open_service_detail(&mut self) {
+        let Some(label) = self.svc_selected().map(|r| r.package.clone()) else {
+            return;
+        };
+        if !self.open_label_detail(&label) {
+            self.say("package not in the installed list — `R` refreshes services");
+        }
+    }
+
+    /// Shared tail of the Home/Services `Enter` paths — park the
+    /// Installed cursor on `label`'s row (dropping a stale `/`
+    /// filter that would hide it) and open its package page through
+    /// [`Model::toggle_detail`]. The origin pane is recorded so
+    /// [`Model::close_detail`] lands back on it — Esc/Enter-close
+    /// return to Home or Services rather than always Installed.
+    /// Returns `false` when no visible row matches; the caller
+    /// decides what to say.
+    fn open_label_detail(&mut self, label: &str) -> bool {
         let mut vis = self.visible();
         let mut pos = vis.iter().position(|&i| {
             self.entries
@@ -1412,10 +1858,12 @@ impl Model {
                 .is_some_and(|r| r.entry.label() == label)
         });
         if pos.is_none() && !self.filter.is_empty() {
-            // The filter is an Installed-pane artifact — Home can't
-            // show it hiding the target, so drop it and retry.
+            // The filter is an Installed-pane artifact — the origin
+            // pane can't show it hiding the target, so drop it and
+            // retry.
             self.filter.clear();
             self.input.clear();
+            self.input_cur = 0;
             vis = self.visible();
             pos = vis.iter().position(|&i| {
                 self.entries
@@ -1423,10 +1871,17 @@ impl Model {
                     .is_some_and(|r| r.entry.label() == label)
             });
         }
-        let Some(pos) = pos else { return };
+        let Some(pos) = pos else {
+            return false;
+        };
+        let origin = self.pane;
         self.switch_pane(Pane::Installed);
         self.sel = pos;
         self.toggle_detail();
+        if self.detail.is_some() {
+            self.detail_origin = Some(origin);
+        }
+        true
     }
 
     /// Kick off the background sibling-versions fetch for a registry
@@ -1453,11 +1908,13 @@ impl Model {
 
     // --- confirms / prompts ---
 
-    /// Open the confirm modal for a mutating job on `name` — the body
+    /// Open the confirm modal for a mutating `job` — the title is the
+    /// job's own label (`install nine:tamias@0.3.0 — sure? [y/n]`), so
+    /// the dialog always names exactly what `y` will mutate. The body
     /// warns about driver teardown when the record's kind isn't
     /// `files` (serve's remove rule, surfaced up front).
-    fn confirm_job(&mut self, verb: &str, job: Job) {
-        // Resolve the entry for the teardown warning + label.
+    fn confirm_job(&mut self, job: Job) {
+        // Resolve the entry for the teardown warning.
         let name = match &job {
             Job::Remove(n) | Job::Update { name: n, .. } | Job::Pin { name: n, .. } => n.clone(),
             _ => String::new(),
@@ -1474,7 +1931,7 @@ impl Model {
             }
         }
         self.modal = Some(Modal::Confirm {
-            title: format!("{verb} — sure? [y/n]"),
+            title: format!("{} — sure? [y/n]", job.label()),
             body,
             job,
         });
@@ -1490,6 +1947,16 @@ impl Model {
         }
     }
 
+    /// `n`/`esc` on a modal — cancels (the safe default). A declined
+    /// driver-consent install says so on the status bar instead of
+    /// vanishing silently.
+    fn modal_no(&mut self) {
+        if matches!(self.modal, Some(Modal::Consent { .. })) {
+            self.say("install declined — bundled drivers not allowed");
+        }
+        self.modal = None;
+    }
+
     /// Run a `p`/`i`/`:registry` prompt's buffer.
     fn run_prompt(&mut self) {
         let Some(kind) = (match &self.mode {
@@ -1501,31 +1968,26 @@ impl Model {
         let text = self.prompt_buf.trim().to_string();
         self.mode = Mode::Normal;
         self.prompt_buf.clear();
+        self.prompt_cur = 0;
         match kind {
             PromptKind::Pin { name } => {
                 if text.is_empty() {
                     self.say_err("pin: empty ref");
                 } else {
-                    self.confirm_job(
-                        "pin",
-                        Job::Pin {
-                            name,
-                            reference: text,
-                        },
-                    );
+                    self.confirm_job(Job::Pin {
+                        name,
+                        reference: text,
+                    });
                 }
             }
             PromptKind::InstallRef => {
                 if text.is_empty() {
                     self.say_err("install: empty ref");
                 } else {
-                    self.confirm_job(
-                        "install",
-                        Job::Install {
-                            reference: text,
-                            allow_drivers: false,
-                        },
-                    );
+                    self.confirm_job(Job::Install {
+                        reference: text,
+                        allow_drivers: false,
+                    });
                 }
             }
             PromptKind::RegistryTarget => {
@@ -1545,7 +2007,9 @@ impl Model {
                 if text.is_empty() {
                     self.say_err("add dep: empty ref");
                 } else {
-                    self.spawn(Job::AddDep {
+                    // Same confirm posture as the sibling mutating
+                    // verbs — the title names the ref being added.
+                    self.confirm_job(Job::AddDep {
                         reference: text,
                         allow_drivers: false,
                     });
@@ -1555,23 +2019,17 @@ impl Model {
                 if text.is_empty() {
                     self.say_err("set dep: empty ref");
                 } else {
-                    self.confirm_job(
-                        &format!("set dep {old} → {text}"),
-                        Job::SetDep {
-                            old,
-                            new: text,
-                            allow_drivers: false,
-                        },
-                    );
+                    self.confirm_job(Job::SetDep {
+                        old,
+                        new: text,
+                        allow_drivers: false,
+                    });
                 }
             }
             PromptKind::DeployConfig { name } => {
                 // Empty answer = no driver config, same as `:deploy`.
                 let config = if text.is_empty() { None } else { Some(text) };
-                self.confirm_job(
-                    &format!("deploy {name}"),
-                    Job::ProviderDeploy { name, config },
-                );
+                self.confirm_job(Job::ProviderDeploy { name, config });
             }
             PromptKind::PackSpec => {
                 let mut it = text.split_whitespace();
@@ -1593,13 +2051,10 @@ impl Model {
                 if dir.is_empty() {
                     self.say_err("publish: empty spec — usage: dir [registry]");
                 } else {
-                    self.confirm_job(
-                        &format!("publish {dir}"),
-                        Job::Publish {
-                            dir: dir.to_string(),
-                            registry: registry.map(str::to_string),
-                        },
-                    );
+                    self.confirm_job(Job::Publish {
+                        dir: dir.to_string(),
+                        registry: registry.map(str::to_string),
+                    });
                 }
             }
         }
@@ -1613,13 +2068,10 @@ impl Model {
     fn install_registry_entry(&mut self, entry: RegistryEntry) {
         match ops::entry_install_ref(&self.ctx, &entry, self.reg_target.as_deref()) {
             Ok(reference) => {
-                self.confirm_job(
-                    "install",
-                    Job::Install {
-                        reference,
-                        allow_drivers: false,
-                    },
-                );
+                self.confirm_job(Job::Install {
+                    reference,
+                    allow_drivers: false,
+                });
             }
             Err(e) => self.say_err(format!("{e} — `:registry <name>` picks another target")),
         }
@@ -1771,13 +2223,10 @@ impl Model {
     /// `u` — update the selected entry from its recorded ref.
     fn verb_update(&mut self) {
         if let Some(label) = self.selected_label() {
-            self.confirm_job(
-                "update",
-                Job::Update {
-                    name: label,
-                    allow_drivers: false,
-                },
-            );
+            self.confirm_job(Job::Update {
+                name: label,
+                allow_drivers: false,
+            });
         }
     }
 
@@ -1785,6 +2234,7 @@ impl Model {
     fn verb_pin(&mut self) {
         if let Some(label) = self.selected_label() {
             self.prompt_buf.clear();
+            self.prompt_cur = 0;
             self.mode = Mode::Prompt(PromptKind::Pin { name: label });
         }
     }
@@ -1792,20 +2242,13 @@ impl Model {
     /// `x` — remove confirm (teardown warning for non-`files`).
     fn verb_remove(&mut self) {
         if let Some(label) = self.selected_label() {
-            self.confirm_job("remove", Job::Remove(label));
+            self.confirm_job(Job::Remove(label));
         }
     }
 
     /// `c`/`C` — cache clean confirm (>30d / all).
     fn verb_cache_clean(&mut self, all: bool) {
-        self.confirm_job(
-            if all {
-                "cache clean --all"
-            } else {
-                "cache clean >30d"
-            },
-            Job::CacheClean { all },
-        );
+        self.confirm_job(Job::CacheClean { all });
     }
 
     /// `d` — doctor summary.
@@ -1820,6 +2263,7 @@ impl Model {
             Pane::Registry => self.install_registry_result(),
             _ => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::InstallRef);
             }
         }
@@ -1846,29 +2290,24 @@ impl Model {
             _ => None,
         };
         if let Some(action) = action {
-            self.confirm_job(
-                unit_action_word(action),
-                Job::UnitAction {
-                    unit: row.unit.clone(),
-                    action,
-                },
-            );
+            self.confirm_job(Job::UnitAction {
+                unit: row.unit.clone(),
+                action,
+            });
             return;
         }
         match key {
             'd' => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::DeployConfig {
                     name: row.package.clone(),
                 });
             }
             'x' => {
-                self.confirm_job(
-                    &format!("uninstall {}", row.package),
-                    Job::ProviderUninstall {
-                        name: row.package.clone(),
-                    },
-                );
+                self.confirm_job(Job::ProviderUninstall {
+                    name: row.package.clone(),
+                });
             }
             't' => self.spawn(Job::Logs {
                 name: row.package.clone(),
@@ -1892,40 +2331,35 @@ impl Model {
         }
     }
 
-    // --- Manifest pane verbs ---
+    // --- Project pane verbs ---
 
     /// `a`/`x`/`d`/`e`/`s` on the deps form — add/remove/set-ref/sync.
     fn man_verb(&mut self, key: char) {
         match key {
             'a' => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::AddDep);
             }
             // `s` reconciles the whole `deps:` set (`tamias sync`) —
             // confirm first like the other mutating verbs. `S` is the
             // lock-spec variant (`tamias sync --from-lock`).
-            's' | 'S' => self.confirm_job(
-                if key == 'S' {
-                    "sync --from-lock"
-                } else {
-                    "sync deps"
-                },
-                Job::Sync {
-                    allow_drivers: false,
-                    from_lock: key == 'S',
-                },
-            ),
+            's' | 'S' => self.confirm_job(Job::Sync {
+                allow_drivers: false,
+                from_lock: key == 'S',
+            }),
             // `d`/`x` both drop the dep (the proposal's two remove
             // keys); `a` adds, `e` edits the ref.
             'x' | 'd' => match self.dep_selected() {
                 Some(dep) => {
-                    self.confirm_job("remove dep", Job::RemoveDep { reference: dep });
+                    self.confirm_job(Job::RemoveDep { reference: dep });
                 }
                 None => self.say_err("no dep selected"),
             },
             'e' => match self.dep_selected() {
                 Some(old) => {
                     self.prompt_buf.clear();
+                    self.prompt_cur = 0;
                     self.mode = Mode::Prompt(PromptKind::SetDep { old });
                 }
                 None => self.say_err("no dep selected"),
@@ -1935,17 +2369,19 @@ impl Model {
         }
     }
 
-    // --- Author pane verbs ---
+    // --- Publish pane verbs ---
 
-    /// `p`/`P`/`r`/`R` on the Author pane — pack/publish/registries.
+    /// `p`/`P`/`r`/`R` on the Publish pane — pack/publish/registries.
     fn author_verb(&mut self, key: char) {
         match key {
             'p' => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::PackSpec);
             }
             'P' => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::PublishSpec);
             }
             'r' => self.spawn(Job::Registries),
@@ -1971,47 +2407,42 @@ impl Model {
             Ok(Cmd::Help) => self.mode = Mode::Help,
             Ok(Cmd::Log) => self.open_log(),
             Ok(Cmd::Install(reference)) => {
-                self.confirm_job(
-                    "install",
-                    Job::Install {
-                        reference,
-                        allow_drivers: false,
-                    },
-                );
+                self.confirm_job(Job::Install {
+                    reference,
+                    allow_drivers: false,
+                });
             }
             Ok(Cmd::Remove(name)) => {
-                self.confirm_job("remove", Job::Remove(name));
+                self.confirm_job(Job::Remove(name));
+            }
+            Ok(Cmd::Uninstall(name)) => {
+                self.confirm_job(Job::ProviderUninstall { name });
             }
             Ok(Cmd::Verify(name)) => self.spawn(Job::Verify(name)),
             Ok(Cmd::Update(name)) => match name {
-                Some(name) => self.confirm_job(
-                    "update",
-                    Job::Update {
-                        name,
-                        allow_drivers: false,
-                    },
-                ),
+                Some(name) => self.confirm_job(Job::Update {
+                    name,
+                    allow_drivers: false,
+                }),
                 None => {
                     let n = self.entries.len();
                     if n == 0 {
                         self.say_err("nothing installed — `i` installs by ref");
                     } else {
-                        self.confirm_job(
-                            "update all",
-                            Job::UpdateAll {
-                                allow_drivers: false,
-                            },
-                        );
+                        self.confirm_job(Job::UpdateAll {
+                            allow_drivers: false,
+                        });
                     }
                 }
             },
             Ok(Cmd::Pin(name, reference)) => {
-                self.confirm_job("pin", Job::Pin { name, reference });
+                self.confirm_job(Job::Pin { name, reference });
             }
             Ok(Cmd::Search(query)) => {
                 self.switch_pane(Pane::Registry);
                 self.reg_query = query.clone();
                 self.input = query;
+                self.input_cur = self.input.len();
                 self.search_typed_at = None;
                 self.search_now();
             }
@@ -2025,6 +2456,7 @@ impl Model {
                 }
                 None => {
                     self.prompt_buf.clear();
+                    self.prompt_cur = 0;
                     self.mode = Mode::Prompt(PromptKind::RegistryTarget);
                 }
             },
@@ -2039,12 +2471,13 @@ impl Model {
                     self.say_err(format!("unknown service verb '{action}'"));
                     return;
                 };
-                self.confirm_job(unit_action_word(action), Job::UnitAction { unit, action });
+                self.confirm_job(Job::UnitAction { unit, action });
             }
             Ok(Cmd::Run { package, service }) => self.spawn(Job::RunService { package, service }),
             Ok(Cmd::Logs { name, follow }) => self.spawn(Job::Logs { name, follow }),
             Ok(Cmd::Deploy(name)) => {
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 self.mode = Mode::Prompt(PromptKind::DeployConfig { name });
             }
             Ok(Cmd::Pack(spec)) => {
@@ -2067,13 +2500,10 @@ impl Model {
                 if dir.is_empty() {
                     self.say_err("publish: empty spec — usage: dir [registry]");
                 } else {
-                    self.confirm_job(
-                        &format!("publish {dir}"),
-                        Job::Publish {
-                            dir: dir.to_string(),
-                            registry: registry.map(str::to_string),
-                        },
-                    );
+                    self.confirm_job(Job::Publish {
+                        dir: dir.to_string(),
+                        registry: registry.map(str::to_string),
+                    });
                 }
             }
             Ok(Cmd::Registries) => self.spawn(Job::Registries),
@@ -2082,35 +2512,134 @@ impl Model {
                 self.say("manifest reloaded");
             }
             Ok(Cmd::Sync { from_lock }) => {
-                self.confirm_job(
-                    if from_lock {
-                        "sync --from-lock"
-                    } else {
-                        "sync deps"
-                    },
-                    Job::Sync {
-                        allow_drivers: false,
-                        from_lock,
-                    },
-                );
+                self.confirm_job(Job::Sync {
+                    allow_drivers: false,
+                    from_lock,
+                });
             }
             Err(e) if e.is_empty() => {}
             Err(e) => self.say_err(e),
         }
     }
 
-    /// Recompute the `:` completion candidates for the current
-    /// buffer; any edit resets the Tab selection to "none applied".
+    /// Recompute the `:` completion candidates for the buffer *up to
+    /// the cursor* (completion is cursor-relative, not whole-line);
+    /// any edit resets the Tab selection to "none applied".
     fn refresh_completions(&mut self) {
-        self.cmd_completions = crate::complete::complete(&self.cmdline);
+        let line = self.cmd_prefix();
+        let dynamic = self.dynamic_candidates();
+        self.cmd_completions = crate::complete::complete_with(&line, &dynamic);
         self.cmd_sel = usize::MAX;
     }
 
+    /// `cmdline[..cmd_cur]` clamped to a char boundary — the text the
+    /// completer sees (the token under the cursor is its last word).
+    fn cmd_prefix(&self) -> String {
+        let mut cur = self.cmd_cur.min(self.cmdline.len());
+        while !self.cmdline.is_char_boundary(cur) {
+            cur -= 1;
+        }
+        self.cmdline[..cur].to_string()
+    }
+
+    /// Dynamic completion candidates for the arg position under the
+    /// cursor — the model-backed half of [`crate::complete_with`].
+    /// Tokenizes the same way the completer does (verb = token 0,
+    /// token index = arg position) and picks a source per verb:
+    ///
+    /// - package-name verbs (`remove`/`verify`/`update`/`uninstall`/
+    ///   `deploy`/`install`/`run`/`logs`/`pin` first arg) → installed
+    ///   entry labels;
+    /// - `registry` and `publish`'s registry arg → configured
+    ///   registry names;
+    /// - `service`'s unit arg → unit base names, `run`'s service arg
+    ///   → that package's provider service names.
+    ///
+    /// Dedupe + [`CMD_COMPLETION_CAP`] cap; inserts carry a trailing
+    /// space so the next arg position is already open.
+    fn dynamic_candidates(&self) -> Vec<crate::complete::Candidate> {
+        use crate::complete::Candidate;
+        let body = self
+            .cmd_prefix()
+            .trim_start()
+            .trim_start_matches(':')
+            .trim_start()
+            .to_string();
+        let tokens: Vec<&str> = body.split_whitespace().collect();
+        if tokens.is_empty() {
+            return Vec::new();
+        }
+        let fresh = body.chars().last().is_none_or(|c| c.is_whitespace());
+        let position = if fresh {
+            tokens.len()
+        } else {
+            tokens.len() - 1
+        };
+        if position == 0 {
+            return Vec::new();
+        }
+        let verb = tokens[0].to_lowercase();
+        let labels = |hint: &str| -> Vec<Candidate> {
+            self.entries
+                .iter()
+                .map(|r| Candidate {
+                    insert: format!("{} ", r.entry.label()),
+                    hint: hint.to_string(),
+                })
+                .collect()
+        };
+        let names = |hint: &str, names: Vec<String>| -> Vec<Candidate> {
+            names
+                .into_iter()
+                .map(|n| Candidate {
+                    insert: format!("{n} "),
+                    hint: hint.to_string(),
+                })
+                .collect()
+        };
+        let out = match verb.as_str() {
+            // First-arg package positions.
+            "remove" | "uninstall" | "verify" | "update" | "u" | "deploy" | "install" | "i"
+            | "logs" | "pin" | "p"
+                if position == 1 =>
+            {
+                labels("installed")
+            }
+            // `:run <pkg> [service]` — arg 1 is the package, arg 2
+            // the provider service within it.
+            "run" if position == 1 => labels("installed"),
+            "run" if position == 2 => {
+                let pkg = tokens.get(1).copied().unwrap_or("");
+                let svcs: Vec<String> = self
+                    .svc_rows
+                    .iter()
+                    .filter(|r| r.package == pkg)
+                    .map(|r| r.service.clone())
+                    .collect();
+                names("provider service", svcs)
+            }
+            // `:service <verb> <unit>` — position 2 is the unit.
+            "service" if position >= 2 => names(
+                "unit",
+                self.svc_rows.iter().map(|r| r.unit.clone()).collect(),
+            ),
+            // `:registry <name>` and `:publish <dir> [registry]`.
+            "registry" if position == 1 => names("registry", self.reg_names.clone()),
+            "publish" if position == 2 => names("registry", self.reg_names.clone()),
+            _ => Vec::new(),
+        };
+        // Dedupe on insert, cap — prefix filtering is complete_with's.
+        let mut seen = std::collections::HashSet::new();
+        out.into_iter()
+            .filter(|c| seen.insert(c.insert.clone()))
+            .take(CMD_COMPLETION_CAP)
+            .collect()
+    }
+
     /// `Tab`/`BackTab` in `:` mode — cycle the candidate list and
-    /// replace the trailing token with the pick. The token boundary
-    /// is the last whitespace (or buffer start); a trailing space
-    /// means we're completing a fresh token, so `rfind` lands on it
-    /// and the replace is a pure append.
+    /// replace the token under the cursor with the pick. The token
+    /// bounds come from [`token_start`]/[`token_end`] at `cmd_cur`,
+    /// so completion works mid-line, not just at the end.
     fn apply_completion(&mut self, forward: bool) {
         let n = self.cmd_completions.len();
         if n == 0 {
@@ -2131,20 +2660,90 @@ impl Model {
             Some(c) => c.insert.clone(),
             None => return,
         };
-        let start = self.cmdline.rfind(char::is_whitespace).map_or(0, |i| i + 1);
-        self.cmdline.replace_range(start.., &insert);
+        let mut cur = self.cmd_cur.min(self.cmdline.len());
+        while !self.cmdline.is_char_boundary(cur) {
+            cur -= 1;
+        }
+        let start = token_start(&self.cmdline, cur);
+        let end = token_end(&self.cmdline, cur);
+        self.cmdline.replace_range(start..end, &insert);
+        self.cmd_cur = start + insert.len();
         self.refresh_completions();
     }
 
-    /// `:` mode keys — `Enter` runs, `esc` drops the line, `Tab`
-    /// cycles [`crate::complete`] candidates into the buffer.
+    /// Push the submitted line onto `:` history — non-empty only,
+    /// consecutive duplicates collapse (like readline).
+    fn record_command(&mut self) {
+        let line = self.cmdline.trim().to_string();
+        if line.is_empty() {
+            return;
+        }
+        if self.cmd_history.front().is_some_and(|f| *f == line) {
+            return;
+        }
+        self.cmd_history.push_front(line);
+        while self.cmd_history.len() > CMD_HIST_CAP {
+            self.cmd_history.pop_back();
+        }
+    }
+
+    /// `Up`/`Down` history recall — `Up` walks back (most recent
+    /// first), `Down` forward; stepping past the newest entry
+    /// restores the line that was being edited when recall began.
+    fn hist_move(&mut self, down: bool) {
+        if self.cmd_history.is_empty() {
+            return;
+        }
+        match self.cmd_hist {
+            None => {
+                if down {
+                    return;
+                }
+                self.cmd_draft = self.cmdline.clone();
+                self.cmd_hist = Some(0);
+            }
+            Some(i) => {
+                if down {
+                    if i == 0 {
+                        self.cmdline = std::mem::take(&mut self.cmd_draft);
+                        self.cmd_hist = None;
+                        self.cmd_cur = self.cmdline.len();
+                        self.refresh_completions();
+                        return;
+                    }
+                    self.cmd_hist = Some(i - 1);
+                } else {
+                    let last = self.cmd_history.len() - 1;
+                    self.cmd_hist = Some((i + 1).min(last));
+                }
+            }
+        }
+        if let Some(i) = self.cmd_hist {
+            if let Some(line) = self.cmd_history.get(i) {
+                self.cmdline = line.clone();
+            }
+        }
+        self.cmd_cur = self.cmdline.len();
+        self.refresh_completions();
+    }
+
+    /// `:` mode keys — `Enter` runs (and records history), `esc`
+    /// drops the line, `Tab`/`BackTab` cycle [`crate::complete`]
+    /// candidates into the buffer at the cursor, `Up`/`Down` recall
+    /// history, everything else is shared line editing.
     fn key_command(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
+                self.record_command();
+                self.cmd_hist = None;
                 self.mode = Mode::Normal;
                 self.cmd_completions.clear();
                 let quit = matches!(self.cmdline.trim(), "q" | "quit" | "q!");
-                if !quit {
+                if quit {
+                    // Same teardown as bare `q`/Ctrl-C — a stream
+                    // child (`run`/`logs -f`) must not outlive quit.
+                    self.kill_stream();
+                } else {
                     self.run_command();
                 }
                 quit
@@ -2152,12 +2751,17 @@ impl Model {
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
                 self.cmdline.clear();
+                self.cmd_cur = 0;
+                self.cmd_hist = None;
                 self.cmd_completions.clear();
                 false
             }
-            KeyCode::Backspace => {
-                self.cmdline.pop();
-                self.refresh_completions();
+            KeyCode::Up => {
+                self.hist_move(false);
+                false
+            }
+            KeyCode::Down => {
+                self.hist_move(true);
                 false
             }
             KeyCode::Tab => {
@@ -2168,83 +2772,122 @@ impl Model {
                 self.apply_completion(false);
                 false
             }
-            KeyCode::Char(c) => {
-                self.cmdline.push(c);
-                self.refresh_completions();
+            _ => {
+                // Any consumed edit — including cursor moves —
+                // refreshes completions (they're cursor-relative).
+                if line_edit(&mut self.cmdline, &mut self.cmd_cur, &k) != Edit::Ignored {
+                    self.refresh_completions();
+                }
                 false
             }
-            _ => false,
+        }
+    }
+
+    /// Post-edit hook shared by `key_filter`/`key_search`/`paste` —
+    /// push `input` into the mode's real field and refresh.
+    fn after_input_edit(&mut self) {
+        match self.mode {
+            Mode::Filter => {
+                self.filter = self.input.clone();
+                self.rebuild_sel(None, self.sel);
+            }
+            Mode::Search => {
+                self.reg_query = self.input.clone();
+                self.search_typed_at = Some(Instant::now());
+            }
+            _ => {}
+        }
+    }
+
+    /// Insert `text` at a char-boundary-clamped cursor.
+    fn insert_at(text: &mut String, cur: &mut usize, s: &str) {
+        *cur = (*cur).min(text.len());
+        while !text.is_char_boundary(*cur) {
+            *cur -= 1;
+        }
+        text.insert_str(*cur, s);
+        *cur += s.len();
+    }
+
+    /// Bracketed paste (`Event::Paste`) — insert the text at the
+    /// cursor of whichever text mode is active; a no-op elsewhere.
+    /// Newlines are kept verbatim (the modes are single-line — a
+    /// pasted `\n` just becomes part of the buffer text).
+    pub fn paste(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        match self.mode {
+            Mode::Command => {
+                Self::insert_at(&mut self.cmdline, &mut self.cmd_cur, text);
+                self.refresh_completions();
+            }
+            Mode::Filter | Mode::Search => {
+                Self::insert_at(&mut self.input, &mut self.input_cur, text);
+                self.after_input_edit();
+            }
+            Mode::Prompt(_) => {
+                Self::insert_at(&mut self.prompt_buf, &mut self.prompt_cur, text);
+            }
+            _ => {}
         }
     }
 
     /// `/` mode keys on Installed — live filter; `Enter` keeps it,
-    /// `esc` clears.
+    /// `esc` clears. Editing keys are the shared [`line_edit`] set.
     fn key_filter(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
                 self.mode = Mode::Normal;
                 self.input.clear();
+                self.input_cur = 0;
                 false
             }
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
                 self.input.clear();
+                self.input_cur = 0;
                 self.filter.clear();
                 self.rebuild_sel(None, self.sel);
                 false
             }
-            KeyCode::Backspace => {
-                self.input.pop();
-                self.filter = self.input.clone();
-                self.rebuild_sel(None, self.sel);
+            _ => {
+                if line_edit(&mut self.input, &mut self.input_cur, &k) == Edit::Mutate {
+                    self.after_input_edit();
+                }
                 false
             }
-            KeyCode::Char(c) => {
-                self.input.push(c);
-                self.filter = self.input.clone();
-                self.rebuild_sel(None, self.sel);
-                false
-            }
-            _ => false,
         }
     }
 
     /// `/` mode keys on Registry — the query edits `reg_query` live;
     /// `tick` debounces the actual search, `Enter` fires it now.
+    /// `esc` only leaves the mode — the query and results are the
+    /// pane's persistent state (pane switches keep them too).
     fn key_search(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
                 self.mode = Mode::Normal;
                 self.input.clear();
+                self.input_cur = 0;
                 self.search_now();
                 false
             }
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
-                self.input.clear();
-                self.reg_query.clear();
-                self.reg_results.clear();
-                self.reg_err = None;
-                self.search_typed_at = None;
                 false
             }
-            KeyCode::Backspace => {
-                self.input.pop();
-                self.reg_query = self.input.clone();
-                self.search_typed_at = Some(Instant::now());
+            _ => {
+                if line_edit(&mut self.input, &mut self.input_cur, &k) == Edit::Mutate {
+                    self.after_input_edit();
+                }
                 false
             }
-            KeyCode::Char(c) => {
-                self.input.push(c);
-                self.reg_query = self.input.clone();
-                self.search_typed_at = Some(Instant::now());
-                false
-            }
-            _ => false,
         }
     }
 
     /// `p`/`i`/`:registry` prompt keys — text entry; `Enter` runs.
+    /// Editing keys are the shared [`line_edit`] set.
     fn key_prompt(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
@@ -2254,22 +2897,21 @@ impl Model {
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
                 self.prompt_buf.clear();
+                self.prompt_cur = 0;
                 false
             }
-            KeyCode::Backspace => {
-                self.prompt_buf.pop();
+            _ => {
+                let _ = line_edit(&mut self.prompt_buf, &mut self.prompt_cur, &k);
                 false
             }
-            KeyCode::Char(c) => {
-                self.prompt_buf.push(c);
-                false
-            }
-            _ => false,
         }
     }
 
     /// `?` overlay — any of `esc`/`?`/`q` closes.
     fn key_help(&mut self, k: KeyEvent) -> bool {
+        if chorded(&k) {
+            return false;
+        }
         match k.code {
             KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
                 self.mode = Mode::Normal;
@@ -2279,25 +2921,29 @@ impl Model {
         }
     }
 
-    /// Open the op-log overlay (`L`/`:log`) scrolled to the newest
-    /// lines — the strip only ever shows the tail, so the overlay
-    /// opens there too.
+    /// Open the op-log view (`L`/`:log`) scrolled to the newest
+    /// lines — it docks as a right sidebar (centered overlay under
+    /// ~50 cols), so it opens on the tail either way.
     fn open_log(&mut self) {
         self.mode = Mode::Log;
         self.log_scroll = self.log_max_scroll();
     }
 
     /// Top-line scroll offset that puts the log tail on screen —
-    /// `log.len() - 1` until `draw` reports the overlay's inner
+    /// `log.len() - 1` until `draw` reports the view's inner
     /// height, then the true bottom.
     fn log_max_scroll(&self) -> usize {
         self.log.len().saturating_sub(self.log_view_h.max(1))
     }
 
-    /// Log-overlay keys — scroll the op log; `esc`/`q`/`L` closes.
-    /// Everything else is swallowed while the overlay is up (same
-    /// posture as `key_help`).
+    /// Log-view keys — scroll the op log; `esc`/`q`/`L` closes.
+    /// Everything else is swallowed while the view is up (same
+    /// posture as `key_help`): the pane stays visible behind the
+    /// sidebar but takes no input — it's a view, not split focus.
     fn key_log(&mut self, k: KeyEvent) -> bool {
+        if chorded(&k) {
+            return false;
+        }
         match k.code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('L') => {
                 self.mode = Mode::Normal;
@@ -2324,31 +2970,45 @@ impl Model {
     }
 
     /// Modal keys — `y` confirms, `n`/`esc` cancels (default `n`).
-    /// Returns `true` when the key was consumed by the modal.
+    /// Chord-modified chars (Ctrl/Alt) never count — Ctrl+Y must not
+    /// confirm a destructive op. Returns `true` when the key was
+    /// consumed by the modal.
     fn key_modal(&mut self, k: KeyEvent) -> bool {
         if self.modal.is_none() {
             return false;
         }
         match k.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
+            KeyCode::Char('y') | KeyCode::Char('Y') if !chorded(&k) => {
                 self.modal_yes();
                 true
             }
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                self.modal = None;
+            KeyCode::Char('n') | KeyCode::Char('N') if !chorded(&k) => {
+                self.modal_no();
+                true
+            }
+            KeyCode::Esc => {
+                self.modal_no();
                 true
             }
             _ => true, // swallow everything else while a modal is up
         }
     }
 
-    /// Close the package page — the shared `esc`/`h`/`←`/`q` close;
-    /// also drops versions focus and resets both scroll/cursor state.
+    /// Close the package page — the shared `esc`/`h`/`←`/`q`/`Enter`
+    /// close; also drops versions focus, resets both scroll/cursor
+    /// state, and restores the origin pane a Home/Services `Enter`
+    /// recorded (a page opened on its own pane has none — the pane
+    /// stays put).
     fn close_detail(&mut self) {
+        let origin = self.detail_origin.take();
         self.detail = None;
         self.detail_scroll = 0;
+        self.detail_max_scroll = 0;
         self.versions_focus = false;
         self.versions_sel = 0;
+        if let Some(pane) = origin {
+            self.pane = pane;
+        }
     }
 
     /// One key event → `true` when the app should quit. Ctrl-C is
@@ -2372,6 +3032,12 @@ impl Model {
             Mode::Log => return self.key_log(k),
             Mode::Normal => {}
         }
+        // Ctrl/Alt chords never reach the pane verbs below — every
+        // `Char` arm is a plain keystroke (Shift arrives as the
+        // shifted char itself). Ctrl-C already force-quit above.
+        if matches!(k.code, KeyCode::Char(_)) && chorded(&k) {
+            return false;
+        }
         match k.code {
             // `q` backs out of an open package page first (same
             // close as esc/h/← — quitting from under a detail view
@@ -2393,10 +3059,12 @@ impl Model {
                 }
             }
             KeyCode::Enter => match self.pane {
-                // Home's recent list opens through the Installed
-                // pane (see `open_home_detail`).
+                // Home's recent list and Services rows both resolve
+                // to an installed package's page (see
+                // `open_home_detail`/`open_service_detail`).
                 Pane::Home => self.open_home_detail(),
                 Pane::Installed | Pane::Registry => self.toggle_detail(),
+                Pane::Services => self.open_service_detail(),
                 _ => {}
             },
             // Versions focus eats esc first — one level out (back to
@@ -2434,57 +3102,89 @@ impl Model {
                     self.sync_sel_label();
                 }
             }
-            KeyCode::Char('g') => match self.pane {
-                Pane::Home => self.home_sel = 0,
-                Pane::Registry => self.reg_sel = 0,
-                Pane::Services => self.svc_sel = 0,
-                Pane::Manifest => self.man_sel = 0,
-                _ => self.sel = 0,
-            },
-            KeyCode::Char('G') => match self.pane {
+            // g/G follow the visible cursor: versions focus jumps the
+            // version list, an open package page jumps its scroll —
+            // never the hidden row cursor underneath.
+            KeyCode::Char('g') => {
+                if self.versions_focused() {
+                    self.versions_sel = 0;
+                } else if self.detail.is_some() {
+                    self.detail_scroll = 0;
+                } else {
+                    match self.pane {
+                        Pane::Home => self.home_sel = 0,
+                        Pane::Registry => self.reg_sel = 0,
+                        Pane::Services => self.svc_sel = 0,
+                        Pane::Manifest => self.man_sel = 0,
+                        Pane::Author => self.say("nothing to select on this pane"),
+                        _ => self.sel = 0,
+                    }
+                }
+            }
+            KeyCode::Char('G') => {
+                if self.versions_focused() {
+                    self.versions_sel = self.versions_len().saturating_sub(1);
+                } else if self.detail.is_some() {
+                    self.detail_scroll = self.detail_max_scroll;
+                } else {
+                    match self.pane {
+                        Pane::Home => {
+                            self.home_sel = self.recent_installed().len().saturating_sub(1);
+                        }
+                        Pane::Registry => {
+                            self.reg_sel = self.reg_results.len().saturating_sub(1);
+                        }
+                        Pane::Services => {
+                            self.svc_sel = self.svc_rows.len().saturating_sub(1);
+                        }
+                        Pane::Manifest => {
+                            self.man_sel = self
+                                .project
+                                .as_ref()
+                                .map_or(0, |m| m.deps.len().saturating_sub(1));
+                        }
+                        Pane::Author => self.say("nothing to select on this pane"),
+                        _ => {
+                            self.sel = self.visible().len().saturating_sub(1);
+                            self.sync_sel_label();
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('/') => match self.pane {
                 Pane::Home => {
-                    self.home_sel = self.recent_installed().len().saturating_sub(1);
-                }
-                Pane::Registry => self.reg_sel = self.reg_results.len().saturating_sub(1),
-                Pane::Services => self.svc_sel = self.svc_rows.len().saturating_sub(1),
-                Pane::Manifest => {
-                    self.man_sel = self
-                        .project
-                        .as_ref()
-                        .map_or(0, |m| m.deps.len().saturating_sub(1));
-                }
-                _ => {
-                    self.sel = self.visible().len().saturating_sub(1);
-                    self.sync_sel_label();
-                }
-            },
-            KeyCode::Char('/') => {
-                if self.pane == Pane::Home {
                     // Home has no filter of its own — `/` is the way
                     // into registry search: switch panes and land in
                     // Search mode with an empty query.
                     self.switch_pane(Pane::Registry);
                     self.reg_query.clear();
                     self.reg_results.clear();
+                    self.reg_version_counts.clear();
                     self.reg_err = None;
                     self.input.clear();
+                    self.input_cur = 0;
                     self.mode = Mode::Search;
-                } else {
-                    self.mode = if self.pane == Pane::Registry {
-                        Mode::Search
-                    } else {
-                        Mode::Filter
-                    };
-                    self.input = if self.pane == Pane::Registry {
-                        self.reg_query.clone()
-                    } else {
-                        self.filter.clone()
-                    };
                 }
-            }
+                Pane::Registry => {
+                    self.mode = Mode::Search;
+                    self.input = self.reg_query.clone();
+                    self.input_cur = self.input.len();
+                }
+                Pane::Installed => {
+                    self.mode = Mode::Filter;
+                    self.input = self.filter.clone();
+                    self.input_cur = self.input.len();
+                }
+                // The `/` filter only exists on Installed — anywhere
+                // else it would edit hidden state, so say where it
+                // lives instead of silently mutating `self.filter`.
+                _ => self.say("filter is Installed-only — `2` jumps there"),
+            },
             KeyCode::Char(':') => {
                 self.mode = Mode::Command;
                 self.cmdline.clear();
+                self.cmd_cur = 0;
+                self.cmd_hist = None;
                 self.refresh_completions();
             }
             KeyCode::Char('F') => {
@@ -2508,12 +3208,11 @@ impl Model {
             }
             KeyCode::Char('v') if self.pane == Pane::Installed => self.verb_verify(),
             KeyCode::Char('u') if self.pane == Pane::Installed => self.verb_update(),
-            KeyCode::Char('U') if self.pane == Pane::Installed => self.confirm_job(
-                "update all",
-                Job::UpdateAll {
+            KeyCode::Char('U') if self.pane == Pane::Installed => {
+                self.confirm_job(Job::UpdateAll {
                     allow_drivers: false,
-                },
-            ),
+                })
+            }
             KeyCode::Char('p') if self.pane == Pane::Installed => self.verb_pin(),
             // `x` removes — the same destructive key as Services'
             // uninstall and Manifest's dep removal. (`x` with a live
@@ -2528,12 +3227,12 @@ impl Model {
             KeyCode::Char('i') => self.verb_install(),
             // Services-pane verbs route through `svc_verb` — the keys
             // don't collide with Installed's (pane-gated). `!` is
-            // restart: `r` stays exclusive to the Author pane's
+            // restart: `r` stays exclusive to the Publish pane's
             // registries report so the key keeps one meaning app-wide.
             KeyCode::Char(
                 c @ ('s' | 'S' | '!' | 'e' | 'E' | 'd' | 'x' | 't' | 'T' | 'n' | 'R'),
             ) if self.pane == Pane::Services => self.svc_verb(c),
-            // Manifest pane: add/remove/edit dep + sync + reload.
+            // Project pane: add/remove/edit dep + sync + reload.
             // (`S` is the `sync --from-lock` variant — `man_verb`
             // handles it; the route must let it through.)
             KeyCode::Char(c @ ('a' | 'x' | 'd' | 'e' | 's' | 'S' | 'R'))
@@ -2541,9 +3240,19 @@ impl Model {
             {
                 self.man_verb(c)
             }
-            // Author pane: pack/publish/registries.
+            // Publish pane: pack/publish/registries.
             KeyCode::Char(c @ ('p' | 'P' | 'r' | 'R')) if self.pane == Pane::Author => {
                 self.author_verb(c)
+            }
+            // Installed-only verbs pressed on a pane that doesn't
+            // bind them used to die silently (bare `v`/`u`/`p`/`x`/
+            // `c`/`d` on Registry, Home, Services' leftovers, …) —
+            // every pane-gated arm above already claimed its own.
+            KeyCode::Char(c @ ('v' | 'u' | 'U' | 'p' | 'x' | 'c' | 'C' | 'd')) => {
+                self.say(format!(
+                    "no '{c}' on {} — ? lists the keys",
+                    self.pane.label()
+                ));
             }
             KeyCode::Char('?') => self.mode = Mode::Help,
             // `L` opens the full op log — `l` (lowercase) stays pane
@@ -2555,16 +3264,45 @@ impl Model {
     }
 
     /// Mouse — wheel scrolls the selection, a click on the tab bar
-    /// switches panes, a click on a row selects it.
+    /// switches panes, a click on a row selects it. While the log
+    /// view is up it owns the pointer instead: the wheel inside its
+    /// rect scrolls the history and every other event is swallowed
+    /// (same posture as the swallowed keys).
     pub fn mouse(&mut self, ev: MouseEvent) {
+        if self.mode == Mode::Log {
+            if self.log_area.contains((ev.column, ev.row).into()) {
+                match ev.kind {
+                    MouseEventKind::ScrollUp => {
+                        self.log_scroll = self.log_scroll.saturating_sub(1);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        self.log_scroll = (self.log_scroll + 1).min(self.log_max_scroll());
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
         match ev.kind {
+            // Wheel scrolls the open package page's body — versions
+            // focus rides the same offset (`scroll_to_show` keeps the
+            // cursor row visible); otherwise it walks the pane's
+            // selection as before.
             MouseEventKind::ScrollUp => {
-                self.move_sel(-3);
-                self.sync_sel_label();
+                if self.detail.is_some() {
+                    self.detail_scroll = self.detail_scroll.saturating_sub(3);
+                } else {
+                    self.move_sel(-3);
+                    self.sync_sel_label();
+                }
             }
             MouseEventKind::ScrollDown => {
-                self.move_sel(3);
-                self.sync_sel_label();
+                if self.detail.is_some() {
+                    self.detail_scroll += 3;
+                } else {
+                    self.move_sel(3);
+                    self.sync_sel_label();
+                }
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 if let Some(tabs) = self.tabs_area {
@@ -2652,6 +3390,11 @@ mod tests {
             Cmd::Install("git:x#main".into())
         );
         assert_eq!(parse_command("remove w").unwrap(), Cmd::Remove("w".into()));
+        assert_eq!(
+            parse_command("uninstall @s/w@1").unwrap(),
+            Cmd::Uninstall("@s/w@1".into())
+        );
+        assert!(parse_command("uninstall").is_err());
         assert_eq!(parse_command("verify w").unwrap(), Cmd::Verify("w".into()));
         assert_eq!(parse_command("update").unwrap(), Cmd::Update(None));
         assert_eq!(
@@ -2888,6 +3631,7 @@ mod tests {
         for i in 0..10u64 {
             m.entries.push(store_row(&format!("p{i}"), i + 1));
         }
+        m.rebuild_derived();
         // Newest first, capped at 8 — p0/p1 (oldest) fall off.
         let recent = m.recent_installed();
         assert_eq!(recent.len(), 8);
@@ -2923,13 +3667,13 @@ mod tests {
             }
             other => panic!("expected installed page, got {other:?}"),
         }
-        // Esc closes the page onto the Installed table (documented
-        // trade-off — back does not return to Home).
+        // Esc closes the page and restores the origin pane — back
+        // lands on Home, where Enter was pressed.
         m.key(key(KeyCode::Esc));
         assert!(m.detail.is_none());
-        assert_eq!(m.pane, Pane::Installed);
+        assert_eq!(m.pane, Pane::Home);
         assert_eq!(
-            m.selected().map(|r| r.entry.record.name.as_str()),
+            m.home_selected().map(|r| r.entry.record.name.as_str()),
             Some("p8")
         );
     }
@@ -2974,6 +3718,7 @@ mod tests {
             size: None,
             sealed: false,
         });
+        m.rebuild_derived();
         assert_eq!(
             m.installed_label_for("w", Some("s")).as_deref(),
             Some("0.2.0")
@@ -3211,7 +3956,7 @@ mod tests {
             tamias_provider::UnitAction::Enable,
             tamias_provider::UnitAction::Disable,
         ] {
-            assert!(!unit_action_word(a).is_empty());
+            assert!(!crate::ops::unit_action_verb(a).is_empty());
         }
     }
 
@@ -3346,6 +4091,7 @@ mod tests {
         let _g = EnvGuard::enter(tmp.path());
         let c = tctx(tmp.path());
         let mut m = Model::open(&c).unwrap();
+        m.pane = Pane::Installed;
         // bare first alphabetically — its payload has no manifest, so
         // the detail page takes the manifest_err arm
         let bare = tmp.path().join("bare");
@@ -3521,11 +4267,11 @@ mod tests {
         assert_eq!(m.reg_query, "wid");
         key(&mut m, KeyCode::Backspace);
         assert_eq!(m.reg_query, "wi");
-        // Esc clears the query + results + debounce state
+        // Esc leaves search mode but keeps the query + results —
+        // clearing is `F`, not a mis-aimed esc.
         key(&mut m, KeyCode::Esc);
         assert_eq!(m.mode, Mode::Normal);
-        assert!(m.reg_query.is_empty());
-        assert!(m.reg_results.is_empty());
+        assert_eq!(m.reg_query, "wi");
         // retype + Enter → immediate search (real job, empty registry)
         m.reg_query = "w".into();
         m.reg_results = vec![reg_entry("1.0.0")];
@@ -3763,6 +4509,8 @@ mod tests {
         run_prompt(&mut m, PromptKind::AddDep, "");
         assert!(m.status_err);
         run_prompt(&mut m, PromptKind::AddDep, &w_ref);
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'y');
         settle(&mut m);
         assert!(
             m.project
@@ -4486,12 +5234,13 @@ mod tests {
         assert!(m.status.contains("already installed"), "{}", m.status);
     }
 
-    /// `L`/`:log` opens the op-log overlay on the tail; j/k and the
+    /// `L`/`:log` opens the op-log view (right sidebar, centered
+    /// overlay on narrow terminals) on the tail; j/k and the
     /// PgUp/PgDn page by the drawn view height, g/G jump the ends,
     /// and every other key is swallowed while it's up. New log lines
     /// follow only while parked at the bottom.
     #[test]
-    fn log_overlay_toggle_scroll_and_gating() {
+    fn log_view_toggle_scroll_and_gating() {
         let tmp = tempfile::tempdir().unwrap();
         let ctx = Ctx::new(
             tmp.path().join("store"),
@@ -4504,7 +5253,7 @@ mod tests {
         for i in 0..50 {
             m.push_log(format!("line {i}"));
         }
-        m.log_view_h = 10; // as `draw_log_overlay` would report
+        m.log_view_h = 10; // as `draw_log_view` would report
                            // `L` opens at the bottom (newest last).
         m.key(key(KeyCode::Char('L')));
         assert_eq!(m.mode, Mode::Log);
@@ -4551,7 +5300,7 @@ mod tests {
         m.key(key(KeyCode::Esc));
         assert_eq!(m.mode, Mode::Normal);
         // `:log` opens it through the command line — and `L` typed
-        // inside `:` is just text, not the overlay.
+        // inside `:` is just text, not the log view.
         m.key(key(KeyCode::Char(':')));
         assert_eq!(m.mode, Mode::Command);
         m.key(key(KeyCode::Char('L')));
@@ -4560,7 +5309,7 @@ mod tests {
         m.cmdline = "log".to_string();
         m.run_command();
         assert_eq!(m.mode, Mode::Log);
-        // An empty log still opens — the overlay draws its muted
+        // An empty log still opens — the view draws its muted
         // "no operations yet" line.
         let mut empty = Model::open(&ctx).unwrap();
         empty.key(key(KeyCode::Char('L')));
@@ -4610,6 +5359,7 @@ mod tests {
         for i in 0..4u64 {
             m.entries.push(store_row(&format!("p{i}"), i + 1));
         }
+        m.rebuild_derived();
         assert_eq!(m.pane, Pane::Home);
         // As `draw_home` would report: rows start at y=3, 4 rows tall.
         m.home_area = Rect::new(0, 3, 60, 4);
@@ -4640,5 +5390,783 @@ mod tests {
         m.home_area = Rect::default();
         m.mouse(click(4));
         assert_eq!(m.home_sel, 2);
+    }
+
+    /// A bare model on a temp store — the shared fixture for the
+    /// key/confirm/drain tests below.
+    fn bare_model() -> (tempfile::TempDir, Model) {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        (tmp, Model::open(&ctx).unwrap())
+    }
+
+    /// Ctrl/Alt chords never fire verbs: Ctrl+Y can't confirm a
+    /// modal, Ctrl+Q can't quit, Ctrl+X can't remove — while plain
+    /// and Shift-modified chars still work (Shift arrives as the
+    /// shifted char itself).
+    #[test]
+    fn modifier_chords_do_not_fire_verbs() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        // A confirm modal up: Ctrl+Y is swallowed, `y` confirms.
+        m.modal = Some(Modal::Confirm {
+            title: "remove w — sure? [y/n]".into(),
+            body: Vec::new(),
+            job: Job::Remove("w".into()),
+        });
+        assert!(!m.key(key(KeyCode::Char('y'), KeyModifiers::CONTROL)));
+        assert!(m.modal.is_some());
+        assert!(m.busy.is_none());
+        // Alt+Y likewise; plain `y` is the real confirm.
+        assert!(!m.key(key(KeyCode::Char('y'), KeyModifiers::ALT)));
+        assert!(m.modal.is_some());
+        m.key(key(KeyCode::Char('y'), KeyModifiers::NONE));
+        assert!(m.modal.is_none());
+        assert!(m.busy.is_some());
+        // Ctrl+Q at pane level is not the quit.
+        assert!(!m.key(key(KeyCode::Char('q'), KeyModifiers::CONTROL)));
+        // Ctrl+X on Installed doesn't open the remove confirm.
+        m.busy = None;
+        m.busy_job = None;
+        m.pane = Pane::Installed;
+        m.entries.push(store_row("w", 1));
+        m.key(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        assert!(m.modal.is_none());
+        assert!(m.busy.is_none());
+        // Shift+'U' still fires update-all — the shifted char is the
+        // input, SHIFT isn't a chord.
+        m.key(key(KeyCode::Char('U'), KeyModifiers::SHIFT));
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+    }
+
+    /// Every confirm title names its target — the job's own label —
+    /// and Manifest `a` (AddDep) confirms like its siblings.
+    #[test]
+    fn confirm_title_names_the_target() {
+        let (_tmp, mut m) = bare_model();
+        let title = |m: &Model| match &m.modal {
+            Some(Modal::Confirm { title, .. }) => title.clone(),
+            other => panic!("expected confirm modal, got {other:?}"),
+        };
+        // Install-by-ref prompt.
+        m.mode = Mode::Prompt(PromptKind::InstallRef);
+        m.prompt_buf = "nine:tamias@0.3.0".into();
+        m.run_prompt();
+        assert!(title(&m).contains("nine:tamias@0.3.0"), "{}", title(&m));
+        // `:remove` names the store label.
+        m.modal = None;
+        m.cmdline = "remove w@1.0.0".into();
+        m.run_command();
+        assert!(title(&m).contains("w@1.0.0"), "{}", title(&m));
+        // Manifest add-dep confirms (was a bare spawn) and names the ref.
+        m.modal = None;
+        m.mode = Mode::Prompt(PromptKind::AddDep);
+        m.prompt_buf = "git:x#main".into();
+        m.run_prompt();
+        let t = title(&m);
+        assert!(t.contains("git:x#main"), "{t}");
+        assert!(matches!(
+            m.modal,
+            Some(Modal::Confirm {
+                job: Job::AddDep { .. },
+                ..
+            })
+        ));
+    }
+
+    /// `:q`/`:quit` quit *and* kill a running stream child — same
+    /// teardown as bare `q`/Ctrl-C.
+    #[test]
+    fn colon_quit_kills_stream_child() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        // A real (portable) child — the test binary's own `--list`
+        // exits immediately; `kill` on it is a harmless no-op, what
+        // matters is the handle is taken and logged.
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        m.stream_child = Some(Arc::new(Mutex::new(child)));
+        m.key(key(KeyCode::Char(':')));
+        m.key(key(KeyCode::Char('q')));
+        assert!(m.key(key(KeyCode::Enter)));
+        assert!(m.stream_child.is_none());
+        assert!(m.log.iter().any(|l| l.contains("killed stream")));
+    }
+
+    /// `/` only filters where a filter exists: Installed → Filter,
+    /// Registry → Search, Home → the Registry jump; on the other
+    /// panes it says where the filter lives instead of editing
+    /// hidden state.
+    #[test]
+    fn slash_filter_is_gated_to_installed() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        for pane in [Pane::Services, Pane::Manifest, Pane::Author] {
+            m.pane = pane;
+            m.mode = Mode::Normal;
+            m.filter = "keep".into();
+            m.key(key(KeyCode::Char('/')));
+            assert_eq!(m.mode, Mode::Normal, "{pane:?}");
+            assert_eq!(m.filter, "keep", "{pane:?}");
+            assert!(
+                m.status.contains("Installed-only"),
+                "{pane:?}: {}",
+                m.status
+            );
+        }
+        m.pane = Pane::Installed;
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.mode, Mode::Filter);
+        m.key(key(KeyCode::Esc));
+        m.pane = Pane::Registry;
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.mode, Mode::Search);
+    }
+
+    /// A multi-line `Outcome::Text` (doctor/registries reports) lands
+    /// one line per log entry with the first on the status bar — and
+    /// a read-only job's `Done` skips the store reload + services
+    /// staleness a mutating job would trigger.
+    #[test]
+    fn done_text_splits_lines_and_readonly_skips_reload() {
+        let (tmp, mut m) = bare_model();
+        // A real (empty) store dir — a reload would rebuild
+        // `entries` from it and drop the planted row.
+        std::fs::create_dir_all(tmp.path().join("store")).unwrap();
+        m.entries.push(store_row("ghost", 1));
+        m.busy = Some("doctor".into());
+        m.busy_job = Some(Job::Doctor);
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Text(
+                "store ok\ncache ok\nregistry ok".into(),
+            ))))
+            .unwrap();
+        m.drain_work();
+        assert_eq!(m.status, "store ok");
+        assert!(m.busy.is_none());
+        assert!(m.entries.iter().any(|r| r.entry.record.name == "ghost"));
+        assert!(!m.svc_stale);
+        let tail: Vec<&str> = m.log.iter().rev().take(3).map(String::as_str).collect();
+        assert_eq!(tail, ["registry ok", "cache ok", "ok — store ok"]);
+        // The same Done for a mutating job reloads + marks services.
+        m.entries.push(store_row("ghost", 1));
+        m.busy = Some("remove ghost".into());
+        m.busy_job = Some(Job::Remove("ghost".into()));
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Text("removed ghost".into()))))
+            .unwrap();
+        m.drain_work();
+        assert!(m.entries.is_empty());
+        assert!(m.svc_stale);
+    }
+
+    /// `Enter` in registry search while a job holds `busy` doesn't
+    /// lose the query — the debounce re-arms and the search fires
+    /// once the job lands.
+    #[test]
+    fn search_enter_during_busy_rearms_debounce() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Registry;
+        m.busy = Some("install x".into());
+        m.reg_query = "wid".into();
+        m.search_now();
+        assert!(m.search_typed_at.is_some());
+        assert!(m.search_inflight.is_none());
+        // Job lands; the armed debounce fires the pending query.
+        m.busy = None;
+        m.search_typed_at = Some(Instant::now() - SEARCH_DEBOUNCE - Duration::from_millis(1));
+        m.maybe_search();
+        assert!(m.busy.is_some());
+        assert_eq!(m.search_inflight.as_deref(), Some("wid"));
+    }
+
+    /// `:services` (and any other stale marker) refreshes from any
+    /// pane — the Services-pane gate is gone; `busy` still serializes.
+    #[test]
+    fn services_refresh_runs_off_the_services_pane() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Home;
+        m.svc_stale = true;
+        m.tick();
+        assert_eq!(m.busy.as_deref(), Some("services refresh"));
+        // A second stale tick while busy queues nothing extra.
+        m.svc_stale = true;
+        m.tick();
+        assert_eq!(m.busy.as_deref(), Some("services refresh"));
+    }
+
+    /// Declining the bundled-driver consent modal is honest — `n`
+    /// and `esc` both land a status line instead of silence.
+    #[test]
+    fn consent_decline_says_so() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let consent = || Modal::Consent {
+            job: Job::Install {
+                reference: "./x".into(),
+                allow_drivers: false,
+            },
+            reason: "ships drivers/".into(),
+        };
+        m.modal = Some(consent());
+        m.key(key(KeyCode::Char('n')));
+        assert!(m.modal.is_none());
+        assert!(m.status.contains("declined"), "{}", m.status);
+        m.modal = Some(consent());
+        m.key(key(KeyCode::Esc));
+        assert!(m.modal.is_none());
+        assert!(m.status.contains("declined"), "{}", m.status);
+        // A plain Confirm cancel stays silent.
+        m.status.clear();
+        m.modal = Some(Modal::Confirm {
+            title: "remove w — sure?".into(),
+            body: Vec::new(),
+            job: Job::Remove("w".into()),
+        });
+        m.key(key(KeyCode::Char('n')));
+        assert!(m.modal.is_none());
+        assert!(!m.status.contains("declined"));
+    }
+
+    /// Search-mode `esc` exits without wiping the query/results —
+    /// they are the pane's persistent state, same as a pane switch.
+    #[test]
+    fn search_esc_keeps_query_and_results() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        m.pane = Pane::Registry;
+        m.reg_query = "wid".into();
+        m.reg_results = vec![reg_entry("1.0.0")];
+        m.reg_err = Some("warn".into());
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.mode, Mode::Search);
+        m.key(key(KeyCode::Esc));
+        assert_eq!(m.mode, Mode::Normal);
+        assert_eq!(m.reg_query, "wid");
+        assert_eq!(m.reg_results.len(), 1);
+        assert_eq!(m.reg_err.as_deref(), Some("warn"));
+    }
+
+    /// A raw search hit for the dedupe tests — `name`/`scope`/
+    /// `version` parameterized, everything else empty.
+    fn hit(name: &str, scope: Option<&str>, version: Option<&str>) -> RegistryEntry {
+        RegistryEntry {
+            name: name.into(),
+            scope: scope.map(str::to_string),
+            version: version.map(str::to_string),
+            kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
+            digest: String::new(),
+            signature: None,
+            publisher: None,
+            file: format!("{name}@{}", version.unwrap_or("?")),
+        }
+    }
+
+    /// Search hits collapse to one row per `(name, scope)` — the
+    /// newest version wins with numeric-aware ordering (`0.10.0` >
+    /// `0.9.0`, a bare release > its prerelease), first-seen row order
+    /// holds, and the parallel count feeds the `· N versions` cell.
+    #[test]
+    fn search_results_dedupe_to_latest_per_package() {
+        let results = vec![
+            hit("w", Some("s"), Some("0.9.0")),
+            hit("w", Some("s"), Some("0.10.0")),
+            hit("w", Some("s"), Some("0.10.0-rc.1")),
+            hit("x", None, Some("1.0.0")),
+            hit("w", None, Some("2.0.0")), // unscoped w — a different package
+        ];
+        let (rows, counts) = dedupe_search_results(results);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(counts, vec![3, 1, 1]);
+        assert_eq!(rows[0].scope.as_deref(), Some("s"));
+        assert_eq!(rows[0].version.as_deref(), Some("0.10.0"));
+        assert_eq!(rows[1].name, "x");
+        assert_eq!(rows[2].name, "w");
+        assert_eq!(rows[2].scope, None);
+        // A versionless hit loses to any versioned sibling.
+        let (rows, counts) =
+            dedupe_search_results(vec![hit("a", None, None), hit("a", None, Some("1.0.0"))]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(counts, vec![2]);
+        assert_eq!(rows[0].version.as_deref(), Some("1.0.0"));
+        // Empty input stays empty.
+        assert!(dedupe_search_results(Vec::new()).0.is_empty());
+    }
+
+    /// `Enter` on a Services row opens the owning package's detail
+    /// page — through the Installed pane, since the detail verbs are
+    /// pane-gated — with the row cursor parked on the package. A row
+    /// whose package isn't in the store gets a hint and stays put.
+    #[test]
+    fn services_enter_opens_package_detail() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let pkg = store_row("w", 1);
+        let label = pkg.entry.label();
+        m.entries.push(pkg);
+        m.pane = Pane::Services;
+        m.svc_rows = vec![
+            ServiceRow {
+                package: label,
+                service: "web".into(),
+                unit: "tamias-w.service".into(),
+                state: Some("active".into()),
+                exec: "w serve".into(),
+            },
+            ServiceRow {
+                package: "@s/ghost@9.9.9".into(),
+                service: "x".into(),
+                unit: "ghost.service".into(),
+                state: None,
+                exec: String::new(),
+            },
+        ];
+        // Row 0 → the installed package's page on the Installed pane.
+        m.key(key(KeyCode::Enter));
+        assert_eq!(m.pane, Pane::Installed);
+        match &m.detail {
+            Some(Detail::Installed { entry, .. }) => assert_eq!(entry.record.name, "w"),
+            other => panic!("expected installed page, got {other:?}"),
+        }
+        // Esc back restores the Services pane the page came from.
+        m.key(key(KeyCode::Esc));
+        assert!(m.detail.is_none());
+        assert_eq!(m.pane, Pane::Services);
+        // A service row whose package isn't installed says so and
+        // stays on Services.
+        m.pane = Pane::Services;
+        m.svc_sel = 1;
+        m.key(key(KeyCode::Enter));
+        assert_eq!(m.pane, Pane::Services);
+        assert!(m.detail.is_none());
+        assert!(
+            m.status.contains("not in the installed list"),
+            "{}",
+            m.status
+        );
+    }
+
+    // --- `:` line editing, history, dynamic completion ---
+
+    /// Type `s` into the `:` buffer char by char.
+    fn type_colon(m: &mut Model, s: &str) {
+        let key = |code, mods| KeyEvent::new(code, mods);
+        for c in s.chars() {
+            m.key(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+    }
+
+    /// `:` mode gets full line editing: arrows/Home/End move the
+    /// cursor, Backspace/Delete edit around it, Ctrl-A/E/U/W are the
+    /// readline chords — and unicode survives (cursor is a char
+    /// boundary, not a byte count).
+    #[test]
+    fn colon_line_editing() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "remove w");
+        assert_eq!(m.cmdline, "remove w");
+        assert_eq!(m.cmd_cur, 8);
+        // Left lands before 'w'; typing inserts there.
+        m.key(key(KeyCode::Left, none));
+        type_colon(&mut m, "X");
+        assert_eq!(m.cmdline, "remove Xw");
+        // Backspace removes before the cursor ('X'), not 'w'.
+        m.key(key(KeyCode::Backspace, none));
+        assert_eq!(m.cmdline, "remove w");
+        // Delete removes *at* the cursor — Left then Delete eats 'w'.
+        m.key(key(KeyCode::Delete, none));
+        assert_eq!(m.cmdline, "remove ");
+        // Home + type prepends; End jumps back.
+        m.key(key(KeyCode::Home, none));
+        type_colon(&mut m, ">");
+        assert_eq!(m.cmdline, ">remove ");
+        m.key(key(KeyCode::End, none));
+        assert_eq!(m.cmd_cur, m.cmdline.len());
+        // Ctrl-A is Home, Ctrl-E is End.
+        m.key(key(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        assert_eq!(m.cmd_cur, 0);
+        m.key(key(KeyCode::Char('e'), KeyModifiers::CONTROL));
+        assert_eq!(m.cmd_cur, m.cmdline.len());
+        // Ctrl-W kills back to the previous whitespace — ">remove "
+        // trims to ">remove" (no inner space), so the whole word goes.
+        m.key(key(KeyCode::Char('w'), KeyModifiers::CONTROL));
+        assert_eq!(m.cmdline, "");
+        // Ctrl-U clears the line outright.
+        m.key(key(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(m.cmdline, "");
+        assert_eq!(m.cmd_cur, 0);
+        // Unicode: 'é' is two bytes — Left/Right cross it as one
+        // char and Backspace at end eats it whole (no split char).
+        type_colon(&mut m, "café");
+        assert_eq!(m.cmdline, "café");
+        m.key(key(KeyCode::Left, none)); // cursor before 'é'
+        m.key(key(KeyCode::Right, none)); // back to end
+        m.key(key(KeyCode::Backspace, none));
+        assert_eq!(m.cmdline, "caf");
+        // Esc drops the line and resets the cursor.
+        m.key(key(KeyCode::Esc, none));
+        assert_eq!(m.mode, Mode::Normal);
+        assert_eq!(m.cmdline, "");
+    }
+
+    /// Ctrl-W word-kill semantics on a plain line.
+    #[test]
+    fn ctrl_w_kills_word_back() {
+        let mut text = String::from("foo bar baz");
+        let mut cur = text.len();
+        let k = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+        assert_eq!(line_edit(&mut text, &mut cur, &k('w')), Edit::Mutate);
+        assert_eq!(text, "foo bar ");
+        assert_eq!(cur, 8);
+        assert_eq!(line_edit(&mut text, &mut cur, &k('w')), Edit::Mutate);
+        assert_eq!(text, "foo ");
+        // Cursor mid-word kills only the fragment before it —
+        // "one two" with the cursor after 't' drops just the 't'.
+        let mut text = String::from("one two");
+        let mut cur = 5;
+        assert_eq!(line_edit(&mut text, &mut cur, &k('w')), Edit::Mutate);
+        assert_eq!(text, "one wo");
+        assert_eq!(cur, 4);
+    }
+
+    /// `:` history: Enter records, Up recalls newest-first, Down
+    /// walks forward and restores the in-progress draft.
+    #[test]
+    fn colon_history_recalls() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "r");
+        m.key(key(KeyCode::Enter, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "services");
+        m.key(key(KeyCode::Enter, none));
+        // Reopen — Up gives the most recent first.
+        m.key(key(KeyCode::Char(':'), none));
+        m.key(key(KeyCode::Up, none));
+        assert_eq!(m.cmdline, "services");
+        m.key(key(KeyCode::Up, none));
+        assert_eq!(m.cmdline, "r");
+        // Clamped at the oldest entry.
+        m.key(key(KeyCode::Up, none));
+        assert_eq!(m.cmdline, "r");
+        m.key(key(KeyCode::Down, none));
+        assert_eq!(m.cmdline, "services");
+        // Past the newest entry the draft (empty here) returns.
+        m.key(key(KeyCode::Down, none));
+        assert_eq!(m.cmdline, "");
+        // A typed draft is stashed and restored.
+        type_colon(&mut m, "draft");
+        m.key(key(KeyCode::Up, none));
+        assert_eq!(m.cmdline, "services");
+        m.key(key(KeyCode::Down, none));
+        assert_eq!(m.cmdline, "draft");
+        // Consecutive duplicates collapse.
+        m.key(key(KeyCode::Esc, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "services");
+        m.key(key(KeyCode::Enter, none));
+        assert_eq!(m.cmd_history.len(), 2);
+        assert_eq!(m.cmd_history[0].as_str(), "services");
+    }
+
+    /// Dynamic completion: `:remove <prefix>` offers installed
+    /// labels, `:service <verb> <u>` offers unit names, `:registry`
+    /// offers registry names — all prefix-filtered, Tab-spliced at
+    /// the cursor.
+    #[test]
+    fn colon_dynamic_completion() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.entries.push(store_row("widget", 1));
+        m.entries.push(store_row("gadget", 2));
+        m.svc_rows = vec![ServiceRow {
+            package: "widget@1".into(),
+            service: "web".into(),
+            unit: "tamias-widget-web".into(),
+            state: Some("active".into()),
+            exec: "w".into(),
+        }];
+        m.reg_names = vec!["mine".into(), "org".into()];
+        // Installed labels at a package arg position.
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "remove wid");
+        let inserts: Vec<String> = m.cmd_completions.iter().map(|c| c.insert.clone()).collect();
+        assert_eq!(inserts, vec!["widget@1 ".to_string()]);
+        // Tab splices at the cursor — replaces the partial token.
+        m.key(key(KeyCode::Tab, none));
+        assert_eq!(m.cmdline, "remove widget@1 ");
+        // `:uninstall` gets the same label candidates.
+        m.key(key(KeyCode::Esc, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "uninstall gad");
+        let inserts: Vec<String> = m.cmd_completions.iter().map(|c| c.insert.clone()).collect();
+        assert_eq!(inserts, vec!["gadget@2 ".to_string()]);
+        // `:service`'s unit position offers unit names.
+        m.key(key(KeyCode::Esc, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "service start tamias-w");
+        let inserts: Vec<String> = m.cmd_completions.iter().map(|c| c.insert.clone()).collect();
+        assert_eq!(inserts, vec!["tamias-widget-web ".to_string()]);
+        // `:registry` offers configured names.
+        m.key(key(KeyCode::Esc, none));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "registry m");
+        let inserts: Vec<String> = m.cmd_completions.iter().map(|c| c.insert.clone()).collect();
+        assert_eq!(inserts, vec!["mine ".to_string()]);
+    }
+
+    /// Completion works mid-line: the cursor, not the buffer end,
+    /// decides which token is completed and where the insert lands.
+    #[test]
+    fn colon_completion_at_cursor() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.entries.push(store_row("widget", 1));
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "remove wid extra");
+        // Move the cursor back into the 'wid' token.
+        for _ in 0..6 {
+            m.key(key(KeyCode::Left, none)); // "extra" is 5 + space
+        }
+        // Now inside/at-end of 'wid' — completions reflect 'wid'.
+        assert!(
+            m.cmd_completions.iter().any(|c| c.insert == "widget@1 "),
+            "{:?}",
+            m.cmd_completions
+        );
+        m.key(key(KeyCode::Tab, none));
+        assert_eq!(m.cmdline, "remove widget@1  extra");
+    }
+
+    /// `:uninstall` dispatches `Job::ProviderUninstall` (full
+    /// teardown) while `:remove` keeps the light `Job::Remove`.
+    #[test]
+    fn colon_uninstall_dispatches_provider_teardown() {
+        let (_tmp, mut m) = bare_model();
+        m.cmdline = "uninstall w@1".into();
+        m.run_command();
+        match &m.modal {
+            Some(Modal::Confirm {
+                job: Job::ProviderUninstall { name },
+                ..
+            }) => assert_eq!(name, "w@1"),
+            other => panic!("expected ProviderUninstall confirm, got {other:?}"),
+        }
+        m.modal = None;
+        m.cmdline = "remove w@1".into();
+        m.run_command();
+        assert!(matches!(
+            m.modal,
+            Some(Modal::Confirm {
+                job: Job::Remove(_),
+                ..
+            })
+        ));
+    }
+
+    /// The shared [`line_edit`] set also drives `/` filter/search
+    /// and the prompts — cursor movement included.
+    #[test]
+    fn shared_line_editing_in_other_text_modes() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        // Prompt mode.
+        m.mode = Mode::Prompt(PromptKind::InstallRef);
+        for c in "abc".chars() {
+            m.key(key(KeyCode::Char(c), none));
+        }
+        m.key(key(KeyCode::Left, none));
+        m.key(key(KeyCode::Char('X'), none));
+        assert_eq!(m.prompt_buf, "abXc");
+        m.key(key(KeyCode::Esc, none));
+        assert_eq!(m.prompt_buf, "");
+        // Filter mode — editing rebuilds the filter live.
+        m.pane = Pane::Installed;
+        m.entries.push(store_row("widget", 1));
+        m.key(key(KeyCode::Char('/'), none));
+        assert_eq!(m.mode, Mode::Filter);
+        for c in "wid".chars() {
+            m.key(key(KeyCode::Char(c), none));
+        }
+        assert_eq!(m.filter, "wid");
+        // Mid-line edit: Left then 'g' → "wigd".
+        m.key(key(KeyCode::Left, none));
+        m.key(key(KeyCode::Char('g'), none));
+        assert_eq!(m.input, "wigd");
+        assert_eq!(m.filter, "wigd");
+        // Ctrl-U clears both buffer and filter.
+        m.key(key(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(m.input, "");
+        assert_eq!(m.filter, "");
+    }
+
+    /// Bracketed paste lands at the cursor in every text mode.
+    #[test]
+    fn paste_inserts_at_cursor() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        let none = KeyModifiers::NONE;
+        m.key(key(KeyCode::Char(':'), none));
+        type_colon(&mut m, "remove");
+        m.paste(" w");
+        assert_eq!(m.cmdline, "remove w");
+        m.key(key(KeyCode::Left, none));
+        m.paste("X");
+        assert_eq!(m.cmdline, "remove Xw");
+        // Filter mode.
+        m.mode = Mode::Filter;
+        m.input = "ab".into();
+        m.input_cur = 1;
+        m.paste("Z");
+        assert_eq!(m.input, "aZb");
+        assert_eq!(m.filter, "aZb");
+        // Prompt mode.
+        m.mode = Mode::Prompt(PromptKind::InstallRef);
+        m.prompt_buf = "ab".into();
+        m.prompt_cur = 2;
+        m.paste("cd");
+        assert_eq!(m.prompt_buf, "abcd");
+        // Normal mode swallows it.
+        m.mode = Mode::Normal;
+        m.paste("nope");
+        assert_eq!(m.prompt_buf, "abcd");
+    }
+
+    /// `g`/`G` follow the visible cursor: on an open package page
+    /// they jump `detail_scroll` (never the hidden row `sel`), and
+    /// inside versions focus they jump `versions_sel`.
+    #[test]
+    fn detail_g_g_jumps_page_scroll() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let page = reg_entry("1.0.0");
+        m.pane = Pane::Registry;
+        m.detail = Some(Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: Some(vec![reg_entry("0.9.0"), page.clone(), reg_entry("1.1.0")]),
+            versions_err: None,
+        });
+        m.detail_scroll = 5;
+        m.sel = 3; // hidden installed cursor — must not move
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.detail_scroll, 0);
+        assert_eq!(m.sel, 3);
+        // G jumps to the last frame's max scroll.
+        m.detail_max_scroll = 42;
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.detail_scroll, 42);
+        assert_eq!(m.sel, 3);
+        // Versions focus: g/G walk the version list instead.
+        m.versions_focus = true;
+        m.versions_sel = 2;
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.versions_sel, 0);
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.versions_sel, 2);
+        assert_eq!(m.detail_scroll, 42);
+    }
+
+    /// The wheel scrolls the open package page's body; with no page
+    /// it keeps walking the pane selection.
+    #[test]
+    fn wheel_scrolls_detail_page() {
+        let (_tmp, mut m) = bare_model();
+        let wheel = |kind| MouseEvent {
+            kind,
+            column: 1,
+            row: 1,
+            modifiers: KeyModifiers::NONE,
+        };
+        m.entries.push(store_row("w", 1));
+        m.pane = Pane::Installed;
+        m.sel = 0;
+        // No detail — wheel moves the row selection (clamped at 0).
+        m.mouse(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(m.sel, 0);
+        // Detail open — wheel moves detail_scroll, sel stays put.
+        m.detail = Some(Detail::Installed {
+            entry: m.entries[0].entry.clone(),
+            manifest: None,
+            manifest_err: None,
+        });
+        m.mouse(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(m.detail_scroll, 3);
+        m.mouse(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(m.detail_scroll, 6);
+        m.mouse(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(m.detail_scroll, 3);
+        assert_eq!(m.sel, 0);
+    }
+
+    /// Dead keys say so: j/k/g/G on the listless Publish pane and
+    /// Installed-only verbs on panes that don't bind them land a
+    /// status hint instead of silence.
+    #[test]
+    fn dead_keys_get_a_status_hint() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        m.pane = Pane::Author;
+        m.sel = 2;
+        m.key(key(KeyCode::Char('j')));
+        assert!(m.status.contains("nothing to select"), "{}", m.status);
+        m.key(key(KeyCode::Char('G')));
+        assert!(m.status.contains("nothing to select"), "{}", m.status);
+        // Installed-only verbs on the bare Registry pane.
+        m.pane = Pane::Registry;
+        m.status.clear();
+        for c in ['v', 'u', 'p', 'x', 'c', 'd'] {
+            m.key(key(KeyCode::Char(c)));
+            assert!(m.status.contains(&format!("no '{c}'")), "{c}: {}", m.status);
+            m.status.clear();
+        }
+        // …but the pane's own verbs still work — 'i' installs.
+        m.key(key(KeyCode::Char('i')));
+        assert!(m.status.is_empty() || !m.status.contains("no 'i'"));
+    }
+
+    /// The `/` filter matches what the row shows — label, kind,
+    /// source ref, description, sealed — never the provenance hex
+    /// (`resolved`/`digest`), where fragments like "sha" matched
+    /// everything.
+    #[test]
+    fn filter_ignores_provenance_hex() {
+        let (_tmp, mut m) = bare_model();
+        m.entries.push(store_row("widget", 1)); // resolved sha256:1, digest sha256:d1
+        m.filter = "sha256".into();
+        assert!(m.visible().is_empty());
+        m.filter = "d1".into();
+        assert!(m.visible().is_empty());
+        // Source ref still matches.
+        m.filter = "./x".into();
+        assert_eq!(m.visible(), vec![0]);
+        // And the label.
+        m.filter = "wid".into();
+        assert_eq!(m.visible(), vec![0]);
     }
 }

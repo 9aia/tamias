@@ -8,8 +8,8 @@
 //! `v`/`u`/`p`/`x`/`c`/`d`/`i` run the same library calls
 //! `tamias-serve`/the CLI use on worker threads (confirm + consent
 //! modals, streamed phase log); the Registry pane searches a registry
-//! as-you-type and `i` installs a result. The Services, Manifest, and
-//! Author panes cover provider lifecycle, the project `deps:` form,
+//! as-you-type and `i` installs a result. The Services, Project, and
+//! Publish panes cover provider lifecycle, the project `deps:` form,
 //! and pack/publish authoring. Terminal
 //! discipline mirrors `myco-tui`: alternate screen, raw mode, a
 //! drop guard, a panic hook, mouse capture, and a `notify` watcher
@@ -26,7 +26,9 @@
 //! be re-plumbed.
 
 mod app;
-mod complete;
+/// `:`-line completion — pure candidate engine (`complete` static,
+/// `complete_with` model-supplied dynamic args).
+pub mod complete;
 mod ops;
 mod render;
 
@@ -158,6 +160,9 @@ pub fn run(ctx: &Ctx) -> Result<(), String> {
                     }
                 }
                 Event::Mouse(m) => model.mouse(m),
+                // Bracketed paste — lands in whichever text mode is
+                // active (`:`/`/`/prompt); a no-op otherwise.
+                Event::Paste(text) => model.paste(&text),
                 Event::Resize(..) => {}
                 _ => {}
             }

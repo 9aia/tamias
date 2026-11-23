@@ -3,10 +3,12 @@
 //! [`complete`] is pure and self-contained: it takes the current
 //! command-line buffer (the text after `:`, or with the `:` still
 //! attached — a leading colon is stripped defensively) and returns
-//! the static candidates that fit the token under the cursor.
-//! Dynamic sources — store entry names, registry names, unit names —
-//! are out of scope; arg positions with free text yield no
-//! candidates.
+//! the candidates that fit the token under the cursor. Static
+//! candidates come from the [`VERBS`] table + fixed arg vocab;
+//! [`complete_with`] additionally accepts caller-supplied dynamic
+//! candidates (installed labels, registry names, unit names) which
+//! are prefix-filtered and offered only at arg positions the static
+//! grammar leaves free — see [`dynamic_ok`].
 //!
 //! The verb table mirrors `app.rs`'s `parse_command` exactly: same
 //! aliases, same fixed-vocabulary positions (`:service` verbs,
@@ -98,7 +100,7 @@ const VERBS: &[VerbSpec] = &[
     VerbSpec {
         alias: "log",
         kind: ArgKind::None,
-        hint: "op-log overlay",
+        hint: "op-log sidebar",
     },
     VerbSpec {
         alias: "install",
@@ -114,6 +116,11 @@ const VERBS: &[VerbSpec] = &[
         alias: "remove",
         kind: ArgKind::Free,
         hint: "remove a package — usage: :remove <name>",
+    },
+    VerbSpec {
+        alias: "uninstall",
+        kind: ArgKind::Free,
+        hint: "full provider teardown — usage: :uninstall <name>",
     },
     VerbSpec {
         alias: "verify",
@@ -300,6 +307,20 @@ fn arg_candidates(
 /// - Anything else — unknown verbs, free-text arg positions, args
 ///   past the fixed vocabulary — yields an empty vec.
 pub fn complete(line: &str) -> Vec<Candidate> {
+    complete_with(line, &[])
+}
+
+/// [`complete`] plus caller-supplied `dynamic` candidates.
+///
+/// Static candidates always win: dynamic entries are consulted only
+/// when the position under completion yields no static candidates
+/// *and* [`dynamic_ok`] says the verb's arg shape has a free slot
+/// there — `Free` verbs at any arg position, `:service` at the unit
+/// position (≥2), `:logs` at the name position (1). The dynamic list
+/// is prefix-filtered case-insensitively against the token being
+/// completed (matching on `insert` minus its trailing space); the
+/// caller owns ordering, dedupe, and the size cap.
+pub fn complete_with(line: &str, dynamic: &[Candidate]) -> Vec<Candidate> {
     let body = line.trim_start();
     let body = match body.strip_prefix(':') {
         Some(rest) => rest.trim_start(),
@@ -332,7 +353,7 @@ pub fn complete(line: &str) -> Vec<Candidate> {
     };
     // The verb sits at token 0, so the token index *is* the 1-based
     // arg index (`:service <verb>` completes at position 1, etc.).
-    match (kind, position) {
+    let static_out = match (kind, position) {
         (ArgKind::Service, 1) => arg_candidates(
             SERVICE_ACTIONS,
             prefix,
@@ -353,8 +374,36 @@ pub fn complete(line: &str) -> Vec<Candidate> {
         ),
         (ArgKind::Logs, 2) => arg_candidates(LOGS_FLAGS, prefix, false, "follow the journal"),
         // Free-text positions, positions past the fixed vocabulary,
-        // and no-arg verbs with stray args all yield nothing.
+        // and no-arg verbs with stray args all yield nothing static.
         _ => Vec::new(),
+    };
+    if !static_out.is_empty() || !dynamic_ok(kind, position) {
+        return static_out;
+    }
+    let prefix = prefix.to_lowercase();
+    dynamic
+        .iter()
+        .filter(|c| c.insert.trim_end().to_lowercase().starts_with(&prefix))
+        .cloned()
+        .collect()
+}
+
+/// Whether `dynamic` candidates may surface at `(kind, position)` —
+/// the arg slots the static grammar leaves free:
+///
+/// - `Free` verbs: every arg position (`:remove <name>`, `:pin`'s
+///   name *and* ref slots, …).
+/// - `Service`: position ≥ 2 — the unit name (position 1 is the
+///   fixed action vocabulary).
+/// - `Logs`: position 1 — the package/unit name (position 2 is the
+///   flag vocabulary).
+/// - `Sync`/`Clean`/`None`: never — their slots are fixed or stray.
+fn dynamic_ok(kind: ArgKind, position: usize) -> bool {
+    match kind {
+        ArgKind::Free => true,
+        ArgKind::Service => position >= 2,
+        ArgKind::Logs => position == 1,
+        ArgKind::Sync | ArgKind::Clean | ArgKind::None => false,
     }
 }
 
@@ -404,6 +453,7 @@ mod tests {
                 "install ",
                 "i ",
                 "remove ",
+                "uninstall ",
                 "verify ",
                 "update ",
                 "u ",
@@ -599,5 +649,67 @@ mod tests {
         assert!(cands.iter().all(|c| !c.hint.is_empty()));
         let cands = complete("");
         assert!(cands.iter().all(|c| !c.hint.is_empty()));
+    }
+
+    /// A dynamic candidate factory for `complete_with` tests.
+    fn dyn_cands(inserts: &[&str]) -> Vec<Candidate> {
+        inserts
+            .iter()
+            .map(|i| Candidate {
+                insert: format!("{i} "),
+                hint: "dynamic".to_string(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn dynamic_candidates_fill_free_arg_positions() {
+        let dyns = dyn_cands(&["widget@1", "gadget@2"]);
+        // `:remove <name>` — Free arg position.
+        let got = inserts(&complete_with("remove wid", &dyns));
+        assert_eq!(got, vec!["widget@1 "]);
+        // Fresh token after the space — both candidates, unfiltered.
+        let got = inserts(&complete_with("remove ", &dyns));
+        assert_eq!(got, vec!["widget@1 ", "gadget@2 "]);
+        // `:pin`'s second arg is Free too — the caller decides what
+        // to offer there; the gate doesn't discriminate.
+        let got = inserts(&complete_with("pin w ", &dyns));
+        assert_eq!(got.len(), 2);
+    }
+
+    #[test]
+    fn dynamic_candidates_respect_fixed_vocab_positions() {
+        let dyns = dyn_cands(&["widget@1"]);
+        // `:service` position 1 is the action vocabulary — static
+        // wins, dynamic never leaks in even when it prefix-matches.
+        let got = inserts(&complete_with("service st", &dyns));
+        assert_eq!(got, vec!["start ", "stop "]);
+        // …but position ≥2 (the unit) is free for dynamic.
+        let got = inserts(&complete_with("service start wi", &dyns));
+        assert_eq!(got, vec!["widget@1 "]);
+        // `:sync`/`:clean` slots stay static-only.
+        assert!(complete_with("sync --f", &dyns)
+            .iter()
+            .all(|c| c.insert == "--from-lock"));
+        assert_eq!(inserts(&complete_with("sync ", &dyns)), vec!["--from-lock"]);
+        // Verb position ignores dynamic entirely.
+        let got = inserts(&complete_with("rem", &dyns));
+        assert_eq!(got, vec!["remove "]);
+        // Unknown verbs and no-arg verbs' stray args yield nothing.
+        assert!(complete_with("bogus ", &dyns).is_empty());
+        assert!(complete_with("q x", &dyns).is_empty());
+        // `:logs` name position (1) takes dynamic; the flag position
+        // (2) stays static.
+        let got = inserts(&complete_with("logs wi", &dyns));
+        assert_eq!(got, vec!["widget@1 "]);
+        let got = inserts(&complete_with("logs widget -", &dyns));
+        assert_eq!(got, vec!["-f", "-F", "--follow"]);
+    }
+
+    #[test]
+    fn dynamic_prefix_matching_is_case_insensitive() {
+        let dyns = dyn_cands(&["Widget@1"]);
+        let got = inserts(&complete_with("remove WID", &dyns));
+        assert_eq!(got, vec!["Widget@1 "]);
     }
 }

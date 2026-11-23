@@ -1,8 +1,9 @@
-//! Drawing — tab bar on top, the active pane filling the frame, an
-//! optional op-log strip, status bar at the bottom, and modal/prompt
-//! overlays. Chrome bars yield to the pane on short terminals, same
-//! budget rule as myco-tui: tabs need height ≥3, the status bar ≥5,
-//! the log strip ≥12 (and only while the log has lines).
+//! Drawing — tab bar on top, the active pane filling the frame, a
+//! status bar at the bottom, and modal/prompt overlays. Chrome bars
+//! yield to the pane on short terminals, same budget rule as
+//! myco-tui: tabs need height ≥3, the status bar ≥5. `L`/`:log`
+//! docks the op log as a right-hand sidebar (a centered overlay on
+//! terminals too narrow for one) — there is no permanent log strip.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,8 +15,18 @@ use ratatui::Frame;
 
 use crate::app::{Detail, Modal, Mode, Model, Pane, PromptKind, SPINNER};
 
-const ACCENT: Color = Color::Indexed(69); // same nav blue as myco-tui
-const MUTED: Color = Color::Indexed(241);
+/// Accent — a bright saturated blue that stays legible on dark
+/// terminals (the old `Indexed(69)` navy read as near-background);
+/// also the active tab's background and the `›` cursor marker.
+const ACCENT: Color = Color::Indexed(75);
+/// Secondary text — mid gray: clearly above a dark terminal's
+/// background where `Indexed(241)` read as bg-colored, still a
+/// step dimmer than [`TEXT`].
+const MUTED: Color = Color::Indexed(245);
+/// Primary text — the explicit fg for spans that carry no style of
+/// their own; terminals' default fg can be near-black on dark
+/// themes, which is what made table cells and body copy vanish.
+const TEXT: Color = Color::White;
 const WARN: Color = Color::Indexed(214);
 
 /// Chrome budget — `(tabs, status)`: tabs cost a row at height ≥3,
@@ -28,20 +39,32 @@ fn chrome(height: u16) -> (bool, bool) {
 /// next mouse event can hit-test against where rows landed.
 pub fn draw(f: &mut Frame, m: &mut Model) {
     let area = f.area();
-    let (show_tabs, show_status) = chrome(area.height);
-    let show_log = area.height >= 12 && !m.log.is_empty();
-    let mut constraints = Vec::with_capacity(4);
+    // `L` docks the op log as a right-hand sidebar — the pane chrome
+    // lays out inside the shrunken main rect, so `tabs_area`/
+    // `board_area`/`home_area` and the status bar all describe what
+    // is actually on screen (the status bar shrinks with the pane,
+    // it doesn't span under the sidebar). Below ~50 cols the sidebar
+    // would starve the pane, so the centered overlay takes over.
+    let split = if m.mode == Mode::Log && area.width >= 50 {
+        let side_w = (area.width / 4)
+            .clamp(24, 48)
+            .min(area.width.saturating_sub(20));
+        let c = Layout::horizontal([Constraint::Min(0), Constraint::Length(side_w)]).split(area);
+        Some((c[0], c[1]))
+    } else {
+        None
+    };
+    let main = split.map_or(area, |(main, _)| main);
+    let (show_tabs, show_status) = chrome(main.height);
+    let mut constraints = Vec::with_capacity(3);
     if show_tabs {
         constraints.push(Constraint::Length(1));
     }
     constraints.push(Constraint::Min(0));
-    if show_log {
-        constraints.push(Constraint::Length(4));
-    }
     if show_status {
         constraints.push(Constraint::Length(1));
     }
-    let chunks = Layout::vertical(constraints).split(area);
+    let chunks = Layout::vertical(constraints).split(main);
 
     let mut next = 0;
     if show_tabs {
@@ -53,10 +76,6 @@ pub fn draw(f: &mut Frame, m: &mut Model) {
     }
     draw_pane(f, m, chunks[next]);
     next += 1;
-    if show_log {
-        draw_log(f, m, chunks[next]);
-        next += 1;
-    }
     if show_status {
         draw_status(f, m, chunks[next]);
     }
@@ -65,9 +84,12 @@ pub fn draw(f: &mut Frame, m: &mut Model) {
         Mode::Filter | Mode::Search | Mode::Command | Mode::Prompt(_) => draw_input(f, m, area),
         Mode::Normal | Mode::Log => {}
     }
-    // The log overlay needs `&mut Model` (it clamps `log_scroll` and
-    // reports `log_view_h`), so it can't ride the `&m.mode` match.
-    if m.mode == Mode::Log {
+    // The log view needs `&mut Model` (it clamps `log_scroll` and
+    // reports `log_view_h`/`log_area`), so it can't ride the
+    // `&m.mode` match.
+    if let Some((_, side)) = split {
+        draw_log_view(f, m, side);
+    } else if m.mode == Mode::Log {
         draw_log_overlay(f, m, area);
     }
     if let Some(modal) = &m.modal {
@@ -76,7 +98,8 @@ pub fn draw(f: &mut Frame, m: &mut Model) {
 }
 
 /// Tab captions — full names when they fit, initials when they
-/// don't (the `1`-`5`/`h`/`l` binds still work).
+/// don't (the `1`-`6`/`h`/`l` binds still work; PROJECT/PUBLISH get
+/// two-char codes since both start with P).
 fn tab_labels(width: usize) -> Vec<String> {
     let full: Vec<String> = Pane::ALL
         .iter()
@@ -86,9 +109,16 @@ fn tab_labels(width: usize) -> Vec<String> {
     if need <= width {
         full
     } else {
+        // Initials fallback — PROJECT and PUBLISH collide on 'P',
+        // so those two widen to two chars ("PR"/"PU"); the digits
+        // and h/l binds don't depend on the letters anyway.
         Pane::ALL
             .iter()
-            .map(|p| p.label()[..1].to_string())
+            .map(|p| match p {
+                Pane::Manifest => "PR".to_string(),
+                Pane::Author => "PU".to_string(),
+                _ => p.label()[..1].to_string(),
+            })
             .collect()
     }
 }
@@ -206,9 +236,11 @@ fn draw_pane(f: &mut Frame, m: &mut Model, area: Rect) {
 
 /// The Home pane — the npm-home analog and the landing view:
 /// wordmark + version, a muted stats strip (installed count, registry
-/// target, store/cache roots), the key hints in two columns, and the
-/// recently-installed list (`installed_at` desc, top 8 — the same
+/// target, store/cache roots), and the recently-installed list
+/// (`installed_at` desc, top 8 — the same
 /// [`Model::recent_installed`] ordering the `home_sel` cursor walks).
+/// Key hints live only in the status bar — the body deliberately
+/// carries none (the footer is the single hint surface).
 /// The highlighted row gets the versions-focus treatment — accent
 /// `›` marker + `Indexed(238)` row background — and `Enter` opens its
 /// package page via the Installed pane.
@@ -253,21 +285,6 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
         Style::default().fg(MUTED),
     )));
     lines.push(Line::from(""));
-    // Hints — two columns like the Author pane's; the recent-list
-    // binds only appear when there's a list to walk.
-    let mut hint_rows = vec![
-        ("/  search registry", "i  install by ref"),
-        ("1-6  jump to a pane", ":  command line · ? help"),
-    ];
-    if !m.entries.is_empty() {
-        hint_rows.insert(1, ("j/k · Enter  open recent", "g/G  first/last"));
-    }
-    for (left, right) in hint_rows {
-        lines.push(Line::from(vec![
-            Span::styled(format!("{left:<22}"), Style::default().fg(MUTED)),
-            Span::styled(right, Style::default().fg(MUTED)),
-        ]));
-    }
     // The recents block — section header plus one line per row (or
     // the empty-state hint). Kept out of `lines` so it renders in its
     // own fixed-height chunk below.
@@ -277,7 +294,7 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
     ))];
     if m.entries.is_empty() {
         tail.push(Line::from(Span::styled(
-            "  nothing installed yet — `i` install by ref · `/` search · `:` commands",
+            "  nothing installed yet",
             Style::default().fg(MUTED),
         )));
     } else {
@@ -324,8 +341,16 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
     // row (long labels clip instead of wrapping onto the next row).
     let tail_h = (tail.len() as u16).min(inner.height);
     let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(tail_h)]).split(inner);
-    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), chunks[0]);
-    f.render_widget(Paragraph::new(tail), chunks[1]);
+    f.render_widget(
+        Paragraph::new(lines)
+            .style(Style::default().fg(TEXT))
+            .wrap(Wrap { trim: true }),
+        chunks[0],
+    );
+    f.render_widget(
+        Paragraph::new(tail).style(Style::default().fg(TEXT)),
+        chunks[1],
+    );
     // Data rows start one line below the "recently installed" header;
     // height is the rows actually rendered (clipped on short frames).
     let shown = chunks[1]
@@ -366,7 +391,7 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
         let hint = if m.busy.is_some() {
             "loading services…"
         } else {
-            "no provider services — `R` refreshes · `i` installs a package with a `provider:` block"
+            "no provider services — `i` installs a package with a `provider:` block"
         };
         f.render_widget(Paragraph::new(hint).style(Style::default().fg(MUTED)), area);
         m.board_area = Rect::default();
@@ -403,13 +428,14 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
     let table = Table::new(rows, widths)
         .header(header)
         .block(Block::default().borders(Borders::ALL).title(title))
+        .style(Style::default().fg(TEXT))
         .row_highlight_style(Style::default().bg(Color::Indexed(238)));
     let mut state = ratatui::widgets::TableState::default().with_selected(Some(m.svc_sel));
     f.render_stateful_widget(table, area, &mut state);
     note_table_area(m, area, state.offset());
 }
 
-/// The Manifest pane — the project manifest's `deps:` as editable
+/// The Project pane — the project manifest's `deps:` as editable
 /// rows; every other field renders read-only above the table. Writes
 /// go through `Manifest::save` + `tamias.lock` sync on the worker.
 fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
@@ -477,7 +503,10 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
         (Rect::default(), area)
     };
     if info_h > 0 {
-        f.render_widget(Paragraph::new(info), info_area);
+        f.render_widget(
+            Paragraph::new(info).style(Style::default().fg(TEXT)),
+            info_area,
+        );
     }
     let deps: Vec<String> = m
         .project
@@ -486,8 +515,7 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
         .unwrap_or_default();
     if deps.is_empty() {
         f.render_widget(
-            Paragraph::new("no deps — `a` adds a ref · `s` reconciles the set")
-                .style(Style::default().fg(MUTED)),
+            Paragraph::new("no deps — `a` adds a ref").style(Style::default().fg(MUTED)),
             table_area,
         );
         m.board_area = Rect::default();
@@ -508,18 +536,21 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
                 .borders(Borders::ALL)
                 .title(format!(" deps — {} ", m.manifest_path.display())),
         )
+        .style(Style::default().fg(TEXT))
         .row_highlight_style(Style::default().bg(Color::Indexed(238)));
     let mut state = ratatui::widgets::TableState::default().with_selected(Some(m.man_sel));
     f.render_stateful_widget(table, table_area, &mut state);
     note_table_area(m, table_area, state.offset());
 }
 
-/// The Author pane — configured registries plus the pack/publish
+/// The Publish pane — configured registries plus the pack/publish
 /// entry points; results land in the op log like every other job.
+/// The pane carries no cursor, so its body legitimately lists the
+/// key shapes (with args) the terse status-bar hint abbreviates.
 fn draw_author(f: &mut Frame, m: &mut Model, area: Rect) {
     let mut lines: Vec<Line> = vec![Line::from(vec![
         Span::styled(
-            "authoring",
+            "publishing",
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ),
         Span::raw(" — bundle pack/publish"),
@@ -527,7 +558,7 @@ fn draw_author(f: &mut Frame, m: &mut Model, area: Rect) {
     lines.push(Line::from(""));
     if m.author_regs.is_empty() {
         lines.push(Line::from(Span::styled(
-            "no registries configured — `registries:` in tamias.yml adds them (`R` reloads) · publish → default local root",
+            "no registries configured — `registries:` in tamias.yml adds them · publish → default local root",
             Style::default().fg(MUTED),
         )));
     } else {
@@ -558,7 +589,9 @@ fn draw_author(f: &mut Frame, m: &mut Model, area: Rect) {
         Style::default().fg(MUTED),
     )));
     f.render_widget(
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" author ")),
+        Paragraph::new(lines)
+            .style(Style::default().fg(TEXT))
+            .block(Block::default().borders(Borders::ALL).title(" publish ")),
         area,
     );
     m.board_area = Rect::default();
@@ -591,7 +624,7 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     }
     if m.entries.is_empty() {
         f.render_widget(
-            Paragraph::new("no packages installed — `i` install-by-ref, `:install <ref>`, or `tamias install <ref>` · `/` searches the registry")
+            Paragraph::new("no packages installed — `i` installs by ref")
                 .style(Style::default().fg(MUTED)),
             area,
         );
@@ -652,6 +685,7 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     let table = Table::new(rows, widths)
         .header(header)
         .block(Block::default().borders(Borders::ALL).title(" installed "))
+        .style(Style::default().fg(TEXT))
         .row_highlight_style(Style::default().bg(Color::Indexed(238)));
     let mut state = ratatui::widgets::TableState::default().with_selected(Some(m.sel));
     f.render_stateful_widget(table, area, &mut state);
@@ -709,12 +743,23 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
 /// active ([`Model::versions_focused`]) — row `i` gets the table's
 /// `Indexed(238)` row highlight plus an accent `›` marker, and the
 /// footer hint switches to the focus keys.
+///
+/// The fifth return value is the body line index of the focused
+/// version row (`None` unless focus is active and the list landed) —
+/// [`draw_detail`] feeds it to [`scroll_to_show`] so the cursor row
+/// stays on screen past one page of versions.
 fn page_parts(
     detail: &Detail,
     registry_target: &str,
     installed_ver: Option<&str>,
     versions_sel: Option<usize>,
-) -> (String, Line<'static>, Option<String>, Vec<Line<'static>>) {
+) -> (
+    String,
+    Line<'static>,
+    Option<String>,
+    Vec<Line<'static>>,
+    Option<usize>,
+) {
     let label = detail.label();
     // Header — bold label then muted/bracketed chips; the trust chip
     // is the one colored span (tier → [`trust_style`]).
@@ -743,6 +788,9 @@ fn page_parts(
     let desc = detail.description().map(str::to_string);
 
     let mut body: Vec<Line> = Vec::new();
+    // Body index of the versions-focus row — set by the Registry
+    // arm below; `draw_detail` scrolls it into view.
+    let mut versions_row: Option<usize> = None;
     // Install command — the ref an installed entry recorded, or the
     // registry entry's resolved install ref (error inline on failure).
     match detail {
@@ -844,7 +892,16 @@ fn page_parts(
             body.push(kv("source", rec.source_ref.clone()));
             body.push(kv("resolved", rec.resolved.clone()));
             body.push(kv("digest", rec.digest.clone()));
-            body.push(kv("installed", rec.installed_at.to_string()));
+            // `installed_at` is unix seconds — render the same
+            // relative label Home uses, not the raw epoch.
+            body.push(kv(
+                "installed",
+                if rec.installed_at > 0 {
+                    ago(rec.installed_at)
+                } else {
+                    "-".to_string()
+                },
+            ));
             body.push(kv("dir", entry.dir.display().to_string()));
             if let Some(signer) = &rec.signer {
                 body.push(kv("signer", signer.clone()));
@@ -901,13 +958,28 @@ fn page_parts(
             match (versions, versions_err) {
                 (Some(list), _) => {
                     body.push(Line::from(""));
-                    body.push(rule("versions"));
+                    // Unfocused, the section advertises its `v` toggle
+                    // inline — the footer hint alone is easy to miss.
+                    if versions_sel.is_none() && !list.is_empty() {
+                        body.push(Line::from(vec![
+                            Span::styled("── versions ──", Style::default().fg(ACCENT)),
+                            Span::styled("  · v picks a version", Style::default().fg(MUTED)),
+                        ]));
+                    } else {
+                        body.push(rule("versions"));
+                    }
                     if list.is_empty() {
                         body.push(Line::from(Span::styled(
                             "  no versions indexed",
                             Style::default().fg(MUTED),
                         )));
                     }
+                    // The focused row's body index — `draw_detail`
+                    // scrolls it into view while versions focus is on.
+                    let rows_start = body.len();
+                    versions_row = versions_sel
+                        .filter(|&s| s < list.len())
+                        .map(|s| rows_start + s);
                     for (i, v) in list.iter().enumerate() {
                         let ver = v.version.clone().unwrap_or_else(|| "-".into());
                         // `file` is the per-version blob path — the
@@ -966,18 +1038,45 @@ fn page_parts(
             ));
         }
     }
-    body.push(Line::from(""));
-    body.push(Line::from(Span::styled(
-        match detail {
-            Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
-            Detail::Registry { .. } if versions_sel.is_some() => {
-                "versions — j/k move · i install · v/esc back"
-            }
-            Detail::Registry { .. } => "esc back · j/k scroll · i install",
-        },
-        Style::default().fg(MUTED),
-    )));
-    (label, head, desc, body)
+    // No trailing hint line — the status bar's `detail_hint` is the
+    // single hint surface (a body-bottom copy would both duplicate
+    // it and scroll away with the content).
+    (label, head, desc, body, versions_row)
+}
+
+/// The package page's status-bar hint — `draw_status`'s right-side
+/// hint while `detail` is open. `versions_focused` is the caller's
+/// focus state ([`Model::versions_focused`]).
+fn detail_hint(detail: &Detail, versions_focused: bool) -> &'static str {
+    match detail {
+        Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
+        Detail::Registry { .. } if versions_focused => {
+            "versions — j/k move · i install · v/esc back"
+        }
+        // Landed, non-empty sibling list — advertise the `v` toggle.
+        Detail::Registry {
+            versions: Some(list),
+            ..
+        } if !list.is_empty() => "esc back · j/k scroll · i install · v versions",
+        Detail::Registry { .. } => "esc back · j/k scroll · i install",
+    }
+}
+
+/// Scroll offset that keeps body line `row` inside a `view_h`-line
+/// window — scrolls the minimum amount (up when the row is above the
+/// window, down when below); the caller still clamps to `max_scroll`.
+/// `view_h == 0` leaves the offset alone.
+fn scroll_to_show(row: usize, scroll: usize, view_h: usize) -> usize {
+    if view_h == 0 {
+        return scroll;
+    }
+    if row < scroll {
+        row
+    } else if row >= scroll + view_h {
+        row + 1 - view_h
+    } else {
+        scroll
+    }
 }
 
 /// Greedy word-wrap line count for `text` at `width` columns,
@@ -1022,7 +1121,7 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
         }
         _ => None,
     };
-    let (title, head, desc, body) = page_parts(
+    let (title, head, desc, body, versions_row) = page_parts(
         detail,
         &m.reg_target_label,
         installed_ver.as_deref(),
@@ -1063,7 +1162,12 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
         height: body_h,
         ..inner
     };
-    f.render_widget(Paragraph::new(head).wrap(Wrap { trim: true }), header_area);
+    f.render_widget(
+        Paragraph::new(head)
+            .style(Style::default().fg(TEXT))
+            .wrap(Wrap { trim: true }),
+        header_area,
+    );
     if let Some(d) = &desc {
         f.render_widget(
             Paragraph::new(d.as_str())
@@ -1072,11 +1176,21 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
             desc_area,
         );
     }
-    // Clamp the scroll offset to the body, then render.
+    // Versions focus keeps its cursor row on screen — the body is a
+    // scrolling Paragraph, so aim `detail_scroll` at the row before
+    // the usual max_scroll clamp (body-line approximation, same
+    // posture as the clamp itself under wrapped lines).
+    if let Some(row) = versions_row {
+        m.detail_scroll = scroll_to_show(row, m.detail_scroll, body_area.height as usize);
+    }
+    // Clamp the scroll offset to the body, then render. The max is
+    // recorded for `G` — the model's jump-to-bottom target.
     let max_scroll = body.len().saturating_sub(body_area.height as usize);
     m.detail_scroll = m.detail_scroll.min(max_scroll);
+    m.detail_max_scroll = max_scroll;
     f.render_widget(
         Paragraph::new(body)
+            .style(Style::default().fg(TEXT))
             .wrap(Wrap { trim: false })
             .scroll((m.detail_scroll as u16, 0)),
         body_area,
@@ -1103,9 +1217,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     if m.reg_query.trim().is_empty() {
         f.render_widget(
             Paragraph::new(
-                "registry search — `/` to type a query (name/scope substring), \
-                 `:registry <name>` picks the target, Enter opens the package \
-                 page, `i` installs a result",
+                "registry search — `/` types a query · `:registry <name>` picks the target",
             )
             .style(Style::default().fg(MUTED)),
             area,
@@ -1148,10 +1260,12 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     let rows: Vec<Row> = m
         .reg_results
         .iter()
-        .map(|e| {
+        .enumerate()
+        .map(|(i, e)| {
             // Name cell carries styled spans — `[signed]` green for
             // signed index entries, `· installed <ver>` muted when
-            // the store already has this (name, scope) at any version.
+            // the store already has this (name, scope) at any version,
+            // `· N versions` muted when the row collapsed siblings.
             let mut name = vec![Span::raw(e.label())];
             if e.signature.is_some() {
                 name.push(Span::styled(" [signed]", trust_style("signed")));
@@ -1159,6 +1273,13 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
             if let Some(ver) = m.installed_label_for(&e.name, e.scope.as_deref()) {
                 name.push(Span::styled(
                     format!(" · installed {ver}"),
+                    Style::default().fg(MUTED),
+                ));
+            }
+            let versions = m.reg_version_counts.get(i).copied().unwrap_or(1);
+            if versions > 1 {
+                name.push(Span::styled(
+                    format!(" · {versions} versions"),
                     Style::default().fg(MUTED),
                 ));
             }
@@ -1191,6 +1312,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     let table = Table::new(rows, widths)
         .header(header)
         .block(Block::default().borders(Borders::ALL).title(title))
+        .style(Style::default().fg(TEXT))
         .row_highlight_style(Style::default().bg(Color::Indexed(238)));
     let mut state = ratatui::widgets::TableState::default().with_selected(Some(m.reg_sel));
     f.render_stateful_widget(table, area, &mut state);
@@ -1198,7 +1320,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
 }
 
 /// Style for one op-log line — errors red, warnings amber, the rest
-/// muted. Shared by the strip and the `L` overlay.
+/// muted.
 fn log_style(line: &str) -> Style {
     if line.starts_with("error") || line.starts_with("!!") {
         Style::default().fg(Color::Red)
@@ -1209,38 +1331,15 @@ fn log_style(line: &str) -> Style {
     }
 }
 
-/// The op log — last few phase/result lines, tail-scroll.
-fn draw_log(f: &mut Frame, m: &Model, area: Rect) {
-    let skip = m.log.len().saturating_sub(4);
-    let text: Vec<Line> = m
-        .log
-        .iter()
-        .skip(skip)
-        .map(|l| Line::from(Span::styled(format!(" {l}"), log_style(l))))
-        .collect();
-    f.render_widget(
-        Paragraph::new(text).block(Block::default().borders(Borders::TOP).title(" log ")),
-        area,
-    );
-}
-
-/// The op-log overlay (`L`/`:log`) — the full retained history
-/// (up to `LOG_CAP` lines), newest at the bottom. `j`/`k` scroll,
-/// `g`/`G` jump the ends; the key handling lives in
-/// `Model::key_log`. Drawn like the help overlay — centered box over
-/// a cleared frame.
-fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
-    let w = (area.width * 4 / 5).clamp(30, area.width.max(30));
-    let h = (area.height * 4 / 5).clamp(5, area.height.max(5));
-    let w = w.min(area.width);
-    let h = h.min(area.height);
-    let x = area.x + area.width.saturating_sub(w) / 2;
-    let y = area.y + area.height.saturating_sub(h) / 2;
-    let rect = Rect::new(x, y, w, h);
-    f.render_widget(Clear, rect);
-    // Report the text area (inside the border) so PgUp/PgDn page by
-    // it and the scroll clamp matches what's on screen.
-    m.log_view_h = h.saturating_sub(2) as usize;
+/// The scrollable op-log body — the full retained history (up to
+/// `LOG_CAP` lines), newest at the bottom. Reports the text height
+/// into `log_view_h` (so `PgUp`/`PgDn` page by what's on screen and
+/// `open_log` aims the tail) and the block rect into `log_area` (for
+/// mouse hit-tests). Shared by the right-docked sidebar and the
+/// narrow-terminal centered overlay.
+fn draw_log_view(f: &mut Frame, m: &mut Model, area: Rect) {
+    m.log_area = area;
+    m.log_view_h = area.height.saturating_sub(2) as usize;
     let max_scroll = m.log.len().saturating_sub(m.log_view_h);
     m.log_scroll = m.log_scroll.min(max_scroll);
     let lines: Vec<Line> = if m.log.is_empty() {
@@ -1270,14 +1369,37 @@ fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
             )
             .style(Style::default().fg(Color::White))
             .scroll((m.log_scroll as u16, 0)),
-        rect,
+        area,
     );
+}
+
+/// The narrow-terminal fallback for `L`/`:log` — the same scrollable
+/// body centered over a cleared frame, used when the frame is too
+/// narrow (<50 cols) for a right sidebar to leave the pane usable.
+/// Key handling lives in `Model::key_log`.
+fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
+    let w = (area.width * 4 / 5).clamp(30, area.width.max(30));
+    let h = (area.height * 4 / 5).clamp(5, area.height.max(5));
+    let w = w.min(area.width);
+    let h = h.min(area.height);
+    let x = area.x + area.width.saturating_sub(w) / 2;
+    let y = area.y + area.height.saturating_sub(h) / 2;
+    let rect = Rect::new(x, y, w, h);
+    f.render_widget(Clear, rect);
+    draw_log_view(f, m, rect);
 }
 
 fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
     let left = if let Some(busy) = &m.busy {
         let frame = SPINNER[(m.tick_n as usize) % SPINNER.len()];
-        format!("{frame} {busy}")
+        // Busy doesn't swallow the status toast — a "busy — still
+        // running" refusal or a finished job's summary stays visible
+        // next to the spinner (`fit_width` truncates the tail).
+        if m.status.is_empty() {
+            format!("{frame} {busy}")
+        } else {
+            format!("{frame} {busy} · {}", m.status)
+        }
     } else if !m.status.is_empty() {
         m.status.clone()
     } else {
@@ -1298,9 +1420,10 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                 } else if m.reg_query.is_empty() {
                     "registry — / search · :registry <name> · i install".to_string()
                 } else {
+                    // `sel+1/len` — the conventional current/total.
                     format!(
                         "{}/{} · /{} · {}",
-                        m.reg_results.len(),
+                        m.reg_sel.saturating_add(1),
                         m.reg_results.len(),
                         m.reg_query,
                         m.reg_target_label
@@ -1323,10 +1446,14 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                 }
             }
             Pane::Manifest => match &m.project {
-                Some(p) => format!("{} — {} dep(s)", m.manifest_path.display(), p.deps.len()),
-                None => format!("{} — no manifest", m.manifest_path.display()),
+                Some(p) => format!(
+                    "project {} — {} dep(s)",
+                    m.manifest_path.display(),
+                    p.deps.len()
+                ),
+                None => format!("project {} — no manifest", m.manifest_path.display()),
             },
-            Pane::Author => "author — p pack · P publish · r registries".to_string(),
+            Pane::Author => "publish — p pack · P publish · r registries".to_string(),
         }
     };
     let style = if m.status_err {
@@ -1337,14 +1464,8 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
     // The package page's hint wins over the pane's while `detail` is
     // open; either way the hint yields to the left status text —
     // truncated with `…` to whatever width is left.
-    let hint = if m.detail.is_some() {
-        match &m.detail {
-            Some(Detail::Registry { .. }) if m.versions_focused() => {
-                "versions — j/k move · i install · v/esc back"
-            }
-            Some(Detail::Registry { .. }) => "esc back · j/k scroll · i install",
-            _ => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
-        }
+    let hint = if let Some(d) = &m.detail {
+        detail_hint(d, m.versions_focused())
     } else {
         match m.pane {
             Pane::Home => {
@@ -1450,6 +1571,17 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
                     Style::default().fg(MUTED)
                 };
                 spans.push(Span::styled(shown.to_string(), style));
+                // The hint rides dimmed after the insert — capped so
+                // one verbose candidate can't eat the strip (the
+                // paragraph clips at the pane edge regardless).
+                let hint = c.hint.trim();
+                if !hint.is_empty() {
+                    let hint: String = hint.chars().take(48).collect();
+                    spans.push(Span::styled(
+                        format!(" — {hint}"),
+                        Style::default().fg(MUTED),
+                    ));
+                }
             }
             if m.cmd_completions.len() > 14 {
                 spans.push(Span::styled(
@@ -1457,15 +1589,14 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
                     Style::default().fg(MUTED),
                 ));
             }
-            f.render_widget(
-                Paragraph::new(Line::from(spans)),
-                Rect {
-                    x: area.x,
-                    y: cy,
-                    width: area.width,
-                    height: 1,
-                },
-            );
+            let strip = Rect {
+                x: area.x,
+                y: cy,
+                width: area.width,
+                height: 1,
+            };
+            f.render_widget(Clear, strip);
+            f.render_widget(Paragraph::new(Line::from(spans)), strip);
         }
     }
     let rect = Rect {
@@ -1474,12 +1605,18 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
         width: area.width,
         height: 1,
     };
+    // Clear first — the line overlays the pane's last row and stale
+    // cell contents would bleed through where the text is shorter.
+    f.render_widget(Clear, rect);
     let spans = vec![
         Span::styled(label.to_string(), Style::default().fg(ACCENT)),
         Span::raw(text.to_string()),
         Span::styled("█", Style::default().fg(ACCENT)),
     ];
-    f.render_widget(Paragraph::new(Line::from(spans)), rect);
+    f.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().fg(TEXT)),
+        rect,
+    );
 }
 
 /// A centered confirm/consent dialog — `y`/`n`, default `n`.
@@ -1500,7 +1637,9 @@ fn draw_modal(f: &mut Frame, modal: &Modal, area: Rect) {
         "y = yes · n/esc = no (default n)",
         Style::default().fg(MUTED),
     )));
-    let w = (area.width * 3 / 5).clamp(30, 72);
+    // `min(area.width)` — the 30-col floor must yield on terminals
+    // narrower than the modal's minimum or the rect overflows.
+    let w = ((area.width * 3 / 5).clamp(30, 72)).min(area.width);
     let h = (lines.len() as u16 + 2).min(area.height);
     let x = area.x + area.width.saturating_sub(w) / 2;
     let y = area.y + area.height.saturating_sub(h) / 2;
@@ -1516,58 +1655,84 @@ fn draw_modal(f: &mut Frame, modal: &Modal, area: Rect) {
 }
 
 fn draw_help(f: &mut Frame, area: Rect) {
+    // Static text — keep it honest: pane names match `Pane::label`,
+    // and `q`/`esc` close an open package page before they quit.
     let text = "\
 keys — installed pane
 
   j/k, ↑/↓      move selection        g/G    top/bottom
   Enter         package page          esc/←   back / close page
-  v             verify (digest check) u       update selected
+  v             verify (digest)       u       update selected
   U             update all            p       pin → new ref
   x             remove (confirm)      c/C     cache clean >30d / all
   d             doctor summary        i       install by ref
-  Tab, h/l      cycle panes           1-6    jump to pane
-  /             filter installed      Enter  keep filter
-  :             command line          Tab   complete · esc leave mode
-  L/:log       full op-log overlay    j/k   scroll · g/G ends · q close
-  R             reload store          F      clear filter
-  ?             this help             q/C-c  quit
+  l/Tab, 1-6    switch pane — closes an open page too
+  h/←           back — closes the page first, then prev pane
+  /             filter installed      F       clear filter
+  :             command line          Tab    complete · esc leave
+  L/:log       op-log sidebar         j/k    scroll · g/G ends · q close
+  R             reload store          ?       this help
+  q             quit — closes an open page first · C-c quits anywhere
 
 home pane:    landing view — wordmark · stats · recently installed ·
-              / jumps to registry search · i install by ref · no cursor
+              j/k + g/G walk the recents · Enter opens the package
+              page · / jumps to registry search · i install by ref
 
 package page:  npm-style page — header chips · description · install
                command · deps/services/meta · provenance last ·
-               j/k scroll · Enter/esc close · registry: i installs ·
-               v focuses versions — j/k pick · i installs that version ·
-               `installed <pkg>@<ver>` line when already in the store
+               j/k scroll · g/G jump ends · wheel scrolls ·
+               esc/q/h/← close (back to where Enter was pressed) ·
+               l/Tab/1-6 switch panes and close · registry pages: v
+               focuses versions — j/k/g/G pick · i installs that
+               version · `installed <pkg>@<ver>` line when already
+               in the store
 
 registry pane:  / search-as-you-type (debounced) · Enter package page ·
                 i install result · :registry <name> target · :search <q>
-                results mark [signed] and · installed <ver>
+                results mark [signed] · installed <ver> · N versions
+
+services pane:  provider services + unit state · s/S start/stop ·
+                ! restart · e/E enable/disable · d deploy · x uninstall
+                t/T journal tail/follow · n foreground run (x kills)
+                Enter opens the package's page · R refresh
+
+project pane:   project manifest deps: — a add · d/x remove · e new ref
+                (writes tamias.yaml + tamias.lock like `tamias add`)
+                s / :sync reconciles deps: against the store + lock
+                S / :sync --from-lock installs tamias.lock verbatim
+                R reloads the manifest
+
+publish pane:   p bundle pack · P publish (confirm) · r registries ·
+                R reloads the registry list
 
 commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
-           :verify <name>  :update [name]  :pin <name> <ref>
+           :uninstall <name> (provider teardown)  :verify <name>
+           :update [name]  :pin <name> <ref>
            :search <q>  :registry <name>  :clean [all]  :doctor
            :services  :service <verb> <unit>  :run <pkg> [svc]
            :logs <pkg|unit> [-f]  :deploy <name>  :manifest
            :pack <dir> [out]  :publish <dir> [registry]  :registries
            :sync [--from-lock]
-mouse:     wheel scrolls · click row selects · click tab switches
-
-services pane:  provider services + unit state · s/S start/stop ·
-                ! restart · e/E enable/disable · d deploy · x uninstall
-                t/T journal tail/follow · n foreground run (x kills)
-manifest pane:  deps rows editable — a add · d/x remove · e new ref
-                (writes tamias.yaml + tamias.lock like `tamias add`)
-                s / :sync reconciles deps: against the store + lock
-                S / :sync --from-lock installs tamias.lock entries verbatim
-author pane:    p bundle pack · P publish (confirm) · r registries";
+           (: line editing — arrows · Home/End · Ctrl-A/E/U/W ·
+            Tab completes · Up/Down history)
+mouse:     wheel scrolls (the package page when open) · click row
+           selects · click tab switches (version rows aren't
+           click-selectable — the page is one scrolling block)";
     let width = area.width.min(72) as usize;
-    let h = text.lines().count() as u16 + 2;
     let w = (width as u16 + 2).min(area.width);
+    // Height counts *wrapped* lines — at narrow widths the static
+    // text wraps past a raw `lines().count()` estimate and the box
+    // clipped its own bottom border off-screen.
+    let inner_w = w.saturating_sub(2).max(1);
+    let h = (text
+        .lines()
+        .map(|l| wrapped_lines(l, inner_w, usize::MAX))
+        .sum::<usize>()
+        + 2)
+    .min(area.height as usize) as u16;
     let x = area.x + area.width.saturating_sub(w) / 2;
     let y = area.y + area.height.saturating_sub(h) / 2;
-    let rect = Rect::new(x, y, w, h.min(area.height));
+    let rect = Rect::new(x, y, w, h);
     f.render_widget(Clear, rect);
     f.render_widget(
         Paragraph::new(text)
@@ -1628,7 +1793,7 @@ mod tests {
         installed_ver: Option<&str>,
         versions_sel: Option<usize>,
     ) -> String {
-        let (_, _, _, body) = page_parts(detail, "default", installed_ver, versions_sel);
+        let (_, _, _, body, _) = page_parts(detail, "default", installed_ver, versions_sel);
         body.iter()
             .map(|l| {
                 l.spans
@@ -1658,9 +1823,13 @@ mod tests {
         assert!(pending.contains("versions …"));
         assert!(!pending.contains("── versions ──"));
         // Landed — the rule, every version in index order, `← current`
-        // on the page's own entry (matched by blob `file`).
+        // on the page's own entry (matched by blob `file`), and the
+        // inline `v` affordance while unfocused. Key hints live in the
+        // status bar (`detail_hint`), not the scrolling body.
         let ready = body_text(&detail(Some(vec![reg_entry("0.9.0"), page.clone()]), None));
         assert!(ready.contains("── versions ──"));
+        assert!(ready.contains("· v picks a version"));
+        assert!(!ready.contains("esc back · j/k scroll"));
         assert!(ready.contains("  0.9.0"));
         assert!(ready.contains("  1.0.0  ← current"));
         // Failed — the error line, still no rule.
@@ -1831,9 +2000,12 @@ mod tests {
         assert!(wide[1].contains("INSTALLED"));
         assert_eq!(tab_hit(200, 0), None); // leading space
         assert_eq!(tab_hit(200, 1), Some(0));
-        // narrow → initials, hit-test still resolves
+        // narrow → initials (PROJECT/PUBLISH widen to PR/PU),
+        // hit-test still resolves
         let narrow = tab_labels(20);
-        assert!(narrow.iter().all(|l| l.chars().count() == 1));
+        assert!(narrow.iter().all(|l| l.chars().count() <= 2));
+        assert!(narrow.contains(&"PR".to_string()));
+        assert!(narrow.contains(&"PU".to_string()));
         assert!(tab_hit(20, 30).is_none());
         let _ = tab_hit(20, 2);
     }
@@ -1862,10 +2034,10 @@ mod tests {
         m.man_err = None;
         let s = screen(&mut m, 80, 24);
         assert!(s.contains("no project manifest"), "{s}");
-        // Author — no registries
+        // Author (PUBLISH) — no registries
         m.pane = Pane::Author;
         let s = screen(&mut m, 80, 24);
-        assert!(s.contains("authoring"), "{s}");
+        assert!(s.contains("publishing"), "{s}");
         assert!(s.contains("no registries configured"), "{s}");
     }
 
@@ -2230,20 +2402,16 @@ mod tests {
         m.status_err = true;
         let s = screen(&mut m, 80, 24);
         assert!(s.contains("removed w"), "{s}");
-        // log strip: ≥12 rows and non-empty; error/warning styling
-        // five lines → tail-4 keeps warning/error/done/extra1 inside
-        // the strip's three visible rows
+        // no permanent log strip — history only shows in the `L`
+        // sidebar (covered by log_mode_* tests), never in Normal mode
         m.log.push_back("phase fetch".into());
         m.log.push_back("warning: drift".into());
         m.log.push_back("error: boom".into());
         m.log.push_back("done".into());
         m.log.push_back("extra1".into());
         let s = screen(&mut m, 80, 16);
-        assert!(s.contains(" log "), "{s}");
-        assert!(s.contains("warning: drift"), "{s}");
-        assert!(s.contains("error: boom"), "{s}");
-        assert!(!s.contains("phase fetch"), "{s}"); // tail-4 window
-                                                    // 4 rows: tabs stay (≥3), status bar yields (<5), no log (<12)
+        assert!(!s.contains("error: boom"), "{s}");
+        // 4 rows: tabs stay (≥3), status bar yields (<5), no log (<12)
         let s = screen(&mut m, 80, 4);
         assert!(s.contains("INSTALLED"), "{s}");
         assert!(!s.contains("removed w"), "{s}");
@@ -2295,7 +2463,7 @@ mod tests {
         assert!(s.contains("1 dep(s)"), "{s}");
         m.pane = Pane::Author;
         let s = screen(&mut m, 80, 24);
-        assert!(s.contains("author — p pack"), "{s}");
+        assert!(s.contains("publish — p pack"), "{s}");
     }
 
     /// Versions focus marks the cursor row with `›` and switches the
@@ -2313,13 +2481,69 @@ mod tests {
         let focused = body_text_full(&detail, None, Some(0));
         assert!(focused.contains("› 0.9.0"));
         assert!(focused.contains("  1.0.0  ← current"));
-        assert!(focused.contains("versions — j/k move · i install · v/esc back"));
-        assert!(!focused.contains("esc back · j/k scroll · i install"));
+        // The status-bar hint is what versions focus switches — the
+        // body itself carries no hint line.
+        assert_eq!(
+            detail_hint(&detail, true),
+            "versions — j/k move · i install · v/esc back"
+        );
+        assert_eq!(
+            detail_hint(&detail, false),
+            "esc back · j/k scroll · i install · v versions"
+        );
+        assert!(!focused.contains("esc back · j/k scroll"));
+        // Focused — the inline `v` affordance steps aside.
+        assert!(!focused.contains("v picks a version"));
         // Cursor on the current entry keeps its `← current` marker.
         let on_current = body_text_full(&detail, None, Some(1));
         assert!(on_current.contains("› 1.0.0  ← current"));
         // Unfocused stays byte-identical to the plain render.
         assert_eq!(body_text(&detail), body_text_full(&detail, None, None));
+    }
+
+    /// `page_parts` reports the focused version row's body index so
+    /// `draw_detail` can scroll it into view — `None` when unfocused,
+    /// unfetched, or the selection is out of range.
+    #[test]
+    fn versions_focus_row_index_for_scroll() {
+        let page = reg_entry("1.0.0");
+        let detail = Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: Some(vec![reg_entry("0.9.0"), page.clone(), reg_entry("1.1.0")]),
+            versions_err: None,
+        };
+        let (_, _, _, body, row) = page_parts(&detail, "default", None, Some(2));
+        let row = row.expect("focused row index");
+        assert!(
+            body[row].spans.iter().any(|s| s.content.contains("1.1.0")),
+            "row {row} should be the focused 1.1.0 line"
+        );
+        assert!(page_parts(&detail, "default", None, None).4.is_none());
+        assert!(page_parts(&detail, "default", None, Some(9)).4.is_none());
+        // Pending fetch — no rows, no target.
+        let pending = Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: None,
+            versions_err: None,
+        };
+        assert!(page_parts(&pending, "default", None, Some(0)).4.is_none());
+    }
+
+    /// `scroll_to_show` scrolls the minimum to keep `row` inside the
+    /// `view_h` window — up when above, down when below, untouched
+    /// when already visible or the view is empty.
+    #[test]
+    fn scroll_to_show_minimal_adjustment() {
+        assert_eq!(scroll_to_show(5, 0, 10), 0); // already visible
+        assert_eq!(scroll_to_show(3, 5, 10), 3); // above → scroll up
+        assert_eq!(scroll_to_show(20, 0, 10), 11); // below → scroll down
+        assert_eq!(scroll_to_show(9, 0, 10), 0); // last visible row
+        assert_eq!(scroll_to_show(10, 0, 10), 1); // first hidden row
+        assert_eq!(scroll_to_show(4, 7, 0), 7); // empty view: untouched
     }
 
     /// The `installed <pkg>@<ver>` line appears on a Registry page
@@ -2404,5 +2628,124 @@ mod tests {
         // A future stamp (clock skew) reads as "just now", not a
         // negative duration.
         assert_eq!(ago_at(now + 60, now), "just now");
+    }
+
+    // --- frame-level layout tests (TestBackend) ---
+
+    /// A model with `n` op-log lines, ready to draw.
+    fn log_model(n: usize) -> Model {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = crate::Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            None,
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        for i in 0..n {
+            m.log.push_back(format!("op line {i}"));
+        }
+        m
+    }
+
+    /// Render one frame of `m` at `w`×`h` and flatten the buffer to
+    /// text lines for assertions.
+    fn frame_text(m: &mut Model, w: u16, h: u16) -> Vec<String> {
+        let backend = ratatui::backend::TestBackend::new(w, h);
+        let mut term = ratatui::Terminal::new(backend).unwrap();
+        term.draw(|f| draw(f, m)).unwrap();
+        let buf = term.backend().buffer();
+        (0..h)
+            .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>())
+            .collect()
+    }
+
+    /// There is no permanent log strip: with op-log lines present
+    /// and `Mode::Normal`, no ` log ` chrome renders and the pane
+    /// owns the row the strip used to take.
+    #[test]
+    fn no_permanent_log_strip() {
+        let mut m = log_model(10);
+        let screen = frame_text(&mut m, 80, 24);
+        // The strip's ` log ` title appears nowhere above the status
+        // bar (the bar's own `· L log` hint is exempt); the log
+        // history only exists behind `L`.
+        assert!(
+            !screen[..22].iter().any(|l| l.contains(" log ")),
+            "permanent log strip still drawn:\n{}",
+            screen.join("\n")
+        );
+        // The freed row belongs to the pane — the Home block's bottom
+        // border now sits on the last row above the status bar (the
+        // strip used to eat four rows there).
+        assert!(screen[22].contains('─'), "{}", screen[22]);
+        assert!(screen[23].contains("home"), "{}", screen[23]);
+        // And the log view was never drawn, so no hit rect was set.
+        assert_eq!(m.log_area, Rect::default());
+    }
+
+    /// The `:` candidate strip renders `insert — hint`: the hint is
+    /// no longer dead data.
+    #[test]
+    fn completion_strip_shows_hints() {
+        let mut m = log_model(0);
+        m.mode = Mode::Command;
+        m.cmdline = "ins".into();
+        m.cmd_completions = vec![
+            crate::complete::Candidate {
+                insert: "install ".into(),
+                hint: "install a package by ref".into(),
+            },
+            crate::complete::Candidate {
+                insert: "i ".into(),
+                hint: String::new(), // hintless candidates render bare
+            },
+        ];
+        let screen = frame_text(&mut m, 80, 24);
+        assert!(
+            screen
+                .iter()
+                .any(|l| l.contains("install — install a package by ref")),
+            "{}",
+            screen.join("\n")
+        );
+        // The `i` alias shows without a dangling separator.
+        assert!(screen.iter().any(|l| l.contains(" i ")));
+    }
+
+    /// `L` at a normal width docks the log as a right sidebar: the
+    /// main chrome shrinks to the left column, the bordered log panel
+    /// takes the right ~quarter, and the pane stays on screen.
+    #[test]
+    fn log_mode_docks_right_sidebar() {
+        let mut m = log_model(50);
+        m.mode = Mode::Log;
+        m.log_view_h = 20;
+        m.log_scroll = m.log.len() - 20; // tail, as `open_log` aims
+        let screen = frame_text(&mut m, 80, 24);
+        // 80/4 = 20 → clamped to 24 cols; the main column keeps 56.
+        assert_eq!(m.log_area.width, 24);
+        assert_eq!(m.log_area.x, 56);
+        assert_eq!(m.log_view_h, 22); // block height minus borders
+        assert_eq!(m.tabs_area.map(|r| r.width), Some(56));
+        // The sidebar shows history; the pane (Home) is still drawn
+        // in the left column.
+        assert!(screen.iter().any(|l| l.contains("log — 50 lines")));
+        assert!(screen.iter().any(|l| l.contains("op line 49")));
+        assert!(screen.iter().any(|l| l.contains("home")));
+    }
+
+    /// Under ~50 cols the sidebar would starve the pane — the log
+    /// falls back to the centered overlay instead.
+    #[test]
+    fn log_mode_narrow_falls_back_to_overlay() {
+        let mut m = log_model(10);
+        m.mode = Mode::Log;
+        let screen = frame_text(&mut m, 40, 20);
+        // Centered box: narrower than the frame, inset on both sides.
+        assert!(m.log_area.width < 40);
+        assert!(m.log_area.x > 0);
+        assert!(m.log_area.x + m.log_area.width < 40);
+        assert!(screen.iter().any(|l| l.contains("log — 10 lines")));
     }
 }

@@ -300,7 +300,7 @@ fn detail_verify_and_registry_pane() {
 }
 
 #[test]
-fn services_manifest_author_panes() {
+fn services_project_publish_panes() {
     let f = fixture();
     let (mut master, mut child) = spawn_pty(command(&f));
     let d = drain(&mut master);
@@ -311,14 +311,14 @@ fn services_manifest_author_panes() {
     // styled hint's "`provider:`" fragment is the reliable one.)
     d.send("4");
     d.wait_for(b"provider:");
-    // `5` — Manifest: no project manifest in cwd → the deps table
+    // `5` — Project: no project manifest in cwd → the deps table
     // title carries the default tamias.yaml path.
     d.send("5");
     d.wait_for(b"tamias.yaml");
-    // `6` — Author: the pane header + key hints render.
+    // `6` — Publish: the pane header + key hints render.
     d.send("6");
-    d.wait_for(b"author");
     d.wait_for(b"publish");
+    d.wait_for(b"pack");
     // `:manifest` reload + `:registries` report run on the worker.
     d.send(":manifest\r");
     std::thread::sleep(Duration::from_millis(300));

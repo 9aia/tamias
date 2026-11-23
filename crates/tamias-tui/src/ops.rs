@@ -199,7 +199,7 @@ impl Job {
             Self::Remove(n) => format!("remove {n}"),
             Self::Update { name, .. } => format!("update {name}"),
             Self::UpdateAll { .. } => "update all".to_string(),
-            Self::Pin { name, .. } => format!("pin {name}"),
+            Self::Pin { name, reference } => format!("pin {name} → {reference}"),
             Self::CacheClean { all } => {
                 if *all {
                     "cache clean --all".to_string()
@@ -252,6 +252,30 @@ impl Job {
     #[must_use]
     pub fn is_stream(&self) -> bool {
         matches!(self, Self::RunService { .. } | Self::Logs { .. })
+    }
+
+    /// Does this job mutate the store or provider state the panes
+    /// show? `Done` uses it to decide the post-job store `reload` +
+    /// services-refresh — read-only jobs (verify, doctor, search,
+    /// registries, cache clean, pack, publish, stream exits,
+    /// services refresh itself) skip both.
+    #[must_use]
+    pub fn mutates(&self) -> bool {
+        matches!(
+            self,
+            Self::Install { .. }
+                | Self::Remove(_)
+                | Self::Update { .. }
+                | Self::UpdateAll { .. }
+                | Self::Pin { .. }
+                | Self::AddDep { .. }
+                | Self::RemoveDep { .. }
+                | Self::SetDep { .. }
+                | Self::Sync { .. }
+                | Self::ProviderDeploy { .. }
+                | Self::ProviderUninstall { .. }
+                | Self::UnitAction { .. }
+        )
     }
 
     /// The same job with bundled-driver consent granted — what the
@@ -322,7 +346,7 @@ pub enum Outcome {
 }
 
 /// The `systemctl` verb word for a [`tamias_provider::UnitAction`].
-fn unit_action_verb(action: tamias_provider::UnitAction) -> &'static str {
+pub(crate) fn unit_action_verb(action: tamias_provider::UnitAction) -> &'static str {
     match action {
         tamias_provider::UnitAction::Start => "start",
         tamias_provider::UnitAction::Stop => "stop",
@@ -815,7 +839,7 @@ fn provider_uninstall(
     Ok(Outcome::Text(format!("uninstalled {name}")))
 }
 
-/// The project manifest the Manifest pane edits — `./tamias.yaml`
+/// The project manifest the Project pane edits — `./tamias.yaml`
 /// first (the file `tamias add` writes), then an existing
 /// `./tamias.yml`; a lone `tamias.toml` is refused because
 /// [`Manifest::save`] always writes YAML. Missing entirely → the
@@ -922,7 +946,7 @@ fn set_dep(
 }
 
 /// `tamias sync` — the shared [`tamias_install::sync_project`] over
-/// the project the Manifest pane edits (same [`project_manifest`]
+/// the project the Project pane edits (same [`project_manifest`]
 /// discovery, so `tamias.toml`-only projects get the same refusal).
 /// `from_lock` swaps the spec to `tamias.lock` itself — the manifest
 /// isn't even required then. Per-dep outcomes stream to the log; any
@@ -1070,7 +1094,7 @@ pub fn registry_names(ctx: &Ctx) -> Vec<(String, String)> {
     out
 }
 
-/// `:registries`/the Author pane's list — names + kinds, one per
+/// `:registries`/the Publish pane's list — names + kinds, one per
 /// line, defaults annotated.
 fn registries(ctx: &Ctx) -> Result<Outcome, Error> {
     let rows = registry_names(ctx);
