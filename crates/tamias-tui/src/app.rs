@@ -541,7 +541,7 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
             }
             Ok(Cmd::Sync { from_lock })
         }
-        other => Err(format!("unknown command ':{other}'")),
+        other => Err(format!("unknown command ':{other}' — `:help` lists verbs")),
     }
 }
 
@@ -1615,7 +1615,7 @@ impl Model {
                     },
                 );
             }
-            Err(e) => self.say_err(e.to_string()),
+            Err(e) => self.say_err(format!("{e} — `:registry <name>` picks another target")),
         }
     }
 
@@ -1988,7 +1988,7 @@ impl Model {
                 None => {
                     let n = self.entries.len();
                     if n == 0 {
-                        self.say_err("nothing installed");
+                        self.say_err("nothing installed — `i` installs by ref");
                     } else {
                         self.confirm_job(
                             "update all",

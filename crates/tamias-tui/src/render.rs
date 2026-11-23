@@ -269,7 +269,7 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
     )));
     if m.entries.is_empty() {
         lines.push(Line::from(Span::styled(
-            "  nothing installed yet — `i` install by ref",
+            "  nothing installed yet — `i` install by ref · `/` search · `:` commands",
             Style::default().fg(MUTED),
         )));
     } else {
@@ -320,7 +320,10 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
     if let Some(err) = &m.svc_err {
         if m.svc_rows.is_empty() {
             f.render_widget(
-                Paragraph::new(format!("services: {err}")).style(Style::default().fg(Color::Red)),
+                Paragraph::new(format!(
+                    "services: {err} — `R` retries · `:doctor` diagnoses"
+                ))
+                .style(Style::default().fg(Color::Red)),
                 area,
             );
             m.board_area = Rect::default();
@@ -332,7 +335,7 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
         let hint = if m.busy.is_some() {
             "loading services…"
         } else {
-            "no provider services — install a package with a `provider:` block"
+            "no provider services — `R` refreshes · `i` installs a package with a `provider:` block"
         };
         f.render_widget(Paragraph::new(hint).style(Style::default().fg(MUTED)), area);
         m.board_area = Rect::default();
@@ -418,13 +421,13 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
         }
         (None, Some(err)) => {
             info.push(Line::from(Span::styled(
-                format!("{err} — `:manifest` retries, `a` creates tamias.yaml on save"),
+                format!("{err} — `:manifest` retries once the file is fixed"),
                 Style::default().fg(WARN),
             )));
         }
         (None, None) => {
             info.push(Line::from(Span::styled(
-                "no project manifest — `a` writes tamias.yaml + tamias.lock",
+                "no project manifest — `a` adds a dep (writes tamias.yaml + tamias.lock)",
                 Style::default().fg(MUTED),
             )));
         }
@@ -452,7 +455,7 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
         .unwrap_or_default();
     if deps.is_empty() {
         f.render_widget(
-            Paragraph::new("no deps — `a` add ref · rows edit via `e`/`x`")
+            Paragraph::new("no deps — `a` adds a ref · `s` reconciles the set")
                 .style(Style::default().fg(MUTED)),
             table_area,
         );
@@ -493,7 +496,7 @@ fn draw_author(f: &mut Frame, m: &mut Model, area: Rect) {
     lines.push(Line::from(""));
     if m.author_regs.is_empty() {
         lines.push(Line::from(Span::styled(
-            "no registries configured — publish routes to the default local root",
+            "no registries configured — `registries:` in tamias.yml adds them (`R` reloads) · publish → default local root",
             Style::default().fg(MUTED),
         )));
     } else {
@@ -547,7 +550,8 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     let vis = m.visible();
     if let Some(err) = &m.load_err {
         f.render_widget(
-            Paragraph::new(format!("store: {err}")).style(Style::default().fg(Color::Red)),
+            Paragraph::new(format!("store: {err} — `R` reloads · `:doctor` diagnoses"))
+                .style(Style::default().fg(Color::Red)),
             area,
         );
         m.board_area = Rect::default();
@@ -556,7 +560,7 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     }
     if m.entries.is_empty() {
         f.render_widget(
-            Paragraph::new("no packages installed — `i` install-by-ref, `:install <ref>`, or `tamias install <ref>`")
+            Paragraph::new("no packages installed — `i` install-by-ref, `:install <ref>`, or `tamias install <ref>` · `/` searches the registry")
                 .style(Style::default().fg(MUTED)),
             area,
         );
@@ -566,8 +570,11 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     }
     if vis.is_empty() {
         f.render_widget(
-            Paragraph::new(format!("no entries match /{}", m.filter))
-                .style(Style::default().fg(MUTED)),
+            Paragraph::new(format!(
+                "no entries match /{} — `F` clears the filter",
+                m.filter
+            ))
+            .style(Style::default().fg(MUTED)),
             area,
         );
         m.board_area = Rect::default();
@@ -726,7 +733,7 @@ fn page_parts(
             (None, Some(err)) => body.push(Line::from(vec![
                 Span::styled("install  ", Style::default().fg(ACCENT)),
                 Span::styled("unavailable — ", Style::default().fg(WARN)),
-                Span::raw(err.clone()),
+                Span::raw(format!("{err} — `:registry <name>` picks another target")),
             ])),
             (None, None) => {}
         },
@@ -797,7 +804,7 @@ fn page_parts(
             } else if let Some(err) = manifest_err {
                 body.push(Line::from(vec![
                     Span::styled("manifest ", Style::default().fg(WARN)),
-                    Span::raw(err.clone()),
+                    Span::raw(format!("{err} — `x` removes it; reinstall repairs")),
                 ]));
             }
             // provenance — last, per the package-page anatomy.
@@ -898,7 +905,10 @@ fn page_parts(
                 }
                 (None, Some(err)) => body.push(Line::from(vec![
                     Span::styled("versions ", Style::default().fg(ACCENT)),
-                    Span::styled(format!("— {err}"), Style::default().fg(WARN)),
+                    Span::styled(
+                        format!("— {err} — reopen the page to retry"),
+                        Style::default().fg(WARN),
+                    ),
                 ])),
                 (None, None) => body.push(Line::from(vec![
                     Span::styled("versions ", Style::default().fg(ACCENT)),
@@ -1049,7 +1059,10 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
 fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     if let Some(err) = &m.reg_err {
         f.render_widget(
-            Paragraph::new(format!("registry: {err}")).style(Style::default().fg(Color::Red)),
+            Paragraph::new(format!(
+                "registry: {err} — `:registry <name>` switches target · `:doctor` diagnoses"
+            ))
+            .style(Style::default().fg(Color::Red)),
             area,
         );
         m.board_area = Rect::default();
@@ -1071,16 +1084,15 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
         return;
     }
     if m.reg_results.is_empty() {
-        let hint = if m.busy.is_some() {
-            "searching…"
+        let text = if m.busy.is_some() {
+            format!("searching… — /{}", m.reg_query)
         } else {
-            "no results"
+            format!(
+                "no results for /{} — `/` edits the query · `:registry <name>` switches target",
+                m.reg_query
+            )
         };
-        f.render_widget(
-            Paragraph::new(format!("{hint} — /{query}", query = m.reg_query))
-                .style(Style::default().fg(MUTED)),
-            area,
-        );
+        f.render_widget(Paragraph::new(text).style(Style::default().fg(MUTED)), area);
         m.board_area = Rect::default();
         m.viewport_top = 0;
         return;
@@ -1187,7 +1199,7 @@ fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
     m.log_scroll = m.log_scroll.min(max_scroll);
     let lines: Vec<Line> = if m.log.is_empty() {
         vec![Line::from(Span::styled(
-            " no operations yet",
+            " no operations yet — installs, `:` commands, and jobs log here",
             Style::default().fg(MUTED),
         ))]
     } else {

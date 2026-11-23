@@ -403,7 +403,7 @@ fn verify(ctx: &Ctx, name: &str) -> Result<Outcome, Error> {
     let report = store.verify(name)?;
     if !report.ok {
         return Err(Error::Failed(format!(
-            "{}: digest mismatch — recorded {}, computed {}",
+            "{}: digest mismatch — recorded {}, computed {} — `u`/`U` reinstalls",
             report.name,
             short(&report.recorded),
             short(&report.computed)
@@ -419,7 +419,7 @@ fn verify(ctx: &Ctx, name: &str) -> Result<Outcome, Error> {
     )?;
     if signature == tamias_sign::SignatureStatus::Failed {
         return Err(Error::Failed(format!(
-            "{}: signature verification failed",
+            "{}: signature verification failed — check `signing.allowed_signers` in tamias.yml",
             report.name
         )));
     }
@@ -625,7 +625,13 @@ fn writable(dir: &Path) -> bool {
 fn search(ctx: &Ctx, query: &str, target: Option<&str>) -> Result<Outcome, Error> {
     let config = env_config(ctx);
     let (results, value) =
-        tamias_registry_open::search(&ctx.registry_root, Some(&config), target, query)?;
+        tamias_registry_open::search(&ctx.registry_root, Some(&config), target, query).map_err(
+            |e| {
+                Error::Failed(format!(
+                    "{e} — `:registry <name>` switches target · `:doctor` diagnoses"
+                ))
+            },
+        )?;
     Ok(Outcome::Search {
         target: value.unwrap_or_else(|| "default".to_string()),
         results,
@@ -823,7 +829,9 @@ pub fn project_manifest() -> Result<(PathBuf, Manifest), Error> {
     }
     if Path::new("tamias.toml").is_file() {
         return Err(Error::Failed(
-            "tamias.toml found — the deps form edits YAML manifests only".to_string(),
+            "tamias.toml found — the deps form edits YAML manifests only \
+             (rename it or add tamias.yaml)"
+                .to_string(),
         ));
     }
     Ok((PathBuf::from("tamias.yaml"), Manifest::default()))
