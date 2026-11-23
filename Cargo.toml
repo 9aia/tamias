@@ -64,7 +64,7 @@ inherits = "release"
 lto = "thin"
 
 [workspace.dependencies]
-tamias = { path = "crates/tamias-cli", version = "0.2.0" }
+tamias = { path = "crates/tamias-cli", version = "0.3.0" }
 tamias-cache = { path = "crates/tamias-cache", version = "0.2.1" }
 tamias-cache-local = { path = "crates/tamias-cache-local", version = "0.2.1" }
 tamias-config = { path = "crates/tamias-config", version = "0.2.1" }
