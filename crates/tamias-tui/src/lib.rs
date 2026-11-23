@@ -5,7 +5,7 @@
 //! pane lists store entries with a `/` filter, `Enter` opens an
 //! npm-style package page (installed entries and Registry results
 //! alike — chips, description, install command, provenance), and
-//! `v`/`u`/`p`/`r`/`c`/`d`/`i` run the same library calls
+//! `v`/`u`/`p`/`x`/`c`/`d`/`i` run the same library calls
 //! `tamias-serve`/the CLI use on worker threads (confirm + consent
 //! modals, streamed phase log); the Registry pane searches a registry
 //! as-you-type and `i` installs a result. The Services, Manifest, and

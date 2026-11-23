@@ -575,7 +575,11 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
         return;
     }
 
-    let header = Row::new(vec!["NAME", "TYPE", "SOURCE", "RESOLVED", "DIGEST", "SIZE"])
+    // RESOLVED and DIGEST collapse to one compact DIGEST column —
+    // the fetch sha and full digests live on the package page's
+    // provenance section; the table only needs the verify-relevant
+    // short form.
+    let header = Row::new(vec!["NAME", "TYPE", "SOURCE", "DIGEST", "SIZE"])
         .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = vis
         .iter()
@@ -595,18 +599,16 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
                 Cell::from(Line::from(name)),
                 Cell::from(rec.kind.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(rec.source_ref.clone()),
-                Cell::from(short_sha(&rec.resolved)),
                 Cell::from(short_sha(&rec.digest)),
                 Cell::from(r.size.map_or("-".into(), human_size)),
             ])
         })
         .collect();
     let widths = [
-        Constraint::Min(16),
+        Constraint::Min(18),
         Constraint::Length(12),
         Constraint::Min(14),
-        Constraint::Length(14),
-        Constraint::Length(14),
+        Constraint::Length(13),
         Constraint::Length(9),
     ];
     let table = Table::new(rows, widths)
@@ -926,7 +928,7 @@ fn page_parts(
     body.push(Line::from(""));
     body.push(Line::from(Span::styled(
         match detail {
-            Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
+            Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
             Detail::Registry { .. } if versions_sel.is_some() => {
                 "versions — j/k move · i install · v/esc back"
             }
@@ -1083,16 +1085,14 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
         m.viewport_top = 0;
         return;
     }
-    let header = Row::new(vec![
-        "NAME",
-        "SCOPE",
-        "TYPE",
-        "VERSION",
-        "LICENSE",
-        "DIGEST",
-        "DESCRIPTION",
-    ])
-    .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    // NAME's label already carries `@scope/name@version` — SCOPE and
+    // DIGEST columns were pure noise (scope prefixes the label where
+    // truncation can't reach it; the digest lives on the package
+    // page's provenance). VERSION stays a column so the version
+    // survives even when a long name pushes the label's `@ver` tail
+    // off-screen.
+    let header = Row::new(vec!["NAME", "TYPE", "VERSION", "LICENSE", "DESCRIPTION"])
+        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = m
         .reg_results
         .iter()
@@ -1112,26 +1112,22 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
             }
             Row::new(vec![
                 Cell::from(Line::from(name)),
-                Cell::from(e.scope.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(e.kind.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(e.version.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(e.license.clone().unwrap_or_else(|| "-".into())),
-                Cell::from(short_sha(&e.digest)),
                 Cell::from(e.description.clone().unwrap_or_else(|| "-".into())),
             ])
         })
         .collect();
     // DESCRIPTION is the flexible column — it absorbs leftover width
-    // and clips on narrow terminals; LICENSE stays a fixed narrow
-    // column so it survives degradation.
+    // and clips on narrow terminals; LICENSE stays a Min column so it
+    // survives degradation alongside NAME.
     let widths = [
+        Constraint::Min(18),
+        Constraint::Length(10),
+        Constraint::Length(9),
+        Constraint::Min(11),
         Constraint::Min(14),
-        Constraint::Length(10),
-        Constraint::Length(10),
-        Constraint::Length(8),
-        Constraint::Length(10),
-        Constraint::Length(12),
-        Constraint::Min(12),
     ];
     let title = format!(" registry — {} · /{} ", m.reg_target_label, m.reg_query);
     let table = Table::new(rows, widths)
@@ -1255,7 +1251,7 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
             }
             Pane::Services => {
                 if m.svc_rows.is_empty() {
-                    "services — s/S start/stop · r restart · e/E enable/disable".to_string()
+                    "services — s/S start/stop · ! restart · e/E enable/disable".to_string()
                 } else {
                     format!(
                         "{} service row(s){}",
@@ -1289,7 +1285,7 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                 "versions — j/k move · i install · v/esc back"
             }
             Some(Detail::Registry { .. }) => "esc back · j/k scroll · i install",
-            _ => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
+            _ => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
         }
     } else {
         match m.pane {
@@ -1301,14 +1297,14 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                 }
             }
             Pane::Installed => {
-                "j/k · Enter page · v verify · u update · p pin · r remove · i install · c clean · d doctor · / filter · : cmds · q quit"
+                "j/k · Enter page · v verify · u update · p pin · x remove · i install · c clean · d doctor · / filter · : cmds · q quit"
             }
             Pane::Registry => "j/k · Enter page · i install · / query · : cmds · q quit",
             Pane::Services => {
                 if m.stream_child.is_some() {
                     "streaming — x kill · q quit"
                 } else {
-                    "j/k · s/S start/stop · r restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
+                    "j/k · s/S start/stop · ! restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
                 }
             }
             Pane::Manifest => {
@@ -1469,7 +1465,7 @@ keys — installed pane
   Enter         package page          esc/←   back / close page
   v             verify (digest check) u       update selected
   U             update all            p       pin → new ref
-  r             remove (confirm)      c/C     cache clean >30d / all
+  x             remove (confirm)      c/C     cache clean >30d / all
   d             doctor summary        i       install by ref
   Tab, h/l      cycle panes           1-6    jump to pane
   /             filter installed      Enter  keep filter
@@ -1501,7 +1497,7 @@ commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
 mouse:     wheel scrolls · click row selects · click tab switches
 
 services pane:  provider services + unit state · s/S start/stop ·
-                r restart · e/E enable/disable · d deploy · x uninstall
+                ! restart · e/E enable/disable · d deploy · x uninstall
                 t/T journal tail/follow · n foreground run (x kills)
 manifest pane:  deps rows editable — a add · d/x remove · e new ref
                 (writes tamias.yaml + tamias.lock like `tamias add`)
