@@ -215,6 +215,36 @@ pub enum Modal {
         /// The pipeline's refusal message (shown for context).
         reason: String,
     },
+    /// The Installed group's version picker — `x` on a group with
+    /// more than one installed version. Every member starts checked
+    /// (the default removes the whole group); `space` toggles the
+    /// cursor row, `a`/`n` check/uncheck the *visible* rows, `/`
+    /// filters labels, `⏎`/`y` removes the checked set as one
+    /// [`Job::RemoveMany`], `esc` cancels (there is no `n`-cancel —
+    /// `n` is select-none here).
+    Pick {
+        /// Dialog title (`remove <pkg> — N versions?`).
+        title: String,
+        /// Detail lines (the non-`files` teardown warning lives here,
+        /// once per distinct kind across the group).
+        body: Vec<String>,
+        /// Every group member's store label, semver-desc — the
+        /// removal candidates.
+        labels: Vec<String>,
+        /// Parallel to `labels` — `true` = selected for removal.
+        checked: Vec<bool>,
+        /// `/`-filtered view — indexes into `labels`, label order.
+        rows: Vec<usize>,
+        /// Cursor into `rows`.
+        cursor: usize,
+        /// `/` filter text (case-insensitive label substring).
+        filter: String,
+        /// Filter edit mode — printable keys edit `filter` instead of
+        /// driving the picker; `⏎`/`esc` leaves edit mode.
+        filter_edit: bool,
+        /// Top of the scroll window into `rows`.
+        scroll: usize,
+    },
 }
 
 /// A worker-thread message — phase lines, the final outcome, or a
@@ -383,8 +413,15 @@ enum Cmd {
     Uninstall(String),
     /// `:verify <name>`.
     Verify(String),
-    /// `:update [name]` — bare updates everything (`--all`).
-    Update(Option<String>),
+    /// `:update [name] [--no-prune]` — bare updates everything
+    /// (`--all`); `--no-prune` skips the post-update prune of
+    /// superseded versions (the CLI's flag of the same name).
+    Update {
+        /// Package name/label; `None` → update all.
+        name: Option<String>,
+        /// `false` when `--no-prune` was passed.
+        prune: bool,
+    },
     /// `:pin <name> <ref>`.
     Pin(String, String),
     /// `:search <q>` — jump to the Registry pane and query.
@@ -485,7 +522,24 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
                 Ok(Cmd::Verify(rest))
             }
         }
-        "update" | "u" => Ok(Cmd::Update(if rest.is_empty() { None } else { Some(rest) })),
+        "update" | "u" => {
+            // `--no-prune` is a flag, not part of the name — the
+            // remaining tokens join back into the package spec.
+            let mut prune = true;
+            let mut name_parts = Vec::new();
+            for t in rest.split_whitespace() {
+                if t == "--no-prune" {
+                    prune = false;
+                } else {
+                    name_parts.push(t);
+                }
+            }
+            let name = name_parts.join(" ");
+            Ok(Cmd::Update {
+                name: if name.is_empty() { None } else { Some(name) },
+                prune,
+            })
+        }
         "pin" | "p" => {
             // `:pin <name> <ref…>` — the ref may contain spaces? No —
             // refs never do; first token is the name, rest is the ref.
@@ -873,6 +927,33 @@ fn group_key(rec: &StoreRecord) -> String {
     match &rec.scope {
         Some(scope) => format!("@{scope}/{}", rec.name),
         None => rec.name.clone(),
+    }
+}
+
+/// The version picker's visible window — `j`/`k` scroll `rows` by
+/// keeping the cursor inside this many rows ([`pick_scroll_into_view`]).
+pub(crate) const PICK_VIEW: usize = 10;
+
+/// The Pick modal's `/`-filtered rows — indexes into `labels` whose
+/// label contains `filter` (case-insensitive substring), label order
+/// preserved. An empty filter shows everything.
+fn pick_rows(labels: &[String], filter: &str) -> Vec<usize> {
+    let needle = filter.to_lowercase();
+    labels
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| needle.is_empty() || l.to_lowercase().contains(&needle))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Keep `cursor` inside the picker's [`PICK_VIEW`]-row window — pull
+/// `scroll` only when the cursor would leave it.
+fn pick_scroll_into_view(scroll: &mut usize, cursor: usize) {
+    if cursor < *scroll {
+        *scroll = cursor;
+    } else if cursor >= *scroll + PICK_VIEW {
+        *scroll = cursor + 1 - PICK_VIEW;
     }
 }
 
@@ -2214,12 +2295,14 @@ impl Model {
     }
 
     /// `y` on a modal — Confirm spawns its job; Consent re-runs the
-    /// refused job with `allow_drivers`.
+    /// refused job with `allow_drivers`. `Pick` never reaches here
+    /// (`key_pick` owns its keys) — the arm exists only for
+    /// exhaustiveness and drops the modal like a cancel.
     fn modal_yes(&mut self) {
         match self.modal.take() {
             Some(Modal::Confirm { job, .. }) => self.spawn(job),
             Some(Modal::Consent { job, .. }) => self.spawn(job.with_drivers_allowed()),
-            None => {}
+            Some(Modal::Pick { .. }) | None => {}
         }
     }
 
@@ -2566,12 +2649,14 @@ impl Model {
         }
     }
 
-    /// `u` — update the selected entry from its recorded ref.
+    /// `u` — update the selected entry from its recorded ref
+    /// (`tamias update` parity: superseded versions prune after).
     fn verb_update(&mut self) {
         if let Some(label) = self.selected_label() {
             self.confirm_job(Job::Update {
                 name: label,
                 allow_drivers: false,
+                prune: true,
             });
         }
     }
@@ -2585,11 +2670,66 @@ impl Model {
         }
     }
 
-    /// `x` — remove confirm (teardown warning for non-`files`).
+    /// `x` — remove. A single-version group keeps the plain confirm;
+    /// a multi-version group opens the version picker instead of
+    /// silently removing only the representative (latest) row.
     fn verb_remove(&mut self) {
-        if let Some(label) = self.selected_label() {
-            self.confirm_job(Job::Remove(label));
+        let vis = self.visible();
+        let Some(&rep) = vis.get(self.sel) else {
+            self.say_err("nothing selected");
+            return;
+        };
+        let group = self.inst_groups().into_iter().find(|g| g.rep == rep);
+        match group {
+            Some(g) if g.members.len() > 1 => self.open_remove_pick(&g),
+            _ => {
+                if let Some(row) = self.entries.get(rep) {
+                    self.confirm_job(Job::Remove(row.entry.label()));
+                }
+            }
         }
+    }
+
+    /// Open the version picker for a multi-version Installed group —
+    /// every member starts checked (the default removes all of
+    /// them), listed semver-desc like the package page's version
+    /// list. The body carries the same non-`files` teardown warning
+    /// `confirm_job` shows, once per distinct kind across the group.
+    fn open_remove_pick(&mut self, group: &InstGroup) {
+        let mut members: Vec<StoreEntry> = group
+            .members
+            .iter()
+            .map(|&i| self.entries[i].entry.clone())
+            .collect();
+        members
+            .sort_by(|a, b| version_cmp(b.record.version.as_deref(), a.record.version.as_deref()));
+        // A group always has ≥2 members here — `members[0]` shares
+        // the `(name, scope)` the title names.
+        let gkey = group_key(&members[0].record);
+        let n = members.len();
+        let mut kinds = std::collections::BTreeSet::new();
+        for e in &members {
+            let kind = e.record.kind.as_deref().unwrap_or("files");
+            if kind != "files" {
+                kinds.insert(kind.to_string());
+            }
+        }
+        let body = kinds
+            .into_iter()
+            .map(|k| format!("type '{k}' — the driver uninstall may leave provider resources"))
+            .collect();
+        let labels: Vec<String> = members.iter().map(|e| e.label()).collect();
+        self.modal = Some(Modal::Pick {
+            title: format!("remove {gkey} — {n} versions? [⏎/y]"),
+            body,
+            checked: vec![true; labels.len()],
+            rows: pick_rows(&labels, ""),
+            cursor: 0,
+            filter: String::new(),
+            filter_edit: false,
+            scroll: 0,
+            labels,
+        });
     }
 
     /// `c`/`C` — cache clean confirm (>30d / all).
@@ -2768,10 +2908,11 @@ impl Model {
                 self.confirm_job(Job::ProviderUninstall { name });
             }
             Ok(Cmd::Verify(name)) => self.spawn(Job::Verify(name)),
-            Ok(Cmd::Update(name)) => match name {
+            Ok(Cmd::Update { name, prune }) => match name {
                 Some(name) => self.confirm_job(Job::Update {
                     name,
                     allow_drivers: false,
+                    prune,
                 }),
                 None => {
                     let n = self.entries.len();
@@ -2780,6 +2921,7 @@ impl Model {
                     } else {
                         self.confirm_job(Job::UpdateAll {
                             allow_drivers: false,
+                            prune,
                         });
                     }
                 }
@@ -3359,6 +3501,135 @@ impl Model {
         false
     }
 
+    /// Keys for the version picker — see [`Modal::Pick`]. `⏎`/`y`
+    /// confirm the checked set as one [`Job::RemoveMany`] (at least
+    /// one row must be checked), `esc` cancels, `j`/`k`/`g`/`G` move
+    /// the cursor, `space` toggles the row, `a`/`n` check/uncheck the
+    /// *visible* rows, `/` edits the filter. In filter-edit mode
+    /// printable keys edit `filter`; `⏎`/`esc` leaves edit mode
+    /// without confirming.
+    fn key_pick(&mut self, k: KeyEvent) -> bool {
+        let Some(modal) = self.modal.take() else {
+            return true;
+        };
+        let Modal::Pick {
+            title,
+            body,
+            labels,
+            mut checked,
+            mut rows,
+            mut cursor,
+            mut filter,
+            mut filter_edit,
+            mut scroll,
+        } = modal
+        else {
+            // Unreachable — `key_modal` only routes `Modal::Pick` here.
+            return true;
+        };
+        let mut close = false;
+        let mut confirm = false;
+        if filter_edit {
+            match k.code {
+                KeyCode::Enter | KeyCode::Esc => filter_edit = false,
+                KeyCode::Backspace => {
+                    filter.pop();
+                    rows = pick_rows(&labels, &filter);
+                    cursor = 0;
+                    scroll = 0;
+                }
+                KeyCode::Char(c) if !chorded(&k) => {
+                    filter.push(c);
+                    rows = pick_rows(&labels, &filter);
+                    cursor = 0;
+                    scroll = 0;
+                }
+                _ => {}
+            }
+        } else {
+            match k.code {
+                KeyCode::Esc => close = true,
+                KeyCode::Enter => confirm = true,
+                KeyCode::Char('y') | KeyCode::Char('Y') if !chorded(&k) => confirm = true,
+                KeyCode::Char('j') | KeyCode::Down => {
+                    cursor = (cursor + 1).min(rows.len().saturating_sub(1));
+                    pick_scroll_into_view(&mut scroll, cursor);
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    cursor = cursor.saturating_sub(1);
+                    pick_scroll_into_view(&mut scroll, cursor);
+                }
+                KeyCode::Char('g') => {
+                    cursor = 0;
+                    scroll = 0;
+                }
+                KeyCode::Char('G') => {
+                    cursor = rows.len().saturating_sub(1);
+                    pick_scroll_into_view(&mut scroll, cursor);
+                }
+                KeyCode::Char(' ') if !chorded(&k) => {
+                    if let Some(&li) = rows.get(cursor) {
+                        checked[li] = !checked[li];
+                    }
+                }
+                KeyCode::Char('/') => filter_edit = true,
+                KeyCode::Char('a') | KeyCode::Char('A') if !chorded(&k) => {
+                    for &li in &rows {
+                        checked[li] = true;
+                    }
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') if !chorded(&k) => {
+                    for &li in &rows {
+                        checked[li] = false;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if close {
+            return true; // modal dropped — cancelled
+        }
+        if confirm {
+            let picked: Vec<String> = labels
+                .iter()
+                .zip(checked.iter())
+                .filter(|(_, c)| **c)
+                .map(|(l, _)| l.clone())
+                .collect();
+            if picked.is_empty() {
+                // Nothing checked — keep the picker up so the
+                // selection work isn't lost to a stray ⏎.
+                self.say_err("nothing checked — space toggles · esc cancels");
+                self.modal = Some(Modal::Pick {
+                    title,
+                    body,
+                    labels,
+                    checked,
+                    rows,
+                    cursor,
+                    filter,
+                    filter_edit,
+                    scroll,
+                });
+            } else {
+                self.spawn(Job::RemoveMany { labels: picked });
+            }
+            return true;
+        }
+        self.modal = Some(Modal::Pick {
+            title,
+            body,
+            labels,
+            checked,
+            rows,
+            cursor,
+            filter,
+            filter_edit,
+            scroll,
+        });
+        true
+    }
+
     /// Modal keys — `y` confirms, `n`/`esc` cancels (default `n`).
     /// Chord-modified chars (Ctrl/Alt) never count — Ctrl+Y must not
     /// confirm a destructive op. Returns `true` when the key was
@@ -3366,6 +3637,11 @@ impl Model {
     fn key_modal(&mut self, k: KeyEvent) -> bool {
         if self.modal.is_none() {
             return false;
+        }
+        // The version picker has its own keymap — it's a list, not a
+        // y/n dialog (`n` is select-none there, not cancel).
+        if matches!(self.modal, Some(Modal::Pick { .. })) {
+            return self.key_pick(k);
         }
         match k.code {
             KeyCode::Char('y') | KeyCode::Char('Y') if !chorded(&k) => {
@@ -3643,6 +3919,7 @@ impl Model {
             KeyCode::Char('U') if self.pane == Pane::Installed => {
                 self.confirm_job(Job::UpdateAll {
                     allow_drivers: false,
+                    prune: true,
                 })
             }
             KeyCode::Char('p') if self.pane == Pane::Installed => self.verb_pin(),
@@ -3853,10 +4130,34 @@ mod tests {
         );
         assert!(parse_command("uninstall").is_err());
         assert_eq!(parse_command("verify w").unwrap(), Cmd::Verify("w".into()));
-        assert_eq!(parse_command("update").unwrap(), Cmd::Update(None));
+        assert_eq!(
+            parse_command("update").unwrap(),
+            Cmd::Update {
+                name: None,
+                prune: true
+            }
+        );
         assert_eq!(
             parse_command("update @s/w@1").unwrap(),
-            Cmd::Update(Some("@s/w@1".into()))
+            Cmd::Update {
+                name: Some("@s/w@1".into()),
+                prune: true
+            }
+        );
+        // `--no-prune` is a flag — bare and named forms both parse.
+        assert_eq!(
+            parse_command("update --no-prune").unwrap(),
+            Cmd::Update {
+                name: None,
+                prune: false
+            }
+        );
+        assert_eq!(
+            parse_command("update w --no-prune").unwrap(),
+            Cmd::Update {
+                name: Some("w".into()),
+                prune: false
+            }
         );
         assert_eq!(
             parse_command("pin w git:x#main").unwrap(),
@@ -4366,6 +4667,23 @@ mod tests {
         m.reload();
     }
 
+    /// `place` with a real version — the shared `record()` pins
+    /// `1.0.0`, and multi-version groups need distinct labels.
+    fn place_ver(m: &mut Model, payload: &Path, name: &str, version: &str) {
+        let mut rec = record(name, payload, None);
+        rec.version = Some(version.into());
+        Store::new(&m.store_root).install(payload, rec).unwrap();
+        m.reload();
+    }
+
+    /// Visible-row position of the group whose rep record has `name`.
+    fn group_pos(m: &Model, name: &str) -> usize {
+        m.visible()
+            .iter()
+            .position(|&i| m.entries[i].entry.record.name == name)
+            .unwrap()
+    }
+
     /// A provider service row for the Services pane.
     fn svc_row(package: &str, service: &str) -> ServiceRow {
         ServiceRow {
@@ -4412,7 +4730,7 @@ mod tests {
         ));
         assert!(matches!(
             parse_command("u w").unwrap(),
-            Cmd::Update(Some(_))
+            Cmd::Update { name: Some(_), .. }
         ));
         assert!(matches!(parse_command("i x").unwrap(), Cmd::Install(_)));
         assert!(matches!(parse_command("d").unwrap(), Cmd::Doctor));
@@ -4713,6 +5031,138 @@ mod tests {
         assert!(m.status.contains("nothing selected"));
         m.filter.clear();
         m.rebuild_sel(None, 0);
+    }
+
+    #[test]
+    fn remove_picker_multi_version_group() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = tctx(tmp.path());
+        let mut m = Model::open(&c).unwrap();
+        m.pane = Pane::Installed;
+        let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
+        place_ver(&mut m, &w, "w", "0.9.0");
+        place_ver(&mut m, &w, "w", "1.0.0");
+        place_ver(&mut m, &w, "w", "2.0.0");
+        // A single-version group keeps the plain confirm.
+        let o = pkg(tmp.path(), "o", "name: o\nversion: 1.0.0\n");
+        place_ver(&mut m, &o, "o", "1.0.0");
+        assert_eq!(m.entries.len(), 4);
+
+        // `x` on `o` (one version) → the simple Confirm, not a picker.
+        m.sel = group_pos(&m, "o");
+        m.sync_sel_key();
+        chr(&mut m, 'x');
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+        chr(&mut m, 'n');
+        assert!(m.modal.is_none());
+
+        // `x` on `w` (three versions) → the picker, all checked,
+        // semver-desc, package named in the title.
+        m.sel = group_pos(&m, "w");
+        m.sync_sel_key();
+        chr(&mut m, 'x');
+        let Some(Modal::Pick {
+            title,
+            labels,
+            checked,
+            rows,
+            cursor,
+            filter,
+            filter_edit,
+            ..
+        }) = &m.modal
+        else {
+            panic!("expected version picker, got {:?}", m.modal)
+        };
+        assert!(title.contains('w'), "{title}");
+        assert_eq!(labels, &vec!["w@2.0.0", "w@1.0.0", "w@0.9.0"]);
+        assert!(checked.iter().all(|c| *c), "default = all checked");
+        assert_eq!(rows, &vec![0, 1, 2]);
+        assert_eq!(*cursor, 0);
+        assert!(filter.is_empty() && !filter_edit);
+
+        // `n` unchecks every visible row → ⏎ refuses with an error
+        // and keeps the picker (selection work isn't lost).
+        chr(&mut m, 'n');
+        key(&mut m, KeyCode::Enter);
+        assert!(matches!(m.modal, Some(Modal::Pick { .. })));
+        assert!(m.status_err);
+        assert!(m.status.contains("nothing checked"));
+        // `a` re-checks; `esc` cancels outright.
+        chr(&mut m, 'a');
+        key(&mut m, KeyCode::Esc);
+        assert!(m.modal.is_none());
+
+        // Reopen — `/` filters the list; `n` unchecks the *visible*
+        // row only, so hidden checked rows still ride the removal.
+        chr(&mut m, 'x');
+        chr(&mut m, '/');
+        assert!(matches!(
+            &m.modal,
+            Some(Modal::Pick {
+                filter_edit: true,
+                ..
+            })
+        ));
+        for c in "0.9".chars() {
+            chr(&mut m, c);
+        }
+        key(&mut m, KeyCode::Enter); // leaves filter-edit, keeps picker
+        let Some(Modal::Pick { rows, filter, .. }) = &m.modal else {
+            panic!("picker closed during filter")
+        };
+        assert_eq!(filter, "0.9");
+        assert_eq!(rows, &vec![2], "only w@0.9.0 matches");
+        chr(&mut m, 'n'); // uncheck w@0.9.0 (the sole visible row)
+                          // Clear the filter — three backspaces for "0.9".
+        chr(&mut m, '/');
+        for _ in 0..3 {
+            key(&mut m, KeyCode::Backspace);
+        }
+        key(&mut m, KeyCode::Enter);
+        let Some(Modal::Pick { rows, cursor, .. }) = &m.modal else {
+            panic!("picker closed during refilter")
+        };
+        assert_eq!(rows, &vec![0, 1, 2]);
+        assert_eq!(*cursor, 0);
+        // `n` clears every check, `j`+`space` re-checks just row 1 —
+        // the subset removal: only w@1.0.0 rides the job.
+        chr(&mut m, 'n');
+        key(&mut m, KeyCode::Char('j'));
+        chr(&mut m, ' ');
+        key(&mut m, KeyCode::Enter);
+        assert!(m.modal.is_none());
+        settle(&mut m);
+        let mut names: Vec<String> = m.entries.iter().map(|r| r.entry.label()).collect();
+        names.sort();
+        assert_eq!(names, vec!["o@1.0.0", "w@0.9.0", "w@2.0.0"], "{names:?}");
+    }
+
+    #[test]
+    fn update_no_prune_flag_reaches_confirm_job() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let mut m = open(tmp.path());
+        // Named form — the job carries `prune: false`.
+        run_cmd(&mut m, ":update w --no-prune");
+        match &m.modal {
+            Some(Modal::Confirm { job, .. }) => {
+                assert!(matches!(job, Job::Update { prune: false, .. }));
+            }
+            other => panic!("expected update confirm, got {other:?}"),
+        }
+        chr(&mut m, 'n');
+        // Bare `--no-prune` with entries present → UpdateAll job.
+        let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
+        place(&mut m, &w, "w", None);
+        run_cmd(&mut m, ":update --no-prune");
+        match &m.modal {
+            Some(Modal::Confirm { job, .. }) => {
+                assert!(matches!(job, Job::UpdateAll { prune: false, .. }));
+            }
+            other => panic!("expected update-all confirm, got {other:?}"),
+        }
     }
 
     #[test]
@@ -6383,7 +6833,8 @@ mod tests {
     /// into one row — the rep is the semver-max (not lexicographic,
     /// not first-seen), `visible_rows` reports the group size for the
     /// `· N versions` marker, and the row verbs/detail act on the
-    /// rep's label. The `/` filter still matches through non-rep
+    /// rep's label (`x` opens the version picker covering every
+    /// member). The `/` filter still matches through non-rep
     /// members.
     #[test]
     fn installed_groups_versions_and_routes_to_latest() {
@@ -6410,14 +6861,22 @@ mod tests {
             other => panic!("expected installed page, got {other:?}"),
         }
         key(&mut m, KeyCode::Esc);
-        // `x` confirms removal of the rep's label — the latest
-        // version's store entry, not the whole group.
+        // `x` on a multi-version group opens the version picker —
+        // every version checked by default (removing only the rep
+        // silently would orphan the group's other copies).
         chr(&mut m, 'x');
         match &m.modal {
-            Some(Modal::Confirm { title, .. }) => {
-                assert!(title.contains("w@0.10.0"), "{title}");
+            Some(Modal::Pick {
+                title,
+                labels,
+                checked,
+                ..
+            }) => {
+                assert!(title.contains('w'), "{title}");
+                assert_eq!(labels, &vec!["w@0.10.0".to_string(), "w@0.9.0".to_string()]);
+                assert!(checked.iter().all(|c| *c), "default = all checked");
             }
-            other => panic!("expected confirm, got {other:?}"),
+            other => panic!("expected version picker, got {other:?}"),
         }
         // `/` matches any member — filtering on the old version's
         // label still surfaces the group.

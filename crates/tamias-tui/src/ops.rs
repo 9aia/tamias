@@ -11,6 +11,7 @@
 //! [`tamias_install::Progress`] phases through it, and every op
 //! returns a one-line summary the status bar/log can show.
 
+use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -41,17 +42,31 @@ pub enum Job {
     Verify(String),
     /// Driver `uninstall` dispatch + `Store::remove` (serve's rule).
     Remove(String),
+    /// The Installed group's version picker — every checked
+    /// `name@version` label removed through the same per-label path
+    /// as [`Job::Remove`], sequentially in one job. A failing label
+    /// warns and keeps its entry; the rest still run.
+    RemoveMany {
+        /// Store labels (`@scope/name@version`) to remove.
+        labels: Vec<String>,
+    },
     /// Re-install from the recorded `source_ref`.
     Update {
         /// `@scope/name@label`, label, or bare name.
         name: String,
         /// Bundled-driver consent (`--allow-drivers` equivalent).
         allow_drivers: bool,
+        /// Auto-prune superseded versions of the touched package
+        /// afterwards (`tamias update` default; `--no-prune` sets
+        /// this `false`).
+        prune: bool,
     },
     /// `update` over every installed entry (`--all`).
     UpdateAll {
         /// Bundled-driver consent.
         allow_drivers: bool,
+        /// Auto-prune superseded versions of the touched packages.
+        prune: bool,
     },
     /// `Store::retarget` + `tamias.lock` sync (`tamias pin`).
     Pin {
@@ -205,8 +220,21 @@ impl Job {
         match self {
             Self::Verify(n) => format!("verify {n}"),
             Self::Remove(n) => format!("remove {n}"),
-            Self::Update { name, .. } => format!("update {name}"),
-            Self::UpdateAll { .. } => "update all".to_string(),
+            Self::RemoveMany { labels } => format!("remove {} entr(ies)", labels.len()),
+            Self::Update { name, prune, .. } => {
+                if *prune {
+                    format!("update {name}")
+                } else {
+                    format!("update {name} — no prune")
+                }
+            }
+            Self::UpdateAll { prune, .. } => {
+                if *prune {
+                    "update all".to_string()
+                } else {
+                    "update all — no prune".to_string()
+                }
+            }
             Self::Pin { name, reference } => format!("pin {name} → {reference}"),
             Self::CacheClean { all } => {
                 if *all {
@@ -274,6 +302,7 @@ impl Job {
             self,
             Self::Install { .. }
                 | Self::Remove(_)
+                | Self::RemoveMany { .. }
                 | Self::Update { .. }
                 | Self::UpdateAll { .. }
                 | Self::Pin { .. }
@@ -296,12 +325,18 @@ impl Job {
             Self::Update {
                 name,
                 allow_drivers: _,
+                prune,
             } => Self::Update {
                 name,
                 allow_drivers: true,
+                prune,
             },
-            Self::UpdateAll { .. } => Self::UpdateAll {
+            Self::UpdateAll {
+                allow_drivers: _,
+                prune,
+            } => Self::UpdateAll {
                 allow_drivers: true,
+                prune,
             },
             Self::Install { reference, .. } => Self::Install {
                 reference,
@@ -477,26 +512,76 @@ fn remove(ctx: &Ctx, name: &str, log: &mut dyn FnMut(String)) -> Result<Outcome,
     Ok(Outcome::Text(format!("removed {}", record.name)))
 }
 
+/// The version picker's multi-remove — each checked label rides the
+/// same [`remove`] path as `Job::Remove`, sequentially. A failing
+/// label warns and keeps its entry; the rest still run, and any
+/// failure fails the job after the loop (the `prune` posture).
+fn remove_many(
+    ctx: &Ctx,
+    labels: &[String],
+    log: &mut dyn FnMut(String),
+) -> Result<Outcome, Error> {
+    let mut removed = Vec::new();
+    let mut failures = Vec::new();
+    for label in labels {
+        match remove(ctx, label, log) {
+            Ok(_) => removed.push(label.clone()),
+            Err(e) => {
+                log(format!("warning — could not remove {label}: {e}"));
+                failures.push(label.clone());
+            }
+        }
+    }
+    if failures.is_empty() {
+        Ok(Outcome::Text(format!(
+            "removed {} entr(ies)",
+            removed.len()
+        )))
+    } else {
+        Err(Error::Failed(format!(
+            "remove: {} removal(s) failed: {}",
+            failures.len(),
+            failures.join(", ")
+        )))
+    }
+}
+
 /// `update` — re-resolve + re-install from the recorded `source_ref`,
-/// then `tamias.lock` sync (same as `tamias update`).
+/// then `tamias.lock` sync (same as `tamias update`). With `prune`
+/// the touched `(scope, name)` group's superseded versions drop
+/// afterwards — the CLI's `prune_updated` parity (`--no-prune` sets
+/// `prune` false).
 fn update_one(
     ctx: &Ctx,
     name: &str,
     allow_drivers: bool,
+    prune: bool,
     log: &mut dyn FnMut(String),
 ) -> Result<Outcome, Error> {
     let store = Store::new(&ctx.store_root);
     let reference = store.find(name)?.record.source_ref;
     let entry = install_ref(ctx, &reference, allow_drivers, log)?;
     sync_lock(&entry.record)?;
-    Ok(Outcome::Text(format!("updated {}", entry.label())))
+    let mut text = format!("updated {}", entry.label());
+    if prune {
+        let touched = BTreeSet::from([(entry.record.scope.clone(), entry.record.name.clone())]);
+        let pruned = prune_touched(ctx, &touched, log);
+        if !pruned.is_empty() {
+            text.push_str(&format!("; pruned: {}", pruned.join(", ")));
+        }
+    }
+    Ok(Outcome::Text(text))
 }
 
 /// `update --all` — every entry's recorded ref, sequentially; the
-/// first failure stops the run (same as the CLI loop).
+/// first failure stops the run (same as the CLI loop). Packages that
+/// updated before the failure still prune — only they did (the
+/// CLI's `prune_updated` parity); prune failures warn, never fail
+/// the update.
 fn update_all(
     ctx: &Ctx,
     allow_drivers: bool,
+    prune: bool,
     log: &mut dyn FnMut(String),
 ) -> Result<Outcome, Error> {
     let store = Store::new(&ctx.store_root);
@@ -510,15 +595,39 @@ fn update_all(
     }
     log(format!("updating {} package(s)", refs.len()));
     let mut updated = Vec::new();
+    // `(scope, name)` of every package whose re-install landed — the
+    // auto-prune set (the CLI's `touched`).
+    let mut touched: BTreeSet<(Option<String>, String)> = BTreeSet::new();
+    let mut failure = None;
     for (_label, reference) in refs {
-        let entry = install_ref(ctx, &reference, allow_drivers, log)?;
-        sync_lock(&entry.record)?;
-        updated.push(entry.label());
+        match install_ref(ctx, &reference, allow_drivers, log) {
+            Ok(entry) => {
+                touched.insert((entry.record.scope.clone(), entry.record.name.clone()));
+                if let Err(e) = sync_lock(&entry.record) {
+                    failure = Some(e);
+                    break;
+                }
+                updated.push(entry.label());
+            }
+            Err(e) => {
+                failure = Some(e);
+                break;
+            }
+        }
     }
-    Ok(Outcome::Text(format!(
-        "updated {} package(s)",
-        updated.len()
-    )))
+    let pruned = if prune {
+        prune_touched(ctx, &touched, log)
+    } else {
+        Vec::new()
+    };
+    if let Some(e) = failure {
+        return Err(e);
+    }
+    let mut text = format!("updated {} package(s)", updated.len());
+    if !pruned.is_empty() {
+        text.push_str(&format!("; pruned: {}", pruned.join(", ")));
+    }
+    Ok(Outcome::Text(text))
 }
 
 /// `pin` — retarget the recorded ref, then `tamias.lock` sync.
@@ -652,24 +761,121 @@ fn writable(dir: &Path) -> bool {
         .is_ok()
 }
 
-/// `search` — the shared `tamias_registry_open::search` routing:
+/// `search` — the shared `tamias_registry_open` routing:
 /// `target` flag → `TAMIAS_REGISTRY` → `search.default` →
-/// `publish.default` → the local default root; then
-/// `registry.search(query)`.
+/// `publish.default` → the local default root. The TUI ranks the
+/// full index itself ([`rank_search`]): the registry `search` port's
+/// substring fields keep their order and always rank first, then
+/// fuzzy name-subsequence hits append (the CLI/serve `search` keeps
+/// plain substring — this is a TUI-only affordance).
 fn search(ctx: &Ctx, query: &str, target: Option<&str>) -> Result<Outcome, Error> {
     let config = env_config(ctx);
-    let (results, value) =
-        tamias_registry_open::search(&ctx.registry_root, Some(&config), target, query).map_err(
-            |e| {
-                Error::Failed(format!(
-                    "{e} — `:registry <name>` switches target · `:doctor` diagnoses"
-                ))
-            },
-        )?;
+    let value = ro::registry_target(
+        target,
+        &[
+            config.search.default.as_deref(),
+            config.publish.default.as_deref(),
+        ],
+    );
+    let registry = ro::open_registry(
+        &ctx.registry_root,
+        Some(&config),
+        value.as_deref(),
+        None,
+        None,
+    )
+    .map_err(|e| {
+        Error::Failed(format!(
+            "{e} — `:registry <name>` switches target · `:doctor` diagnoses"
+        ))
+    })?;
+    let results = rank_search(&registry.entries()?, query);
     Ok(Outcome::Search {
         target: value.unwrap_or_else(|| "default".to_string()),
         results,
     })
+}
+
+/// Fuzzy-tier cap — subsequence hits beyond this many are dropped so
+/// a short query can't flood the pane.
+const FUZZY_CAP: usize = 30;
+
+/// Minimum query length for the fuzzy tier — anything shorter
+/// subsequence-matches nearly every package name.
+const FUZZY_MIN_QUERY: usize = 2;
+
+/// Registry search ranking — the `Registry::search` port's substring
+/// fields (name, scope, description, keywords; case-insensitive)
+/// keep index order and always rank first. Entries that don't
+/// substring-match join after, but only when the query is an
+/// in-order subsequence of the package's `scope/name` key
+/// ([`fuzzy_score`]) — names only, never descriptions — best score
+/// first, capped at [`FUZZY_CAP`].
+fn rank_search(entries: &[RegistryEntry], query: &str) -> Vec<RegistryEntry> {
+    let q = query.to_lowercase();
+    let mut substring = Vec::new();
+    let mut fuzzy: Vec<(i64, usize, RegistryEntry)> = Vec::new();
+    for (i, e) in entries.iter().enumerate() {
+        let hit = e.name.to_lowercase().contains(&q)
+            || e.scope.as_deref().unwrap_or("").to_lowercase().contains(&q)
+            || e.description
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains(&q)
+            || e.keywords.iter().any(|k| k.to_lowercase().contains(&q));
+        if hit {
+            substring.push(e.clone());
+            continue;
+        }
+        if q.chars().count() < FUZZY_MIN_QUERY {
+            continue;
+        }
+        // The package key as users see it — `@scope/name`-less
+        // `scope/name` or bare `name` (the label's `@version` tail
+        // would fuzzy-match digits, so it's excluded).
+        let key = match &e.scope {
+            Some(scope) => format!("{scope}/{}", e.name),
+            None => e.name.clone(),
+        };
+        if let Some(score) = fuzzy_score(&key.to_lowercase(), &q) {
+            fuzzy.push((score, i, e.clone()));
+        }
+    }
+    // Score desc; index order breaks ties (stable, deterministic).
+    fuzzy.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    fuzzy.truncate(FUZZY_CAP);
+    substring.extend(fuzzy.into_iter().map(|(_, _, e)| e));
+    substring
+}
+
+/// Subsequence score of `needle` in `hay` (both already lowercase)
+/// — `None` when the needle isn't an in-order subsequence. Higher
+/// is better: every matched char earns its distance-from-the-end,
+/// contiguous runs and separator-adjacent hits (`-`, `_`, `.`, `/` —
+/// word starts like `pr-review`'s `r`) score bonuses, and each
+/// skipped char in a gap costs — so `prv` prefers `pr-review` over
+/// `sprawl`.
+fn fuzzy_score(hay: &str, needle: &str) -> Option<i64> {
+    let hay_chars: Vec<char> = hay.chars().collect();
+    let mut pos = 0usize;
+    let mut prev: Option<usize> = None;
+    let mut score = 0i64;
+    for nc in needle.chars() {
+        let i = pos + hay_chars[pos..].iter().position(|&c| c == nc)?;
+        score += (hay_chars.len() - i) as i64;
+        match prev {
+            Some(p) if i == p + 1 => score += 40,
+            Some(p) => score -= 6 * (i - p - 1) as i64,
+            None => {}
+        }
+        if i == 0 || matches!(hay_chars[i - 1], '-' | '_' | '.' | '/') {
+            score += 25;
+        }
+        prev = Some(i);
+        pos = i + 1;
+    }
+    Some(score)
 }
 
 /// The installable source ref for a registry index entry — the honest
@@ -849,12 +1055,68 @@ fn provider_uninstall(
     Ok(Outcome::Text(format!("uninstalled {name}")))
 }
 
+/// One prune removal — bins cleanup while the entry dir still
+/// exists, then provider teardown + store drop (the CLI's
+/// `uninstall_package` order: bins first — ownership checks read the
+/// entry dir — then version-aware provider teardown). Returns the
+/// removed label or the failure.
+fn prune_one(
+    store: &Store,
+    ctx: &Ctx,
+    label: &str,
+    kept: &[String],
+    log: &mut dyn FnMut(String),
+) -> Result<String, Error> {
+    log(format!("pruning {label} (keeping {})", kept.join(", ")));
+    if let Ok(entry) = store.find(label) {
+        if let Err(e) = tamias_bin::cleanup_after_remove(
+            label,
+            &entry,
+            &tamias_bin::default_bin_dir(),
+            &tamias_bin::default_alias_root(&ctx.store_root),
+        ) {
+            log(format!("warning — bin cleanup for {label}: {e}"));
+        }
+    }
+    let report = tamias_provider::uninstall(&ctx.store_root, label)?;
+    for line in &report.lines {
+        log(line.clone());
+    }
+    for warning in &report.warnings {
+        log(format!("warning — {warning}"));
+    }
+    Ok(label.to_string())
+}
+
+/// Run a [`tamias_core::PrunePlan`]'s removals — `(removed, failures)`;
+/// every failure warns into `log` and keeps its entry while the rest
+/// still run.
+fn run_prune_removals(
+    ctx: &Ctx,
+    store: &Store,
+    removals: &[tamias_core::PruneRemoval],
+    log: &mut dyn FnMut(String),
+) -> (Vec<String>, Vec<String>) {
+    let mut removed = Vec::new();
+    let mut failures = Vec::new();
+    for r in removals {
+        let label = r.entry.label();
+        match prune_one(store, ctx, &label, &r.kept, log) {
+            Ok(label) => removed.push(label),
+            Err(e) => {
+                log(format!("warning — could not prune {label}: {e}"));
+                failures.push(label);
+            }
+        }
+    }
+    (removed, failures)
+}
+
 /// `tamias prune --yes` — the pure plan ([`tamias_core::plan_prune`]:
 /// semver-max per `(scope, name)`, non-semver entries skipped) then
-/// one [`provider_uninstall`]-shaped removal per superseded label:
-/// bins cleanup while the entry dir still exists, then provider
-/// teardown + store drop. A failing removal keeps its entry; the rest
-/// still run and the job reports the failures.
+/// one provider-teardown removal per superseded label. A failing
+/// removal keeps its entry; the rest still run and the job reports
+/// the failures.
 fn prune(ctx: &Ctx, keep: usize, log: &mut dyn FnMut(String)) -> Result<Outcome, Error> {
     let store = Store::new(&ctx.store_root);
     let plan = tamias_core::plan_prune(&store.entries()?, keep);
@@ -866,44 +1128,7 @@ fn prune(ctx: &Ctx, keep: usize, log: &mut dyn FnMut(String)) -> Result<Outcome,
     for s in &plan.skipped {
         log(format!("skipped {} — {}", s.label, s.reason));
     }
-    let mut removed = Vec::new();
-    let mut failures = Vec::new();
-    for r in &plan.removals {
-        let label = r.entry.label();
-        log(format!("pruning {label} (keeping {})", r.kept.join(", ")));
-        // Same order as the CLI's `uninstall`: bins cleanup first —
-        // ownership checks read the entry dir — then provider
-        // teardown, which is version-aware (shared units re-render
-        // from survivors, driver `uninstall` waits for the last
-        // same-name install).
-        let result = (|| -> Result<(), Error> {
-            if let Ok(entry) = store.find(&label) {
-                if let Err(e) = tamias_bin::cleanup_after_remove(
-                    &label,
-                    &entry,
-                    &tamias_bin::default_bin_dir(),
-                    &tamias_bin::default_alias_root(&ctx.store_root),
-                ) {
-                    log(format!("warning — bin cleanup for {label}: {e}"));
-                }
-            }
-            let report = tamias_provider::uninstall(&ctx.store_root, &label)?;
-            for line in &report.lines {
-                log(line.clone());
-            }
-            for warning in &report.warnings {
-                log(format!("warning — {warning}"));
-            }
-            Ok(())
-        })();
-        match result {
-            Ok(()) => removed.push(label),
-            Err(e) => {
-                log(format!("warning — could not prune {label}: {e}"));
-                failures.push(label);
-            }
-        }
-    }
+    let (removed, failures) = run_prune_removals(ctx, &store, &plan.removals, log);
     if !failures.is_empty() {
         return Err(Error::Failed(format!(
             "prune: {} removal(s) failed: {}",
@@ -915,6 +1140,39 @@ fn prune(ctx: &Ctx, keep: usize, log: &mut dyn FnMut(String)) -> Result<Outcome,
         "pruned {} superseded entr(ies)",
         removed.len()
     )))
+}
+
+/// The `update` auto-prune — [`tamias_core::plan_prune`] at keep=1
+/// over only the touched `(scope, name)` groups (the CLI's
+/// `prune_updated`), so unrelated store entries are never candidates.
+/// Prune failures warn and keep their entries — cleanup never fails
+/// an update that already landed. Returns the removed labels.
+fn prune_touched(
+    ctx: &Ctx,
+    touched: &BTreeSet<(Option<String>, String)>,
+    log: &mut dyn FnMut(String),
+) -> Vec<String> {
+    if touched.is_empty() {
+        return Vec::new();
+    }
+    let store = Store::new(&ctx.store_root);
+    let scoped: Vec<StoreEntry> = match store.entries() {
+        Ok(entries) => entries
+            .into_iter()
+            .filter(|e| touched.contains(&(e.record.scope.clone(), e.record.name.clone())))
+            .collect(),
+        Err(e) => {
+            log(format!("warning — post-update prune skipped: {e}"));
+            return Vec::new();
+        }
+    };
+    let plan = tamias_core::plan_prune(&scoped, 1);
+    for s in &plan.skipped {
+        log(format!("skipped {} — {}", s.label, s.reason));
+    }
+    // `run_prune_removals` already warned per failure — prune never
+    // fails an update that already landed.
+    run_prune_removals(ctx, &store, &plan.removals, log).0
 }
 
 /// The project manifest the Project pane edits — `./tamias.yaml`
@@ -1354,11 +1612,16 @@ pub fn run(ctx: &Ctx, job: &Job, log: &mut dyn FnMut(String)) -> Result<Outcome,
     match job {
         Job::Verify(name) => verify(ctx, name),
         Job::Remove(name) => remove(ctx, name, log),
+        Job::RemoveMany { labels } => remove_many(ctx, labels, log),
         Job::Update {
             name,
             allow_drivers,
-        } => update_one(ctx, name, *allow_drivers, log),
-        Job::UpdateAll { allow_drivers } => update_all(ctx, *allow_drivers, log),
+            prune,
+        } => update_one(ctx, name, *allow_drivers, *prune, log),
+        Job::UpdateAll {
+            allow_drivers,
+            prune,
+        } => update_all(ctx, *allow_drivers, *prune, log),
         Job::Pin { name, reference } => pin(ctx, name, reference),
         Job::CacheClean { all } => cache_clean(ctx, *all),
         Job::Doctor => doctor(ctx),
@@ -1635,6 +1898,7 @@ mod tests {
             &c,
             &Job::UpdateAll {
                 allow_drivers: false,
+                prune: true,
             },
         );
         assert!(t.contains("updated 2 package(s)"), "{t}");
@@ -1645,7 +1909,8 @@ mod tests {
             text(
                 &c2,
                 &Job::UpdateAll {
-                    allow_drivers: false
+                    allow_drivers: false,
+                    prune: true
                 }
             ),
             "nothing installed"
@@ -1657,6 +1922,7 @@ mod tests {
             &Job::Update {
                 name: "w".into(),
                 allow_drivers: false,
+                prune: true,
             },
         );
         assert!(t.contains("updated w@1.0.0"), "{t}");
@@ -1680,7 +1946,8 @@ mod tests {
             &c,
             &Job::Update {
                 name: "ghost".into(),
-                allow_drivers: false
+                allow_drivers: false,
+                prune: true
             },
             &mut |_| {}
         )
@@ -2543,12 +2810,28 @@ mod tests {
         let jobs = vec![
             Job::Verify("w".into()),
             Job::Remove("w".into()),
+            Job::RemoveMany {
+                labels: vec!["w@1.0.0".into(), "w@0.9.0".into()],
+            },
             Job::Update {
                 name: "w".into(),
                 allow_drivers: false,
+                prune: true,
+            },
+            // `--no-prune` posture — `with_drivers_allowed` must
+            // preserve the flag, not silently re-enable pruning.
+            Job::Update {
+                name: "w2".into(),
+                allow_drivers: false,
+                prune: false,
             },
             Job::UpdateAll {
                 allow_drivers: false,
+                prune: true,
+            },
+            Job::UpdateAll {
+                allow_drivers: false,
+                prune: false,
             },
             Job::Pin {
                 name: "w".into(),
@@ -2591,6 +2874,7 @@ mod tests {
                 config: Some("c".into()),
             },
             Job::ProviderUninstall { name: "w".into() },
+            Job::Prune { keep: 1 },
             Job::RunService {
                 package: "w".into(),
                 service: Some("s".into()),
@@ -2672,9 +2956,16 @@ mod tests {
                         allow_drivers: b, ..
                     },
                 ) => *b && !*a,
-                (Job::UpdateAll { allow_drivers: a }, Job::UpdateAll { allow_drivers: b }) => {
-                    *b && !*a
-                }
+                (
+                    Job::UpdateAll {
+                        allow_drivers: a,
+                        prune: pa,
+                    },
+                    Job::UpdateAll {
+                        allow_drivers: b,
+                        prune: pb,
+                    },
+                ) => *b && !*a && pa == pb,
                 (
                     Job::SetDep {
                         allow_drivers: a, ..
@@ -2695,6 +2986,7 @@ mod tests {
                     allowed,
                     Job::Verify(_)
                         | Job::Remove(_)
+                        | Job::RemoveMany { .. }
                         | Job::Pin { .. }
                         | Job::CacheClean { .. }
                         | Job::Doctor
@@ -2703,6 +2995,7 @@ mod tests {
                         | Job::UnitAction { .. }
                         | Job::ProviderDeploy { .. }
                         | Job::ProviderUninstall { .. }
+                        | Job::Prune { .. }
                         | Job::RunService { .. }
                         | Job::Logs { .. }
                         | Job::RemoveDep { .. }
@@ -2758,6 +3051,7 @@ mod tests {
             &c,
             &Job::UpdateAll {
                 allow_drivers: false,
+                prune: true,
             },
         );
         assert!(t.contains("nothing installed"), "{t}");
@@ -2771,7 +3065,8 @@ mod tests {
             &c,
             &Job::Update {
                 name: "gone".into(),
-                allow_drivers: false
+                allow_drivers: false,
+                prune: true
             },
             &mut |_| {}
         )
@@ -2793,5 +3088,233 @@ mod tests {
         let res = run(&c, &Job::Doctor, &mut |_| {});
         let rendered = format!("{res:?}");
         assert!(rendered.contains("drivers"), "{rendered}");
+    }
+
+    // --- fuzzy registry search ---
+
+    /// A [`RegistryEntry`] fixture with just the fields `rank_search`
+    /// reads — name/scope/description (keywords stay empty).
+    fn ren(name: &str, scope: Option<&str>, desc: Option<&str>) -> RegistryEntry {
+        RegistryEntry {
+            name: name.into(),
+            scope: scope.map(str::to_string),
+            version: Some("1.0.0".into()),
+            kind: None,
+            description: desc.map(str::to_string),
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
+            digest: "sha256:x".into(),
+            signature: None,
+            publisher: None,
+            file: format!("{name}.tgz"),
+        }
+    }
+
+    #[test]
+    fn fuzzy_score_subsequence_and_shape() {
+        // `prv` is an in-order subsequence of `pr-review` (p…r…v)
+        // but not a substring; `other` lacks the `p` entirely.
+        assert!(fuzzy_score("pr-review", "prv").is_some());
+        assert!(fuzzy_score("other", "prv").is_none());
+        // Contiguous + word-start hits outrank gappy ones — the
+        // motivating `prv` → `pr-review` case.
+        let good = fuzzy_score("pr-review", "prv").unwrap();
+        let weak = fuzzy_score("sprawlv", "prv").unwrap();
+        assert!(good > weak, "{good} vs {weak}");
+        // Scope keys participate — `acme/widget` matches `aw`.
+        assert!(fuzzy_score("acme/widget", "aw").is_some());
+        assert!(fuzzy_score("acme/widget", "wa").is_none());
+    }
+
+    #[test]
+    fn rank_search_substring_first_fuzzy_names_only() {
+        let entries = vec![
+            // Fuzzy-only: `prv` subsequences but doesn't substring.
+            ren("pr-review", None, None),
+            // Substring hit on the name — must outrank the fuzzy row
+            // even though it sits later in the index.
+            ren("xprv", None, None),
+            // Description has the *subsequence* but not the substring,
+            // and the name doesn't match at all — fuzzy is name-only,
+            // so this entry must not appear.
+            ren("zzz", None, Some("purview of things")),
+        ];
+        let out = rank_search(&entries, "prv");
+        let names: Vec<&str> = out.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["xprv", "pr-review"], "{names:?}");
+        // Scope participates in the fuzzy key.
+        let scoped = vec![ren("widget", Some("acme"), None)];
+        let out = rank_search(&scoped, "aw");
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].name, "widget");
+        // No match at all → empty.
+        assert!(rank_search(&entries, "qqq").is_empty());
+    }
+
+    #[test]
+    fn rank_search_fuzzy_capped() {
+        // 35 fuzzy-only hits — the tier caps at FUZZY_CAP so a short
+        // query can't flood the pane.
+        let entries: Vec<RegistryEntry> = (0..35)
+            .map(|i| ren(&format!("a-x-b-{i}"), None, None))
+            .collect();
+        let out = rank_search(&entries, "ab");
+        assert_eq!(out.len(), FUZZY_CAP);
+        // Substring hits are never capped — they aren't fuzzy.
+        let mut with_sub = entries.clone();
+        with_sub.push(ren("ab", None, None));
+        let out = rank_search(&with_sub, "ab");
+        assert_eq!(out.len(), FUZZY_CAP + 1);
+        assert_eq!(out[0].name, "ab");
+    }
+
+    #[test]
+    fn search_job_ranks_fuzzy_hits() {
+        let tmp = tempfile::tempdir().unwrap();
+        let c = ctx(tmp.path());
+        std::fs::create_dir_all(&c.registry_root).unwrap();
+        std::fs::write(
+            c.registry_root.join("index.json"),
+            r#"[
+                {"name":"pr-review","version":"1.0.0","digest":"sha256:a","file":"pr-review/1.0.0.tgz"},
+                {"name":"xprv","version":"1.0.0","digest":"sha256:b","file":"xprv/1.0.0.tgz"},
+                {"name":"other","version":"1.0.0","digest":"sha256:c","file":"other/1.0.0.tgz"}
+            ]"#,
+        )
+        .unwrap();
+        match run(
+            &c,
+            &Job::Search {
+                query: "prv".into(),
+                target: None,
+            },
+            &mut |_| {},
+        )
+        .unwrap()
+        {
+            Outcome::Search { results, .. } => {
+                let names: Vec<&str> = results.iter().map(|e| e.name.as_str()).collect();
+                assert_eq!(names, vec!["xprv", "pr-review"], "{names:?}");
+            }
+            other => panic!("expected search outcome, got {other:?}"),
+        }
+    }
+
+    // --- update auto-prune parity + multi-remove ---
+
+    /// `place` with a real version — the shared `record()` pins
+    /// `1.0.0`, and multi-version groups need distinct labels.
+    fn place_ver(c: &Ctx, payload: &Path, name: &str, version: &str) -> StoreEntry {
+        let mut rec = record(name, payload, None);
+        rec.version = Some(version.into());
+        Store::new(&c.store_root).install(payload, rec).unwrap()
+    }
+
+    /// Store labels sorted — the post-job assertion surface.
+    fn labels(c: &Ctx) -> Vec<String> {
+        let mut v: Vec<String> = Store::new(&c.store_root)
+            .entries()
+            .unwrap()
+            .iter()
+            .map(StoreEntry::label)
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn update_prunes_only_touched_groups() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = ctx(tmp.path());
+        // `w`'s payload manifest is 2.0.0 — the ref every placed `w`
+        // entry recorded, so updating any of them lands w@2.0.0.
+        let w = pkg(tmp.path(), "w", "name: w\nversion: 2.0.0\n");
+        let o = pkg(tmp.path(), "o", "name: o\nversion: 1.0.0\n");
+        place_ver(&c, &w, "w", "0.9.0");
+        place_ver(&c, &w, "w", "1.0.0");
+        // `o`'s superseded pair must survive — its group is untouched.
+        place_ver(&c, &o, "o", "0.9.0");
+        place_ver(&c, &o, "o", "1.0.0");
+
+        let t = text(
+            &c,
+            &Job::Update {
+                name: "w@1.0.0".into(),
+                allow_drivers: false,
+                prune: true,
+            },
+        );
+        assert!(t.contains("updated w@2.0.0"), "{t}");
+        assert!(t.contains("pruned:"), "{t}");
+        assert_eq!(
+            labels(&c),
+            vec!["o@0.9.0", "o@1.0.0", "w@2.0.0"],
+            "w's superseded copies pruned; o untouched"
+        );
+
+        // `--no-prune` — a fresh superseded w stays put.
+        place_ver(&c, &w, "w", "1.5.0");
+        let t = text(
+            &c,
+            &Job::Update {
+                name: "w@1.5.0".into(),
+                allow_drivers: false,
+                prune: false,
+            },
+        );
+        assert!(t.contains("updated w@2.0.0"), "{t}");
+        assert!(!t.contains("pruned"), "{t}");
+        assert!(labels(&c).contains(&"w@1.5.0".to_string()));
+
+        // `update --all` prunes every touched group — including `o`,
+        // which this run *does* touch (CLI parity: --all updates all).
+        let t = text(
+            &c,
+            &Job::UpdateAll {
+                allow_drivers: false,
+                prune: true,
+            },
+        );
+        assert!(t.contains("pruned:"), "{t}");
+        assert_eq!(labels(&c), vec!["o@1.0.0", "w@2.0.0"]);
+    }
+
+    #[test]
+    fn remove_many_sequential_and_failure_tolerant() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _g = EnvGuard::enter(tmp.path());
+        let c = ctx(tmp.path());
+        let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
+        place_ver(&c, &w, "w", "1.0.0");
+        place_ver(&c, &w, "w", "2.0.0");
+        let t = text(
+            &c,
+            &Job::RemoveMany {
+                labels: vec!["w@1.0.0".into(), "w@2.0.0".into()],
+            },
+        );
+        assert!(t.contains("removed 2"), "{t}");
+        assert!(labels(&c).is_empty());
+
+        // A failing label warns and keeps its entry while the rest
+        // still run — the job then reports the failure.
+        place_ver(&c, &w, "w", "1.0.0");
+        place_ver(&c, &w, "w", "2.0.0");
+        let err = run(
+            &c,
+            &Job::RemoveMany {
+                labels: vec!["w@1.0.0".into(), "ghost@9.9.9".into(), "w@2.0.0".into()],
+            },
+            &mut |_| {},
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("1 removal(s) failed"), "{err}");
+        assert!(err.contains("ghost@9.9.9"), "{err}");
+        assert!(labels(&c).is_empty(), "both w versions still removed");
     }
 }

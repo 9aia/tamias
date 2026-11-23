@@ -14,7 +14,7 @@ use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap}
 use ratatui::Frame;
 use tamias_core::StoreEntry;
 
-use crate::app::{Detail, Modal, Mode, Model, Pane, PromptKind, SPINNER};
+use crate::app::{Detail, Modal, Mode, Model, Pane, PromptKind, PICK_VIEW, SPINNER};
 
 /// Accent — a bright saturated blue that stays legible on dark
 /// terminals (the old `Indexed(69)` navy read as near-background);
@@ -1433,7 +1433,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
             format!("searching… — /{}", m.reg_query)
         } else {
             format!(
-                "no results for /{} — `:search <q>` edits · `:registry <name>` switches target",
+                "no results for /{} — substring + fuzzy name match · `:search <q>` edits · `:registry <name>` switches target",
                 m.reg_query
             )
         };
@@ -1851,12 +1851,17 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
 
 /// A centered confirm/consent dialog — `y`/`n`, default `n`.
 fn draw_modal(f: &mut Frame, modal: &Modal, area: Rect) {
+    if let Modal::Pick { .. } = modal {
+        draw_pick(f, modal, area);
+        return;
+    }
     let (title, body): (String, Vec<String>) = match modal {
         Modal::Confirm { title, body, .. } => (title.clone(), body.clone()),
         Modal::Consent { reason, .. } => (
             "bundled drivers — consent? [y/n]".to_string(),
             vec![reason.clone()],
         ),
+        Modal::Pick { .. } => unreachable!("Pick routed to draw_pick"),
     };
     let mut lines: Vec<Line> = body
         .iter()
@@ -1884,6 +1889,101 @@ fn draw_modal(f: &mut Frame, modal: &Modal, area: Rect) {
     );
 }
 
+/// The multi-version remove picker — a checkbox list over the
+/// group's labels inside the same centered-box chrome as the confirm
+/// dialog. `/` filters, `space`/`a`/`n` edit the checked set, `⏎`/`y`
+/// removes it; the footer line carries the whole keymap (the modal's
+/// own hint surface, same posture as the confirm's `y = yes` line).
+fn draw_pick(f: &mut Frame, modal: &Modal, area: Rect) {
+    let Modal::Pick {
+        title,
+        body,
+        labels,
+        checked,
+        rows,
+        cursor,
+        filter,
+        filter_edit,
+        scroll,
+    } = modal
+    else {
+        return;
+    };
+    let mut lines: Vec<Line> = body
+        .iter()
+        .map(|b| Line::from(Span::styled(b.clone(), Style::default().fg(WARN))))
+        .collect();
+    if !body.is_empty() {
+        lines.push(Line::from(""));
+    }
+    // The `/` filter line — block cursor only while editing.
+    let mut filter_spans = vec![
+        Span::styled(
+            if *filter_edit { "filter> " } else { "filter  " },
+            Style::default().fg(ACCENT),
+        ),
+        Span::raw(filter.clone()),
+    ];
+    if *filter_edit {
+        filter_spans.push(Span::styled("█", Style::default().fg(ACCENT)));
+    }
+    lines.push(Line::from(filter_spans));
+    lines.push(Line::from(""));
+    // The scroll window — `rows[scroll .. scroll+PICK_VIEW)`; the
+    // cursor row is highlighted and marked `›` like the pane cursor.
+    let view: Vec<usize> = rows.iter().skip(*scroll).take(PICK_VIEW).copied().collect();
+    if view.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "no versions match the filter",
+            Style::default().fg(MUTED),
+        )));
+    }
+    for (pos, &li) in view.iter().enumerate() {
+        let is_cur = *scroll + pos == *cursor;
+        let mark = if checked[li] { "[x]" } else { "[ ]" };
+        let style = if is_cur {
+            Style::default().fg(TEXT).bg(Color::Indexed(238))
+        } else {
+            Style::default().fg(TEXT)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(if is_cur { "› " } else { "  " }, style),
+            Span::styled(format!("{mark} "), style),
+            Span::styled(labels[li].clone(), style),
+        ]));
+    }
+    let remaining = rows.len().saturating_sub(*scroll + view.len());
+    if remaining > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("… {remaining} more — j/k scrolls"),
+            Style::default().fg(MUTED),
+        )));
+    }
+    lines.push(Line::from(""));
+    let n_checked = checked.iter().filter(|c| **c).count();
+    lines.push(Line::from(Span::styled(
+        format!(
+            "⏎/y remove {n_checked} checked · space toggle · a/n all/none · / filter · esc cancel"
+        ),
+        Style::default().fg(MUTED),
+    )));
+    // Same box math as the confirm dialog — `min(area.width)` keeps
+    // the 30-col floor from overflowing narrow terminals.
+    let w = ((area.width * 3 / 5).clamp(30, 72)).min(area.width);
+    let h = (lines.len() as u16 + 2).min(area.height);
+    let x = area.x + area.width.saturating_sub(w) / 2;
+    let y = area.y + area.height.saturating_sub(h) / 2;
+    let rect = Rect::new(x, y, w, h);
+    f.render_widget(Clear, rect);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(Block::default().borders(Borders::ALL).title(title.clone()))
+            .style(Style::default().fg(Color::White))
+            .wrap(Wrap { trim: false }),
+        rect,
+    );
+}
+
 fn draw_help(f: &mut Frame, m: &mut Model, area: Rect) {
     // Static text — keep it honest: pane names match `Pane::label`,
     // and `q`/`esc` close an open package page before they quit.
@@ -1901,7 +2001,9 @@ keys — installed pane
   /             filter installed      F       clear filter
   rows show the latest version per package — · N versions counts
   the store's other copies; Enter's page lists them all and v picks
-  one to reinstall · :prune drops the superseded copies
+  one to reinstall · x on a multi-version group opens a picker —
+  every version checked, space/a/n// narrow it, ⏎ removes the set ·
+  :prune drops the superseded copies
   :             command line          Tab    complete · esc leave
   L/:log       op-log sidebar         j/k    scroll · g/G ends · q close
   R             reload store          ?       this help
@@ -1922,7 +2024,9 @@ package page:  npm-style page — header chips · description · install
                not an activate) · `installed <pkg>@<ver>` line when
                already in the store · old versions: :prune
 
-registry pane:  / search-as-you-type (debounced) · Enter package page ·
+registry pane:  / search-as-you-type (debounced) — substring over
+                name/scope/description/keywords ranks first, then
+                fuzzy name-subsequence hits · Enter package page ·
                 i install result · :registry <name> target · :search <q>
                 results mark [signed] · installed <ver> · N versions
 
@@ -1944,7 +2048,7 @@ publish pane:   p bundle pack · P publish (confirm) · r registries ·
 
 commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
            :uninstall <name> (provider teardown)  :verify <name>
-           :update [name]  :pin <name> <ref>
+           :update [name] [--no-prune]  :pin <name> <ref>
            :search <q>  :registry <name>  :clean [all]  :doctor
            :services  :service <verb> <unit>  :run <pkg> [svc]
            :logs <pkg|unit> [-f]  :deploy <name>  :manifest
