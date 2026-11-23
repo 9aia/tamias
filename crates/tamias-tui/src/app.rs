@@ -858,6 +858,13 @@ pub struct Model {
     /// ([`Model::recent_installed`]) — `j`/`k`/wheel move it, `Enter`
     /// opens the highlighted entry's package page.
     pub home_sel: usize,
+    /// `recent_installed` cache — the `installed_at`-desc top-8 index
+    /// order, rebuilt on reload instead of re-sorted per call/frame.
+    recent: Vec<usize>,
+    /// `(name, scope)` → installed version label, sorted by key —
+    /// rebuilt on reload; the Registry pane's per-row `· installed`
+    /// marker and the package page's marker query it per frame.
+    installed_labels: Vec<((String, Option<String>), String)>,
     /// Label of the selected row before the last rebuild — keeps the
     /// cursor on the same package across reloads.
     sel_label: Option<String>,
@@ -952,9 +959,19 @@ pub struct Model {
     /// Package page (`Enter` on an Installed row or Registry result)
     /// — see [`Detail`].
     pub detail: Option<Detail>,
-    /// Page scroll offset — `j`/`k`/arrows move it while `detail` is
-    /// open; clamped to the body height each frame.
+    /// The pane an `open_label_detail` page was opened from (Home or
+    /// Services) — [`Model::close_detail`] restores it so Esc lands
+    /// back where `Enter` was pressed, not always on Installed.
+    /// `None` for pages opened on their own pane (Installed/Registry
+    /// `Enter`) and cleared by every pane switch.
+    detail_origin: Option<Pane>,
+    /// Page scroll offset — `j`/`k`/arrows/wheel move it while
+    /// `detail` is open; clamped to the body height each frame.
     pub detail_scroll: usize,
+    /// Last frame's max `detail_scroll` (body lines minus the body
+    /// area) — `G` jumps straight to the bottom; `draw_detail`
+    /// refreshes it every frame the page is open.
+    pub(crate) detail_max_scroll: usize,
     /// Versions-focus mode on a Registry package page — `v` toggles
     /// it once the sibling-version list has landed; while set, `j`/`k`
     /// move [`Model::versions_sel`] instead of scrolling the page and
@@ -1047,6 +1064,8 @@ impl Model {
             pane: Pane::Home,
             sel: 0,
             home_sel: 0,
+            recent: Vec::new(),
+            installed_labels: Vec::new(),
             sel_label: None,
             filter: String::new(),
             mode: Mode::Normal,
@@ -1080,7 +1099,9 @@ impl Model {
             log: VecDeque::new(),
             modal: None,
             detail: None,
+            detail_origin: None,
             detail_scroll: 0,
+            detail_max_scroll: 0,
             versions_focus: false,
             versions_sel: 0,
             log_scroll: 0,
@@ -1140,6 +1161,7 @@ impl Model {
             }
         }
         self.rebuild_sel(keep.as_deref(), at);
+        self.rebuild_derived();
         // The recent list shrank under the cursor (uninstall, or a
         // fresh install reordering it) — clamp like every other sel.
         let n = self.recent_installed().len();
@@ -1484,8 +1506,10 @@ impl Model {
     // --- selection ---
 
     /// Indices of the rows passing the `/` filter, in store order.
-    /// The filter is a case-insensitive substring over the label,
-    /// source ref, kind, and resolved sha — everything the row shows.
+    /// The filter is a case-insensitive substring over what the row
+    /// shows — label, kind, source ref, description, sealed badge.
+    /// Provenance (`resolved`/`digest`) is deliberately excluded:
+    /// hex fragments would match nearly everything.
     pub fn visible(&self) -> Vec<usize> {
         let needle = self.filter.to_lowercase();
         self.entries
@@ -1498,12 +1522,11 @@ impl Model {
                 let rec = &r.entry.record;
                 let sealed = if r.sealed { " sealed" } else { "" };
                 let hay = format!(
-                    "{} {} {} {} {}{}",
+                    "{} {} {} {}{}",
                     r.entry.label(),
                     rec.kind.as_deref().unwrap_or(""),
                     rec.source_ref,
-                    rec.resolved,
-                    rec.digest,
+                    rec.description.as_deref().unwrap_or(""),
                     sealed
                 )
                 .to_lowercase();
@@ -1527,19 +1550,11 @@ impl Model {
 
     /// Indices into `entries` for the Home pane's "recently installed"
     /// list — `installed_at` desc (stable, so ties keep the store's
-    /// label order), top 8. The renderer and the `home_sel` cursor
-    /// share this ordering so they can never disagree.
-    pub fn recent_installed(&self) -> Vec<usize> {
-        let mut idx: Vec<usize> = (0..self.entries.len()).collect();
-        idx.sort_by(|&a, &b| {
-            self.entries[b]
-                .entry
-                .record
-                .installed_at
-                .cmp(&self.entries[a].entry.record.installed_at)
-        });
-        idx.truncate(8);
-        idx
+    /// label order), top 8. Cached by [`Model::rebuild_derived`] on
+    /// reload; the renderer and the `home_sel` cursor share this
+    /// ordering so they can never disagree.
+    pub fn recent_installed(&self) -> &[usize] {
+        &self.recent
     }
 
     /// The recent-install row under the Home cursor, if any.
@@ -1554,21 +1569,59 @@ impl Model {
     /// show (`0.2.0`, or the resolved-sha short form when the record
     /// is unversioned). `None` when no store entry matches; version
     /// may differ from the registry row's — that's the point.
+    /// Binary-searches the [`Model::installed_labels`] cache rebuilt
+    /// on reload — O(log n), no per-row scan per frame.
     pub fn installed_label_for(&self, name: &str, scope: Option<&str>) -> Option<String> {
-        self.entries.iter().find_map(|r| {
-            let rec = &r.entry.record;
-            if rec.name == name && rec.scope.as_deref() == scope {
-                Some(rec.version.clone().unwrap_or_else(|| {
+        self.installed_labels
+            .binary_search_by(|probe| {
+                probe
+                    .0
+                     .0
+                    .as_str()
+                    .cmp(name)
+                    .then_with(|| probe.0 .1.as_deref().cmp(&scope))
+            })
+            .ok()
+            .map(|i| self.installed_labels[i].1.clone())
+    }
+
+    /// Rebuild the per-reload derived caches — the sorted
+    /// `(name, scope)` → version-label table [`Model::installed_label_for`]
+    /// searches and the [`Model::recent`] ordering. Called at the end
+    /// of `reload`; tests that plant `entries` directly call it too.
+    fn rebuild_derived(&mut self) {
+        // Every (name, scope) → label pair, sorted by key; the stable
+        // sort keeps store order inside equal keys and `dedup_by`
+        // keeps the first — the same row the old linear `find_map`
+        // returned.
+        let mut labels: Vec<((String, Option<String>), String)> = self
+            .entries
+            .iter()
+            .map(|r| {
+                let rec = &r.entry.record;
+                let label = rec.version.clone().unwrap_or_else(|| {
                     let sha = rec
                         .resolved
                         .strip_prefix("sha256:")
                         .unwrap_or(&rec.resolved);
                     sha.chars().take(12).collect()
-                }))
-            } else {
-                None
-            }
-        })
+                });
+                ((rec.name.clone(), rec.scope.clone()), label)
+            })
+            .collect();
+        labels.sort_by(|a, b| a.0.cmp(&b.0));
+        labels.dedup_by(|a, b| a.0 == b.0);
+        self.installed_labels = labels;
+        let mut idx: Vec<usize> = (0..self.entries.len()).collect();
+        idx.sort_by(|&a, &b| {
+            self.entries[b]
+                .entry
+                .record
+                .installed_at
+                .cmp(&self.entries[a].entry.record.installed_at)
+        });
+        idx.truncate(8);
+        self.recent = idx;
     }
 
     /// The Services row under the cursor.
@@ -1638,6 +1691,9 @@ impl Model {
                     (self.home_sel as isize + delta).clamp(0, n as isize - 1) as usize
                 };
             }
+            // Publish has no list — j/k used to slide the hidden
+            // Installed cursor; say so instead of moving nothing.
+            Pane::Author => self.say("nothing to select on this pane"),
             _ => {
                 let len = self.visible().len();
                 if len == 0 {
@@ -1652,7 +1708,9 @@ impl Model {
     fn switch_pane(&mut self, pane: Pane) {
         self.pane = pane;
         self.detail = None;
+        self.detail_origin = None;
         self.detail_scroll = 0;
+        self.detail_max_scroll = 0;
         self.versions_focus = false;
         self.versions_sel = 0;
         self.sel_label = self.selected().map(|r| r.entry.label());
@@ -1712,10 +1770,9 @@ impl Model {
     /// when already open.
     fn toggle_detail(&mut self) {
         if self.detail.is_some() {
-            self.detail = None;
-            self.detail_scroll = 0;
-            self.versions_focus = false;
-            self.versions_sel = 0;
+            // Same close as esc/h/← — restores the origin pane a
+            // Home/Services `Enter` recorded.
+            self.close_detail();
             return;
         }
         match self.pane {
@@ -1756,6 +1813,7 @@ impl Model {
             }
         }
         self.detail_scroll = 0;
+        self.detail_max_scroll = 0;
         self.versions_focus = false;
         self.versions_sel = 0;
     }
@@ -1787,10 +1845,11 @@ impl Model {
     /// Shared tail of the Home/Services `Enter` paths — park the
     /// Installed cursor on `label`'s row (dropping a stale `/`
     /// filter that would hide it) and open its package page through
-    /// [`Model::toggle_detail`]. Returns `false` when no visible row
-    /// matches; the caller decides what to say. Esc-back lands on
-    /// the Installed table rather than the origin pane — the
-    /// deliberate trade-off for reusing the whole detail surface.
+    /// [`Model::toggle_detail`]. The origin pane is recorded so
+    /// [`Model::close_detail`] lands back on it — Esc/Enter-close
+    /// return to Home or Services rather than always Installed.
+    /// Returns `false` when no visible row matches; the caller
+    /// decides what to say.
     fn open_label_detail(&mut self, label: &str) -> bool {
         let mut vis = self.visible();
         let mut pos = vis.iter().position(|&i| {
@@ -1815,9 +1874,13 @@ impl Model {
         let Some(pos) = pos else {
             return false;
         };
+        let origin = self.pane;
         self.switch_pane(Pane::Installed);
         self.sel = pos;
         self.toggle_detail();
+        if self.detail.is_some() {
+            self.detail_origin = Some(origin);
+        }
         true
     }
 
@@ -2931,13 +2994,21 @@ impl Model {
         }
     }
 
-    /// Close the package page — the shared `esc`/`h`/`←`/`q` close;
-    /// also drops versions focus and resets both scroll/cursor state.
+    /// Close the package page — the shared `esc`/`h`/`←`/`q`/`Enter`
+    /// close; also drops versions focus, resets both scroll/cursor
+    /// state, and restores the origin pane a Home/Services `Enter`
+    /// recorded (a page opened on its own pane has none — the pane
+    /// stays put).
     fn close_detail(&mut self) {
+        let origin = self.detail_origin.take();
         self.detail = None;
         self.detail_scroll = 0;
+        self.detail_max_scroll = 0;
         self.versions_focus = false;
         self.versions_sel = 0;
+        if let Some(pane) = origin {
+            self.pane = pane;
+        }
     }
 
     /// One key event → `true` when the app should quit. Ctrl-C is
@@ -3031,30 +3102,55 @@ impl Model {
                     self.sync_sel_label();
                 }
             }
-            KeyCode::Char('g') => match self.pane {
-                Pane::Home => self.home_sel = 0,
-                Pane::Registry => self.reg_sel = 0,
-                Pane::Services => self.svc_sel = 0,
-                Pane::Manifest => self.man_sel = 0,
-                _ => self.sel = 0,
-            },
-            KeyCode::Char('G') => match self.pane {
-                Pane::Home => {
-                    self.home_sel = self.recent_installed().len().saturating_sub(1);
+            // g/G follow the visible cursor: versions focus jumps the
+            // version list, an open package page jumps its scroll —
+            // never the hidden row cursor underneath.
+            KeyCode::Char('g') => {
+                if self.versions_focused() {
+                    self.versions_sel = 0;
+                } else if self.detail.is_some() {
+                    self.detail_scroll = 0;
+                } else {
+                    match self.pane {
+                        Pane::Home => self.home_sel = 0,
+                        Pane::Registry => self.reg_sel = 0,
+                        Pane::Services => self.svc_sel = 0,
+                        Pane::Manifest => self.man_sel = 0,
+                        Pane::Author => self.say("nothing to select on this pane"),
+                        _ => self.sel = 0,
+                    }
                 }
-                Pane::Registry => self.reg_sel = self.reg_results.len().saturating_sub(1),
-                Pane::Services => self.svc_sel = self.svc_rows.len().saturating_sub(1),
-                Pane::Manifest => {
-                    self.man_sel = self
-                        .project
-                        .as_ref()
-                        .map_or(0, |m| m.deps.len().saturating_sub(1));
+            }
+            KeyCode::Char('G') => {
+                if self.versions_focused() {
+                    self.versions_sel = self.versions_len().saturating_sub(1);
+                } else if self.detail.is_some() {
+                    self.detail_scroll = self.detail_max_scroll;
+                } else {
+                    match self.pane {
+                        Pane::Home => {
+                            self.home_sel = self.recent_installed().len().saturating_sub(1);
+                        }
+                        Pane::Registry => {
+                            self.reg_sel = self.reg_results.len().saturating_sub(1);
+                        }
+                        Pane::Services => {
+                            self.svc_sel = self.svc_rows.len().saturating_sub(1);
+                        }
+                        Pane::Manifest => {
+                            self.man_sel = self
+                                .project
+                                .as_ref()
+                                .map_or(0, |m| m.deps.len().saturating_sub(1));
+                        }
+                        Pane::Author => self.say("nothing to select on this pane"),
+                        _ => {
+                            self.sel = self.visible().len().saturating_sub(1);
+                            self.sync_sel_label();
+                        }
+                    }
                 }
-                _ => {
-                    self.sel = self.visible().len().saturating_sub(1);
-                    self.sync_sel_label();
-                }
-            },
+            }
             KeyCode::Char('/') => match self.pane {
                 Pane::Home => {
                     // Home has no filter of its own — `/` is the way
@@ -3146,6 +3242,16 @@ impl Model {
             KeyCode::Char(c @ ('p' | 'P' | 'r' | 'R')) if self.pane == Pane::Author => {
                 self.author_verb(c)
             }
+            // Installed-only verbs pressed on a pane that doesn't
+            // bind them used to die silently (bare `v`/`u`/`p`/`x`/
+            // `c`/`d` on Registry, Home, Services' leftovers, …) —
+            // every pane-gated arm above already claimed its own.
+            KeyCode::Char(c @ ('v' | 'u' | 'U' | 'p' | 'x' | 'c' | 'C' | 'd')) => {
+                self.say(format!(
+                    "no '{c}' on {} — ? lists the keys",
+                    self.pane.label()
+                ));
+            }
             KeyCode::Char('?') => self.mode = Mode::Help,
             // `L` opens the full op log — `l` (lowercase) stays pane
             // cycling, so this rides the shifted char only.
@@ -3176,13 +3282,25 @@ impl Model {
             return;
         }
         match ev.kind {
+            // Wheel scrolls the open package page's body — versions
+            // focus rides the same offset (`scroll_to_show` keeps the
+            // cursor row visible); otherwise it walks the pane's
+            // selection as before.
             MouseEventKind::ScrollUp => {
-                self.move_sel(-3);
-                self.sync_sel_label();
+                if self.detail.is_some() {
+                    self.detail_scroll = self.detail_scroll.saturating_sub(3);
+                } else {
+                    self.move_sel(-3);
+                    self.sync_sel_label();
+                }
             }
             MouseEventKind::ScrollDown => {
-                self.move_sel(3);
-                self.sync_sel_label();
+                if self.detail.is_some() {
+                    self.detail_scroll += 3;
+                } else {
+                    self.move_sel(3);
+                    self.sync_sel_label();
+                }
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 if let Some(tabs) = self.tabs_area {
@@ -3511,6 +3629,7 @@ mod tests {
         for i in 0..10u64 {
             m.entries.push(store_row(&format!("p{i}"), i + 1));
         }
+        m.rebuild_derived();
         // Newest first, capped at 8 — p0/p1 (oldest) fall off.
         let recent = m.recent_installed();
         assert_eq!(recent.len(), 8);
@@ -3546,13 +3665,13 @@ mod tests {
             }
             other => panic!("expected installed page, got {other:?}"),
         }
-        // Esc closes the page onto the Installed table (documented
-        // trade-off — back does not return to Home).
+        // Esc closes the page and restores the origin pane — back
+        // lands on Home, where Enter was pressed.
         m.key(key(KeyCode::Esc));
         assert!(m.detail.is_none());
-        assert_eq!(m.pane, Pane::Installed);
+        assert_eq!(m.pane, Pane::Home);
         assert_eq!(
-            m.selected().map(|r| r.entry.record.name.as_str()),
+            m.home_selected().map(|r| r.entry.record.name.as_str()),
             Some("p8")
         );
     }
@@ -3597,6 +3716,7 @@ mod tests {
             size: None,
             sealed: false,
         });
+        m.rebuild_derived();
         assert_eq!(
             m.installed_label_for("w", Some("s")).as_deref(),
             Some("0.2.0")
@@ -3934,6 +4054,7 @@ mod tests {
         for i in 0..4u64 {
             m.entries.push(store_row(&format!("p{i}"), i + 1));
         }
+        m.rebuild_derived();
         assert_eq!(m.pane, Pane::Home);
         // As `draw_home` would report: rows start at y=3, 4 rows tall.
         m.home_area = Rect::new(0, 3, 60, 4);
@@ -4318,11 +4439,10 @@ mod tests {
             Some(Detail::Installed { entry, .. }) => assert_eq!(entry.record.name, "w"),
             other => panic!("expected installed page, got {other:?}"),
         }
-        // Esc back lands on the Installed table (same trade-off as
-        // the Home path).
+        // Esc back restores the Services pane the page came from.
         m.key(key(KeyCode::Esc));
         assert!(m.detail.is_none());
-        assert_eq!(m.pane, Pane::Installed);
+        assert_eq!(m.pane, Pane::Services);
         // A service row whose package isn't installed says so and
         // stays on Services.
         m.pane = Pane::Services;
@@ -4629,5 +4749,119 @@ mod tests {
         m.mode = Mode::Normal;
         m.paste("nope");
         assert_eq!(m.prompt_buf, "abcd");
+    }
+
+    /// `g`/`G` follow the visible cursor: on an open package page
+    /// they jump `detail_scroll` (never the hidden row `sel`), and
+    /// inside versions focus they jump `versions_sel`.
+    #[test]
+    fn detail_g_g_jumps_page_scroll() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let page = reg_entry("1.0.0");
+        m.pane = Pane::Registry;
+        m.detail = Some(Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: Some(vec![reg_entry("0.9.0"), page.clone(), reg_entry("1.1.0")]),
+            versions_err: None,
+        });
+        m.detail_scroll = 5;
+        m.sel = 3; // hidden installed cursor — must not move
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.detail_scroll, 0);
+        assert_eq!(m.sel, 3);
+        // G jumps to the last frame's max scroll.
+        m.detail_max_scroll = 42;
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.detail_scroll, 42);
+        assert_eq!(m.sel, 3);
+        // Versions focus: g/G walk the version list instead.
+        m.versions_focus = true;
+        m.versions_sel = 2;
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.versions_sel, 0);
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.versions_sel, 2);
+        assert_eq!(m.detail_scroll, 42);
+    }
+
+    /// The wheel scrolls the open package page's body; with no page
+    /// it keeps walking the pane selection.
+    #[test]
+    fn wheel_scrolls_detail_page() {
+        let (_tmp, mut m) = bare_model();
+        let wheel = |kind| MouseEvent {
+            kind,
+            column: 1,
+            row: 1,
+            modifiers: KeyModifiers::NONE,
+        };
+        m.entries.push(store_row("w", 1));
+        m.pane = Pane::Installed;
+        m.sel = 0;
+        // No detail — wheel moves the row selection (clamped at 0).
+        m.mouse(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(m.sel, 0);
+        // Detail open — wheel moves detail_scroll, sel stays put.
+        m.detail = Some(Detail::Installed {
+            entry: m.entries[0].entry.clone(),
+            manifest: None,
+            manifest_err: None,
+        });
+        m.mouse(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(m.detail_scroll, 3);
+        m.mouse(wheel(MouseEventKind::ScrollDown));
+        assert_eq!(m.detail_scroll, 6);
+        m.mouse(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(m.detail_scroll, 3);
+        assert_eq!(m.sel, 0);
+    }
+
+    /// Dead keys say so: j/k/g/G on the listless Publish pane and
+    /// Installed-only verbs on panes that don't bind them land a
+    /// status hint instead of silence.
+    #[test]
+    fn dead_keys_get_a_status_hint() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        m.pane = Pane::Author;
+        m.sel = 2;
+        m.key(key(KeyCode::Char('j')));
+        assert!(m.status.contains("nothing to select"), "{}", m.status);
+        m.key(key(KeyCode::Char('G')));
+        assert!(m.status.contains("nothing to select"), "{}", m.status);
+        // Installed-only verbs on the bare Registry pane.
+        m.pane = Pane::Registry;
+        m.status.clear();
+        for c in ['v', 'u', 'p', 'x', 'c', 'd'] {
+            m.key(key(KeyCode::Char(c)));
+            assert!(m.status.contains(&format!("no '{c}'")), "{c}: {}", m.status);
+            m.status.clear();
+        }
+        // …but the pane's own verbs still work — 'i' installs.
+        m.key(key(KeyCode::Char('i')));
+        assert!(m.status.is_empty() || !m.status.contains("no 'i'"));
+    }
+
+    /// The `/` filter matches what the row shows — label, kind,
+    /// source ref, description, sealed — never the provenance hex
+    /// (`resolved`/`digest`), where fragments like "sha" matched
+    /// everything.
+    #[test]
+    fn filter_ignores_provenance_hex() {
+        let (_tmp, mut m) = bare_model();
+        m.entries.push(store_row("widget", 1)); // resolved sha256:1, digest sha256:d1
+        m.filter = "sha256".into();
+        assert!(m.visible().is_empty());
+        m.filter = "d1".into();
+        assert!(m.visible().is_empty());
+        // Source ref still matches.
+        m.filter = "./x".into();
+        assert_eq!(m.visible(), vec![0]);
+        // And the label.
+        m.filter = "wid".into();
+        assert_eq!(m.visible(), vec![0]);
     }
 }

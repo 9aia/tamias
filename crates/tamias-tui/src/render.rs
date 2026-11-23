@@ -1183,9 +1183,11 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
     if let Some(row) = versions_row {
         m.detail_scroll = scroll_to_show(row, m.detail_scroll, body_area.height as usize);
     }
-    // Clamp the scroll offset to the body, then render.
+    // Clamp the scroll offset to the body, then render. The max is
+    // recorded for `G` — the model's jump-to-bottom target.
     let max_scroll = body.len().saturating_sub(body_area.height as usize);
     m.detail_scroll = m.detail_scroll.min(max_scroll);
+    m.detail_max_scroll = max_scroll;
     f.render_widget(
         Paragraph::new(body)
             .style(Style::default().fg(TEXT))
@@ -1587,15 +1589,14 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
                     Style::default().fg(MUTED),
                 ));
             }
-            f.render_widget(
-                Paragraph::new(Line::from(spans)),
-                Rect {
-                    x: area.x,
-                    y: cy,
-                    width: area.width,
-                    height: 1,
-                },
-            );
+            let strip = Rect {
+                x: area.x,
+                y: cy,
+                width: area.width,
+                height: 1,
+            };
+            f.render_widget(Clear, strip);
+            f.render_widget(Paragraph::new(Line::from(spans)), strip);
         }
     }
     let rect = Rect {
@@ -1604,6 +1605,9 @@ fn draw_input(f: &mut Frame, m: &Model, area: Rect) {
         width: area.width,
         height: 1,
     };
+    // Clear first — the line overlays the pane's last row and stale
+    // cell contents would bleed through where the text is shorter.
+    f.render_widget(Clear, rect);
     let spans = vec![
         Span::styled(label.to_string(), Style::default().fg(ACCENT)),
         Span::raw(text.to_string()),
@@ -1633,7 +1637,9 @@ fn draw_modal(f: &mut Frame, modal: &Modal, area: Rect) {
         "y = yes · n/esc = no (default n)",
         Style::default().fg(MUTED),
     )));
-    let w = (area.width * 3 / 5).clamp(30, 72);
+    // `min(area.width)` — the 30-col floor must yield on terminals
+    // narrower than the modal's minimum or the rect overflows.
+    let w = ((area.width * 3 / 5).clamp(30, 72)).min(area.width);
     let h = (lines.len() as u16 + 2).min(area.height);
     let x = area.x + area.width.saturating_sub(w) / 2;
     let y = area.y + area.height.saturating_sub(h) / 2;
@@ -1660,7 +1666,8 @@ keys — installed pane
   U             update all            p       pin → new ref
   x             remove (confirm)      c/C     cache clean >30d / all
   d             doctor summary        i       install by ref
-  Tab, h/l      cycle panes           1-6    jump to pane
+  l/Tab, 1-6    switch pane — closes an open page too
+  h/←           back — closes the page first, then prev pane
   /             filter installed      F       clear filter
   :             command line          Tab    complete · esc leave
   L/:log       op-log sidebar         j/k    scroll · g/G ends · q close
@@ -1673,9 +1680,12 @@ home pane:    landing view — wordmark · stats · recently installed ·
 
 package page:  npm-style page — header chips · description · install
                command · deps/services/meta · provenance last ·
-               j/k scroll · esc/q/h/← close · registry pages: v
-               focuses versions — j/k pick · i installs that version ·
-               `installed <pkg>@<ver>` line when already in the store
+               j/k scroll · g/G jump ends · wheel scrolls ·
+               esc/q/h/← close (back to where Enter was pressed) ·
+               l/Tab/1-6 switch panes and close · registry pages: v
+               focuses versions — j/k/g/G pick · i installs that
+               version · `installed <pkg>@<ver>` line when already
+               in the store
 
 registry pane:  / search-as-you-type (debounced) · Enter package page ·
                 i install result · :registry <name> target · :search <q>
@@ -1705,13 +1715,24 @@ commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
            :sync [--from-lock]
            (: line editing — arrows · Home/End · Ctrl-A/E/U/W ·
             Tab completes · Up/Down history)
-mouse:     wheel scrolls · click row selects · click tab switches";
+mouse:     wheel scrolls (the package page when open) · click row
+           selects · click tab switches (version rows aren't
+           click-selectable — the page is one scrolling block)";
     let width = area.width.min(72) as usize;
-    let h = text.lines().count() as u16 + 2;
     let w = (width as u16 + 2).min(area.width);
+    // Height counts *wrapped* lines — at narrow widths the static
+    // text wraps past a raw `lines().count()` estimate and the box
+    // clipped its own bottom border off-screen.
+    let inner_w = w.saturating_sub(2).max(1);
+    let h = (text
+        .lines()
+        .map(|l| wrapped_lines(l, inner_w, usize::MAX))
+        .sum::<usize>()
+        + 2)
+    .min(area.height as usize) as u16;
     let x = area.x + area.width.saturating_sub(w) / 2;
     let y = area.y + area.height.saturating_sub(h) / 2;
-    let rect = Rect::new(x, y, w, h.min(area.height));
+    let rect = Rect::new(x, y, w, h);
     f.render_widget(Clear, rect);
     f.render_widget(
         Paragraph::new(text)
