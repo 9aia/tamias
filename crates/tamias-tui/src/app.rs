@@ -911,6 +911,10 @@ pub struct Model {
     status_at: Instant,
     /// `status` is an error — holds the bar until the next input.
     pub status_err: bool,
+    /// Clipboard payload queued by `y` on the package page —
+    /// `run` drains it into an OSC 52 write between frames (the TUI
+    /// owns the terminal, so the model only records the request).
+    pub copy_request: Option<String>,
     /// OS filesystem watcher on the store root — `tick` drains its
     /// events into `dirty`. `None` when the platform/backend can't
     /// watch or the root doesn't exist yet; the rescan fallback
@@ -1067,8 +1071,9 @@ pub struct Model {
     /// pane entry (`ops::registry_names`).
     pub author_regs: Vec<(String, String)>,
     /// Registry names for `:` completion (`:registry`, `:publish`'s
-    /// registry arg) — refreshed on every store `reload`.
-    reg_names: Vec<String>,
+    /// registry arg) — refreshed on every store `reload`; the
+    /// Registry pane's empty-query browse list reads it too.
+    pub reg_names: Vec<String>,
 }
 
 impl Model {
@@ -1103,6 +1108,7 @@ impl Model {
             status: String::new(),
             status_at: Instant::now(),
             status_err: false,
+            copy_request: None,
             watcher: None,
             watch_rx: None,
             dirty: false,
@@ -3087,6 +3093,26 @@ impl Model {
         }
     }
 
+    /// `y` on the package page — yank the install ref the page
+    /// displays (`tamias install <ref>`'s argument) into the
+    /// clipboard. The model only queues the payload
+    /// ([`Self::copy_request`]); `run` emits the OSC 52 sequence
+    /// between frames.
+    fn copy_install_ref(&mut self) {
+        let r = match self.detail.as_ref() {
+            Some(Detail::Installed { entry, .. }) => Some(entry.record.source_ref.clone()),
+            Some(Detail::Registry { install_ref, .. }) => install_ref.clone(),
+            None => None,
+        };
+        match r {
+            Some(r) => {
+                self.copy_request = Some(r);
+                self.say("copied install ref");
+            }
+            None => self.say("no install ref on this page"),
+        }
+    }
+
     /// One key event → `true` when the app should quit. Ctrl-C is
     /// the force-quit and works from every mode (even under a modal);
     /// quitting kills a running stream child first.
@@ -3268,6 +3294,11 @@ impl Model {
                 self.reload();
                 self.say("reloaded");
             }
+            // `y` yanks the open package page's install ref to the
+            // clipboard — the OSC 52 write happens in `run` between
+            // frames (`copy_request` is the hand-off). Modal `y`
+            // (confirm) is consumed earlier by `key_modal`.
+            KeyCode::Char('y') if self.detail.is_some() => self.copy_install_ref(),
             // `x` while a stream child runs kills it — takes
             // precedence over the pane's own `x` (uninstall/remove
             // dep) since a live child is the more urgent target.
@@ -6360,6 +6391,44 @@ mod tests {
         m.mouse(wheel(MouseEventKind::ScrollUp));
         assert_eq!(m.detail_scroll, 3);
         assert_eq!(m.sel, 0);
+    }
+
+    /// `y` on the package page queues the install ref for the OSC 52
+    /// clipboard write (`copy_request` — `run` emits it between
+    /// frames) and confirms via the status toast. Installed copies
+    /// the record's `source_ref`, Registry the resolved
+    /// `install_ref`; a page with no ref says so instead.
+    #[test]
+    fn y_copies_install_ref() {
+        let (_tmp, mut m) = bare_model();
+        m.entries.push(store_row("w", 1));
+        m.pane = Pane::Installed;
+        m.sel = 0;
+        m.sync_sel_label();
+        key(&mut m, KeyCode::Enter); // open the package page
+        assert!(m.detail.is_some());
+        key(&mut m, KeyCode::Char('y'));
+        assert_eq!(m.copy_request.as_deref(), Some("./x"));
+        assert_eq!(m.status, "copied install ref");
+        // Registry page — the resolved install_ref is what copies.
+        m.copy_request = None;
+        m.detail = Some(Detail::Registry {
+            entry: reg_entry("1.0.0"),
+            install_ref: Some("named:@s/w@1.0.0".into()),
+            install_err: None,
+            versions: None,
+            versions_err: None,
+        });
+        key(&mut m, KeyCode::Char('y'));
+        assert_eq!(m.copy_request.as_deref(), Some("named:@s/w@1.0.0"));
+        // No ref → honest toast, nothing queued for the clipboard.
+        m.copy_request = None;
+        if let Some(Detail::Registry { install_ref, .. }) = &mut m.detail {
+            *install_ref = None;
+        }
+        key(&mut m, KeyCode::Char('y'));
+        assert!(m.copy_request.is_none());
+        assert_eq!(m.status, "no install ref on this page");
     }
 
     /// Dead keys say so: j/k/g/G on the listless Publish pane and

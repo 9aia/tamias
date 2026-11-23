@@ -43,12 +43,15 @@ pub fn draw(f: &mut Frame, m: &mut Model) {
     // lays out inside the shrunken main rect, so `tabs_area`/
     // `board_area`/`home_area` and the status bar all describe what
     // is actually on screen (the status bar shrinks with the pane,
-    // it doesn't span under the sidebar). Below ~50 cols the sidebar
-    // would starve the pane, so the centered overlay takes over.
-    let split = if m.mode == Mode::Log && area.width >= 50 {
+    // it doesn't span under the sidebar). The dock needs ~96 cols:
+    // below that the sidebar would starve the pane (the Installed
+    // table wants ~66 for its columns) and the centered overlay
+    // takes over. The `saturating_sub(70)` cap keeps the main
+    // column ≥70 even right at the boundary.
+    let split = if m.mode == Mode::Log && area.width >= 96 {
         let side_w = (area.width / 4)
             .clamp(24, 48)
-            .min(area.width.saturating_sub(20));
+            .min(area.width.saturating_sub(70));
         let c = Layout::horizontal([Constraint::Min(0), Constraint::Length(side_w)]).split(area);
         Some((c[0], c[1]))
     } else {
@@ -1107,16 +1110,16 @@ fn page_parts(
 /// focus state ([`Model::versions_focused`]).
 fn detail_hint(detail: &Detail, versions_focused: bool) -> &'static str {
     match detail {
-        Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
+        Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row · y copy",
         Detail::Registry { .. } if versions_focused => {
-            "versions — j/k move · i install · v/esc back"
+            "versions — j/k move · i install · v/esc back · y copy"
         }
         // Landed, non-empty sibling list — advertise the `v` toggle.
         Detail::Registry {
             versions: Some(list),
             ..
-        } if !list.is_empty() => "esc back · j/k scroll · i install · v versions",
-        Detail::Registry { .. } => "esc back · j/k scroll · i install",
+        } if !list.is_empty() => "esc back · j/k scroll · i install · v versions · y copy",
+        Detail::Registry { .. } => "esc back · j/k scroll · i install · y copy",
     }
 }
 
@@ -1273,13 +1276,27 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
         return;
     }
     if m.reg_query.trim().is_empty() {
-        f.render_widget(
-            Paragraph::new(
-                "registry search — `/` types a query · `:registry <name>` picks the target",
-            )
-            .style(Style::default().fg(MUTED)),
-            area,
-        );
+        // Browse state (npm-style): the current target, the named
+        // `:registry` targets, and example queries — display only,
+        // no search fires until `/` types one.
+        let mut lines = vec![Line::from(vec![
+            Span::styled("registry search — ", Style::default().fg(MUTED)),
+            Span::styled("target ", Style::default().fg(ACCENT)),
+            Span::styled(m.reg_target_label.clone(), Style::default().fg(TEXT)),
+            Span::styled(" · `/` types a query", Style::default().fg(MUTED)),
+        ])];
+        if !m.reg_names.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("targets  ", Style::default().fg(ACCENT)),
+                Span::styled(m.reg_names.join(" · "), Style::default().fg(MUTED)),
+                Span::styled(" — `:registry <name>` switches", Style::default().fg(MUTED)),
+            ]));
+        }
+        lines.push(Line::from(vec![
+            Span::styled("try      ", Style::default().fg(ACCENT)),
+            Span::styled("myco · @scope/name · a keyword", Style::default().fg(MUTED)),
+        ]));
+        f.render_widget(Paragraph::new(lines), area);
         m.board_area = Rect::default();
         m.viewport_top = 0;
         return;
@@ -1435,7 +1452,7 @@ fn draw_log_view(f: &mut Frame, m: &mut Model, area: Rect) {
 
 /// The narrow-terminal fallback for `L`/`:log` — the same scrollable
 /// body centered over a cleared frame, used when the frame is too
-/// narrow (<50 cols) for a right sidebar to leave the pane usable.
+/// narrow (<96 cols) for a right sidebar to leave the pane usable.
 /// Key handling lives in `Model::key_log`.
 fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
     let w = (area.width * 4 / 5).clamp(30, area.width.max(30));
@@ -1743,12 +1760,12 @@ home pane:    landing view — wordmark · stats · recently installed ·
 
 package page:  npm-style page — header chips · description · install
                command · deps/services/meta · provenance last ·
-               j/k scroll · g/G jump ends · wheel scrolls ·
-               esc/q/h/← close (back to where Enter was pressed) ·
-               l/Tab/1-6 switch panes and close · registry pages: v
-               focuses versions — j/k/g/G pick · i installs that
-               version · `installed <pkg>@<ver>` line when already
-               in the store
+               j/k scroll · g/G jump ends · wheel scrolls · y copies
+               the install ref · esc/q/h/← close (back to where
+               Enter was pressed) · l/Tab/1-6 switch panes and close ·
+               registry pages: v focuses versions — j/k/g/G pick · i
+               installs that version · `installed <pkg>@<ver>` line
+               when already in the store
 
 registry pane:  / search-as-you-type (debounced) · Enter package page ·
                 i install result · :registry <name> target · :search <q>
@@ -2172,6 +2189,30 @@ mod tests {
         assert!(s.contains("›"), "{s}");
     }
 
+    /// The empty-query Registry pane is a browse state: the current
+    /// target, the named `:registry` targets, and example queries —
+    /// display only, no search fires.
+    #[test]
+    fn registry_empty_query_browse_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Registry;
+        m.reg_names = vec!["crates".into(), "mine".into()];
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("registry search"), "{s}");
+        assert!(s.contains("target default"), "{s}");
+        assert!(s.contains("crates · mine"), "{s}");
+        assert!(s.contains("myco · @scope/name · a keyword"), "{s}");
+        // Display only — nothing searched, nothing errored.
+        assert!(m.reg_results.is_empty() && m.reg_err.is_none() && m.busy.is_none());
+        // No named registries → the targets line drops, the target
+        // and try lines stay.
+        m.reg_names.clear();
+        let s = screen(&mut m, 80, 24);
+        assert!(s.contains("target default"), "{s}");
+        assert!(!s.contains("crates"), "{s}");
+    }
+
     #[test]
     fn services_pane_states() {
         let tmp = tempfile::tempdir().unwrap();
@@ -2589,11 +2630,11 @@ mod tests {
         // body itself carries no hint line.
         assert_eq!(
             detail_hint(&detail, true),
-            "versions — j/k move · i install · v/esc back"
+            "versions — j/k move · i install · v/esc back · y copy"
         );
         assert_eq!(
             detail_hint(&detail, false),
-            "esc back · j/k scroll · i install · v versions"
+            "esc back · j/k scroll · i install · v versions · y copy"
         );
         assert!(!focused.contains("esc back · j/k scroll"));
         // Focused — the inline `v` affordance steps aside.
@@ -2817,7 +2858,7 @@ mod tests {
         assert!(screen.iter().any(|l| l.contains(" i ")));
     }
 
-    /// `L` at a normal width docks the log as a right sidebar: the
+    /// `L` at a wide terminal docks the log as a right sidebar: the
     /// main chrome shrinks to the left column, the bordered log panel
     /// takes the right ~quarter, and the pane stays on screen.
     #[test]
@@ -2826,12 +2867,12 @@ mod tests {
         m.mode = Mode::Log;
         m.log_view_h = 20;
         m.log_scroll = m.log.len() - 20; // tail, as `open_log` aims
-        let screen = frame_text(&mut m, 80, 24);
-        // 80/4 = 20 → clamped to 24 cols; the main column keeps 56.
-        assert_eq!(m.log_area.width, 24);
-        assert_eq!(m.log_area.x, 56);
+        let screen = frame_text(&mut m, 120, 24);
+        // 120/4 = 30 cols; the main column keeps 90 (≥70 floor).
+        assert_eq!(m.log_area.width, 30);
+        assert_eq!(m.log_area.x, 90);
         assert_eq!(m.log_view_h, 22); // block height minus borders
-        assert_eq!(m.tabs_area.map(|r| r.width), Some(56));
+        assert_eq!(m.tabs_area.map(|r| r.width), Some(90));
         // The sidebar shows history; the pane (Home) is still drawn
         // in the left column.
         assert!(screen.iter().any(|l| l.contains("log — 50 lines")));
@@ -2839,7 +2880,29 @@ mod tests {
         assert!(screen.iter().any(|l| l.contains("home")));
     }
 
-    /// Under ~50 cols the sidebar would starve the pane — the log
+    /// The dock/overlay boundary is 96 cols — the sidebar needs the
+    /// main column to keep ≥70, so one column under it the centered
+    /// overlay takes over even though 95 cols "feels" wide enough.
+    #[test]
+    fn log_mode_boundary_width() {
+        // 95 → overlay: centered box, inset on both sides.
+        let mut m = log_model(10);
+        m.mode = Mode::Log;
+        let screen = frame_text(&mut m, 95, 24);
+        assert!(m.log_area.width < 95);
+        assert!(m.log_area.x > 0);
+        assert!(m.log_area.x + m.log_area.width < 95);
+        assert!(screen.iter().any(|l| l.contains("log — 10 lines")));
+        // 96 → docked: side_w = min(24, 26) = 24, main keeps 72.
+        let mut m = log_model(10);
+        m.mode = Mode::Log;
+        let _ = frame_text(&mut m, 96, 24);
+        assert_eq!(m.log_area.width, 24);
+        assert_eq!(m.log_area.x, 72);
+        assert_eq!(m.tabs_area.map(|r| r.width), Some(72));
+    }
+
+    /// Under ~96 cols the sidebar would starve the pane — the log
     /// falls back to the centered overlay instead.
     #[test]
     fn log_mode_narrow_falls_back_to_overlay() {
