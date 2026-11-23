@@ -928,7 +928,7 @@ fn page_parts(
     body.push(Line::from(""));
     body.push(Line::from(Span::styled(
         match detail {
-            Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
+            Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
             Detail::Registry { .. } if versions_sel.is_some() => {
                 "versions — j/k move · i install · v/esc back"
             }
@@ -1251,7 +1251,7 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
             }
             Pane::Services => {
                 if m.svc_rows.is_empty() {
-                    "services — s/S start/stop · r restart · e/E enable/disable".to_string()
+                    "services — s/S start/stop · ! restart · e/E enable/disable".to_string()
                 } else {
                     format!(
                         "{} service row(s){}",
@@ -1285,7 +1285,7 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                 "versions — j/k move · i install · v/esc back"
             }
             Some(Detail::Registry { .. }) => "esc back · j/k scroll · i install",
-            _ => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
+            _ => "esc back · j/k scroll · v/u/p/x/c/d act on the row",
         }
     } else {
         match m.pane {
@@ -1297,14 +1297,14 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
                 }
             }
             Pane::Installed => {
-                "j/k · Enter page · v verify · u update · p pin · r remove · i install · c clean · d doctor · / filter · : cmds · q quit"
+                "j/k · Enter page · v verify · u update · p pin · x remove · i install · c clean · d doctor · / filter · : cmds · q quit"
             }
             Pane::Registry => "j/k · Enter page · i install · / query · : cmds · q quit",
             Pane::Services => {
                 if m.stream_child.is_some() {
                     "streaming — x kill · q quit"
                 } else {
-                    "j/k · s/S start/stop · r restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
+                    "j/k · s/S start/stop · ! restart · e/E enable/disable · d deploy · x uninstall · t/T logs · n run · R refresh · : cmds · q quit"
                 }
             }
             Pane::Manifest => {
@@ -1465,7 +1465,7 @@ keys — installed pane
   Enter         package page          esc/←   back / close page
   v             verify (digest check) u       update selected
   U             update all            p       pin → new ref
-  r             remove (confirm)      c/C     cache clean >30d / all
+  x             remove (confirm)      c/C     cache clean >30d / all
   d             doctor summary        i       install by ref
   Tab, h/l      cycle panes           1-6    jump to pane
   /             filter installed      Enter  keep filter
@@ -1497,7 +1497,7 @@ commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
 mouse:     wheel scrolls · click row selects · click tab switches
 
 services pane:  provider services + unit state · s/S start/stop ·
-                r restart · e/E enable/disable · d deploy · x uninstall
+                ! restart · e/E enable/disable · d deploy · x uninstall
                 t/T journal tail/follow · n foreground run (x kills)
 manifest pane:  deps rows editable — a add · d/x remove · e new ref
                 (writes tamias.yaml + tamias.lock like `tamias add`)

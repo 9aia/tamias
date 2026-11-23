@@ -1783,7 +1783,7 @@ impl Model {
         }
     }
 
-    /// `r` — remove confirm (teardown warning for non-`files`).
+    /// `x` — remove confirm (teardown warning for non-`files`).
     fn verb_remove(&mut self) {
         if let Some(label) = self.selected_label() {
             self.confirm_job("remove", Job::Remove(label));
@@ -1821,9 +1821,10 @@ impl Model {
 
     // --- Services pane verbs ---
 
-    /// `s`/`S`/`r`/`e`/`E`/`d`/`x`/`t`/`T`/`n`/`R` on the selected
+    /// `s`/`S`/`!`/`e`/`E`/`d`/`x`/`t`/`T`/`n`/`R` on the selected
     /// service row — start/stop/restart/enable/disable, deploy,
     /// uninstall, logs tail/follow, foreground `run`, refresh.
+    /// Restart rides `!` (not `r`) so `r` keeps a single meaning.
     fn svc_verb(&mut self, key: char) {
         let Some(row) = self.svc_selected().cloned() else {
             self.say_err("no service selected");
@@ -1833,7 +1834,7 @@ impl Model {
         let action = match key {
             's' => Some(A::Start),
             'S' => Some(A::Stop),
-            'r' => Some(A::Restart),
+            '!' => Some(A::Restart),
             'e' => Some(A::Enable),
             'E' => Some(A::Disable),
             _ => None,
@@ -2396,7 +2397,7 @@ impl Model {
             }
             KeyCode::Tab | KeyCode::Char('l') => self.step_pane(1),
             // With the package page open j/k scroll it; the row
-            // cursor (and the v/u/p/r/c/d verbs keyed off it) stays put.
+            // cursor (and the v/u/p/x/c/d verbs keyed off it) stays put.
             // Versions focus reroutes them onto the version list.
             KeyCode::Char('j') | KeyCode::Down => {
                 if self.versions_focused() {
@@ -2499,7 +2500,10 @@ impl Model {
                 },
             ),
             KeyCode::Char('p') if self.pane == Pane::Installed => self.verb_pin(),
-            KeyCode::Char('r') if self.pane == Pane::Installed => self.verb_remove(),
+            // `x` removes — the same destructive key as Services'
+            // uninstall and Manifest's dep removal. (`x` with a live
+            // stream child still kills the stream first — see above.)
+            KeyCode::Char('x') if self.pane == Pane::Installed => self.verb_remove(),
             KeyCode::Char('c') if self.pane == Pane::Installed => self.verb_cache_clean(false),
             KeyCode::Char('C') if self.pane == Pane::Installed => self.verb_cache_clean(true),
             KeyCode::Char('d') if self.pane == Pane::Installed => self.verb_doctor(),
@@ -2508,9 +2512,11 @@ impl Model {
             KeyCode::Char('i') if self.versions_focused() => self.install_focused_version(),
             KeyCode::Char('i') => self.verb_install(),
             // Services-pane verbs route through `svc_verb` — the keys
-            // don't collide with Installed's (pane-gated).
+            // don't collide with Installed's (pane-gated). `!` is
+            // restart: `r` stays exclusive to the Author pane's
+            // registries report so the key keeps one meaning app-wide.
             KeyCode::Char(
-                c @ ('s' | 'S' | 'r' | 'e' | 'E' | 'd' | 'x' | 't' | 'T' | 'n' | 'R'),
+                c @ ('s' | 'S' | '!' | 'e' | 'E' | 'd' | 'x' | 't' | 'T' | 'n' | 'R'),
             ) if self.pane == Pane::Services => self.svc_verb(c),
             // Manifest pane: add/remove/edit dep + sync + reload.
             KeyCode::Char(c @ ('a' | 'x' | 'd' | 'e' | 's' | 'R'))
