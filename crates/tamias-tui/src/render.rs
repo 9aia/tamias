@@ -4,6 +4,8 @@
 //! budget rule as myco-tui: tabs need height ≥3, the status bar ≥5,
 //! the log strip ≥12 (and only while the log has lines).
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -135,6 +137,35 @@ fn short_sha(s: &str) -> String {
     bare.chars().take(12).collect()
 }
 
+/// Unix seconds now — [`ago`]'s clock.
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Relative-time label for an `installed_at` unix-seconds stamp —
+/// "just now", "5m ago", "3h ago", "2d ago", then months/years.
+/// `now` is a parameter so the buckets stay unit-testable; [`ago`]
+/// is the clock-reading wrapper the Home pane uses.
+fn ago_at(ts: u64, now: u64) -> String {
+    let secs = now.saturating_sub(ts);
+    match secs {
+        0..=59 => "just now".to_string(),
+        60..=3599 => format!("{}m ago", secs / 60),
+        3600..=86_399 => format!("{}h ago", secs / 3600),
+        86_400..=2_592_000 => format!("{}d ago", secs / 86_400), // ≤30d
+        2_592_001..=31_536_000 => format!("{}mo ago", secs / 2_592_000),
+        _ => format!("{}y ago", secs / 31_536_000),
+    }
+}
+
+/// [`ago_at`] against the wall clock.
+fn ago(ts: u64) -> String {
+    ago_at(ts, unix_now())
+}
+
 /// Trust-tier color — `signed`/`official` green, `bad` red,
 /// `pinned`/`unpinned` warn yellow, anything else muted.
 fn trust_style(tier: &str) -> Style {
@@ -159,12 +190,122 @@ fn draw_pane(f: &mut Frame, m: &mut Model, area: Rect) {
         // model only sets `detail` on Installed/Registry and clears
         // it on pane switches.
         Pane::Installed | Pane::Registry if m.detail.is_some() => draw_detail(f, m, area),
+        Pane::Home => draw_home(f, m, area),
         Pane::Installed => draw_installed(f, m, area),
         Pane::Registry => draw_registry(f, m, area),
         Pane::Services => draw_services(f, m, area),
         Pane::Manifest => draw_manifest(f, m, area),
         Pane::Author => draw_author(f, m, area),
     }
+}
+
+/// The Home pane — the npm-home analog and the landing view:
+/// wordmark + version, a muted stats strip (installed count, registry
+/// target, store/cache roots), the key hints in two columns, and the
+/// recently-installed list (`installed_at` desc, top 8 — the same
+/// [`Model::recent_installed`] ordering the `home_sel` cursor walks).
+/// The highlighted row gets the versions-focus treatment — accent
+/// `›` marker + `Indexed(238)` row background — and `Enter` opens its
+/// package page via the Installed pane. Clicks don't hit-test here
+/// (`board_area` stays empty); the wheel still scrolls the cursor.
+fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+    // Wordmark — accent dot + bold white name; the crate version
+    // rides beside it, the tagline on its own muted line.
+    lines.push(Line::from(vec![
+        Span::styled("● ", Style::default().fg(ACCENT)),
+        Span::styled(
+            "tamias",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  v{}", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(MUTED),
+        ),
+    ]));
+    lines.push(Line::from(Span::styled(
+        "package & content manager",
+        Style::default().fg(MUTED),
+    )));
+    lines.push(Line::from(""));
+    // Stats — one muted line that wraps naturally on narrow frames.
+    lines.push(Line::from(Span::styled(
+        format!(
+            "{} installed · registry {} · store {} · cache {}",
+            m.entries.len(),
+            m.reg_target_label,
+            m.ctx.store_root.display(),
+            m.ctx.cache_root.display()
+        ),
+        Style::default().fg(MUTED),
+    )));
+    lines.push(Line::from(""));
+    // Hints — two columns like the Author pane's; the recent-list
+    // binds only appear when there's a list to walk.
+    let mut hint_rows = vec![
+        ("/  search registry", "i  install by ref"),
+        ("1-6  jump to a pane", ":  command line · ? help"),
+    ];
+    if !m.entries.is_empty() {
+        hint_rows.insert(1, ("j/k · Enter  open recent", "g/G  first/last"));
+    }
+    for (left, right) in hint_rows {
+        lines.push(Line::from(vec![
+            Span::styled(format!("{left:<22}"), Style::default().fg(MUTED)),
+            Span::styled(right, Style::default().fg(MUTED)),
+        ]));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "recently installed",
+        Style::default().fg(ACCENT),
+    )));
+    if m.entries.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  nothing installed yet — `i` install by ref",
+            Style::default().fg(MUTED),
+        )));
+    } else {
+        for (pos, &i) in m.recent_installed().iter().enumerate() {
+            let row = &m.entries[i];
+            let rec = &row.entry.record;
+            let cursor = pos == m.home_sel;
+            let mut spans = vec![Span::styled(
+                if cursor { "› " } else { "  " },
+                if cursor {
+                    Style::default().fg(ACCENT)
+                } else {
+                    Style::default()
+                },
+            )];
+            spans.push(Span::raw(row.entry.label()));
+            if let Some(badge) = trust_badge(rec.trust.as_deref()) {
+                spans.push(badge);
+            }
+            if rec.installed_at > 0 {
+                spans.push(Span::styled(
+                    format!("  · {}", ago(rec.installed_at)),
+                    Style::default().fg(MUTED),
+                ));
+            }
+            let line = Line::from(spans);
+            lines.push(if cursor {
+                line.style(Style::default().bg(Color::Indexed(238)))
+            } else {
+                line
+            });
+        }
+    }
+    f.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: true })
+            .block(Block::default().borders(Borders::ALL).title(" home ")),
+        area,
+    );
+    m.board_area = Rect::default();
+    m.viewport_top = 0;
 }
 
 /// The Services pane — every installed provider service with its
@@ -507,15 +648,27 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
 /// `── section ──` rules ordered by user value — deps/services/keywords
 /// + meta + versions — with provenance last.
 ///
+/// `installed_ver` is the store's version label for the page's
+/// `(name, scope)` when one is installed
+/// ([`Model::installed_label_for`]) — Registry pages only; `None`
+/// elsewhere.
+///
 /// The Registry page's `── versions ──` section is fed by the
 /// background fetch [`Model::fetch_versions`] kicks off on open: a
 /// muted `versions …` placeholder shows while it's in flight, the
 /// section appears once the index read lands (index order, the page's
 /// own entry marked `← current`), and a fetch failure degrades to a
 /// muted line — never an error toast.
+///
+/// `versions_sel` is `Some(i)` while the versions-focus mode is
+/// active ([`Model::versions_focused`]) — row `i` gets the table's
+/// `Indexed(238)` row highlight plus an accent `›` marker, and the
+/// footer hint switches to the focus keys.
 fn page_parts(
     detail: &Detail,
     registry_target: &str,
+    installed_ver: Option<&str>,
+    versions_sel: Option<usize>,
 ) -> (String, Line<'static>, Option<String>, Vec<Line<'static>>) {
     let label = detail.label();
     // Header — bold label then muted/bracketed chips; the trust chip
@@ -659,6 +812,19 @@ fn page_parts(
             versions_err,
             ..
         } => {
+            // installed marker — the same (name, scope) is already in
+            // the store, possibly at another version; sits right
+            // under the install command.
+            if let Some(ver) = installed_ver {
+                let pkg = match &entry.scope {
+                    Some(s) => format!("@{s}/{}", entry.name),
+                    None => entry.name.clone(),
+                };
+                body.push(Line::from(vec![
+                    Span::styled("installed  ", Style::default().fg(ACCENT)),
+                    Span::styled(format!("{pkg}@{ver}"), Style::default().fg(MUTED)),
+                ]));
+            }
             // keywords — the index analogue of deps (search matches
             // them, so they double as discovery terms).
             if !entry.keywords.is_empty() {
@@ -697,17 +863,30 @@ fn page_parts(
                             Style::default().fg(MUTED),
                         )));
                     }
-                    for v in list {
-                        let mut spans = vec![Span::raw(format!(
-                            "  {}",
-                            v.version.clone().unwrap_or_else(|| "-".into())
-                        ))];
+                    for (i, v) in list.iter().enumerate() {
+                        let ver = v.version.clone().unwrap_or_else(|| "-".into());
                         // `file` is the per-version blob path — the
                         // unique match even if version strings repeat.
-                        if v.file == entry.file {
-                            spans.push(Span::styled("  ← current", Style::default().fg(ACCENT)));
-                        }
-                        body.push(Line::from(spans));
+                        let current = v.file == entry.file;
+                        let line = if versions_sel == Some(i) {
+                            let mut spans = vec![
+                                Span::styled("› ", Style::default().fg(ACCENT)),
+                                Span::raw(ver),
+                            ];
+                            if current {
+                                spans
+                                    .push(Span::styled("  ← current", Style::default().fg(ACCENT)));
+                            }
+                            Line::from(spans).style(Style::default().bg(Color::Indexed(238)))
+                        } else {
+                            let mut spans = vec![Span::raw(format!("  {ver}"))];
+                            if current {
+                                spans
+                                    .push(Span::styled("  ← current", Style::default().fg(ACCENT)));
+                            }
+                            Line::from(spans)
+                        };
+                        body.push(line);
                     }
                 }
                 (None, Some(err)) => body.push(Line::from(vec![
@@ -743,6 +922,9 @@ fn page_parts(
     body.push(Line::from(Span::styled(
         match detail {
             Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
+            Detail::Registry { .. } if versions_sel.is_some() => {
+                "versions — j/k move · i install · v/esc back"
+            }
             Detail::Registry { .. } => "esc back · j/k scroll · i install",
         },
         Style::default().fg(MUTED),
@@ -784,7 +966,20 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
     let Some(detail) = m.detail.as_ref() else {
         return;
     };
-    let (title, head, desc, body) = page_parts(detail, &m.reg_target_label);
+    // Registry pages mark an existing install of the same
+    // (name, scope) — any version counts.
+    let installed_ver = match detail {
+        Detail::Registry { entry, .. } => {
+            m.installed_label_for(&entry.name, entry.scope.as_deref())
+        }
+        _ => None,
+    };
+    let (title, head, desc, body) = page_parts(
+        detail,
+        &m.reg_target_label,
+        installed_ver.as_deref(),
+        m.versions_focused().then_some(m.versions_sel),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" {title} "));
@@ -897,14 +1092,27 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
         .reg_results
         .iter()
         .map(|e| {
+            // Name cell carries styled spans — `[signed]` green for
+            // signed index entries, `· installed <ver>` muted when
+            // the store already has this (name, scope) at any version.
+            let mut name = vec![Span::raw(e.label())];
+            if e.signature.is_some() {
+                name.push(Span::styled(" [signed]", trust_style("signed")));
+            }
+            if let Some(ver) = m.installed_label_for(&e.name, e.scope.as_deref()) {
+                name.push(Span::styled(
+                    format!(" · installed {ver}"),
+                    Style::default().fg(MUTED),
+                ));
+            }
             Row::new(vec![
-                e.label(),
-                e.scope.clone().unwrap_or_else(|| "-".into()),
-                e.kind.clone().unwrap_or_else(|| "-".into()),
-                e.version.clone().unwrap_or_else(|| "-".into()),
-                e.license.clone().unwrap_or_else(|| "-".into()),
-                short_sha(&e.digest),
-                e.description.clone().unwrap_or_else(|| "-".into()),
+                Cell::from(Line::from(name)),
+                Cell::from(e.scope.clone().unwrap_or_else(|| "-".into())),
+                Cell::from(e.kind.clone().unwrap_or_else(|| "-".into())),
+                Cell::from(e.version.clone().unwrap_or_else(|| "-".into())),
+                Cell::from(e.license.clone().unwrap_or_else(|| "-".into())),
+                Cell::from(short_sha(&e.digest)),
+                Cell::from(e.description.clone().unwrap_or_else(|| "-".into())),
             ])
         })
         .collect();
@@ -962,6 +1170,7 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
         m.status.clone()
     } else {
         match m.pane {
+            Pane::Home => format!("home — {} installed", m.entries.len()),
             Pane::Installed => {
                 if m.detail.is_some() {
                     "package — esc back".to_string()
@@ -1018,11 +1227,21 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
     // truncated with `…` to whatever width is left.
     let hint = if m.detail.is_some() {
         match &m.detail {
+            Some(Detail::Registry { .. }) if m.versions_focused() => {
+                "versions — j/k move · i install · v/esc back"
+            }
             Some(Detail::Registry { .. }) => "esc back · j/k scroll · i install",
             _ => "esc back · j/k scroll · v/u/p/r/c/d act on the row",
         }
     } else {
         match m.pane {
+            Pane::Home => {
+                if m.entries.is_empty() {
+                    "/ search registry · i install · : cmds · q quit"
+                } else {
+                    "j/k recent · Enter open · / search · i install · : cmds · q quit"
+                }
+            }
             Pane::Installed => {
                 "j/k · Enter page · v verify · u update · p pin · r remove · i install · c clean · d doctor · / filter · : cmds · q quit"
             }
@@ -1190,18 +1409,24 @@ keys — installed pane
   U             update all            p       pin → new ref
   r             remove (confirm)      c/C     cache clean >30d / all
   d             doctor summary        i       install by ref
-  Tab, h/l      cycle panes           1-5    jump to pane
+  Tab, h/l      cycle panes           1-6    jump to pane
   /             filter installed      Enter  keep filter
   :             command line          Tab   complete · esc leave mode
   R             reload store          F      clear filter
   ?             this help             q/C-c  quit
 
+home pane:    landing view — wordmark · stats · recently installed ·
+              / jumps to registry search · i install by ref · no cursor
+
 package page:  npm-style page — header chips · description · install
                command · deps/services/meta · provenance last ·
-               j/k scroll · Enter/esc close · registry: i installs
+               j/k scroll · Enter/esc close · registry: i installs ·
+               v focuses versions — j/k pick · i installs that version ·
+               `installed <pkg>@<ver>` line when already in the store
 
 registry pane:  / search-as-you-type (debounced) · Enter package page ·
                 i install result · :registry <name> target · :search <q>
+                results mark [signed] and · installed <ver>
 
 commands:  :q  :r/:reload  :help  :install <ref>  :remove <name>
            :verify <name>  :update [name]  :pin <name> <ref>
@@ -1271,7 +1496,22 @@ mod tests {
 
     /// Flatten a `page_parts` body to plain text for assertions.
     fn body_text(detail: &Detail) -> String {
-        let (_, _, _, body) = page_parts(detail, "default");
+        body_text_installed(detail, None)
+    }
+
+    /// `body_text` with an installed-version marker for the page.
+    fn body_text_installed(detail: &Detail, installed_ver: Option<&str>) -> String {
+        body_text_full(detail, installed_ver, None)
+    }
+
+    /// `body_text` with the versions-focus cursor (`Some(i)` marks
+    /// row `i` and switches the footer hint).
+    fn body_text_full(
+        detail: &Detail,
+        installed_ver: Option<&str>,
+        versions_sel: Option<usize>,
+    ) -> String {
+        let (_, _, _, body) = page_parts(detail, "default", installed_ver, versions_sel);
         body.iter()
             .map(|l| {
                 l.spans
@@ -1470,8 +1710,8 @@ mod tests {
     fn tab_bar_hit_testing() {
         // wide enough for full labels
         let wide = tab_labels(200);
-        assert_eq!(wide.len(), 5);
-        assert!(wide[0].contains("INSTALLED"));
+        assert_eq!(wide.len(), 6);
+        assert!(wide[1].contains("INSTALLED"));
         assert_eq!(tab_hit(200, 0), None); // leading space
         assert_eq!(tab_hit(200, 1), Some(0));
         // narrow → initials, hit-test still resolves
@@ -1485,7 +1725,8 @@ mod tests {
     fn empty_pane_states() {
         let tmp = tempfile::tempdir().unwrap();
         let mut m = model(tmp.path());
-        // Installed — no packages
+        // Installed — no packages (default pane is Home)
+        m.pane = Pane::Installed;
         let s = screen(&mut m, 80, 24);
         assert!(s.contains("no packages installed"), "{s}");
         assert!(s.contains("INSTALLED"), "{s}");
@@ -1515,6 +1756,7 @@ mod tests {
     fn installed_pane_rows_states() {
         let tmp = tempfile::tempdir().unwrap();
         let mut m = model(tmp.path());
+        m.pane = Pane::Installed;
         m.entries = vec![row("alpha", false), row("beta", true)];
         m.entries[1].entry.record.trust = Some("bad".into());
         m.entries[1].entry.record.kind = None;
@@ -1936,5 +2178,113 @@ mod tests {
         m.pane = Pane::Author;
         let s = screen(&mut m, 80, 24);
         assert!(s.contains("author — p pack"), "{s}");
+    }
+
+    /// Versions focus marks the cursor row with `›` and switches the
+    /// footer hint; unfocused rows keep the plain `  <ver>` shape.
+    #[test]
+    fn registry_page_versions_focus_marks_cursor() {
+        let page = reg_entry("1.0.0");
+        let detail = Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions: Some(vec![reg_entry("0.9.0"), page.clone()]),
+            versions_err: None,
+        };
+        let focused = body_text_full(&detail, None, Some(0));
+        assert!(focused.contains("› 0.9.0"));
+        assert!(focused.contains("  1.0.0  ← current"));
+        assert!(focused.contains("versions — j/k move · i install · v/esc back"));
+        assert!(!focused.contains("esc back · j/k scroll · i install"));
+        // Cursor on the current entry keeps its `← current` marker.
+        let on_current = body_text_full(&detail, None, Some(1));
+        assert!(on_current.contains("› 1.0.0  ← current"));
+        // Unfocused stays byte-identical to the plain render.
+        assert_eq!(body_text(&detail), body_text_full(&detail, None, None));
+    }
+
+    /// The `installed <pkg>@<ver>` line appears on a Registry page
+    /// only when an installed version label is supplied.
+    #[test]
+    fn registry_page_shows_installed_marker() {
+        let page = reg_entry("1.0.0"); // unscoped w@1.0.0
+        let detail = Detail::Registry {
+            entry: page,
+            install_ref: None,
+            install_err: None,
+            versions: None,
+            versions_err: None,
+        };
+        let plain = body_text(&detail);
+        assert!(!plain.contains("installed  w@"));
+        let marked = body_text_installed(&detail, Some("0.2.0"));
+        assert!(marked.contains("installed  w@0.2.0"));
+        // A scoped entry renders `@scope/name@ver`.
+        let mut scoped = reg_entry("1.0.0");
+        scoped.scope = Some("s".into());
+        let scoped_detail = Detail::Registry {
+            entry: scoped,
+            install_ref: None,
+            install_err: None,
+            versions: None,
+            versions_err: None,
+        };
+        let scoped_text = body_text_installed(&scoped_detail, Some("0.2.0"));
+        assert!(scoped_text.contains("installed  @s/w@0.2.0"));
+        // Installed pages never take the marker (their provenance
+        // already carries the version).
+        let installed_page = Detail::Installed {
+            entry: tamias_core::StoreEntry {
+                dir: std::path::PathBuf::from("/x"),
+                record: tamias_core::StoreRecord {
+                    name: "w".into(),
+                    scope: Some("s".into()),
+                    version: Some("0.2.0".into()),
+                    kind: None,
+                    description: None,
+                    keywords: Vec::new(),
+                    homepage: None,
+                    repository: None,
+                    license: None,
+                    authors: Vec::new(),
+                    source_ref: "./x".into(),
+                    resolved: "sha256:0".into(),
+                    digest: "sha256:0".into(),
+                    signature: None,
+                    signer: None,
+                    trust: None,
+                    installed_at: 0,
+                },
+            },
+            manifest: None,
+            manifest_err: None,
+        };
+        let text = body_text_installed(&installed_page, Some("9.9.9"));
+        assert!(!text.contains("installed  @s/w@9.9.9"));
+    }
+
+    /// `ago_at` bucket boundaries — just now / minutes / hours /
+    /// days / months / years.
+    #[test]
+    fn ago_buckets() {
+        let now = 1_800_000_000u64;
+        assert_eq!(ago_at(now, now), "just now");
+        assert_eq!(ago_at(now - 59, now), "just now");
+        assert_eq!(ago_at(now - 60, now), "1m ago");
+        assert_eq!(ago_at(now - 5 * 60, now), "5m ago");
+        assert_eq!(ago_at(now - 3599, now), "59m ago");
+        assert_eq!(ago_at(now - 3600, now), "1h ago");
+        assert_eq!(ago_at(now - 3 * 3600, now), "3h ago");
+        assert_eq!(ago_at(now - 86_399, now), "23h ago");
+        assert_eq!(ago_at(now - 86_400, now), "1d ago");
+        assert_eq!(ago_at(now - 2 * 86_400, now), "2d ago");
+        assert_eq!(ago_at(now - 30 * 86_400, now), "30d ago");
+        assert_eq!(ago_at(now - 31 * 86_400, now), "1mo ago");
+        assert_eq!(ago_at(now - 365 * 86_400, now), "12mo ago");
+        assert_eq!(ago_at(now - 400 * 86_400, now), "1y ago");
+        // A future stamp (clock skew) reads as "just now", not a
+        // negative duration.
+        assert_eq!(ago_at(now + 60, now), "just now");
     }
 }

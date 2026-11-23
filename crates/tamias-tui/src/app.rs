@@ -1,6 +1,7 @@
 //! The TUI model — panes, cursor, modes, modals, and the store reads
-//! every key maps to. The Installed pane lists `tamias-store-local`
-//! entries with a client-side `/` filter; `Enter` opens the package
+//! every key maps to. The Home pane is the landing view (wordmark,
+//! stats, recently installed); the Installed pane lists
+//! `tamias-store-local` entries with a client-side `/` filter; `Enter` opens the package
 //! page (`Detail`) on either the Installed row or a Registry result;
 //! the Registry pane searches a registry as-you-type; Services,
 //! Manifest, and Author cover provider lifecycle, the project `deps:`
@@ -67,10 +68,14 @@ pub struct Row {
     pub sealed: bool,
 }
 
-/// Which pane the tab bar shows. `ALL` fixes the `1`-`5` jump order
+/// Which pane the tab bar shows. `ALL` fixes the `1`-`6` jump order
 /// and tab labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
+    /// Home — wordmark, stats strip, recently-installed list (the
+    /// landing pane; `j`/`k` cursor + `Enter` opens a package page
+    /// via the Installed pane — see [`Model::open_home_detail`]).
+    Home,
     /// Store entries — name/type/source/resolved/digest/size.
     Installed,
     /// Registry search-as-you-type.
@@ -87,6 +92,7 @@ impl Pane {
     /// Tab label.
     pub fn label(self) -> &'static str {
         match self {
+            Pane::Home => "HOME",
             Pane::Installed => "INSTALLED",
             Pane::Registry => "REGISTRY",
             Pane::Services => "SERVICES",
@@ -95,8 +101,9 @@ impl Pane {
         }
     }
 
-    /// Tab order for `h`/`l`, `Tab`/`Shift-Tab`, and `1`-`5`.
-    pub const ALL: [Pane; 5] = [
+    /// Tab order for `h`/`l`, `Tab`/`Shift-Tab`, and `1`-`6`.
+    pub const ALL: [Pane; 6] = [
+        Pane::Home,
         Pane::Installed,
         Pane::Registry,
         Pane::Services,
@@ -559,8 +566,9 @@ fn unit_action_from_word(word: &str) -> Option<tamias_provider::UnitAction> {
 
 /// The whole TUI state.
 pub struct Model {
-    /// Roots the ops run against (cloned into every worker).
-    ctx: Ctx,
+    /// Roots the ops run against (cloned into every worker) —
+    /// `pub(crate)` so the Home pane's stats strip can show them.
+    pub(crate) ctx: Ctx,
     /// Store root the entries were listed from (watcher target).
     store_root: PathBuf,
     /// Every installed entry, sorted by label (as `Store::entries`).
@@ -572,6 +580,10 @@ pub struct Model {
     /// Index into the *filtered* installed row list (clamped on
     /// rebuild).
     pub sel: usize,
+    /// Cursor into the Home pane's recently-installed list
+    /// ([`Model::recent_installed`]) — `j`/`k`/wheel move it, `Enter`
+    /// opens the highlighted entry's package page.
+    pub home_sel: usize,
     /// Label of the selected row before the last rebuild — keeps the
     /// cursor on the same package across reloads.
     sel_label: Option<String>,
@@ -639,6 +651,15 @@ pub struct Model {
     /// Page scroll offset — `j`/`k`/arrows move it while `detail` is
     /// open; clamped to the body height each frame.
     pub detail_scroll: usize,
+    /// Versions-focus mode on a Registry package page — `v` toggles
+    /// it once the sibling-version list has landed; while set, `j`/`k`
+    /// move [`Model::versions_sel`] instead of scrolling the page and
+    /// `i` installs the selected version. Meaningless (and cleared)
+    /// for Installed pages.
+    pub versions_focus: bool,
+    /// Cursor into the page's `versions` list while `versions_focus`
+    /// is set — clamped to the list length on every move.
+    pub versions_sel: usize,
 
     // --- registry pane ---
     /// Last search results.
@@ -702,8 +723,9 @@ impl Model {
             store_root,
             entries: Vec::new(),
             load_err: None,
-            pane: Pane::Installed,
+            pane: Pane::Home,
             sel: 0,
+            home_sel: 0,
             sel_label: None,
             filter: String::new(),
             mode: Mode::Normal,
@@ -729,6 +751,8 @@ impl Model {
             modal: None,
             detail: None,
             detail_scroll: 0,
+            versions_focus: false,
+            versions_sel: 0,
             reg_results: Vec::new(),
             reg_sel: 0,
             reg_query: String::new(),
@@ -779,6 +803,10 @@ impl Model {
             }
         }
         self.rebuild_sel(keep.as_deref(), at);
+        // The recent list shrank under the cursor (uninstall, or a
+        // fresh install reordering it) — clamp like every other sel.
+        let n = self.recent_installed().len();
+        self.home_sel = if n == 0 { 0 } else { self.home_sel.min(n - 1) };
         self.arm_watch();
         self.load_manifest();
     }
@@ -1100,6 +1128,52 @@ impl Model {
         self.reg_results.get(self.reg_sel)
     }
 
+    /// Indices into `entries` for the Home pane's "recently installed"
+    /// list — `installed_at` desc (stable, so ties keep the store's
+    /// label order), top 8. The renderer and the `home_sel` cursor
+    /// share this ordering so they can never disagree.
+    pub fn recent_installed(&self) -> Vec<usize> {
+        let mut idx: Vec<usize> = (0..self.entries.len()).collect();
+        idx.sort_by(|&a, &b| {
+            self.entries[b]
+                .entry
+                .record
+                .installed_at
+                .cmp(&self.entries[a].entry.record.installed_at)
+        });
+        idx.truncate(8);
+        idx
+    }
+
+    /// The recent-install row under the Home cursor, if any.
+    pub fn home_selected(&self) -> Option<&Row> {
+        self.recent_installed()
+            .get(self.home_sel)
+            .and_then(|&i| self.entries.get(i))
+    }
+
+    /// The installed version label for a `(name, scope)` pair — the
+    /// "already installed" marker registry rows and package pages
+    /// show (`0.2.0`, or the resolved-sha short form when the record
+    /// is unversioned). `None` when no store entry matches; version
+    /// may differ from the registry row's — that's the point.
+    pub fn installed_label_for(&self, name: &str, scope: Option<&str>) -> Option<String> {
+        self.entries.iter().find_map(|r| {
+            let rec = &r.entry.record;
+            if rec.name == name && rec.scope.as_deref() == scope {
+                Some(rec.version.clone().unwrap_or_else(|| {
+                    let sha = rec
+                        .resolved
+                        .strip_prefix("sha256:")
+                        .unwrap_or(&rec.resolved);
+                    sha.chars().take(12).collect()
+                }))
+            } else {
+                None
+            }
+        })
+    }
+
     /// The Services row under the cursor.
     pub fn svc_selected(&self) -> Option<&ServiceRow> {
         self.svc_rows.get(self.svc_sel)
@@ -1157,6 +1231,16 @@ impl Model {
                 }
                 self.man_sel = (self.man_sel as isize + delta).clamp(0, len as isize - 1) as usize;
             }
+            // Home's cursor walks the recent-installs list, not the
+            // filtered installed rows.
+            Pane::Home => {
+                let n = self.recent_installed().len();
+                self.home_sel = if n == 0 {
+                    0
+                } else {
+                    (self.home_sel as isize + delta).clamp(0, n as isize - 1) as usize
+                };
+            }
             _ => {
                 let len = self.visible().len();
                 if len == 0 {
@@ -1172,6 +1256,8 @@ impl Model {
         self.pane = pane;
         self.detail = None;
         self.detail_scroll = 0;
+        self.versions_focus = false;
+        self.versions_sel = 0;
         self.sel_label = self.selected().map(|r| r.entry.label());
         match pane {
             // Services entry marks the table stale — `tick` fires the
@@ -1231,6 +1317,8 @@ impl Model {
         if self.detail.is_some() {
             self.detail = None;
             self.detail_scroll = 0;
+            self.versions_focus = false;
+            self.versions_sel = 0;
             return;
         }
         match self.pane {
@@ -1271,6 +1359,44 @@ impl Model {
             }
         }
         self.detail_scroll = 0;
+        self.versions_focus = false;
+        self.versions_sel = 0;
+    }
+
+    /// `Enter` on Home — open the highlighted recent install's package
+    /// page. The page verbs (`v`/`u`/`p`/`r`/`c`/`d`) key off `pane`,
+    /// and `toggle_detail` builds `Detail::Installed` from `selected()`
+    /// — so the clean route is the Installed pane itself: switch
+    /// there, park the row cursor on the entry (dropping a stale `/`
+    /// filter that would hide it), then run the normal detail path.
+    /// Esc-back lands on the Installed table rather than Home — the
+    /// deliberate trade-off for reusing the whole detail surface.
+    fn open_home_detail(&mut self) {
+        let Some(label) = self.home_selected().map(|r| r.entry.label()) else {
+            return;
+        };
+        let mut vis = self.visible();
+        let mut pos = vis.iter().position(|&i| {
+            self.entries
+                .get(i)
+                .is_some_and(|r| r.entry.label() == label)
+        });
+        if pos.is_none() && !self.filter.is_empty() {
+            // The filter is an Installed-pane artifact — Home can't
+            // show it hiding the target, so drop it and retry.
+            self.filter.clear();
+            self.input.clear();
+            vis = self.visible();
+            pos = vis.iter().position(|&i| {
+                self.entries
+                    .get(i)
+                    .is_some_and(|r| r.entry.label() == label)
+            });
+        }
+        let Some(pos) = pos else { return };
+        self.switch_pane(Pane::Installed);
+        self.sel = pos;
+        self.toggle_detail();
     }
 
     /// Kick off the background sibling-versions fetch for a registry
@@ -1480,6 +1606,116 @@ impl Model {
             Some(entry) => self.install_registry_entry(entry),
             None => self.say_err("no registry result selected"),
         }
+    }
+
+    // --- versions focus (registry package page) ---
+
+    /// `versions_focus` only means something on an open Registry
+    /// page — the flag clears with the page, so this also guards
+    /// against any stale state.
+    pub fn versions_focused(&self) -> bool {
+        self.versions_focus && matches!(self.detail, Some(Detail::Registry { .. }))
+    }
+
+    /// The landed sibling-version count on the open Registry page.
+    fn versions_len(&self) -> usize {
+        match &self.detail {
+            Some(Detail::Registry {
+                versions: Some(list),
+                ..
+            }) => list.len(),
+            _ => 0,
+        }
+    }
+
+    /// The version row under the versions cursor.
+    pub fn versions_selected(&self) -> Option<&RegistryEntry> {
+        match &self.detail {
+            Some(Detail::Registry {
+                versions: Some(list),
+                ..
+            }) => list.get(self.versions_sel),
+            _ => None,
+        }
+    }
+
+    /// `v` on a Registry package page — toggle versions focus (the
+    /// npm version-selector mode). Engages only once the background
+    /// fetch has landed a non-empty list; a pending or failed fetch
+    /// gets a muted status instead. The cursor starts on the page's
+    /// own entry (`← current`, matched by blob `file` — the same
+    /// rule the renderer uses).
+    fn toggle_versions_focus(&mut self) {
+        if self.versions_focused() {
+            self.versions_focus = false;
+            return;
+        }
+        // Decide before writing the status — the detail borrow ends
+        // ahead of `say`'s `&mut self`.
+        let (focus_at, note) = match &self.detail {
+            Some(Detail::Registry {
+                entry, versions, ..
+            }) => match versions {
+                Some(list) if !list.is_empty() => (
+                    Some(list.iter().position(|v| v.file == entry.file).unwrap_or(0)),
+                    None,
+                ),
+                Some(_) => (None, Some("no versions indexed")),
+                None => (None, Some("versions still loading…")),
+            },
+            _ => (None, None),
+        };
+        if let Some(i) = focus_at {
+            self.versions_focus = true;
+            self.versions_sel = i;
+        } else if let Some(note) = note {
+            self.say(note);
+        }
+    }
+
+    /// `j`/`k` inside versions focus — clamped to the landed list,
+    /// same posture as [`Model::move_sel`].
+    fn move_versions_sel(&mut self, delta: isize) {
+        let len = self.versions_len();
+        if len == 0 {
+            self.versions_sel = 0;
+            return;
+        }
+        self.versions_sel =
+            (self.versions_sel as isize + delta).clamp(0, len as isize - 1) as usize;
+    }
+
+    /// `i` inside versions focus — install the selected sibling
+    /// version through the same resolve→confirm path as the page
+    /// entry. A version already in the store gets an informational
+    /// toast instead of a reinstall confirm.
+    fn install_focused_version(&mut self) {
+        let Some(entry) = self.versions_selected().cloned() else {
+            return;
+        };
+        if self.version_installed(&entry) {
+            self.say(format!("{} already installed", entry.label()));
+            return;
+        }
+        self.install_registry_entry(entry);
+    }
+
+    /// Is this registry version already in the store? Matches on
+    /// (name, scope) plus version equality *or* digest equality —
+    /// the digest catches unversioned/re-published entries; an
+    /// absent version on either side never counts as a match.
+    fn version_installed(&self, entry: &RegistryEntry) -> bool {
+        self.entries.iter().any(|r| {
+            let rec = &r.entry.record;
+            let version_match = match (rec.version.as_deref(), entry.version.as_deref()) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            };
+            let digest_match = !entry.digest.is_empty() && rec.digest == entry.digest;
+            rec.name == entry.name
+                && rec.scope.as_deref() == entry.scope.as_deref()
+                && (version_match || digest_match)
+        })
     }
 
     // --- verbs on the selected installed row ---
@@ -2055,22 +2291,35 @@ impl Model {
                 self.kill_stream();
                 return true;
             }
-            KeyCode::Char('1') => self.switch_pane(Pane::Installed),
-            KeyCode::Char('2') => self.switch_pane(Pane::Registry),
-            KeyCode::Char('3') => self.switch_pane(Pane::Services),
-            KeyCode::Char('4') => self.switch_pane(Pane::Manifest),
-            KeyCode::Char('5') => self.switch_pane(Pane::Author),
-            KeyCode::Enter if matches!(self.pane, Pane::Installed | Pane::Registry) => {
-                self.toggle_detail()
+            // `1`-`6` jump to the tab at that position in `Pane::ALL`
+            // (Home is `1`); out-of-range digits fall through.
+            KeyCode::Char(c @ '1'..='9') => {
+                if let Some(p) = Pane::ALL.get(c as usize - '1' as usize) {
+                    self.switch_pane(*p);
+                }
             }
+            KeyCode::Enter => match self.pane {
+                // Home's recent list opens through the Installed
+                // pane (see `open_home_detail`).
+                Pane::Home => self.open_home_detail(),
+                Pane::Installed | Pane::Registry => self.toggle_detail(),
+                _ => {}
+            },
+            // Versions focus eats esc first — one level out (back to
+            // page scroll) before the page itself closes.
+            KeyCode::Esc if self.versions_focused() => self.versions_focus = false,
             KeyCode::Esc | KeyCode::Left if self.detail.is_some() => {
                 self.detail = None;
                 self.detail_scroll = 0;
+                self.versions_focus = false;
+                self.versions_sel = 0;
             }
             KeyCode::Char('h') | KeyCode::BackTab => {
                 if self.detail.is_some() {
                     self.detail = None;
                     self.detail_scroll = 0;
+                    self.versions_focus = false;
+                    self.versions_sel = 0;
                 } else {
                     self.step_pane(-1);
                 }
@@ -2078,8 +2327,11 @@ impl Model {
             KeyCode::Tab | KeyCode::Char('l') => self.step_pane(1),
             // With the package page open j/k scroll it; the row
             // cursor (and the v/u/p/r/c/d verbs keyed off it) stays put.
+            // Versions focus reroutes them onto the version list.
             KeyCode::Char('j') | KeyCode::Down => {
-                if self.detail.is_some() {
+                if self.versions_focused() {
+                    self.move_versions_sel(1);
+                } else if self.detail.is_some() {
                     self.detail_scroll += 1;
                 } else {
                     self.move_sel(1);
@@ -2087,7 +2339,9 @@ impl Model {
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if self.detail.is_some() {
+                if self.versions_focused() {
+                    self.move_versions_sel(-1);
+                } else if self.detail.is_some() {
                     self.detail_scroll = self.detail_scroll.saturating_sub(1);
                 } else {
                     self.move_sel(-1);
@@ -2095,12 +2349,16 @@ impl Model {
                 }
             }
             KeyCode::Char('g') => match self.pane {
+                Pane::Home => self.home_sel = 0,
                 Pane::Registry => self.reg_sel = 0,
                 Pane::Services => self.svc_sel = 0,
                 Pane::Manifest => self.man_sel = 0,
                 _ => self.sel = 0,
             },
             KeyCode::Char('G') => match self.pane {
+                Pane::Home => {
+                    self.home_sel = self.recent_installed().len().saturating_sub(1);
+                }
                 Pane::Registry => self.reg_sel = self.reg_results.len().saturating_sub(1),
                 Pane::Services => self.svc_sel = self.svc_rows.len().saturating_sub(1),
                 Pane::Manifest => {
@@ -2115,16 +2373,28 @@ impl Model {
                 }
             },
             KeyCode::Char('/') => {
-                self.mode = if self.pane == Pane::Registry {
-                    Mode::Search
+                if self.pane == Pane::Home {
+                    // Home has no filter of its own — `/` is the way
+                    // into registry search: switch panes and land in
+                    // Search mode with an empty query.
+                    self.switch_pane(Pane::Registry);
+                    self.reg_query.clear();
+                    self.reg_results.clear();
+                    self.reg_err = None;
+                    self.input.clear();
+                    self.mode = Mode::Search;
                 } else {
-                    Mode::Filter
-                };
-                self.input = if self.pane == Pane::Registry {
-                    self.reg_query.clone()
-                } else {
-                    self.filter.clone()
-                };
+                    self.mode = if self.pane == Pane::Registry {
+                        Mode::Search
+                    } else {
+                        Mode::Filter
+                    };
+                    self.input = if self.pane == Pane::Registry {
+                        self.reg_query.clone()
+                    } else {
+                        self.filter.clone()
+                    };
+                }
             }
             KeyCode::Char(':') => {
                 self.mode = Mode::Command;
@@ -2144,6 +2414,12 @@ impl Model {
             // dep) since a live child is the more urgent target.
             KeyCode::Char('x') if self.stream_child.is_some() => self.kill_stream(),
             // --- verbs ---
+            // `v` on an open Registry package page toggles versions
+            // focus — the npm version-selector mode. `v` on the bare
+            // Registry pane stays unbound.
+            KeyCode::Char('v') if self.pane == Pane::Registry && self.detail.is_some() => {
+                self.toggle_versions_focus()
+            }
             KeyCode::Char('v') if self.pane == Pane::Installed => self.verb_verify(),
             KeyCode::Char('u') if self.pane == Pane::Installed => self.verb_update(),
             KeyCode::Char('U') if self.pane == Pane::Installed => self.confirm_job(
@@ -2157,6 +2433,9 @@ impl Model {
             KeyCode::Char('c') if self.pane == Pane::Installed => self.verb_cache_clean(false),
             KeyCode::Char('C') if self.pane == Pane::Installed => self.verb_cache_clean(true),
             KeyCode::Char('d') if self.pane == Pane::Installed => self.verb_doctor(),
+            // Versions focus: `i` installs the selected sibling
+            // version, not the page's own entry.
+            KeyCode::Char('i') if self.versions_focused() => self.install_focused_version(),
             KeyCode::Char('i') => self.verb_install(),
             // Services-pane verbs route through `svc_verb` — the keys
             // don't collide with Installed's (pane-gated).
@@ -2410,6 +2689,190 @@ mod tests {
         }
     }
 
+    /// Home is the landing pane: `/` jumps into Registry search,
+    /// `i` opens the install-by-ref prompt, `1`-`6` map onto
+    /// `Pane::ALL` positions.
+    #[test]
+    fn home_pane_keys() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            None,
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        assert_eq!(m.pane, Pane::Home);
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        // `/` on Home → Registry pane in Search mode, empty query.
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.pane, Pane::Registry);
+        assert_eq!(m.mode, Mode::Search);
+        assert!(m.reg_query.is_empty());
+        // esc leaves search mode; `1` is Home, `2` Installed, `3`
+        // Registry — digits follow `Pane::ALL` order.
+        m.key(key(KeyCode::Esc));
+        assert_eq!(m.mode, Mode::Normal);
+        m.key(key(KeyCode::Char('1')));
+        assert_eq!(m.pane, Pane::Home);
+        m.key(key(KeyCode::Char('2')));
+        assert_eq!(m.pane, Pane::Installed);
+        // `i` on Home opens the install-by-ref prompt (non-Registry
+        // verb path), not a registry-result install.
+        m.key(key(KeyCode::Char('1')));
+        m.key(key(KeyCode::Char('i')));
+        assert_eq!(m.mode, Mode::Prompt(PromptKind::InstallRef));
+        // j/k on Home are no-ops — the installed cursor stays put.
+        m.key(key(KeyCode::Esc));
+        m.sel = 0;
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.sel, 0);
+        assert_eq!(m.pane, Pane::Home);
+    }
+
+    /// A store row for cursor/ordering tests — `name` unscoped at
+    /// version `installed_at` so labels stay distinct.
+    fn store_row(name: &str, installed_at: u64) -> Row {
+        Row {
+            entry: tamias_core::StoreEntry {
+                dir: PathBuf::from(format!("/store/{name}")),
+                record: tamias_core::StoreRecord {
+                    name: name.into(),
+                    scope: None,
+                    version: Some(installed_at.to_string()),
+                    kind: None,
+                    description: None,
+                    keywords: Vec::new(),
+                    homepage: None,
+                    repository: None,
+                    license: None,
+                    authors: Vec::new(),
+                    source_ref: "./x".into(),
+                    resolved: format!("sha256:{installed_at}"),
+                    digest: format!("sha256:d{installed_at}"),
+                    signature: None,
+                    signer: None,
+                    trust: None,
+                    installed_at,
+                },
+            },
+            size: None,
+            sealed: false,
+        }
+    }
+
+    /// Home's recent list is a real cursor: `recent_installed`
+    /// orders `installed_at` desc capped at 8, j/k/g/G move
+    /// `home_sel` clamped, and `Enter` routes through the Installed
+    /// pane into the package page with the row cursor parked on it.
+    #[test]
+    fn home_recent_cursor_and_open() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        for i in 0..10u64 {
+            m.entries.push(store_row(&format!("p{i}"), i + 1));
+        }
+        // Newest first, capped at 8 — p0/p1 (oldest) fall off.
+        let recent = m.recent_installed();
+        assert_eq!(recent.len(), 8);
+        assert_eq!(m.entries[recent[0]].entry.record.name, "p9");
+        assert_eq!(m.entries[recent[7]].entry.record.name, "p2");
+        assert_eq!(
+            m.home_selected().map(|r| r.entry.record.name.as_str()),
+            Some("p9")
+        );
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        // j/k clamp at both ends; g/G jump.
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.home_sel, 0);
+        m.key(key(KeyCode::Char('j')));
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.home_sel, 2);
+        assert_eq!(
+            m.home_selected().map(|r| r.entry.record.name.as_str()),
+            Some("p7")
+        );
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.home_sel, 7);
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.home_sel, 0);
+        // Enter on p9 → Installed pane, package page open on that row.
+        m.key(key(KeyCode::Char('j'))); // p8
+        m.key(key(KeyCode::Enter));
+        assert_eq!(m.pane, Pane::Installed);
+        assert_eq!(m.sel, 8); // p8 is entries[8]; visible() keeps store order
+        match &m.detail {
+            Some(Detail::Installed { entry, .. }) => {
+                assert_eq!(entry.record.name, "p8");
+            }
+            other => panic!("expected installed page, got {other:?}"),
+        }
+        // Esc closes the page onto the Installed table (documented
+        // trade-off — back does not return to Home).
+        m.key(key(KeyCode::Esc));
+        assert!(m.detail.is_none());
+        assert_eq!(m.pane, Pane::Installed);
+        assert_eq!(
+            m.selected().map(|r| r.entry.record.name.as_str()),
+            Some("p8")
+        );
+    }
+
+    /// `installed_label_for` matches on (name, scope) regardless of
+    /// version and falls back to the resolved-sha short form.
+    #[test]
+    fn installed_label_for_matches_name_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            None,
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        assert_eq!(m.installed_label_for("w", Some("s")), None);
+        let entry = tamias_core::StoreEntry {
+            dir: tmp.path().join("store/@s/w@0.2.0"),
+            record: tamias_core::StoreRecord {
+                name: "w".into(),
+                scope: Some("s".into()),
+                version: Some("0.2.0".into()),
+                kind: None,
+                description: None,
+                keywords: Vec::new(),
+                homepage: None,
+                repository: None,
+                license: None,
+                authors: Vec::new(),
+                source_ref: "./x".into(),
+                resolved: "sha256:0123456789abcdef".into(),
+                digest: "sha256:d".into(),
+                signature: None,
+                signer: None,
+                trust: None,
+                installed_at: 0,
+            },
+        };
+        m.entries.push(crate::app::Row {
+            entry,
+            size: None,
+            sealed: false,
+        });
+        assert_eq!(
+            m.installed_label_for("w", Some("s")).as_deref(),
+            Some("0.2.0")
+        );
+        // scope and name must both match — no cross-talk.
+        assert_eq!(m.installed_label_for("w", None), None);
+        assert_eq!(m.installed_label_for("other", Some("s")), None);
+    }
+
     /// `Msg::Versions` applies only to the page whose entry label it
     /// was keyed with — a closed or replaced page drops the result,
     /// and the arm never touches `busy`.
@@ -2647,7 +3110,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut m = open(tmp.path());
         // pane digits + h/l/Tab/BackTab stepping
-        for c in ['2', '3', '4', '5', '1'] {
+        for c in ['2', '3', '4', '5', '6', '2'] {
             chr(&mut m, c);
         }
         assert_eq!(m.pane, Pane::Installed);
@@ -2754,7 +3217,7 @@ mod tests {
         m.mouse(mouse(MouseEventKind::ScrollDown, 1, 1));
         // click the SERVICES tab (find a column tab_hit maps to it)
         let col = (1..100u16)
-            .find(|&x| crate::render::tab_hit(100, x) == Some(2))
+            .find(|&x| crate::render::tab_hit(100, x) == Some(3))
             .unwrap();
         m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), col, 0));
         assert_eq!(m.pane, Pane::Services);
@@ -2918,7 +3381,7 @@ mod tests {
         let _g = EnvGuard::enter(tmp.path());
         let c = tctx(tmp.path());
         let mut m = Model::open(&c).unwrap();
-        chr(&mut m, '2');
+        chr(&mut m, '3');
         assert_eq!(m.pane, Pane::Registry);
         // moves on empty results
         for c in ['j', 'k', 'g', 'G'] {
@@ -3046,7 +3509,7 @@ mod tests {
         .unwrap();
         let mut m = Model::open(&c).unwrap();
         // --- Manifest pane ---
-        chr(&mut m, '4');
+        chr(&mut m, '5');
         assert_eq!(m.pane, Pane::Manifest);
         assert_eq!(m.project.as_ref().map(|p| p.deps.len()), Some(2));
         assert_eq!(m.dep_selected().as_deref(), Some("./a"));
@@ -3081,7 +3544,7 @@ mod tests {
         assert!(m.status_err);
         m.man_sel = 0;
         // --- Services pane ---
-        chr(&mut m, '3');
+        chr(&mut m, '4');
         assert_eq!(m.pane, Pane::Services);
         assert!(m.svc_stale);
         m.svc_rows = vec![svc_row("pkg", "web"), svc_row("pkg2", "api")];
@@ -3120,7 +3583,7 @@ mod tests {
         chr(&mut m, 's');
         assert!(m.status_err);
         // --- Author pane ---
-        chr(&mut m, '5');
+        chr(&mut m, '6');
         assert_eq!(m.pane, Pane::Author);
         chr(&mut m, 'p');
         assert!(matches!(m.mode, Mode::Prompt(PromptKind::PackSpec)));
@@ -3132,7 +3595,7 @@ mod tests {
         settle(&mut m);
         chr(&mut m, 'R');
         // --- Installed verbs with a real selection ---
-        chr(&mut m, '1');
+        chr(&mut m, '2');
         let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
         place(&mut m, &w, "w", Some("weird"));
         for c in ['v', 'u', 'p', 'r', 'c', 'C', 'd', 'i', 'U'] {
@@ -3725,7 +4188,10 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         };
         // click the SERVICES tab (col inside its label span)
-        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 25, 0));
+        let col = (1..100u16)
+            .find(|&x| crate::render::tab_hit(100, x) == Some(3))
+            .unwrap();
+        m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), col, 0));
         assert_eq!(m.pane, Pane::Services);
         // row click on the services table → svc_sel
         m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 4));
@@ -3765,5 +4231,148 @@ mod tests {
             size: Some(1024),
             sealed: false,
         }
+    }
+
+    /// A model on the Registry pane with `page` as its open package
+    /// page — `versions` preset, fetch already "landed".
+    fn registry_page_model(
+        ctx: &Ctx,
+        page: &RegistryEntry,
+        versions: Option<Vec<RegistryEntry>>,
+    ) -> Model {
+        let mut m = Model::open(ctx).unwrap();
+        m.pane = Pane::Registry;
+        m.detail = Some(Detail::Registry {
+            entry: page.clone(),
+            install_ref: None,
+            install_err: None,
+            versions,
+            versions_err: None,
+        });
+        m
+    }
+
+    /// `v` toggles versions focus only once the fetch has landed;
+    /// while focused `j`/`k` move `versions_sel` (clamped, starting
+    /// on the page's own entry) and leave `detail_scroll` alone, and
+    /// `esc` backs out one level before closing the page.
+    #[test]
+    fn versions_focus_toggle_and_cursor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let page = reg_entry("1.0.0");
+        // Pending fetch — `v` is a muted no-op.
+        let mut m = registry_page_model(&ctx, &page, None);
+        m.key(key(KeyCode::Char('v')));
+        assert!(!m.versions_focused());
+        assert!(m.status.contains("loading"));
+        // Landed — focus engages, cursor starts on `← current`.
+        if let Some(Detail::Registry { versions, .. }) = &mut m.detail {
+            *versions = Some(vec![reg_entry("0.9.0"), page.clone(), reg_entry("1.1.0")]);
+        }
+        m.key(key(KeyCode::Char('v')));
+        assert!(m.versions_focused());
+        assert_eq!(m.versions_sel, 1);
+        assert_eq!(
+            m.versions_selected().and_then(|v| v.version.as_deref()),
+            Some("1.0.0")
+        );
+        // j/k move the version cursor, not the page scroll.
+        m.detail_scroll = 3;
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.versions_sel, 2);
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.versions_sel, 1);
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.versions_sel, 0);
+        m.key(key(KeyCode::Char('k'))); // clamps at the top
+        assert_eq!(m.versions_sel, 0);
+        m.key(key(KeyCode::Char('j')));
+        m.key(key(KeyCode::Char('j')));
+        m.key(key(KeyCode::Char('j'))); // clamps at the bottom
+        assert_eq!(m.versions_sel, 2);
+        assert_eq!(m.detail_scroll, 3);
+        // esc backs out to scroll mode — the page stays open.
+        m.key(key(KeyCode::Esc));
+        assert!(!m.versions_focused());
+        assert!(m.detail.is_some());
+        // `v` toggles back off too.
+        m.key(key(KeyCode::Char('v')));
+        assert!(m.versions_focused());
+        m.key(key(KeyCode::Char('v')));
+        assert!(!m.versions_focused());
+        // Closing the page (esc twice: focus, then page) resets.
+        m.key(key(KeyCode::Char('v')));
+        m.key(key(KeyCode::Esc));
+        m.key(key(KeyCode::Esc));
+        assert!(m.detail.is_none());
+        assert!(!m.versions_focused());
+        assert_eq!(m.versions_sel, 0);
+    }
+
+    /// `i` inside versions focus installs the *selected* sibling —
+    /// the confirm modal carries its resolved ref — and reports
+    /// "already installed" instead of reinstalling a stored version.
+    #[test]
+    fn versions_focus_install_selected() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let page = reg_entry("1.0.0");
+        let mut m = registry_page_model(&ctx, &page, Some(vec![reg_entry("0.9.0"), page.clone()]));
+        m.versions_focus = true;
+        m.versions_sel = 0; // 0.9.0 — not in the store
+        m.key(key(KeyCode::Char('i')));
+        match &m.modal {
+            Some(Modal::Confirm {
+                job: Job::Install { reference, .. },
+                ..
+            }) => assert!(reference.contains("0.9.0"), "ref: {reference}"),
+            other => panic!("expected install confirm, got {other:?}"),
+        }
+        // 1.0.0 installed at the same version → informational toast,
+        // no modal.
+        m.modal = None;
+        m.entries.push(crate::app::Row {
+            entry: tamias_core::StoreEntry {
+                dir: tmp.path().join("store/@s/w@1.0.0"),
+                record: tamias_core::StoreRecord {
+                    name: "w".into(),
+                    scope: Some("s".into()),
+                    version: Some("1.0.0".into()),
+                    kind: None,
+                    description: None,
+                    keywords: Vec::new(),
+                    homepage: None,
+                    repository: None,
+                    license: None,
+                    authors: Vec::new(),
+                    source_ref: "./x".into(),
+                    resolved: "sha256:0".into(),
+                    digest: "sha256:1.0.0".into(),
+                    signature: None,
+                    signer: None,
+                    trust: None,
+                    installed_at: 0,
+                },
+            },
+            size: None,
+            sealed: false,
+        });
+        m.versions_sel = 1;
+        m.key(key(KeyCode::Char('i')));
+        assert!(m.modal.is_none());
+        assert!(m.status.contains("already installed"), "{}", m.status);
     }
 }

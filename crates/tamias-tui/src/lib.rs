@@ -1,6 +1,7 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 //! tamias-tui — the interactive package-manager surface behind
-//! `tamias ui` (ratatui/crossterm, PL-0004). The Installed
+//! `tamias ui` (ratatui/crossterm, PL-0004). The Home pane is the
+//! landing view (wordmark, stats, recently installed); the Installed
 //! pane lists store entries with a `/` filter, `Enter` opens an
 //! npm-style package page (installed entries and Registry results
 //! alike — chips, description, install command, provenance), and
