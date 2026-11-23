@@ -2763,6 +2763,7 @@ dependencies = [
 name = "tamias-provider"
 version = "0.2.1"
 dependencies = [
+ "tamias-bin",
  "tamias-core",
  "tamias-deploy",
  "tamias-deploy-launchd",

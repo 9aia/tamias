@@ -1301,6 +1301,9 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
             let entry = store.find(&name).ok();
             bin_cleanup_after_remove(&env, &name, entry.as_ref());
             let record = store.remove(&name)?;
+            if let Some(e) = &entry {
+                bin_redeploy_after_remove(&env, e);
+            }
             println!("removed {}@{}", record.name, record.resolved);
         }
         Some(Command::Prune { keep, yes, json }) => {
@@ -3021,6 +3024,37 @@ fn bin_cleanup_after_remove(env: &Env, name: &str, entry: Option<&StoreEntry>) {
     }
 }
 
+/// Post-drop half of bin cleanup — while a same-`(scope, name)`
+/// sibling declaring `bins[]` remains, redeploy the newest one's
+/// through the same `tamias bin deploy` path so the group's `PATH`
+/// surfaces don't vanish with the removed version (the bins half of
+/// T-029's version-aware teardown — shim markers and the shared
+/// `bin-alias` are identity-keyed, not version-keyed). Silent on
+/// success; warns rather than failing the completed removal.
+fn bin_redeploy_after_remove(env: &Env, removed: &StoreEntry) {
+    let entries = match Store::new(&env.store_root).entries() {
+        Ok(entries) => entries,
+        Err(err) => {
+            eprintln!("tamias: warning — could not rescan store for sibling bins: {err}");
+            return;
+        }
+    };
+    match tamias_bin::redeploy_survivor_bins(
+        removed,
+        &entries,
+        &env.bin_dir,
+        &bin_alias_root(&env.store_root),
+    ) {
+        Ok(Some(rd)) => {
+            for warning in &rd.report.warnings {
+                eprintln!("tamias: warning — {warning}");
+            }
+        }
+        Ok(None) => {}
+        Err(err) => eprintln!("tamias: warning — bin redeploy after remove: {err}"),
+    }
+}
+
 /// `service …` — the per-user service mechanism (systemd units on
 /// Linux/Unix, Task Scheduler tasks on Windows, launchd agents on
 /// macOS — [`tamias_provider::ServiceBackend`]).
@@ -4167,6 +4201,84 @@ mod tests {
         store_seed(tmp.path(), "solo", Some("1.0.0"));
         run_args(e.clone(), &["tamias", "prune", "--yes"]).unwrap();
         assert_eq!(store_labels(&e), ["solo@1.0.0"]);
+    }
+
+    /// A `bins[]`-declaring payload — a `shim: cli` decl needs no
+    /// driver at deploy time (the generated script dispatches
+    /// lazily through `tamias bin exec`).
+    fn shim_pkg(root: &std::path::Path, name: &str, version: &str) -> std::path::PathBuf {
+        let dir = root.join(format!("{name}-{version}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            format!(
+                "name: {name}\nversion: {version}\nbins:\n  \
+                 - name: {name}-tool\n    shim: cli\n    driver: {name}\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        dir
+    }
+
+    /// The shim's embedded dispatch label — `bin exec '<label>'`.
+    fn shim_label(shim: &std::path::Path) -> String {
+        let script = std::fs::read_to_string(shim).unwrap();
+        let marker = "bin exec '";
+        let start = script.find(marker).unwrap() + marker.len();
+        script[start..].split('\'').next().unwrap().to_string()
+    }
+
+    #[test]
+    fn prune_redeploys_bins_from_surviving_version() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        // `tamias_provider::uninstall` resolves the bin dir through
+        // `tamias_bin::default_bin_dir` — point it at the test bin dir.
+        std::env::set_var("TAMIAS_BIN_DIR", &e.bin_dir);
+        for v in ["1.0.0", "2.0.0"] {
+            let dir = shim_pkg(tmp.path(), "bp", v);
+            run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        }
+        let shim = e.bin_dir.join("bp-tool");
+        assert_eq!(shim_label(&shim), "bp@2.0.0");
+        // Prune drops bp@1.0.0 — bp@2.0.0's shim must be redeployed,
+        // not left deleted (the bins half of T-029's survivor rule).
+        run_args(e.clone(), &["tamias", "prune", "--yes"]).unwrap();
+        assert!(Store::new(&e.store_root).find("bp@2.0.0").is_ok());
+        assert!(shim.exists(), "survivor's shim must be redeployed");
+        assert_eq!(shim_label(&shim), "bp@2.0.0");
+        // Uninstalling the last version still cleans up fully (prune
+        // itself never drops a group's final entry — keep ≥ 1).
+        run_args(e.clone(), &["tamias", "uninstall", "bp@2.0.0"]).unwrap();
+        assert!(Store::new(&e.store_root).find("bp").is_err());
+        assert!(!shim.exists() && !shim.is_symlink());
+    }
+
+    #[test]
+    fn remove_redeploys_bins_from_newest_survivor() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        std::env::set_var("TAMIAS_BIN_DIR", &e.bin_dir);
+        for v in ["1.0.0", "1.5.0", "2.0.0"] {
+            let dir = shim_pkg(tmp.path(), "bp", v);
+            run_args(e.clone(), &["tamias", "install", dir.to_str().unwrap()]).unwrap();
+        }
+        let shim = e.bin_dir.join("bp-tool");
+        assert_eq!(shim_label(&shim), "bp@2.0.0");
+        // Removing the newest leaves two survivors — the semver-max
+        // of *those* (1.5.0) redeploys, matching prune's keep=1 pick.
+        run_args(e.clone(), &["tamias", "remove", "bp@2.0.0"]).unwrap();
+        assert!(shim.exists(), "sibling's shim must survive the remove");
+        assert_eq!(shim_label(&shim), "bp@1.5.0");
+        // One survivor left — still redeployed.
+        run_args(e.clone(), &["tamias", "remove", "bp@1.0.0"]).unwrap();
+        assert_eq!(shim_label(&shim), "bp@1.5.0");
+        // Last version gone — full cleanup, shim removed.
+        run_args(e.clone(), &["tamias", "remove", "bp@1.5.0"]).unwrap();
+        assert!(!shim.exists() && !shim.is_symlink());
     }
 
     /// A payload dir `update` can re-resolve — rewriting the manifest

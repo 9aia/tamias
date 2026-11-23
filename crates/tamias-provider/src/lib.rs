@@ -685,7 +685,11 @@ fn surviving_units(
 /// driver `uninstall` first (a failing driver keeps the store entry),
 /// then declarative units are removed unless a *surviving* installed
 /// provider still declares the same unit name — that unit is
-/// re-rendered from the survivor's spec instead.
+/// re-rendered from the survivor's spec instead. Declared `bins[]`
+/// get the same treatment: shim markers and the shared `bin-alias`
+/// are identity-keyed, so a same-`(scope, name)` sibling's bins are
+/// redeployed from the newest survivor through `tamias bin deploy`'s
+/// path rather than left stripped.
 ///
 /// The driver `uninstall` verb is **version-aware** (T-029): drivers
 /// key shared operator state (`~/.config/<product>/…`) on the bare
@@ -783,6 +787,38 @@ pub fn uninstall(store_root: &Path, name: &str) -> Result<DeployReport, Error> {
         // Best-effort: a missing user bus must not fail the uninstall —
         // the unit files are already written/removed.
         let _ = deploy.daemon_reload();
+    }
+    // Bins half of the same survivor rule: shim markers and the
+    // shared `bin-alias` are keyed on package identity
+    // (`@scope/name`), not the versioned label, so the bin cleanup
+    // that ran ahead of this verb stripped `PATH` surfaces every
+    // same-identity sibling owns (and dropped the alias their
+    // payload-bin links hang off). While a `(scope, name)` sibling
+    // declaring `bins[]` remains, redeploy the newest one's through
+    // the same `tamias bin deploy` path — last-deploy wins on name
+    // collisions, same as installs. Best-effort: warnings only, the
+    // store entry is already dropped.
+    match store.entries() {
+        Ok(entries) => match tamias_bin::redeploy_survivor_bins(
+            &entry,
+            &entries,
+            &tamias_bin::default_bin_dir(),
+            &tamias_bin::default_alias_root(store_root),
+        ) {
+            Ok(Some(rd)) => {
+                report
+                    .lines
+                    .push(format!("bins redeployed from {}", rd.label));
+                report.warnings.extend(rd.report.warnings);
+            }
+            Ok(None) => {}
+            Err(e) => report
+                .warnings
+                .push(format!("could not redeploy sibling bins: {e}")),
+        },
+        Err(e) => report
+            .warnings
+            .push(format!("could not rescan store for sibling bins: {e}")),
     }
     report
         .lines

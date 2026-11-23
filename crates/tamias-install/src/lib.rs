@@ -579,7 +579,12 @@ fn sources(max_download: Option<u64>) -> Sources {
 /// `--name`, so the verb runs only when the entry being dropped is the
 /// last installed one sharing that name — removing one of several
 /// versions must not tear down state the survivors still use. The
-/// store entry itself is always dropped.
+/// store entry itself is always dropped. Declared `bins[]` get the
+/// same survivor treatment: after the drop, the newest same-
+/// `(scope, name)` sibling still declaring bins is redeployed through
+/// `tamias bin deploy`'s path, since shim markers and the shared
+/// `bin-alias` are identity-keyed and the cleanup strips surfaces
+/// every version owns.
 ///
 /// # Errors
 /// Store lookup, driver dispatch, or store removal failures.
@@ -624,7 +629,32 @@ pub fn remove(
     ) {
         warn(format!("bin cleanup for {name}: {err}"));
     }
-    store.remove(name)
+    let record = store.remove(name)?;
+    // Bins half of the T-029 survivor rule — shim markers and the
+    // shared `bin-alias` are identity-keyed (`@scope/name`, not the
+    // versioned label), so the cleanup above stripped `PATH` surfaces
+    // every same-identity sibling owns. While a `(scope, name)`
+    // sibling declaring `bins[]` remains, redeploy the newest one's
+    // through the same `tamias bin deploy` path. Best-effort:
+    // warnings only, the store entry is already dropped.
+    match store.entries() {
+        Ok(entries) => match tamias_bin::redeploy_survivor_bins(
+            &entry,
+            &entries,
+            &tamias_bin::default_bin_dir(),
+            &tamias_bin::default_alias_root(store_root),
+        ) {
+            Ok(Some(rd)) => {
+                for warning in &rd.report.warnings {
+                    warn(format!("bin redeploy: {warning}"));
+                }
+            }
+            Ok(None) => {}
+            Err(e) => warn(format!("bin redeploy for {name}: {e}")),
+        },
+        Err(e) => warn(format!("could not rescan store for sibling bins: {e}")),
+    }
+    Ok(record)
 }
 
 /// plan → cache-hit or fetch+commit → `(payload_dir, resolved_id,

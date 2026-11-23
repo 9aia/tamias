@@ -20,6 +20,7 @@ tamias-deploy.workspace = true
 tamias-deploy-systemd.workspace = true
 tamias-deploy-windows.workspace = true
 tamias-deploy-launchd.workspace = true
+tamias-bin.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

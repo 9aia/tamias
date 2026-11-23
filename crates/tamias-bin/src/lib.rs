@@ -1160,6 +1160,89 @@ pub fn cleanup_after_remove(
     }
 }
 
+/// What [`redeploy_survivor_bins`] did.
+#[derive(Clone, Debug)]
+pub struct SurvivorRedeploy {
+    /// The surviving entry redeployed (`@scope/name@version` label).
+    pub label: String,
+    /// Its [`deploy_bins`] report.
+    pub report: DeployReport,
+}
+
+/// Redeploy a surviving same-`(scope, name)` sibling's declared
+/// `bins[]` after `removed`'s store entry dropped — the bins half of
+/// version-aware teardown (the T-029 rule applied to `PATH`
+/// surfaces). Shim markers and the shared `bin-alias` are keyed on
+/// package *identity* (`@scope/name`, not the versioned label), and
+/// `unlink_payload_bins` drops that alias unconditionally, so the
+/// cleanup half of a remove/uninstall strips commands and payload
+/// links every coexisting version owns. `entries` is the
+/// post-removal store scan; `removed` only identifies the
+/// `(scope, name)` group (its own dir is excluded even if the scan
+/// still lists it).
+///
+/// The survivor picked is the newest semver precedence among
+/// siblings still declaring `bins[]` — the same ordering
+/// [`tamias_core::plan_prune`] keeps, so prune's "latest" and the
+/// redeployed bins agree. Siblings whose version isn't semver sort
+/// behind parseable ones; when *no* candidate parses, the
+/// label-greatest one redeploys so the group's commands don't dangle
+/// on a removed label. Deploying only the newest keeps the shared
+/// alias pointed at one entry dir — payload-bin links resolve
+/// through it, and a second version's differing `bins[]` set would
+/// leave stale links either way. `None` when no same-group sibling
+/// remains or none declares bins — the plain cleanup already ran,
+/// nothing to restore.
+///
+/// Best-effort by contract: callers warn on `Err`, never fail the
+/// completed removal. Deploy collisions follow [`deploy_bins`] rules
+/// — last-deploy wins over other tamias packages, foreign files
+/// conflict. Note this redeploys *declared* bins even for a survivor
+/// installed `--no-bins`: deploy state isn't recorded per version,
+/// and the identity-shared surfaces can't tell the versions apart —
+/// `tamias bin destroy` is the opt-out.
+///
+/// # Errors
+/// Propagates [`deploy_bins`] failures (manifest read, alias,
+/// resolution, filesystem).
+pub fn redeploy_survivor_bins(
+    removed: &StoreEntry,
+    entries: &[StoreEntry],
+    bin_dir: &Path,
+    alias_root: &Path,
+) -> Result<Option<SurvivorRedeploy>, Error> {
+    let candidates: Vec<StoreEntry> = entries
+        .iter()
+        .filter(|e| {
+            e.dir != removed.dir
+                && e.record.scope == removed.record.scope
+                && e.record.name == removed.record.name
+        })
+        .filter(|e| e.manifest().map(|m| !m.bins.is_empty()).unwrap_or(false))
+        .cloned()
+        .collect();
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+    // Newest semver precedence wins (prune's keep=1 ordering);
+    // unversioned/non-semver survivors only redeploy when they're
+    // all there is — label-greatest keeps the pick deterministic.
+    let survivor = tamias_core::latest_version(&candidates)
+        .cloned()
+        .or_else(|| {
+            candidates
+                .iter()
+                .max_by(|a, b| a.label().cmp(&b.label()))
+                .cloned()
+        });
+    let Some(survivor) = survivor else {
+        return Ok(None);
+    };
+    let label = survivor.label();
+    let report = deploy_bins(&survivor, bin_dir, alias_root, false)?;
+    Ok(Some(SurvivorRedeploy { label, report }))
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
@@ -1435,6 +1518,110 @@ mod tests {
                 .find(|r| r.package == "a@1.0.0")
                 .unwrap()
                 .deployed
+        );
+    }
+
+    /// A versioned `pkg` entry declaring one shim bin — the shape
+    /// `redeploy_survivor_bins` scans for.
+    fn versioned_entry(store: &Path, version: &str) -> StoreEntry {
+        let dir = store.join(format!("pkg@{version}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("tamias.yaml"),
+            format!(
+                "name: pkg\nversion: {version}\nbins:\n  \
+                 - name: pkg-shim\n    shim: cli\n    driver: pkg\n"
+            ),
+        )
+        .unwrap();
+        let mut e = entry(&dir, "pkg");
+        e.record.version = Some(version.into());
+        e
+    }
+
+    #[test]
+    fn redeploy_survivor_bins_picks_newest_same_group() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("store");
+        let bin_dir = tmp.path().join("bin");
+        let alias_root = tmp.path().join("bin-alias");
+        let entries: Vec<StoreEntry> = ["1.0.0", "1.5.0", "2.0.0"]
+            .iter()
+            .map(|v| versioned_entry(&store, v))
+            .collect();
+        // Not siblings: a different name, and same name under a scope.
+        let other_dir = store.join("other@9.9.9");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        std::fs::write(
+            other_dir.join("tamias.yaml"),
+            "name: other\nversion: 9.9.9\nbins:\n  - name: other-shim\n    shim: cli\n    driver: x\n",
+        )
+        .unwrap();
+        let scoped_dir = store.join("@acme/pkg@9.9.9");
+        std::fs::create_dir_all(&scoped_dir).unwrap();
+        std::fs::write(
+            scoped_dir.join("tamias.yaml"),
+            "name: pkg\nscope: acme\nversion: 9.9.9\nbins:\n  - name: pkg-shim\n    shim: cli\n    driver: pkg\n",
+        )
+        .unwrap();
+        let mut scoped = entry(&scoped_dir, "pkg");
+        scoped.record.scope = Some("acme".into());
+        scoped.record.version = Some("9.9.9".into());
+        let mut all = entries.clone();
+        all.push(entry(&other_dir, "other"));
+        all.push(scoped);
+
+        // Drop 1.0.0 — the newest *same-group* survivor (2.0.0, not
+        // the scoped 9.9.9 or other@9.9.9) redeploys its shim.
+        let removed = &entries[0];
+        let survivors: Vec<StoreEntry> = all
+            .iter()
+            .filter(|e| e.dir != removed.dir)
+            .cloned()
+            .collect();
+        let rd = redeploy_survivor_bins(removed, &survivors, &bin_dir, &alias_root)
+            .unwrap()
+            .unwrap();
+        assert_eq!(rd.label, "pkg@2.0.0");
+        let script = std::fs::read_to_string(bin_dir.join("pkg-shim")).unwrap();
+        assert!(
+            script.contains("bin exec 'pkg@2.0.0' 'pkg-shim'"),
+            "{script}"
+        );
+        assert!(!bin_dir.join("other-shim").exists());
+
+        // Drop 2.0.0 as well — 1.5.0 is the newest remaining.
+        let removed = &entries[2];
+        let survivors: Vec<StoreEntry> = all
+            .iter()
+            .filter(|e| e.dir != removed.dir && e.record.scope.is_none())
+            .cloned()
+            .collect();
+        let rd = redeploy_survivor_bins(removed, &survivors, &bin_dir, &alias_root)
+            .unwrap()
+            .unwrap();
+        assert_eq!(rd.label, "pkg@1.5.0");
+        let script = std::fs::read_to_string(bin_dir.join("pkg-shim")).unwrap();
+        assert!(
+            script.contains("bin exec 'pkg@1.5.0' 'pkg-shim'"),
+            "{script}"
+        );
+
+        // Last version gone — nothing to redeploy.
+        let lone = entry(&store.join("solo@1.0.0"), "solo");
+        assert!(redeploy_survivor_bins(&lone, &[], &bin_dir, &alias_root)
+            .unwrap()
+            .is_none());
+        // A survivor that declares no bins doesn't redeploy either.
+        let plain_dir = store.join("plain@3.0.0");
+        std::fs::create_dir_all(&plain_dir).unwrap();
+        std::fs::write(plain_dir.join("tamias.yaml"), "name: pkg\nversion: 3.0.0\n").unwrap();
+        let removed = &entries[1];
+        let survivors = vec![entry(&plain_dir, "pkg")];
+        assert!(
+            redeploy_survivor_bins(removed, &survivors, &bin_dir, &alias_root)
+                .unwrap()
+                .is_none()
         );
     }
 

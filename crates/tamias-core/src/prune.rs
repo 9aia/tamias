@@ -152,6 +152,38 @@ pub fn plan_prune(entries: &[StoreEntry], keep: usize) -> PrunePlan {
     plan
 }
 
+/// The newest semver-precedence entry in `entries` — the same
+/// ordering [`plan_prune`] keeps at `keep = 1`: max
+/// major/minor/patch/prerelease ignoring build metadata, the store
+/// label breaking precedence ties. Entries without a parseable
+/// semver `version:` are ignored; `None` when `entries` is empty or
+/// none parse. Used where a *survivor* must be picked deterministically
+/// — e.g. redeploying a removed version's bins from the newest
+/// same-package install left behind.
+#[must_use]
+pub fn latest_version(entries: &[StoreEntry]) -> Option<&StoreEntry> {
+    let mut best: Option<(Version, &StoreEntry)> = None;
+    for entry in entries {
+        let Some(raw) = entry.record.version.as_deref() else {
+            continue;
+        };
+        let Ok(v) = Version::parse(raw) else {
+            continue;
+        };
+        let supersedes = match &best {
+            None => true,
+            Some((bv, be)) => {
+                precedence_cmp(&v, bv) == Ordering::Greater
+                    || (precedence_cmp(&v, bv) == Ordering::Equal && entry.label() > be.label())
+            }
+        };
+        if supersedes {
+            best = Some((v, entry));
+        }
+    }
+    best.map(|(_, entry)| entry)
+}
+
 #[cfg(test)]
 #[cfg_attr(coverage, coverage(off))]
 mod tests {
@@ -284,6 +316,29 @@ mod tests {
         // one precedence and are both kept with it.
         assert_eq!(labels(&plan), ["w@1.0.0-rc.1"]);
         assert_eq!(plan.removals[0].kept.len(), 3);
+    }
+
+    #[test]
+    fn latest_version_picks_semver_max_ignoring_build_metadata() {
+        let entries = vec![
+            entry("w", None, Some("1.0.0+build.9")),
+            entry("w", None, Some("2.0.0-rc.1")),
+            entry("w", None, Some("1.0.0")),
+            entry("w", None, Some("bogus")),
+            entry("w", None, None),
+        ];
+        // 2.0.0-rc.1 is the max precedence; non-semver entries never win.
+        assert_eq!(latest_version(&entries).unwrap().label(), "w@2.0.0-rc.1");
+        // Build-metadata ties break on label — deterministic pick.
+        let tied = vec![
+            entry("w", None, Some("1.0.0+a")),
+            entry("w", None, Some("1.0.0+b")),
+        ];
+        assert_eq!(latest_version(&tied).unwrap().label(), "w@1.0.0+b");
+        // Nothing parseable → None.
+        let junk = vec![entry("w", None, Some("bogus")), entry("w", None, None)];
+        assert!(latest_version(&junk).is_none());
+        assert!(latest_version(&[]).is_none());
     }
 
     #[test]

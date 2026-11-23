@@ -37,7 +37,7 @@ pub use manifest::{
 pub use overlay::{find_store_entry, merge_values, overlay, payload_root};
 pub use process::output_with_timeout;
 pub use project::{Lock, LockEntry};
-pub use prune::{plan_prune, PrunePlan, PruneRemoval, PruneSkip};
+pub use prune::{latest_version, plan_prune, PrunePlan, PruneRemoval, PruneSkip};
 pub use records::{copy_tree, StoreEntry, StoreRecord, RECORD_FILE};
 pub use sealed::{
     check_ciphertext_only, has_age_magic, is_age_ciphertext, Sealed, AGE_FORMAT, AGE_MAGIC,
