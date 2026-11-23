@@ -171,7 +171,8 @@ pub enum Mode {
     Command,
     /// `p`/`i`/`:registry` — single-line prompt (`prompt_buf`).
     Prompt(PromptKind),
-    /// `?` — keybind overlay; `esc`/`?`/`q` closes.
+    /// `?` — keybind overlay; it scrolls (j/k · PgUp/PgDn · g/G ·
+    /// wheel) and `esc`/`?`/`q` closes.
     Help,
     /// `L`/`:log` — the op-log view: a right-docked sidebar (centered
     /// overlay under ~50 cols); `j`/`k` scroll, `g`/`G` jump the
@@ -939,6 +940,22 @@ pub struct Model {
     /// overlay) — wheel events inside it scroll the log while
     /// `mode` is [`Mode::Log`]. `Rect::default()` until drawn.
     pub log_area: Rect,
+    /// Help-overlay scroll offset — `j`/`k`/`PgUp`/`PgDn`/`g`/`G`/
+    /// wheel move it while `mode` is [`Mode::Help`]; the offset
+    /// counts *wrapped* display rows (the overlay's Paragraph wraps
+    /// at the box width) and clamps each frame like `detail_scroll`.
+    pub help_scroll: usize,
+    /// Inner height of the help box as last drawn — `PgUp`/`PgDn`
+    /// page by it (0 until the first frame).
+    pub(crate) help_view_h: usize,
+    /// Last frame's max `help_scroll` (wrapped help lines minus the
+    /// box's inner height) — `G` jumps to the bottom; `draw_help`
+    /// refreshes it every frame the overlay is up.
+    pub(crate) help_max_scroll: usize,
+    /// The help overlay's block rect from the last frame — wheel
+    /// events inside it scroll the text while `mode` is
+    /// [`Mode::Help`]. `Rect::default()` until drawn.
+    pub help_area: Rect,
 
     // --- worker jobs (phase 2/3) ---
     /// Job → UI channel; one worker thread per `spawn`.
@@ -967,10 +984,13 @@ pub struct Model {
     detail_origin: Option<Pane>,
     /// Page scroll offset — `j`/`k`/arrows/wheel move it while
     /// `detail` is open; clamped to the body height each frame.
+    /// Counts *display* rows: the body Paragraph wraps, and
+    /// `Paragraph::scroll` skips wrapped lines.
     pub detail_scroll: usize,
-    /// Last frame's max `detail_scroll` (body lines minus the body
-    /// area) — `G` jumps straight to the bottom; `draw_detail`
-    /// refreshes it every frame the page is open.
+    /// Last frame's max `detail_scroll` (the body's wrapped line
+    /// count minus the body area) — `G` jumps straight to the
+    /// bottom; `draw_detail` refreshes it every frame the page is
+    /// open.
     pub(crate) detail_max_scroll: usize,
     /// Versions-focus mode on a Registry package page — `v` toggles
     /// it once the sibling-version list has landed; while set, `j`/`k`
@@ -1106,6 +1126,10 @@ impl Model {
             versions_sel: 0,
             log_scroll: 0,
             log_view_h: 0,
+            help_scroll: 0,
+            help_view_h: 0,
+            help_max_scroll: 0,
+            help_area: Rect::default(),
             reg_results: Vec::new(),
             reg_sel: 0,
             reg_version_counts: Vec::new(),
@@ -2404,7 +2428,7 @@ impl Model {
                 self.reload();
                 self.say("reloaded");
             }
-            Ok(Cmd::Help) => self.mode = Mode::Help,
+            Ok(Cmd::Help) => self.open_help(),
             Ok(Cmd::Log) => self.open_log(),
             Ok(Cmd::Install(reference)) => {
                 self.confirm_job(Job::Install {
@@ -2907,7 +2931,16 @@ impl Model {
         }
     }
 
-    /// `?` overlay — any of `esc`/`?`/`q` closes.
+    /// Open the `?` keybind overlay — scroll starts at the top.
+    fn open_help(&mut self) {
+        self.mode = Mode::Help;
+        self.help_scroll = 0;
+    }
+
+    /// `?` overlay — scrolls like the log view: `j`/`k`/arrows step,
+    /// `PgUp`/`PgDn` page by the last-drawn inner height, `g`/`G`
+    /// jump the ends, and `esc`/`?`/`q` closes. Everything else is
+    /// swallowed (same posture as `key_log`).
     fn key_help(&mut self, k: KeyEvent) -> bool {
         if chorded(&k) {
             return false;
@@ -2915,10 +2948,25 @@ impl Model {
         match k.code {
             KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
                 self.mode = Mode::Normal;
-                false
             }
-            _ => false,
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.help_scroll = (self.help_scroll + 1).min(self.help_max_scroll);
+            }
+            KeyCode::PageDown => {
+                self.help_scroll =
+                    (self.help_scroll + self.help_view_h.max(1)).min(self.help_max_scroll);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.help_scroll = self.help_scroll.saturating_sub(1);
+            }
+            KeyCode::PageUp => {
+                self.help_scroll = self.help_scroll.saturating_sub(self.help_view_h.max(1));
+            }
+            KeyCode::Char('g') => self.help_scroll = 0,
+            KeyCode::Char('G') => self.help_scroll = self.help_max_scroll,
+            _ => {}
         }
+        false
     }
 
     /// Open the op-log view (`L`/`:log`) scrolled to the newest
@@ -3254,7 +3302,7 @@ impl Model {
                     self.pane.label()
                 ));
             }
-            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('?') => self.open_help(),
             // `L` opens the full op log — `l` (lowercase) stays pane
             // cycling, so this rides the shifted char only.
             KeyCode::Char('L') => self.open_log(),
@@ -3265,10 +3313,24 @@ impl Model {
 
     /// Mouse — wheel scrolls the selection, a click on the tab bar
     /// switches panes, a click on a row selects it. While the log
-    /// view is up it owns the pointer instead: the wheel inside its
-    /// rect scrolls the history and every other event is swallowed
-    /// (same posture as the swallowed keys).
+    /// view or the help overlay is up it owns the pointer instead:
+    /// the wheel inside its rect scrolls and every other event is
+    /// swallowed (same posture as the swallowed keys).
     pub fn mouse(&mut self, ev: MouseEvent) {
+        if self.mode == Mode::Help {
+            if self.help_area.contains((ev.column, ev.row).into()) {
+                match ev.kind {
+                    MouseEventKind::ScrollUp => {
+                        self.help_scroll = self.help_scroll.saturating_sub(1);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        self.help_scroll = (self.help_scroll + 1).min(self.help_max_scroll);
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
         if self.mode == Mode::Log {
             if self.log_area.contains((ev.column, ev.row).into()) {
                 match ev.kind {
@@ -5315,6 +5377,105 @@ mod tests {
         empty.key(key(KeyCode::Char('L')));
         assert_eq!(empty.mode, Mode::Log);
         assert_eq!(empty.log_scroll, 0);
+    }
+
+    /// `?`/`:help` opens the scrollable keybind overlay: j/k and the
+    /// arrows step, PgUp/PgDn page by the drawn inner height, g/G
+    /// jump the ends, opening resets the offset, and every other key
+    /// is swallowed while it's up.
+    #[test]
+    fn help_view_scrolls_and_gates() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        // Stand in for a drawn frame's measurements.
+        m.help_max_scroll = 30;
+        m.help_view_h = 10;
+        m.help_scroll = 7;
+        // `?` reopens at the top.
+        m.key(key(KeyCode::Char('?')));
+        assert_eq!(m.mode, Mode::Help);
+        assert_eq!(m.help_scroll, 0);
+        // j/k step, clamped at both ends.
+        m.key(key(KeyCode::Char('j')));
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.help_scroll, 2);
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.help_scroll, 1);
+        m.key(key(KeyCode::Char('k')));
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.help_scroll, 0);
+        // PgDn/PgUp page by the view height.
+        m.key(key(KeyCode::PageDown));
+        assert_eq!(m.help_scroll, 10);
+        m.key(key(KeyCode::PageDown));
+        assert_eq!(m.help_scroll, 20);
+        m.key(key(KeyCode::PageDown));
+        assert_eq!(m.help_scroll, 30); // clamped at max
+        m.key(key(KeyCode::PageUp));
+        assert_eq!(m.help_scroll, 20);
+        // Arrows step too.
+        m.key(key(KeyCode::Down));
+        assert_eq!(m.help_scroll, 21);
+        m.key(key(KeyCode::Up));
+        assert_eq!(m.help_scroll, 20);
+        // g/G jump the ends.
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.help_scroll, 0);
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.help_scroll, 30);
+        // Other keys are swallowed — no pane verbs or modes fire.
+        let pane = m.pane;
+        m.key(key(KeyCode::Char('2')));
+        assert_eq!(m.pane, pane);
+        m.key(key(KeyCode::Char(':')));
+        assert_eq!(m.mode, Mode::Help);
+        // `?` toggles closed; esc and q close too.
+        m.key(key(KeyCode::Char('?')));
+        assert_eq!(m.mode, Mode::Normal);
+        m.key(key(KeyCode::Char('?')));
+        m.key(key(KeyCode::Esc));
+        assert_eq!(m.mode, Mode::Normal);
+        m.key(key(KeyCode::Char('?')));
+        m.key(key(KeyCode::Char('q')));
+        assert_eq!(m.mode, Mode::Normal);
+        // `:help` lands in the same mode through the command line.
+        m.key(key(KeyCode::Char(':')));
+        m.cmdline = "help".to_string();
+        m.run_command();
+        assert_eq!(m.mode, Mode::Help);
+        assert_eq!(m.help_scroll, 0);
+    }
+
+    /// The wheel scrolls the help overlay while its rect is up —
+    /// inside `help_area` it steps the offset, outside it's a no-op,
+    /// and every non-wheel event is swallowed.
+    #[test]
+    fn help_view_wheel_scrolls() {
+        let (_tmp, mut m) = bare_model();
+        let wheel = |kind, column, row| MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+        m.mode = Mode::Help;
+        m.help_area = Rect::new(10, 5, 40, 12);
+        m.help_max_scroll = 20;
+        m.help_scroll = 4;
+        // Inside the box: down steps, up steps back, clamped at max.
+        m.mouse(wheel(MouseEventKind::ScrollDown, 20, 10));
+        assert_eq!(m.help_scroll, 5);
+        m.help_scroll = 20;
+        m.mouse(wheel(MouseEventKind::ScrollDown, 20, 10));
+        assert_eq!(m.help_scroll, 20);
+        m.mouse(wheel(MouseEventKind::ScrollUp, 20, 10));
+        assert_eq!(m.help_scroll, 19);
+        // Outside the box: swallowed, no scroll.
+        m.mouse(wheel(MouseEventKind::ScrollDown, 1, 1));
+        assert_eq!(m.help_scroll, 19);
+        // Clicks don't leak through to the pane either.
+        m.mouse(wheel(MouseEventKind::Down(MouseButton::Left), 20, 10));
+        assert_eq!(m.help_scroll, 19);
     }
 
     /// `q` with a package page open closes the page instead of
