@@ -162,6 +162,9 @@ pub enum Mode {
     Prompt(PromptKind),
     /// `?` — keybind overlay; `esc`/`?`/`q` closes.
     Help,
+    /// `L`/`:log` — full op-log overlay; `j`/`k` scroll, `g`/`G` jump
+    /// the ends, `esc`/`q`/`L` closes. Swallows every other key.
+    Log,
 }
 
 /// A modal dialog over the panes — `y`/`n` (default `n`), `esc` = `n`.
@@ -399,6 +402,8 @@ enum Cmd {
         /// Install `tamias.lock` entries verbatim.
         from_lock: bool,
     },
+    /// `:log` — open the op-log overlay (`L`).
+    Log,
 }
 
 /// Parse a `:` command line (the leading `:` already stripped).
@@ -411,6 +416,7 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
         "q" | "quit" | "q!" => Ok(Cmd::Quit),
         "r" | "reload" => Ok(Cmd::Reload),
         "help" | "?" => Ok(Cmd::Help),
+        "log" => Ok(Cmd::Log),
         "install" | "i" => {
             if rest.is_empty() {
                 Err("usage: :install <ref>".into())
@@ -660,6 +666,14 @@ pub struct Model {
     /// Cursor into the page's `versions` list while `versions_focus`
     /// is set — clamped to the list length on every move.
     pub versions_sel: usize,
+    /// Log-overlay scroll offset — the top line of `log` on screen
+    /// while `mode` is [`Mode::Log`]; clamped to the view each frame
+    /// like `detail_scroll`.
+    pub log_scroll: usize,
+    /// Inner height of the log overlay as last drawn — `PgUp`/`PgDn`
+    /// page by it and `open_log` aims the tail at it (0 until the
+    /// first frame).
+    pub(crate) log_view_h: usize,
 
     // --- registry pane ---
     /// Last search results.
@@ -753,6 +767,8 @@ impl Model {
             detail_scroll: 0,
             versions_focus: false,
             versions_sel: 0,
+            log_scroll: 0,
+            log_view_h: 0,
             reg_results: Vec::new(),
             reg_sel: 0,
             reg_query: String::new(),
@@ -1076,12 +1092,19 @@ impl Model {
         self.fire_search();
     }
 
-    /// One line into the op log (capped).
+    /// One line into the op log (capped). While the log overlay is
+    /// parked at the tail it follows new lines; scrolled up it stays
+    /// put (`G` jumps back down).
     fn push_log(&mut self, line: String) {
+        let at_tail =
+            self.mode == Mode::Log && self.log_scroll + self.log_view_h.max(1) >= self.log.len();
         if self.log.len() >= LOG_CAP {
             self.log.pop_front();
         }
         self.log.push_back(line);
+        if at_tail {
+            self.log_scroll = self.log_max_scroll();
+        }
     }
 
     // --- selection ---
@@ -1938,6 +1961,7 @@ impl Model {
                 self.say("reloaded");
             }
             Ok(Cmd::Help) => self.mode = Mode::Help,
+            Ok(Cmd::Log) => self.open_log(),
             Ok(Cmd::Install(reference)) => {
                 self.confirm_job(
                     "install",
@@ -2247,6 +2271,50 @@ impl Model {
         }
     }
 
+    /// Open the op-log overlay (`L`/`:log`) scrolled to the newest
+    /// lines — the strip only ever shows the tail, so the overlay
+    /// opens there too.
+    fn open_log(&mut self) {
+        self.mode = Mode::Log;
+        self.log_scroll = self.log_max_scroll();
+    }
+
+    /// Top-line scroll offset that puts the log tail on screen —
+    /// `log.len() - 1` until `draw` reports the overlay's inner
+    /// height, then the true bottom.
+    fn log_max_scroll(&self) -> usize {
+        self.log.len().saturating_sub(self.log_view_h.max(1))
+    }
+
+    /// Log-overlay keys — scroll the op log; `esc`/`q`/`L` closes.
+    /// Everything else is swallowed while the overlay is up (same
+    /// posture as `key_help`).
+    fn key_log(&mut self, k: KeyEvent) -> bool {
+        match k.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('L') => {
+                self.mode = Mode::Normal;
+                self.log_scroll = 0;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.log_scroll = (self.log_scroll + 1).min(self.log_max_scroll());
+            }
+            KeyCode::PageDown => {
+                self.log_scroll =
+                    (self.log_scroll + self.log_view_h.max(1)).min(self.log_max_scroll());
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.log_scroll = self.log_scroll.saturating_sub(1);
+            }
+            KeyCode::PageUp => {
+                self.log_scroll = self.log_scroll.saturating_sub(self.log_view_h.max(1));
+            }
+            KeyCode::Char('g') => self.log_scroll = 0,
+            KeyCode::Char('G') => self.log_scroll = self.log_max_scroll(),
+            _ => {}
+        }
+        false
+    }
+
     /// Modal keys — `y` confirms, `n`/`esc` cancels (default `n`).
     /// Returns `true` when the key was consumed by the modal.
     fn key_modal(&mut self, k: KeyEvent) -> bool {
@@ -2284,6 +2352,7 @@ impl Model {
             Mode::Command => return self.key_command(k),
             Mode::Prompt(_) => return self.key_prompt(k),
             Mode::Help => return self.key_help(k),
+            Mode::Log => return self.key_log(k),
             Mode::Normal => {}
         }
         match k.code {
@@ -2455,6 +2524,9 @@ impl Model {
                 self.author_verb(c)
             }
             KeyCode::Char('?') => self.mode = Mode::Help,
+            // `L` opens the full op log — `l` (lowercase) stays pane
+            // cycling, so this rides the shifted char only.
+            KeyCode::Char('L') => self.open_log(),
             _ => {}
         }
         false
@@ -2566,6 +2638,7 @@ mod tests {
         assert_eq!(parse_command("clean").unwrap(), Cmd::Clean(false));
         assert_eq!(parse_command("clean all").unwrap(), Cmd::Clean(true));
         assert_eq!(parse_command("doctor").unwrap(), Cmd::Doctor);
+        assert_eq!(parse_command("log").unwrap(), Cmd::Log);
         assert!(parse_command("bogus").is_err());
         assert!(parse_command("install").is_err());
         assert!(parse_command("").is_err());
@@ -4374,5 +4447,87 @@ mod tests {
         m.key(key(KeyCode::Char('i')));
         assert!(m.modal.is_none());
         assert!(m.status.contains("already installed"), "{}", m.status);
+    }
+
+    /// `L`/`:log` opens the op-log overlay on the tail; j/k and the
+    /// PgUp/PgDn page by the drawn view height, g/G jump the ends,
+    /// and every other key is swallowed while it's up. New log lines
+    /// follow only while parked at the bottom.
+    #[test]
+    fn log_overlay_toggle_scroll_and_gating() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            None,
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        for i in 0..50 {
+            m.push_log(format!("line {i}"));
+        }
+        m.log_view_h = 10; // as `draw_log_overlay` would report
+                           // `L` opens at the bottom (newest last).
+        m.key(key(KeyCode::Char('L')));
+        assert_eq!(m.mode, Mode::Log);
+        assert_eq!(m.log_scroll, 40); // 50 lines - 10 visible
+                                      // j clamps at the bottom; k scrolls up one.
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.log_scroll, 40);
+        m.key(key(KeyCode::Char('k')));
+        assert_eq!(m.log_scroll, 39);
+        // PgUp/PgDn page by the view height.
+        m.key(key(KeyCode::PageUp));
+        assert_eq!(m.log_scroll, 29);
+        m.key(key(KeyCode::PageDown));
+        assert_eq!(m.log_scroll, 39);
+        // Parked at the tail, new lines keep it pinned to the bottom.
+        m.key(key(KeyCode::Char('j')));
+        m.push_log("line 50".to_string());
+        assert_eq!(m.log_scroll, 41); // 51 - 10
+                                      // Scrolled up it stays put.
+        m.key(key(KeyCode::Char('g')));
+        assert_eq!(m.log_scroll, 0);
+        m.push_log("line 51".to_string());
+        assert_eq!(m.log_scroll, 0);
+        // Other keys are swallowed — no pane verbs or modes fire.
+        let pane = m.pane;
+        m.key(key(KeyCode::Char('2')));
+        assert_eq!(m.pane, pane);
+        m.key(key(KeyCode::Char('?')));
+        assert_eq!(m.mode, Mode::Log);
+        m.key(key(KeyCode::Char(':')));
+        assert_eq!(m.mode, Mode::Log);
+        // g/G jump the ends.
+        m.key(key(KeyCode::Char('G')));
+        assert_eq!(m.log_scroll, 42); // 52 - 10
+                                      // `L` toggles closed; reopen and `q` closes too.
+        m.key(key(KeyCode::Char('L')));
+        assert_eq!(m.mode, Mode::Normal);
+        m.key(key(KeyCode::Char('L')));
+        assert_eq!(m.mode, Mode::Log);
+        m.key(key(KeyCode::Char('q')));
+        assert_eq!(m.mode, Mode::Normal);
+        // esc closes as well.
+        m.key(key(KeyCode::Char('L')));
+        m.key(key(KeyCode::Esc));
+        assert_eq!(m.mode, Mode::Normal);
+        // `:log` opens it through the command line — and `L` typed
+        // inside `:` is just text, not the overlay.
+        m.key(key(KeyCode::Char(':')));
+        assert_eq!(m.mode, Mode::Command);
+        m.key(key(KeyCode::Char('L')));
+        assert_eq!(m.mode, Mode::Command);
+        assert_eq!(m.cmdline, "L");
+        m.cmdline = "log".to_string();
+        m.run_command();
+        assert_eq!(m.mode, Mode::Log);
+        // An empty log still opens — the overlay draws its muted
+        // "no operations yet" line.
+        let mut empty = Model::open(&ctx).unwrap();
+        empty.key(key(KeyCode::Char('L')));
+        assert_eq!(empty.mode, Mode::Log);
+        assert_eq!(empty.log_scroll, 0);
     }
 }

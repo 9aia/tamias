@@ -96,6 +96,11 @@ const VERBS: &[VerbSpec] = &[
         hint: "keybind overlay",
     },
     VerbSpec {
+        alias: "log",
+        kind: ArgKind::None,
+        hint: "op-log overlay",
+    },
+    VerbSpec {
         alias: "install",
         kind: ArgKind::Free,
         hint: "install a ref — usage: :install <ref>",

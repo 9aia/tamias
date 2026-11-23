@@ -63,7 +63,12 @@ pub fn draw(f: &mut Frame, m: &mut Model) {
     match &m.mode {
         Mode::Help => draw_help(f, area),
         Mode::Filter | Mode::Search | Mode::Command | Mode::Prompt(_) => draw_input(f, m, area),
-        Mode::Normal => {}
+        Mode::Normal | Mode::Log => {}
+    }
+    // The log overlay needs `&mut Model` (it clamps `log_scroll` and
+    // reports `log_view_h`), so it can't ride the `&m.mode` match.
+    if m.mode == Mode::Log {
+        draw_log_overlay(f, m, area);
     }
     if let Some(modal) = &m.modal {
         draw_modal(f, modal, area);
@@ -1138,6 +1143,18 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     note_table_area(m, area, state.offset());
 }
 
+/// Style for one op-log line — errors red, warnings amber, the rest
+/// muted. Shared by the strip and the `L` overlay.
+fn log_style(line: &str) -> Style {
+    if line.starts_with("error") || line.starts_with("!!") {
+        Style::default().fg(Color::Red)
+    } else if line.starts_with("warning") {
+        Style::default().fg(WARN)
+    } else {
+        Style::default().fg(MUTED)
+    }
+}
+
 /// The op log — last few phase/result lines, tail-scroll.
 fn draw_log(f: &mut Frame, m: &Model, area: Rect) {
     let skip = m.log.len().saturating_sub(4);
@@ -1145,20 +1162,61 @@ fn draw_log(f: &mut Frame, m: &Model, area: Rect) {
         .log
         .iter()
         .skip(skip)
-        .map(|l| {
-            let style = if l.starts_with("error") || l.starts_with("!!") {
-                Style::default().fg(Color::Red)
-            } else if l.starts_with("warning") {
-                Style::default().fg(WARN)
-            } else {
-                Style::default().fg(MUTED)
-            };
-            Line::from(Span::styled(format!(" {l}"), style))
-        })
+        .map(|l| Line::from(Span::styled(format!(" {l}"), log_style(l))))
         .collect();
     f.render_widget(
         Paragraph::new(text).block(Block::default().borders(Borders::TOP).title(" log ")),
         area,
+    );
+}
+
+/// The op-log overlay (`L`/`:log`) — the full retained history
+/// (up to `LOG_CAP` lines), newest at the bottom. `j`/`k` scroll,
+/// `g`/`G` jump the ends; the key handling lives in
+/// `Model::key_log`. Drawn like the help overlay — centered box over
+/// a cleared frame.
+fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
+    let w = (area.width * 4 / 5).clamp(30, area.width.max(30));
+    let h = (area.height * 4 / 5).clamp(5, area.height.max(5));
+    let w = w.min(area.width);
+    let h = h.min(area.height);
+    let x = area.x + area.width.saturating_sub(w) / 2;
+    let y = area.y + area.height.saturating_sub(h) / 2;
+    let rect = Rect::new(x, y, w, h);
+    f.render_widget(Clear, rect);
+    // Report the text area (inside the border) so PgUp/PgDn page by
+    // it and the scroll clamp matches what's on screen.
+    m.log_view_h = h.saturating_sub(2) as usize;
+    let max_scroll = m.log.len().saturating_sub(m.log_view_h);
+    m.log_scroll = m.log_scroll.min(max_scroll);
+    let lines: Vec<Line> = if m.log.is_empty() {
+        vec![Line::from(Span::styled(
+            " no operations yet",
+            Style::default().fg(MUTED),
+        ))]
+    } else {
+        m.log
+            .iter()
+            .map(|l| Line::from(Span::styled(format!(" {l}"), log_style(l))))
+            .collect()
+    };
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" log — {} lines ", m.log.len()))
+                    .title_bottom(
+                        Line::from(Span::styled(
+                            " j/k scroll · PgUp/PgDn page · g/G ends · q/esc/L close ",
+                            Style::default().fg(MUTED),
+                        ))
+                        .centered(),
+                    ),
+            )
+            .style(Style::default().fg(Color::White))
+            .scroll((m.log_scroll as u16, 0)),
+        rect,
     );
 }
 
@@ -1259,8 +1317,12 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
             Pane::Author => "p pack · P publish · r registries · R reload · : cmds · q quit",
         }
     };
+    // `L log` rides every pane's hint — the overlay works from any
+    // mode, so the affordance is global (and yields to `fit_width`
+    // like the rest of the hint).
+    let hint = format!("{hint} · L log");
     let left_w = Line::raw(left.as_str()).width();
-    let hint = fit_width(hint, (area.width as usize).saturating_sub(left_w + 2));
+    let hint = fit_width(&hint, (area.width as usize).saturating_sub(left_w + 2));
     let spans = vec![
         Span::styled(left, style),
         Span::raw("  "),
@@ -1412,6 +1474,7 @@ keys — installed pane
   Tab, h/l      cycle panes           1-6    jump to pane
   /             filter installed      Enter  keep filter
   :             command line          Tab   complete · esc leave mode
+  L/:log       full op-log overlay    j/k   scroll · g/G ends · q close
   R             reload store          F      clear filter
   ?             this help             q/C-c  quit
 
@@ -1428,7 +1491,7 @@ registry pane:  / search-as-you-type (debounced) · Enter package page ·
                 i install result · :registry <name> target · :search <q>
                 results mark [signed] and · installed <ver>
 
-commands:  :q  :r/:reload  :help  :install <ref>  :remove <name>
+commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
            :verify <name>  :update [name]  :pin <name> <ref>
            :search <q>  :registry <name>  :clean [all]  :doctor
            :services  :service <verb> <unit>  :run <pkg> [svc]
