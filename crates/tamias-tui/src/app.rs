@@ -32,7 +32,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
-use tamias_core::{Manifest, StoreEntry};
+use tamias_core::{Manifest, StoreEntry, StoreRecord};
 use tamias_provider::ServiceRow;
 use tamias_registry::RegistryEntry;
 use tamias_store_local::Store;
@@ -76,6 +76,18 @@ pub struct Row {
     /// pack (ADR-0004). Measured once at load like `size`; a manifest
     /// read failure just means no badge.
     pub sealed: bool,
+}
+
+/// One collapsed Installed row — the store keeps every version ever
+/// installed, so the pane groups entries by `(name, scope)` and shows
+/// only the latest. `rep` indexes `Model::entries`; `members` holds
+/// every group entry's index (store order) for the `/` filter's
+/// any-member match.
+struct InstGroup {
+    /// Index into `Model::entries` of the semver-max member.
+    rep: usize,
+    /// All member indices into `Model::entries`, store order.
+    members: Vec<usize>,
 }
 
 /// Which pane the tab bar shows. `ALL` fixes the `1`-`6` jump order
@@ -785,6 +797,58 @@ fn dedupe_search_results(results: Vec<RegistryEntry>) -> (Vec<RegistryEntry>, Ve
     (rows, counts)
 }
 
+/// The version tail of a store label — `name@1.2.3` and
+/// `@scope/name@1.2.3` both yield `1.2.3`; unversioned records carry a
+/// resolved-sha short form which compares as a plain string. Used to
+/// pick the newest provider when several store entries back one
+/// service unit.
+fn svc_version(label: &str) -> &str {
+    label.rsplit('@').next().unwrap_or(label)
+}
+
+/// Collapse service rows to one per unit — the store keeps every
+/// version ever installed and each re-declares the same `provider:`
+/// units, so the raw list repeats e.g. `peregrin-campaign` once per
+/// `pr-review@x`. Groups by `unit` in first-seen order; the survivor
+/// is the row whose package label carries the newest version
+/// ([`version_str_cmp`] over [`svc_version`]) — the provider `Enter`,
+/// deploy, and the log/run verbs act on. Returns the rows plus a
+/// parallel per-unit provider count (`>1` renders `×N` in the
+/// package cell).
+fn dedupe_service_rows(rows: Vec<ServiceRow>) -> (Vec<ServiceRow>, Vec<usize>) {
+    let mut out: Vec<ServiceRow> = Vec::new();
+    let mut counts: Vec<usize> = Vec::new();
+    let mut slots: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for r in rows {
+        match slots.get(&r.unit).copied() {
+            Some(i) => {
+                counts[i] += 1;
+                if version_str_cmp(svc_version(&r.package), svc_version(&out[i].package))
+                    == Ordering::Greater
+                {
+                    out[i] = r;
+                }
+            }
+            None => {
+                slots.insert(r.unit.clone(), out.len());
+                out.push(r);
+                counts.push(1);
+            }
+        }
+    }
+    (out, counts)
+}
+
+/// The Installed pane's group identity — `@scope/name`, the store
+/// label minus its `@version` tail. Stable across version bumps, so
+/// it's what `sel_key` remembers between reloads.
+fn group_key(rec: &StoreRecord) -> String {
+    match &rec.scope {
+        Some(scope) => format!("@{scope}/{}", rec.name),
+        None => rec.name.clone(),
+    }
+}
+
 /// Order two version labels for "newest wins" — `None` sorts lowest;
 /// parseable versions go through [`version_str_cmp`].
 fn version_cmp(a: Option<&str>, b: Option<&str>) -> Ordering {
@@ -854,8 +918,8 @@ pub struct Model {
     pub load_err: Option<String>,
     /// Active pane.
     pub pane: Pane,
-    /// Index into the *filtered* installed row list (clamped on
-    /// rebuild).
+    /// Index into the *filtered* collapsed installed row list — one
+    /// row per `(name, scope)` group, reps only (clamped on rebuild).
     pub sel: usize,
     /// Cursor into the Home pane's recently-installed list
     /// ([`Model::recent_installed`]) — `j`/`k`/wheel move it, `Enter`
@@ -868,9 +932,10 @@ pub struct Model {
     /// rebuilt on reload; the Registry pane's per-row `· installed`
     /// marker and the package page's marker query it per frame.
     installed_labels: Vec<((String, Option<String>), String)>,
-    /// Label of the selected row before the last rebuild — keeps the
-    /// cursor on the same package across reloads.
-    sel_label: Option<String>,
+    /// Group identity (`@scope/name`) of the selected row before the
+    /// last rebuild — keeps the cursor on the same package across
+    /// reloads, including when a newer version becomes the rep.
+    sel_key: Option<String>,
     /// `/` live filter — case-insensitive substring over label,
     /// source ref, kind, and resolved sha.
     pub filter: String,
@@ -1045,6 +1110,10 @@ pub struct Model {
     /// Provider service rows (package/service/unit/state/exec) —
     /// refreshed by [`Job::ServicesRefresh`].
     pub svc_rows: Vec<ServiceRow>,
+    /// Parallel to `svc_rows` — how many store entries provide each
+    /// row's unit (`>1` renders `×N` in the package cell). Rows are
+    /// deduped to one per unit at ingest ([`dedupe_service_rows`]).
+    pub svc_counts: Vec<usize>,
     /// Cursor into `svc_rows`.
     pub svc_sel: usize,
     /// Services rows are stale — pane entry, unit mutations,
@@ -1095,7 +1164,7 @@ impl Model {
             home_sel: 0,
             recent: Vec::new(),
             installed_labels: Vec::new(),
-            sel_label: None,
+            sel_key: None,
             filter: String::new(),
             mode: Mode::Normal,
             input: String::new(),
@@ -1150,6 +1219,7 @@ impl Model {
             search_typed_at: None,
             search_inflight: None,
             svc_rows: Vec::new(),
+            svc_counts: Vec::new(),
             svc_sel: 0,
             // Lazy: pane entry, `:services`, unit mutations, and
             // mutating-job completions set it — `tick` fires the
@@ -1174,7 +1244,7 @@ impl Model {
     /// the rescan fallback all land here.
     pub fn reload(&mut self) {
         let at = self.sel;
-        let keep = self.sel_label.clone();
+        let keep = self.sel_key.clone();
         match Store::new(&self.store_root).entries() {
             Ok(entries) => {
                 self.entries = entries
@@ -1448,22 +1518,30 @@ impl Model {
                     self.busy = None;
                     self.busy_job = None;
                     self.svc_err = None;
-                    // The Services pane groups by package — blanking
-                    // repeat cells only works when same-package rows
-                    // are consecutive. Rows arrive in store order,
+                    // Keep the cursor on the same unit across
+                    // refreshes — rows rebuild wholesale and `svc_sel`
+                    // is index-based.
+                    let keep = self.svc_selected().map(|r| r.unit.clone());
+                    // The Services pane dedupes to one row per unit —
+                    // every retained store version re-declares the same
+                    // provider units. Rows arrive in store order,
                     // which happens to sort by label today but isn't
                     // a `service_rows` contract, so sort defensively.
-                    // Stable sort by (package, service, unit);
-                    // `svc_sel` is index-based and rows rebuild
-                    // wholesale, so the cursor stays valid.
+                    // Stable sort by (package, service, unit); the
+                    // dedupe keeps first-seen positions with the
+                    // newest-version provider as each row's content.
                     rows.sort_by(|a, b| {
                         a.package
                             .cmp(&b.package)
                             .then_with(|| a.service.cmp(&b.service))
                             .then_with(|| a.unit.cmp(&b.unit))
                     });
+                    let (rows, counts) = dedupe_service_rows(rows);
                     self.svc_rows = rows;
-                    self.svc_sel = self.svc_sel.min(self.svc_rows.len().saturating_sub(1));
+                    self.svc_counts = counts;
+                    self.svc_sel = keep
+                        .and_then(|u| self.svc_rows.iter().position(|r| r.unit == u))
+                        .unwrap_or_else(|| self.svc_sel.min(self.svc_rows.len().saturating_sub(1)));
                     self.push_log(format!("services: {} row(s)", self.svc_rows.len()));
                 }
                 Msg::Done(Err(e)) => {
@@ -1554,35 +1632,84 @@ impl Model {
 
     // --- selection ---
 
-    /// Indices of the rows passing the `/` filter, in store order.
-    /// The filter is a case-insensitive substring over what the row
-    /// shows — label, kind, source ref, description, sealed badge.
-    /// Provenance (`resolved`/`digest`) is deliberately excluded:
-    /// hex fragments would match nearly everything.
+    /// Indices of the rows passing the `/` filter, in store order —
+    /// one per `(name, scope)` group, each the representative
+    /// (latest-version) entry's index into `entries`. The filter is a
+    /// case-insensitive substring over what the row shows — label,
+    /// kind, source ref, description, sealed badge — matched against
+    /// *any* group member, so an old version's label still finds the
+    /// package. Provenance (`resolved`/`digest`) is deliberately
+    /// excluded: hex fragments would match nearly everything.
     pub fn visible(&self) -> Vec<usize> {
-        let needle = self.filter.to_lowercase();
-        self.entries
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| {
-                if needle.is_empty() {
-                    return true;
-                }
-                let rec = &r.entry.record;
-                let sealed = if r.sealed { " sealed" } else { "" };
-                let hay = format!(
-                    "{} {} {} {}{}",
-                    r.entry.label(),
-                    rec.kind.as_deref().unwrap_or(""),
-                    rec.source_ref,
-                    rec.description.as_deref().unwrap_or(""),
-                    sealed
-                )
-                .to_lowercase();
-                hay.contains(&needle)
-            })
-            .map(|(i, _)| i)
+        self.visible_rows()
+            .into_iter()
+            .map(|(rep, _)| rep)
             .collect()
+    }
+
+    /// The visible collapsed rows — `(rep entry index, version count)`
+    /// per group passing the `/` filter; the renderer's view of
+    /// [`Model::visible`]. Indices are into `entries`, reps only.
+    pub fn visible_rows(&self) -> Vec<(usize, usize)> {
+        let needle = self.filter.to_lowercase();
+        self.inst_groups()
+            .into_iter()
+            .filter(|g| {
+                needle.is_empty()
+                    || g.members.iter().any(|&i| {
+                        let r = &self.entries[i];
+                        let rec = &r.entry.record;
+                        let sealed = if r.sealed { " sealed" } else { "" };
+                        let hay = format!(
+                            "{} {} {} {}{}",
+                            r.entry.label(),
+                            rec.kind.as_deref().unwrap_or(""),
+                            rec.source_ref,
+                            rec.description.as_deref().unwrap_or(""),
+                            sealed
+                        )
+                        .to_lowercase();
+                        hay.contains(&needle)
+                    })
+            })
+            .map(|g| (g.rep, g.members.len()))
+            .collect()
+    }
+
+    /// Collapse `entries` into one [`InstGroup`] per `(name, scope)` —
+    /// first-seen (store/label) order, representative = the semver-max
+    /// version ([`version_cmp`]; ties keep the first-seen entry).
+    /// Recomputed per call: `entries` is `pub` and tests mutate it
+    /// directly, so a cache would drift.
+    fn inst_groups(&self) -> Vec<InstGroup> {
+        let mut groups: Vec<InstGroup> = Vec::new();
+        let mut slots: std::collections::HashMap<(String, Option<String>), usize> =
+            std::collections::HashMap::new();
+        for (i, r) in self.entries.iter().enumerate() {
+            let rec = &r.entry.record;
+            let key = (rec.name.clone(), rec.scope.clone());
+            match slots.get(&key).copied() {
+                Some(g) => {
+                    groups[g].members.push(i);
+                    let rep = groups[g].rep;
+                    if version_cmp(
+                        rec.version.as_deref(),
+                        self.entries[rep].entry.record.version.as_deref(),
+                    ) == Ordering::Greater
+                    {
+                        groups[g].rep = i;
+                    }
+                }
+                None => {
+                    slots.insert(key, groups.len());
+                    groups.push(InstGroup {
+                        rep: i,
+                        members: vec![i],
+                    });
+                }
+            }
+        }
+        groups
     }
 
     /// The installed row under the cursor, if the filtered list is
@@ -1685,15 +1812,17 @@ impl Model {
             .and_then(|m| m.deps.get(self.man_sel).cloned())
     }
 
-    /// Keep the cursor on `keep`'s label when it survives the reload,
-    /// else clamp `at` into the filtered range.
+    /// Keep the cursor on `keep`'s group (`@scope/name`) when it
+    /// survives the reload, else clamp `at` into the filtered range.
+    /// Matching the group — not the rep's `name@version` label — keeps
+    /// the cursor put when a newer version becomes the rep.
     fn rebuild_sel(&mut self, keep: Option<&str>, at: usize) {
         let vis = self.visible();
-        if let Some(label) = keep {
+        if let Some(key) = keep {
             if let Some(pos) = vis.iter().position(|&i| {
                 self.entries
                     .get(i)
-                    .is_some_and(|r| r.entry.label() == label)
+                    .is_some_and(|r| group_key(&r.entry.record) == key)
             }) {
                 self.sel = pos;
                 return;
@@ -1770,7 +1899,7 @@ impl Model {
         self.detail_max_scroll = 0;
         self.versions_focus = false;
         self.versions_sel = 0;
-        self.sel_label = self.selected().map(|r| r.entry.label());
+        self.sel_key = self.selected().map(|r| group_key(&r.entry.record));
         match pane {
             // Services entry marks the table stale — `tick` fires the
             // refresh once the worker frees up.
@@ -1797,10 +1926,10 @@ impl Model {
         self.switch_pane(Pane::ALL[(cur + delta).rem_euclid(n) as usize]);
     }
 
-    /// Record the selected row's label — call after moves too, so a
-    /// `j` then `R` lands back on the same package.
-    fn sync_sel_label(&mut self) {
-        self.sel_label = self.selected().map(|r| r.entry.label());
+    /// Record the selected row's group key — call after moves too, so
+    /// a `j` then `R` lands back on the same package.
+    fn sync_sel_key(&mut self) {
+        self.sel_key = self.selected().map(|r| group_key(&r.entry.record));
     }
 
     /// Status-bar toast.
@@ -1859,21 +1988,35 @@ impl Model {
                 });
             }
             _ => {
+                // The collapsed row's representative — the latest
+                // version's entry — is what the page and every
+                // row-keyed verb act on.
                 let Some(row) = self.selected() else {
                     return;
                 };
-                let entry = row.entry.clone();
-                let (manifest, manifest_err) = match entry.manifest() {
-                    Ok(m) => (Some(Box::new(m)), None),
-                    Err(e) => (None, Some(e.to_string())),
-                };
-                self.detail = Some(Detail::Installed {
-                    entry,
-                    manifest,
-                    manifest_err,
-                });
+                self.open_installed_detail(row.entry.clone());
             }
         }
+        self.detail_scroll = 0;
+        self.detail_max_scroll = 0;
+        self.versions_focus = false;
+        self.versions_sel = 0;
+    }
+
+    /// Open the package page for one store entry — the shared tail of
+    /// [`Model::toggle_detail`] (the selected group's rep) and
+    /// [`Model::open_label_detail`] (Home/Services name an exact
+    /// `name@version`, which may be an older group member).
+    fn open_installed_detail(&mut self, entry: StoreEntry) {
+        let (manifest, manifest_err) = match entry.manifest() {
+            Ok(m) => (Some(Box::new(m)), None),
+            Err(e) => (None, Some(e.to_string())),
+        };
+        self.detail = Some(Detail::Installed {
+            entry,
+            manifest,
+            manifest_err,
+        });
         self.detail_scroll = 0;
         self.detail_max_scroll = 0;
         self.versions_focus = false;
@@ -1904,21 +2047,32 @@ impl Model {
         }
     }
 
-    /// Shared tail of the Home/Services `Enter` paths — park the
-    /// Installed cursor on `label`'s row (dropping a stale `/`
-    /// filter that would hide it) and open its package page through
-    /// [`Model::toggle_detail`]. The origin pane is recorded so
-    /// [`Model::close_detail`] lands back on it — Esc/Enter-close
-    /// return to Home or Services rather than always Installed.
-    /// Returns `false` when no visible row matches; the caller
-    /// decides what to say.
+    /// Shared tail of the Home/Services `Enter` paths — `label` names
+    /// one store entry exactly (a full `name@version` label, which may
+    /// be an older group member, not the rep). Park the Installed
+    /// cursor on that entry's *group* (dropping a stale `/` filter
+    /// that would hide it) and open the page for the labeled entry
+    /// itself. The origin pane is recorded so [`Model::close_detail`]
+    /// lands back on it — Esc/Enter-close return to Home or Services
+    /// rather than always Installed. Returns `false` when no entry or
+    /// visible group matches; the caller decides what to say.
     fn open_label_detail(&mut self, label: &str) -> bool {
+        // Resolve the exact entry across *all* entries — the `/`
+        // filter only hides rows, it can't change which version a
+        // label names.
+        let Some(entry_idx) = self.entries.iter().position(|r| r.entry.label() == label) else {
+            return false;
+        };
+        let key = group_key(&self.entries[entry_idx].entry.record);
+        let group_pos = |m: &Model, vis: &[usize]| {
+            vis.iter().position(|&i| {
+                m.entries
+                    .get(i)
+                    .is_some_and(|r| group_key(&r.entry.record) == key)
+            })
+        };
         let mut vis = self.visible();
-        let mut pos = vis.iter().position(|&i| {
-            self.entries
-                .get(i)
-                .is_some_and(|r| r.entry.label() == label)
-        });
+        let mut pos = group_pos(self, &vis);
         if pos.is_none() && !self.filter.is_empty() {
             // The filter is an Installed-pane artifact — the origin
             // pane can't show it hiding the target, so drop it and
@@ -1927,11 +2081,7 @@ impl Model {
             self.input.clear();
             self.input_cur = 0;
             vis = self.visible();
-            pos = vis.iter().position(|&i| {
-                self.entries
-                    .get(i)
-                    .is_some_and(|r| r.entry.label() == label)
-            });
+            pos = group_pos(self, &vis);
         }
         let Some(pos) = pos else {
             return false;
@@ -1939,7 +2089,10 @@ impl Model {
         let origin = self.pane;
         self.switch_pane(Pane::Installed);
         self.sel = pos;
-        self.toggle_detail();
+        // `switch_pane` recorded the *old* cursor's key — re-sync so a
+        // reload lands back on the group just opened.
+        self.sync_sel_key();
+        self.open_installed_detail(self.entries[entry_idx].entry.clone());
         if self.detail.is_some() {
             self.detail_origin = Some(origin);
         }
@@ -3212,7 +3365,7 @@ impl Model {
                     self.detail_scroll += 1;
                 } else {
                     self.move_sel(1);
-                    self.sync_sel_label();
+                    self.sync_sel_key();
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
@@ -3222,7 +3375,7 @@ impl Model {
                     self.detail_scroll = self.detail_scroll.saturating_sub(1);
                 } else {
                     self.move_sel(-1);
-                    self.sync_sel_label();
+                    self.sync_sel_key();
                 }
             }
             // g/G follow the visible cursor: versions focus jumps the
@@ -3281,7 +3434,7 @@ impl Model {
                         }
                         _ => {
                             self.sel = self.visible().len().saturating_sub(1);
-                            self.sync_sel_label();
+                            self.sync_sel_key();
                         }
                     }
                 }
@@ -3450,7 +3603,7 @@ impl Model {
                     self.detail_scroll = self.detail_scroll.saturating_sub(3);
                 } else {
                     self.move_sel(-3);
-                    self.sync_sel_label();
+                    self.sync_sel_key();
                 }
             }
             MouseEventKind::ScrollDown => {
@@ -3458,7 +3611,7 @@ impl Model {
                     self.detail_scroll += 3;
                 } else {
                     self.move_sel(3);
-                    self.sync_sel_label();
+                    self.sync_sel_key();
                 }
             }
             MouseEventKind::Down(MouseButton::Left) => {
@@ -3522,7 +3675,7 @@ impl Model {
                             let vis = self.visible();
                             if idx < vis.len() {
                                 self.sel = idx;
-                                self.sync_sel_label();
+                                self.sync_sel_key();
                             }
                         }
                     }
@@ -4317,7 +4470,7 @@ mod tests {
             .any(|&i| m.entries[i].entry.label() == "sec@1.0.0"));
         // selection accessors
         m.sel = 0;
-        m.sync_sel_label();
+        m.sync_sel_key();
         assert!(m.selected().is_some());
         assert!(m.reg_selected().is_none());
         assert!(m.svc_selected().is_none());
@@ -4348,7 +4501,7 @@ mod tests {
             .position(|r| r.entry.label() == "w@1.0.0")
             .unwrap();
         m.sel = wi;
-        m.sync_sel_label();
+        m.sync_sel_key();
         key(&mut m, KeyCode::Enter);
         let d = m.detail.as_ref().unwrap();
         assert!(matches!(d, Detail::Installed { .. }));
@@ -4391,7 +4544,7 @@ mod tests {
             .position(|r| r.entry.label() == "s@1.0.0")
             .unwrap();
         m.sel = si;
-        m.sync_sel_label();
+        m.sync_sel_key();
         chr(&mut m, 'x');
         match &m.modal {
             Some(Modal::Confirm { body, .. }) => {
@@ -5279,12 +5432,12 @@ mod tests {
         m.pane = Pane::Registry;
         m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 4));
         assert_eq!(m.reg_sel, 1);
-        // installed pane row click → sel + sel_label sync
+        // installed pane row click → sel + sel_key sync
         m.pane = Pane::Installed;
         m.filter.clear();
         m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 4));
         assert_eq!(m.sel, 1);
-        assert!(m.sel_label.is_some());
+        assert!(m.sel_key.is_some());
         // tab-bar click past the last label → tab_hit None → no-op
         m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 95, 0));
         assert_eq!(m.pane, Pane::Installed);
@@ -6074,6 +6227,150 @@ mod tests {
         );
     }
 
+    /// A store row for an arbitrary `name@version` — `store_row` ties
+    /// the version to `installed_at`, so version-grouping tests need
+    /// explicit labels.
+    fn versioned_row(name: &str, version: &str) -> Row {
+        let mut r = store_row(name, 1);
+        r.entry.record.version = Some(version.into());
+        r.entry.dir = PathBuf::from(format!("/store/{name}@{version}"));
+        r
+    }
+
+    /// The Installed pane collapses every stored version of a package
+    /// into one row — the rep is the semver-max (not lexicographic,
+    /// not first-seen), `visible_rows` reports the group size for the
+    /// `· N versions` marker, and the row verbs/detail act on the
+    /// rep's label. The `/` filter still matches through non-rep
+    /// members.
+    #[test]
+    fn installed_groups_versions_and_routes_to_latest() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Installed;
+        m.entries = vec![
+            versioned_row("w", "0.9.0"),
+            versioned_row("w", "0.10.0"),
+            versioned_row("other", "1.0.0"),
+        ];
+        // 0.10.0 > 0.9.0 semantically — a lexicographic max would
+        // pick 0.9.0 ('9' > '1').
+        let vis = m.visible();
+        assert_eq!(vis.len(), 2);
+        assert_eq!(m.entries[vis[0]].entry.label(), "w@0.10.0");
+        assert_eq!(m.visible_rows(), vec![(vis[0], 2), (vis[1], 1)]);
+        // Enter opens the rep's page.
+        m.sel = 0;
+        key(&mut m, KeyCode::Enter);
+        match &m.detail {
+            Some(Detail::Installed { entry, .. }) => {
+                assert_eq!(entry.label(), "w@0.10.0");
+            }
+            other => panic!("expected installed page, got {other:?}"),
+        }
+        key(&mut m, KeyCode::Esc);
+        // `x` confirms removal of the rep's label — the latest
+        // version's store entry, not the whole group.
+        chr(&mut m, 'x');
+        match &m.modal {
+            Some(Modal::Confirm { title, .. }) => {
+                assert!(title.contains("w@0.10.0"), "{title}");
+            }
+            other => panic!("expected confirm, got {other:?}"),
+        }
+        // `/` matches any member — filtering on the old version's
+        // label still surfaces the group.
+        m.modal = None;
+        m.filter = "0.9.0".into();
+        assert_eq!(m.visible().len(), 1);
+        m.filter.clear();
+    }
+
+    /// `sel_key` tracks the group (`@scope/name`), not the rep's
+    /// `name@version` label — a reload that re-sorts entries or a
+    /// newer version becoming the rep keeps the cursor on the same
+    /// package.
+    #[test]
+    fn installed_sel_key_survives_reorder_and_rep_change() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Installed;
+        m.entries = vec![store_row("b", 1), store_row("a", 1)];
+        m.sel = 1; // "a"
+        m.sync_sel_key();
+        // A reload re-sorts entries label-asc — "a" moves to position
+        // 0; the keep key must pull the cursor with it.
+        m.entries = vec![store_row("a", 1), store_row("b", 1)];
+        m.rebuild_sel(m.sel_key.clone().as_deref(), m.sel);
+        assert_eq!(m.sel, 0);
+        assert_eq!(
+            m.selected().map(|r| r.entry.record.name.as_str()),
+            Some("a")
+        );
+        // A newer version lands — the rep changes but the group (and
+        // the cursor) stays.
+        m.entries.push(versioned_row("a", "2.0.0"));
+        m.rebuild_sel(m.sel_key.clone().as_deref(), m.sel);
+        assert_eq!(m.sel, 0);
+        assert_eq!(m.selected().unwrap().entry.label(), "a@2.0.0");
+    }
+
+    /// Services rows dedupe to one per unit at ingest — the survivor
+    /// is the newest-version provider (semver over the label's
+    /// version tail, not label order), `svc_counts` feeds the `×N`
+    /// marker, the cursor re-anchors on the unit across refreshes,
+    /// and `Enter` opens the representative's package page.
+    #[test]
+    fn services_dedupe_by_unit() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let unit_row = |package: &str| ServiceRow {
+            package: package.into(),
+            service: "campaign".into(),
+            unit: "peregrin-campaign".into(),
+            state: Some("active".into()),
+            exec: "/bin/camp".into(),
+        };
+        // Label order puts 0.10.0 before 0.9.0 — the semver rep must
+        // still be 1.0.0.
+        let rows = vec![
+            unit_row("pr@0.9.0"),
+            unit_row("pr@0.10.0"),
+            unit_row("pr@1.0.0"),
+            svc_row("solo", "web"),
+        ];
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Services(rows))))
+            .unwrap();
+        m.drain_work();
+        assert_eq!(m.svc_rows.len(), 2);
+        assert_eq!(m.svc_counts, vec![3, 1]);
+        assert_eq!(m.svc_rows[0].package, "pr@1.0.0");
+        assert_eq!(m.svc_rows[0].unit, "peregrin-campaign");
+        assert_eq!(m.svc_rows[1].unit, "solo-web");
+        // A refresh with the cursor on `solo-web` keeps it there.
+        m.svc_sel = 1;
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Services(vec![
+                svc_row("solo", "web"),
+                unit_row("pr@1.0.0"),
+            ]))))
+            .unwrap();
+        m.drain_work();
+        assert_eq!(m.svc_sel, 1);
+        assert_eq!(m.svc_selected().unwrap().unit, "solo-web");
+        // Enter on the deduped row opens the newest provider's page.
+        m.entries.push(versioned_row("pr", "1.0.0"));
+        m.pane = Pane::Services;
+        m.svc_sel = 0;
+        m.key(key(KeyCode::Enter));
+        assert_eq!(m.pane, Pane::Installed);
+        match &m.detail {
+            Some(Detail::Installed { entry, .. }) => {
+                assert_eq!(entry.label(), "pr@1.0.0");
+            }
+            other => panic!("expected installed page, got {other:?}"),
+        }
+    }
+
     // --- `:` line editing, history, dynamic completion ---
 
     /// Type `s` into the `:` buffer char by char.
@@ -6447,7 +6744,7 @@ mod tests {
         m.entries.push(store_row("w", 1));
         m.pane = Pane::Installed;
         m.sel = 0;
-        m.sync_sel_label();
+        m.sync_sel_key();
         key(&mut m, KeyCode::Enter); // open the package page
         assert!(m.detail.is_some());
         key(&mut m, KeyCode::Char('y'));
