@@ -3427,7 +3427,7 @@ mod tests {
             .unwrap();
         m.sel = si;
         m.sync_sel_label();
-        chr(&mut m, 'r');
+        chr(&mut m, 'x');
         match &m.modal {
             Some(Modal::Confirm { body, .. }) => {
                 assert!(body.iter().any(|b| b.contains("type 'weird'")));
@@ -3633,7 +3633,7 @@ mod tests {
         for c in ['j', 'k', 'G', 'g'] {
             chr(&mut m, c);
         }
-        for c in ['s', 'S', 'r', 'e', 'E'] {
+        for c in ['s', 'S', '!', 'e', 'E'] {
             chr(&mut m, c);
             assert!(matches!(m.modal, Some(Modal::Confirm { .. })), "{c}");
             chr(&mut m, 'n');
@@ -3678,7 +3678,7 @@ mod tests {
         chr(&mut m, '2');
         let w = pkg(tmp.path(), "w", "name: w\nversion: 1.0.0\n");
         place(&mut m, &w, "w", Some("weird"));
-        for c in ['v', 'u', 'p', 'r', 'c', 'C', 'd', 'i', 'U'] {
+        for c in ['v', 'u', 'p', 'x', 'c', 'C', 'd', 'i', 'U'] {
             chr(&mut m, c);
             match c {
                 'v' | 'd' => settle(&mut m),

@@ -2196,6 +2196,7 @@ mod tests {
         m.log.clear();
         m.status.clear();
         m.status_err = false;
+        m.pane = Pane::Installed;
         m.entries = vec![row("w", false)];
         m.detail = Some(Detail::Installed {
             entry: entry("w"),
@@ -2203,7 +2204,7 @@ mod tests {
             manifest_err: None,
         });
         let s = screen(&mut m, 80, 24);
-        assert!(s.contains("esc back · j/k scroll · v/u/p/r/c/d"), "{s}");
+        assert!(s.contains("esc back · j/k scroll · v/u/p/x/c/d"), "{s}");
         // services status rows + stream hint
         m.detail = None;
         m.pane = Pane::Services;
