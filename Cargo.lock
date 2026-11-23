@@ -2988,6 +2988,7 @@ dependencies = [
  "notify",
  "portable-pty",
  "ratatui",
+ "tamias-bin",
  "tamias-cache-local",
  "tamias-config",
  "tamias-core",

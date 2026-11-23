@@ -46,6 +46,8 @@ enum ArgKind {
     /// `:logs <name> [-f|-F|--follow]` — token 2 is a free-text name,
     /// token 3 the follow flags.
     Logs,
+    /// `:prune [--keep N]` — token 2 is the only flag.
+    Prune,
 }
 
 /// One row of the verb table: an alias, its arg shape, and the hint
@@ -237,6 +239,11 @@ const VERBS: &[VerbSpec] = &[
         kind: ArgKind::Sync,
         hint: "reconcile project deps — usage: :sync [--from-lock]",
     },
+    VerbSpec {
+        alias: "prune",
+        kind: ArgKind::Prune,
+        hint: "drop superseded store versions — usage: :prune [--keep N]",
+    },
 ];
 
 /// `:service` token-2 vocabulary — must match the whitelist in
@@ -252,6 +259,10 @@ const CLEAN_ARGS: &[&str] = &["all", "--all"];
 /// `:logs` token-3 vocabulary — the flags `parse_command` scans for
 /// anywhere after the name.
 const LOGS_FLAGS: &[&str] = &["-f", "-F", "--follow"];
+
+/// `:prune` token-2 vocabulary — `parse_command` also accepts
+/// `--keep=N` and a separate value token.
+const PRUNE_FLAGS: &[&str] = &["--keep"];
 
 /// Look up a verb's arg shape by its (lowercased) first token.
 fn arg_kind(verb: &str) -> Option<ArgKind> {
@@ -373,6 +384,12 @@ pub fn complete_with(line: &str, dynamic: &[Candidate]) -> Vec<Candidate> {
             "clear everything, not just stale entries",
         ),
         (ArgKind::Logs, 2) => arg_candidates(LOGS_FLAGS, prefix, false, "follow the journal"),
+        (ArgKind::Prune, 1) => arg_candidates(
+            PRUNE_FLAGS,
+            prefix,
+            true,
+            "versions kept per package — :prune --keep <N>",
+        ),
         // Free-text positions, positions past the fixed vocabulary,
         // and no-arg verbs with stray args all yield nothing static.
         _ => Vec::new(),
@@ -403,7 +420,7 @@ fn dynamic_ok(kind: ArgKind, position: usize) -> bool {
         ArgKind::Free => true,
         ArgKind::Service => position >= 2,
         ArgKind::Logs => position == 1,
-        ArgKind::Sync | ArgKind::Clean | ArgKind::None => false,
+        ArgKind::Sync | ArgKind::Clean | ArgKind::Prune | ArgKind::None => false,
     }
 }
 
@@ -477,6 +494,7 @@ mod tests {
                 "manifest",
                 "sync ",
                 "s ",
+                "prune ",
             ] {
                 assert!(
                     got.iter().any(|i| i == expected),

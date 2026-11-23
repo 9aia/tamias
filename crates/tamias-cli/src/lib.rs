@@ -131,6 +131,29 @@ enum Command {
         /// `@scope/name` or `name`.
         name: String,
     },
+    /// Prune superseded store versions — **dry-run by default**.
+    ///
+    /// Groups installed entries by package (`@scope/name`) and reports
+    /// every version older than the newest `keep` semver releases —
+    /// the store keeps every version ever installed, so this is the
+    /// explicit garbage-collection verb. Nothing is removed without
+    /// `--yes`; removals run through the same teardown path as
+    /// `uninstall` (provider units re-rendered from survivors, bins
+    /// cleanup, version-aware driver dispatch, store drop). Entries
+    /// without a semver `version:` are never touched — they are
+    /// reported as skipped instead. Never runs automatically on
+    /// `install`/`update`/`sync`: old versions are rollback targets.
+    Prune {
+        /// Keep this many newest versions per package.
+        #[arg(long, default_value_t = 1)]
+        keep: usize,
+        /// Actually remove — without it this is a dry-run report.
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// JSON output.
+        #[arg(long)]
+        json: bool,
+    },
     /// List installed packages.
     List {
         /// Only entries of this content type.
@@ -1269,6 +1292,9 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
             let record = store.remove(&name)?;
             println!("removed {}@{}", record.name, record.resolved);
         }
+        Some(Command::Prune { keep, yes, json }) => {
+            prune(&env, keep, yes, json)?;
+        }
         Some(Command::List { kind, json }) => {
             let entries: Vec<StoreEntry> = Store::new(&env.store_root)
                 .entries()?
@@ -1983,6 +2009,125 @@ fn uninstall_package(env: &Env, name: &str) -> Result<(), Error> {
     }
     for warning in &report.warnings {
         eprintln!("tamias: warning — {warning}");
+    }
+    Ok(())
+}
+
+/// `prune [--keep N] [--yes] [--json]` — explicit store GC. The plan
+/// is pure ([`tamias_core::plan_prune`]): semver-max per
+/// `(scope, name)` group, non-semver/unversioned entries skipped.
+/// Dry-run reports what `--yes` would remove; `--yes` runs each
+/// removal through [`uninstall_package`] — the same teardown path
+/// `tamias uninstall` takes (provider units, bins cleanup, store
+/// drop), so shared units re-render from survivors and version-keyed
+/// driver state survives while a newer install remains. A failing
+/// removal keeps its entry; remaining removals still run, and the
+/// verb exits non-zero listing the failures.
+fn prune(env: &Env, keep: usize, yes: bool, json: bool) -> Result<(), Error> {
+    let store = Store::new(&env.store_root);
+    let plan = tamias_core::plan_prune(&store.entries()?, keep);
+    // Sizes are only computed for reporting — `dir_size` walks the
+    // payload, cheap enough for the few superseded entries typical.
+    let sizes: Vec<Option<u64>> = plan.removals.iter().map(|r| r.entry.size().ok()).collect();
+    if json {
+        let removals: Vec<serde_json::Value> = plan
+            .removals
+            .iter()
+            .zip(&sizes)
+            .map(|(r, size)| {
+                serde_json::json!({
+                    "label": r.entry.label(),
+                    "name": r.entry.record.name,
+                    "scope": r.entry.record.scope,
+                    "version": r.entry.record.version,
+                    "size": size,
+                    "kept": r.kept,
+                })
+            })
+            .collect();
+        let skipped: Vec<serde_json::Value> = plan
+            .skipped
+            .iter()
+            .map(|s| serde_json::json!({ "label": s.label, "reason": s.reason }))
+            .collect();
+        let mut out = serde_json::json!({
+            "dry_run": !yes,
+            "keep": keep,
+            "removals": removals,
+            "skipped": skipped,
+        });
+        if !yes {
+            print_json(&out)?;
+            return Ok(());
+        }
+        // `--yes --json`: run removals first, then report what landed
+        // (`removed`) and what kept its entry (`failed`).
+        let mut removed = Vec::new();
+        let mut failures = Vec::new();
+        for r in &plan.removals {
+            let label = r.entry.label();
+            match uninstall_package(env, &label) {
+                Ok(()) => removed.push(label),
+                Err(e) => failures.push(format!("{label}: {e}")),
+            }
+        }
+        out["removed"] = serde_json::json!(removed);
+        out["failed"] = serde_json::json!(failures);
+        print_json(&out)?;
+        return if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::Failed(format!(
+                "prune: {} removal(s) failed",
+                failures.len()
+            )))
+        };
+    }
+    if plan.removals.is_empty() {
+        println!("nothing to prune — every package is at its newest {keep} version(s)");
+    } else if !yes {
+        let total: u64 = sizes.iter().flatten().sum();
+        println!(
+            "would prune {} entr(ies) — dry-run, nothing removed (pass --yes to apply):",
+            plan.removals.len()
+        );
+        for (r, size) in plan.removals.iter().zip(&sizes) {
+            let size = size.map_or_else(|| "?".to_string(), fmt_bytes);
+            println!(
+                "  {}  ({size})  keeping {}",
+                r.entry.label(),
+                r.kept.join(", ")
+            );
+        }
+        if total > 0 {
+            println!("  total: {}", fmt_bytes(total));
+        }
+    } else {
+        println!(
+            "pruning {} entr(ies) (keeping newest {keep} per package):",
+            plan.removals.len()
+        );
+        let mut failures = Vec::new();
+        for r in &plan.removals {
+            let label = r.entry.label();
+            match uninstall_package(env, &label) {
+                Ok(()) => println!("  pruned {label}"),
+                Err(e) => {
+                    eprintln!("tamias: warning — could not prune {label}: {e}");
+                    failures.push(label);
+                }
+            }
+        }
+        if !failures.is_empty() {
+            return Err(Error::Failed(format!(
+                "prune: {} removal(s) failed: {}",
+                failures.len(),
+                failures.join(", ")
+            )));
+        }
+    }
+    for s in &plan.skipped {
+        eprintln!("tamias: skipped {} — {}", s.label, s.reason);
     }
     Ok(())
 }
@@ -3837,6 +3982,106 @@ mod tests {
         std::env::remove_var("TAMIAS_HOME");
     }
 
+    /// Seed one store entry directly — `version: None` yields the
+    /// digest-label (`name@<sha12>`) shape unversioned installs get.
+    fn store_seed(root: &std::path::Path, name: &str, version: Option<&str>) {
+        let store = Store::new(root.join("store"));
+        let payload = root.join(format!("pay-{name}-{}", version.unwrap_or("x")));
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join("a.txt"), "a").unwrap();
+        let record = StoreRecord {
+            name: name.into(),
+            scope: None,
+            version: version.map(str::to_string),
+            kind: None,
+            description: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            license: None,
+            authors: Vec::new(),
+            source_ref: "./x".into(),
+            resolved: "sha256:abc123def456".into(),
+            digest: String::new(),
+            signature: None,
+            signer: None,
+            trust: None,
+            installed_at: 0,
+        };
+        store.install(&payload, record).unwrap();
+    }
+
+    fn store_labels(e: &Env) -> Vec<String> {
+        let mut labels: Vec<String> = Store::new(&e.store_root)
+            .entries()
+            .unwrap()
+            .iter()
+            .map(StoreEntry::label)
+            .collect();
+        labels.sort();
+        labels
+    }
+
+    #[test]
+    fn prune_dry_run_removes_nothing_yes_drops_superseded() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        for v in ["0.3.2", "0.3.5", "0.3.7"] {
+            store_seed(tmp.path(), "cg", Some(v));
+        }
+        // Default is a dry-run — text and --json both leave the store.
+        run_args(e.clone(), &["tamias", "prune"]).unwrap();
+        run_args(e.clone(), &["tamias", "prune", "--json"]).unwrap();
+        assert_eq!(store_labels(&e).len(), 3);
+        // --yes removes the superseded versions, keeps semver-max.
+        run_args(e.clone(), &["tamias", "prune", "--yes"]).unwrap();
+        assert_eq!(store_labels(&e), ["cg@0.3.7"]);
+        // Idempotent — nothing left to prune.
+        run_args(e.clone(), &["tamias", "prune", "--yes"]).unwrap();
+        assert_eq!(store_labels(&e), ["cg@0.3.7"]);
+    }
+
+    #[test]
+    fn prune_keep_n_and_non_semver_skips() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        for v in ["1.0.0", "2.0.0", "3.0.0"] {
+            store_seed(tmp.path(), "w", Some(v));
+        }
+        run_args(e.clone(), &["tamias", "prune", "--keep", "2", "--yes"]).unwrap();
+        assert_eq!(store_labels(&e), ["w@2.0.0", "w@3.0.0"]);
+        // Non-semver + unversioned entries in a multi-entry group are
+        // skipped, never removed; the semver-max still survives.
+        store_seed(tmp.path(), "sx", Some("1.0.0"));
+        store_seed(tmp.path(), "sx", Some("2.0.0"));
+        store_seed(tmp.path(), "sx", Some("bogus"));
+        store_seed(tmp.path(), "sx", None);
+        run_args(e.clone(), &["tamias", "prune", "--yes"]).unwrap();
+        let labels = store_labels(&e);
+        assert!(labels.contains(&"sx@2.0.0".to_string()), "{labels:?}");
+        assert!(labels.contains(&"sx@bogus".to_string()), "{labels:?}");
+        assert!(
+            labels.contains(&"sx@abc123def456".to_string()),
+            "{labels:?}"
+        );
+        assert!(!labels.iter().any(|l| l == "sx@1.0.0"), "{labels:?}");
+        // `w` was already at keep=1's max — untouched by this run.
+        assert!(labels.contains(&"w@3.0.0".to_string()), "{labels:?}");
+        assert!(!labels.contains(&"w@2.0.0".to_string()), "{labels:?}");
+    }
+
+    #[test]
+    fn prune_single_version_is_noop() {
+        let _pg = ProcGuard::new();
+        let tmp = tempfile::tempdir().unwrap();
+        let e = env(tmp.path());
+        store_seed(tmp.path(), "solo", Some("1.0.0"));
+        run_args(e.clone(), &["tamias", "prune", "--yes"]).unwrap();
+        assert_eq!(store_labels(&e), ["solo@1.0.0"]);
+    }
+
     #[test]
     fn driver_exec_dispatches_verb_and_args() {
         let _pg = ProcGuard::new();
@@ -5048,6 +5293,7 @@ mod tests {
             "add",
             "sync",
             "remove",
+            "prune",
             "list",
             "info",
             "verify",

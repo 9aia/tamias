@@ -424,6 +424,12 @@ enum Cmd {
         /// Install `tamias.lock` entries verbatim.
         from_lock: bool,
     },
+    /// `:prune [--keep N]` — drop superseded store versions (confirm
+    /// modal; the job is `tamias prune --yes` semantics).
+    Prune {
+        /// Newest versions kept per package.
+        keep: usize,
+    },
     /// `:log` — open the op-log sidebar (`L`).
     Log,
 }
@@ -568,6 +574,27 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
                 }
             }
             Ok(Cmd::Sync { from_lock })
+        }
+        "prune" => {
+            // `:prune [--keep N]` — the only flag; anything else is a
+            // usage error (same posture as `:sync`).
+            let mut keep = 1usize;
+            let mut it = rest.split_whitespace();
+            while let Some(tok) = it.next() {
+                if let Some(v) = tok.strip_prefix("--keep=") {
+                    keep = v
+                        .parse()
+                        .map_err(|_| "usage: :prune [--keep N]".to_string())?;
+                } else if tok == "--keep" {
+                    let v = it.next().ok_or("usage: :prune [--keep N]")?;
+                    keep = v
+                        .parse()
+                        .map_err(|_| "usage: :prune [--keep N]".to_string())?;
+                } else {
+                    return Err("usage: :prune [--keep N]".into());
+                }
+            }
+            Ok(Cmd::Prune { keep })
         }
         other => Err(format!("unknown command ':{other}' — `:help` lists verbs")),
     }
@@ -2581,6 +2608,9 @@ impl Model {
                     allow_drivers: false,
                     from_lock,
                 });
+            }
+            Ok(Cmd::Prune { keep }) => {
+                self.confirm_job(Job::Prune { keep });
             }
             Err(e) if e.is_empty() => {}
             Err(e) => self.say_err(e),

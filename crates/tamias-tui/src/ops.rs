@@ -109,6 +109,14 @@ pub enum Job {
         /// Store label.
         name: String,
     },
+    /// `tamias prune --yes` — drop every store entry superseded by a
+    /// newer semver of the same `(scope, name)` group (keep newest
+    /// `keep` versions). Each removal rides the same provider-teardown
+    /// path as [`Job::ProviderUninstall`].
+    Prune {
+        /// Newest versions kept per package.
+        keep: usize,
+    },
     /// Foreground provider-service exec — spawns the resolved argv
     /// with a scrubbed env, streams stdout/stderr into the log until
     /// exit or `x` (stream job — see [`stream`]).
@@ -216,6 +224,7 @@ impl Job {
             }
             Self::ProviderDeploy { name, .. } => format!("deploy {name}"),
             Self::ProviderUninstall { name } => format!("uninstall {name}"),
+            Self::Prune { keep } => format!("prune (keep {keep})"),
             Self::RunService { package, service } => match service {
                 Some(s) => format!("run {package}/{s}"),
                 None => format!("run {package}"),
@@ -274,6 +283,7 @@ impl Job {
                 | Self::Sync { .. }
                 | Self::ProviderDeploy { .. }
                 | Self::ProviderUninstall { .. }
+                | Self::Prune { .. }
                 | Self::UnitAction { .. }
         )
     }
@@ -839,6 +849,74 @@ fn provider_uninstall(
     Ok(Outcome::Text(format!("uninstalled {name}")))
 }
 
+/// `tamias prune --yes` — the pure plan ([`tamias_core::plan_prune`]:
+/// semver-max per `(scope, name)`, non-semver entries skipped) then
+/// one [`provider_uninstall`]-shaped removal per superseded label:
+/// bins cleanup while the entry dir still exists, then provider
+/// teardown + store drop. A failing removal keeps its entry; the rest
+/// still run and the job reports the failures.
+fn prune(ctx: &Ctx, keep: usize, log: &mut dyn FnMut(String)) -> Result<Outcome, Error> {
+    let store = Store::new(&ctx.store_root);
+    let plan = tamias_core::plan_prune(&store.entries()?, keep);
+    if plan.removals.is_empty() {
+        return Ok(Outcome::Text(format!(
+            "nothing to prune — every package is at its newest {keep} version(s)"
+        )));
+    }
+    for s in &plan.skipped {
+        log(format!("skipped {} — {}", s.label, s.reason));
+    }
+    let mut removed = Vec::new();
+    let mut failures = Vec::new();
+    for r in &plan.removals {
+        let label = r.entry.label();
+        log(format!("pruning {label} (keeping {})", r.kept.join(", ")));
+        // Same order as the CLI's `uninstall`: bins cleanup first —
+        // ownership checks read the entry dir — then provider
+        // teardown, which is version-aware (shared units re-render
+        // from survivors, driver `uninstall` waits for the last
+        // same-name install).
+        let result = (|| -> Result<(), Error> {
+            if let Ok(entry) = store.find(&label) {
+                if let Err(e) = tamias_bin::cleanup_after_remove(
+                    &label,
+                    &entry,
+                    &tamias_bin::default_bin_dir(),
+                    &tamias_bin::default_alias_root(&ctx.store_root),
+                ) {
+                    log(format!("warning — bin cleanup for {label}: {e}"));
+                }
+            }
+            let report = tamias_provider::uninstall(&ctx.store_root, &label)?;
+            for line in &report.lines {
+                log(line.clone());
+            }
+            for warning in &report.warnings {
+                log(format!("warning — {warning}"));
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => removed.push(label),
+            Err(e) => {
+                log(format!("warning — could not prune {label}: {e}"));
+                failures.push(label);
+            }
+        }
+    }
+    if !failures.is_empty() {
+        return Err(Error::Failed(format!(
+            "prune: {} removal(s) failed: {}",
+            failures.len(),
+            failures.join(", ")
+        )));
+    }
+    Ok(Outcome::Text(format!(
+        "pruned {} superseded entr(ies)",
+        removed.len()
+    )))
+}
+
 /// The project manifest the Project pane edits — `./tamias.yaml`
 /// first (the file `tamias add` writes), then an existing
 /// `./tamias.yml`; a lone `tamias.toml` is refused because
@@ -1305,6 +1383,7 @@ pub fn run(ctx: &Ctx, job: &Job, log: &mut dyn FnMut(String)) -> Result<Outcome,
         Job::UnitAction { unit, action } => unit_action(unit, *action),
         Job::ProviderDeploy { name, config } => provider_deploy(ctx, name, config.as_deref(), log),
         Job::ProviderUninstall { name } => provider_uninstall(ctx, name, log),
+        Job::Prune { keep } => prune(ctx, *keep, log),
         Job::RunService { .. } | Job::Logs { .. } => Err(Error::Failed(
             "stream jobs run through ops::stream, not ops::run".to_string(),
         )),

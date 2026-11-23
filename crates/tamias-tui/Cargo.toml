@@ -17,6 +17,7 @@ tamias-cache-local.workspace = true
 tamias-config.workspace = true
 tamias-sign.workspace = true
 tamias-driver.workspace = true
+tamias-bin.workspace = true
 tamias-install.workspace = true
 tamias-registry.workspace = true
 tamias-registry-open.workspace = true
