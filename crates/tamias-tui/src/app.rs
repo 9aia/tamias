@@ -4001,9 +4001,12 @@ mod tests {
     }
 
     /// Drain worker messages until `busy` clears — bounded so a
-    /// stuck job can't hang the suite.
+    /// stuck job can't hang the suite. Real installs on a starved
+    /// worker have exceeded 4s under full-suite parallel load, so
+    /// the ceiling is ~20s; a genuinely stuck job still fails the
+    /// test, just later.
     fn settle(m: &mut Model) {
-        for _ in 0..400 {
+        for _ in 0..2000 {
             m.drain_work();
             if m.busy.is_none() {
                 return;
