@@ -112,14 +112,16 @@ impl Pane {
         }
     }
 
-    /// Tab order for `h`/`l`, `Tab`/`Shift-Tab`, and `1`-`6`.
+    /// Tab order for `h`/`l`, `Tab`/`Shift-Tab`, and `1`-`6` —
+    /// browsing panes first (Installed → Services → Project →
+    /// Publish), search (Registry) last.
     pub const ALL: [Pane; 6] = [
         Pane::Home,
         Pane::Installed,
-        Pane::Registry,
         Pane::Services,
         Pane::Manifest,
         Pane::Author,
+        Pane::Registry,
     ];
 }
 
@@ -3722,7 +3724,7 @@ mod tests {
         assert_eq!(m.pane, Pane::Registry);
         assert_eq!(m.mode, Mode::Search);
         assert!(m.reg_query.is_empty());
-        // esc leaves search mode; `1` is Home, `2` Installed, `3`
+        // esc leaves search mode; `1` is Home, `2` Installed, `6`
         // Registry — digits follow `Pane::ALL` order.
         m.key(key(KeyCode::Esc));
         assert_eq!(m.mode, Mode::Normal);
@@ -4156,11 +4158,11 @@ mod tests {
         }
         assert_eq!(m.pane, Pane::Installed);
         key(&mut m, KeyCode::Tab);
-        assert_eq!(m.pane, Pane::Registry);
+        assert_eq!(m.pane, Pane::Services);
         key(&mut m, KeyCode::BackTab);
         assert_eq!(m.pane, Pane::Installed);
         chr(&mut m, 'l');
-        assert_eq!(m.pane, Pane::Registry);
+        assert_eq!(m.pane, Pane::Services);
         chr(&mut m, 'h');
         assert_eq!(m.pane, Pane::Installed);
         // g/G on empty lists
@@ -4256,9 +4258,10 @@ mod tests {
         };
         m.mouse(mouse(MouseEventKind::ScrollUp, 1, 1));
         m.mouse(mouse(MouseEventKind::ScrollDown, 1, 1));
-        // click the SERVICES tab (find a column tab_hit maps to it)
+        // click the SERVICES tab (find a column tab_hit maps to it —
+        // index 2 in the browsing-first Pane::ALL order)
         let col = (1..100u16)
-            .find(|&x| crate::render::tab_hit(100, x) == Some(3))
+            .find(|&x| crate::render::tab_hit(100, x) == Some(2))
             .unwrap();
         m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), col, 0));
         assert_eq!(m.pane, Pane::Services);
@@ -4423,7 +4426,7 @@ mod tests {
         let _g = EnvGuard::enter(tmp.path());
         let c = tctx(tmp.path());
         let mut m = Model::open(&c).unwrap();
-        chr(&mut m, '3');
+        chr(&mut m, '6');
         assert_eq!(m.pane, Pane::Registry);
         // moves on empty results
         for c in ['j', 'k', 'g', 'G'] {
@@ -4551,7 +4554,7 @@ mod tests {
         .unwrap();
         let mut m = Model::open(&c).unwrap();
         // --- Manifest pane ---
-        chr(&mut m, '5');
+        chr(&mut m, '4');
         assert_eq!(m.pane, Pane::Manifest);
         assert_eq!(m.project.as_ref().map(|p| p.deps.len()), Some(2));
         assert_eq!(m.dep_selected().as_deref(), Some("./a"));
@@ -4586,7 +4589,7 @@ mod tests {
         assert!(m.status_err);
         m.man_sel = 0;
         // --- Services pane ---
-        chr(&mut m, '4');
+        chr(&mut m, '3');
         assert_eq!(m.pane, Pane::Services);
         assert!(m.svc_stale);
         m.svc_rows = vec![svc_row("pkg", "web"), svc_row("pkg2", "api")];
@@ -4625,7 +4628,7 @@ mod tests {
         chr(&mut m, 's');
         assert!(m.status_err);
         // --- Author pane ---
-        chr(&mut m, '6');
+        chr(&mut m, '5');
         assert_eq!(m.pane, Pane::Author);
         chr(&mut m, 'p');
         assert!(matches!(m.mode, Mode::Prompt(PromptKind::PackSpec)));
@@ -5254,9 +5257,10 @@ mod tests {
             row,
             modifiers: KeyModifiers::NONE,
         };
-        // click the SERVICES tab (col inside its label span)
+        // click the SERVICES tab (col inside its label span — index 2
+        // in the browsing-first Pane::ALL order)
         let col = (1..100u16)
-            .find(|&x| crate::render::tab_hit(100, x) == Some(3))
+            .find(|&x| crate::render::tab_hit(100, x) == Some(2))
             .unwrap();
         m.mouse(mouse(MouseEventKind::Down(MouseButton::Left), col, 0));
         assert_eq!(m.pane, Pane::Services);

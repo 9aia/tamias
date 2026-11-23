@@ -279,9 +279,10 @@ fn detail_verify_and_registry_pane() {
     // esc backs out to the table
     d.send("\x1b");
     std::thread::sleep(Duration::from_millis(300));
-    // `3` → the registry pane's search hint (phase 3) — the hint's
-    // head survives the 80-col truncation
-    d.send("3");
+    // `6` → the registry pane's search hint (phase 3, last tab in
+    // the browsing-first order) — the hint's head survives the
+    // 80-col truncation
+    d.send("6");
     d.wait_for(b"registry search");
     // back to installed (`2`); `:verify` runs the op on a worker —
     // the result lands in the log/status stream
@@ -305,18 +306,18 @@ fn services_project_publish_panes() {
     let (mut master, mut child) = spawn_pty(command(&f));
     let d = drain(&mut master);
     d.wait_for(b"widget@1.2.3");
-    // `4` — Services: the fixture package has no provider block, so
+    // `3` — Services: the fixture package has no provider block, so
     // the refresh lands on the empty-state hint. (ratatui diffs
     // cell-by-cell, so needles must be short contiguous runs — the
     // styled hint's "`provider:`" fragment is the reliable one.)
-    d.send("4");
+    d.send("3");
     d.wait_for(b"provider:");
-    // `5` — Project: no project manifest in cwd → the deps table
+    // `4` — Project: no project manifest in cwd → the deps table
     // title carries the default tamias.yaml path.
-    d.send("5");
+    d.send("4");
     d.wait_for(b"tamias.yaml");
-    // `6` — Publish: the pane header + footer hints render.
-    d.send("6");
+    // `5` — Publish: the pane header + footer hints render.
+    d.send("5");
     d.wait_for(b"publish");
     d.wait_for(b"pack");
     // `:manifest` reload + `:registries` report run on the worker.
