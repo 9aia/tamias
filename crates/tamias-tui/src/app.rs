@@ -1090,11 +1090,12 @@ pub struct Model {
     /// bottom; `draw_detail` refreshes it every frame the page is
     /// open.
     pub(crate) detail_max_scroll: usize,
-    /// Versions-focus mode on a Registry package page — `v` toggles
-    /// it once the sibling-version list has landed; while set, `j`/`k`
+    /// Versions-focus mode on an open package page — `v` toggles it
+    /// (Registry: once the sibling-version fetch has landed; Installed:
+    /// when the group has more than one store copy). While set, `j`/`k`
     /// move [`Model::versions_sel`] instead of scrolling the page and
     /// `i` installs the selected version. Meaningless (and cleared)
-    /// for Installed pages.
+    /// with no page open.
     pub versions_focus: bool,
     /// Cursor into the page's `versions` list while `versions_focus`
     /// is set — clamped to the list length on every move.
@@ -1827,6 +1828,39 @@ impl Model {
         self.recent = idx;
     }
 
+    /// `plan_prune(keep=1)` over the current entries — the pure
+    /// superseded-version plan (`tamias_core::prune`). Recomputed per
+    /// call like [`Model::inst_groups`]: `entries` is `pub` and tests
+    /// mutate it, so a cache would drift; the plan is cheap at store
+    /// sizes.
+    fn prune_plan(&self) -> tamias_core::PrunePlan {
+        let entries: Vec<StoreEntry> = self.entries.iter().map(|r| r.entry.clone()).collect();
+        tamias_core::plan_prune(&entries, 1)
+    }
+
+    /// How many superseded versions `:prune` (keep newest 1) would
+    /// remove store-wide — the Home stats strip's `· N old versions`
+    /// nudge. `0` → no nudge.
+    pub fn prune_removals(&self) -> usize {
+        self.prune_plan().removals.len()
+    }
+
+    /// How many of those removals land inside the *selected* Installed
+    /// group — the status-bar nudge's per-package count (`0` when the
+    /// selection has nothing superseded, e.g. a lone version or only
+    /// non-semver copies `:prune` skips).
+    pub fn selected_prune_removals(&self) -> usize {
+        let Some(row) = self.selected() else {
+            return 0;
+        };
+        let rec = &row.entry.record;
+        self.prune_plan()
+            .removals
+            .iter()
+            .filter(|r| r.entry.record.name == rec.name && r.entry.record.scope == rec.scope)
+            .count()
+    }
+
     /// The Services row under the cursor.
     pub fn svc_selected(&self) -> Option<&ServiceRow> {
         self.svc_rows.get(self.svc_sel)
@@ -2334,20 +2368,22 @@ impl Model {
 
     // --- versions focus (registry package page) ---
 
-    /// `versions_focus` only means something on an open Registry
+    /// `versions_focus` only means something on an open package
     /// page — the flag clears with the page, so this also guards
     /// against any stale state.
     pub fn versions_focused(&self) -> bool {
-        self.versions_focus && matches!(self.detail, Some(Detail::Registry { .. }))
+        self.versions_focus && self.detail.is_some()
     }
 
-    /// The landed sibling-version count on the open Registry page.
-    fn versions_len(&self) -> usize {
+    /// The landed sibling-version count on the open Registry page,
+    /// or the open Installed page's store-member count.
+    pub fn versions_len(&self) -> usize {
         match &self.detail {
             Some(Detail::Registry {
                 versions: Some(list),
                 ..
             }) => list.len(),
+            Some(Detail::Installed { .. }) => self.installed_page_versions().len(),
             _ => 0,
         }
     }
@@ -2363,12 +2399,53 @@ impl Model {
         }
     }
 
-    /// `v` on a Registry package page — toggle versions focus (the
-    /// npm version-selector mode). Engages only once the background
-    /// fetch has landed a non-empty list; a pending or failed fetch
-    /// gets a muted status instead. The cursor starts on the page's
-    /// own entry (`← current`, matched by blob `file` — the same
-    /// rule the renderer uses).
+    /// Every store entry in the open Installed page's `(name, scope)`
+    /// group — the store keeps all versions ever installed, so the
+    /// page lists them all, semver-desc via the same [`version_cmp`]
+    /// rule the pane's group rep uses (stable sort: version ties keep
+    /// store order, so row 0 is the `· current` semver-max). Falls
+    /// back to the page entry alone when it isn't among `entries`
+    /// (tests plant `detail` directly). Recomputed per call like
+    /// [`Model::inst_groups`] — `entries` is `pub` and tests mutate
+    /// it, so a cache would drift.
+    pub fn installed_page_versions(&self) -> Vec<StoreEntry> {
+        let Some(Detail::Installed { entry, .. }) = &self.detail else {
+            return Vec::new();
+        };
+        let rec = &entry.record;
+        let mut members: Vec<StoreEntry> = self
+            .entries
+            .iter()
+            .map(|r| r.entry.clone())
+            .filter(|e| e.record.name == rec.name && e.record.scope == rec.scope)
+            .collect();
+        if members.is_empty() {
+            members.push(entry.clone());
+        }
+        members
+            .sort_by(|a, b| version_cmp(b.record.version.as_deref(), a.record.version.as_deref()));
+        members
+    }
+
+    /// The store entry under the versions cursor on an Installed
+    /// page — a clone (the list is recomputed per call).
+    fn installed_versions_selected(&self) -> Option<StoreEntry> {
+        if !matches!(self.detail, Some(Detail::Installed { .. })) {
+            return None;
+        }
+        self.installed_page_versions()
+            .get(self.versions_sel)
+            .cloned()
+    }
+
+    /// `v` on a package page — toggle versions focus (the npm
+    /// version-selector mode). Registry pages engage only once the
+    /// background fetch has landed a non-empty list; a pending or
+    /// failed fetch gets a muted status instead. Installed pages
+    /// engage when the group has more than one store copy — the
+    /// cursor starts on the semver-max (`· current`), the same row
+    /// the Registry cursor seeks via `← current`. A lone installed
+    /// version has nothing to pick.
     fn toggle_versions_focus(&mut self) {
         if self.versions_focused() {
             self.versions_focus = false;
@@ -2387,6 +2464,13 @@ impl Model {
                 Some(_) => (None, Some("no versions indexed")),
                 None => (None, Some("versions still loading…")),
             },
+            Some(Detail::Installed { .. }) => {
+                if self.installed_page_versions().len() > 1 {
+                    (Some(0), None)
+                } else {
+                    (None, Some("single installed version"))
+                }
+            }
             _ => (None, None),
         };
         if let Some(i) = focus_at {
@@ -2409,19 +2493,39 @@ impl Model {
             (self.versions_sel as isize + delta).clamp(0, len as isize - 1) as usize;
     }
 
-    /// `i` inside versions focus — install the selected sibling
-    /// version through the same resolve→confirm path as the page
-    /// entry. A version already in the store gets an informational
-    /// toast instead of a reinstall confirm.
+    /// `i` inside versions focus — install the selected version
+    /// through the same confirm path as the page entry. Registry
+    /// picks resolve to the index tarball ref; a version already in
+    /// the store gets an informational toast instead of a reinstall
+    /// confirm. Installed picks reinstall that exact store label —
+    /// `tamias install <name@version>` semantics (the store keeps
+    /// every version; this re-fetches the picked one, it isn't an
+    /// "activate").
     fn install_focused_version(&mut self) {
+        // Resolve the pick before mutating — the detail borrow ends
+        // ahead of `confirm_job`'s `&mut self`.
+        let installed_label = match &self.detail {
+            Some(Detail::Installed { .. }) => self.installed_versions_selected().map(|e| e.label()),
+            _ => None,
+        };
+        if let Some(label) = installed_label {
+            // Rollback/reinstall — `tamias install <label>` semantics:
+            // the store keeps every version; this re-fetches the
+            // picked one, it isn't an "activate".
+            self.confirm_job(Job::Install {
+                reference: label,
+                allow_drivers: false,
+            });
+            return;
+        }
         let Some(entry) = self.versions_selected().cloned() else {
             return;
         };
         if self.version_installed(&entry) {
             self.say(format!("{} already installed", entry.label()));
-            return;
+        } else {
+            self.install_registry_entry(entry);
         }
-        self.install_registry_entry(entry);
     }
 
     /// Is this registry version already in the store? Matches on
@@ -3520,13 +3624,21 @@ impl Model {
             // dep) since a live child is the more urgent target.
             KeyCode::Char('x') if self.stream_child.is_some() => self.kill_stream(),
             // --- verbs ---
-            // `v` on an open Registry package page toggles versions
-            // focus — the npm version-selector mode. `v` on the bare
-            // Registry pane stays unbound.
+            // `v` on an open package page toggles versions focus —
+            // the npm version-selector mode on Registry (index
+            // siblings) and Installed (store copies) alike. On
+            // Installed a single-version group keeps `v` = verify.
             KeyCode::Char('v') if self.pane == Pane::Registry && self.detail.is_some() => {
                 self.toggle_versions_focus()
             }
-            KeyCode::Char('v') if self.pane == Pane::Installed => self.verb_verify(),
+            KeyCode::Char('v') if self.pane == Pane::Installed => {
+                if matches!(self.detail, Some(Detail::Installed { .. })) && self.versions_len() > 1
+                {
+                    self.toggle_versions_focus();
+                } else {
+                    self.verb_verify();
+                }
+            }
             KeyCode::Char('u') if self.pane == Pane::Installed => self.verb_update(),
             KeyCode::Char('U') if self.pane == Pane::Installed => {
                 self.confirm_job(Job::UpdateAll {
@@ -6313,6 +6425,140 @@ mod tests {
         m.filter = "0.9.0".into();
         assert_eq!(m.visible().len(), 1);
         m.filter.clear();
+    }
+
+    /// Enter on a multi-version Installed group opens a page whose
+    /// installed-versions list carries every store copy semver-desc
+    /// (`· current` on the max — the pane's rep). `v` focuses the
+    /// list, `j`/`k` move the pick, and `i` confirms a `Job::Install`
+    /// for that exact store label — rollback is
+    /// `tamias install name@version`, not an activate; the store
+    /// keeps every version. A lone-version group keeps `v` = verify.
+    #[test]
+    fn installed_detail_versions_focus_and_exact_install() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Installed;
+        m.entries = vec![
+            versioned_row("w", "0.9.0"),
+            versioned_row("w", "0.10.0"),
+            versioned_row("other", "1.0.0"),
+        ];
+        m.sel = 0;
+        key(&mut m, KeyCode::Enter);
+        // Every group member, semver-desc — 0.10.0 leads even though
+        // it sits second in `entries`.
+        let labels: Vec<String> = m
+            .installed_page_versions()
+            .iter()
+            .map(|e| e.label())
+            .collect();
+        assert_eq!(labels, ["w@0.10.0", "w@0.9.0"]);
+        assert_eq!(m.versions_len(), 2);
+        // `v` engages focus on the semver-max (`· current`) row.
+        chr(&mut m, 'v');
+        assert!(m.versions_focused());
+        assert_eq!(m.versions_sel, 0);
+        // j moves to the old version; `i` confirms its exact label.
+        chr(&mut m, 'j');
+        assert_eq!(m.versions_sel, 1);
+        assert_eq!(
+            m.installed_versions_selected()
+                .map(|e| e.label())
+                .as_deref(),
+            Some("w@0.9.0")
+        );
+        chr(&mut m, 'i');
+        match &m.modal {
+            Some(Modal::Confirm {
+                job:
+                    Job::Install {
+                        reference,
+                        allow_drivers,
+                    },
+                ..
+            }) => {
+                assert_eq!(reference, "w@0.9.0");
+                assert!(!allow_drivers);
+            }
+            other => panic!("expected install confirm, got {other:?}"),
+        }
+        // esc backs out of focus first, then closes the page — and
+        // the focus state resets with it. (Dismiss the confirm
+        // first — a modal swallows pane keys.)
+        m.modal = None;
+        key(&mut m, KeyCode::Esc);
+        assert!(!m.versions_focused());
+        assert!(m.detail.is_some());
+        key(&mut m, KeyCode::Esc);
+        assert!(m.detail.is_none());
+        assert!(!m.versions_focused());
+        assert_eq!(m.versions_sel, 0);
+        // A lone-version group has nothing to pick — `v` stays
+        // verify (a read-only job spawns straight away).
+        m.modal = None;
+        m.busy = None;
+        m.busy_job = None;
+        m.sel = 1; // "other"
+        key(&mut m, KeyCode::Enter);
+        chr(&mut m, 'v');
+        assert!(!m.versions_focused());
+        assert!(
+            m.busy.as_deref().unwrap_or("").starts_with("verify"),
+            "busy: {:?}",
+            m.busy
+        );
+    }
+
+    /// Scoped groups keep their scope in the version labels — the
+    /// installed pick's install ref is `@scope/name@version`, the
+    /// same grammar `tamias install` parses.
+    #[test]
+    fn installed_versions_scoped_labels() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Installed;
+        let mut a = versioned_row("w", "1.0.0");
+        a.entry.record.scope = Some("s".into());
+        let mut b = versioned_row("w", "2.0.0");
+        b.entry.record.scope = Some("s".into());
+        m.entries = vec![a, b];
+        m.sel = 0;
+        key(&mut m, KeyCode::Enter);
+        let labels: Vec<String> = m
+            .installed_page_versions()
+            .iter()
+            .map(|e| e.label())
+            .collect();
+        assert_eq!(labels, ["@s/w@2.0.0", "@s/w@1.0.0"]);
+    }
+
+    /// The prune nudge counts `plan_prune(keep=1)` removals live —
+    /// store-wide and per selected group — and clears the moment
+    /// `entries` shrinks. Per-call recompute means tests mutating
+    /// the pub field directly never see a stale count.
+    #[test]
+    fn prune_removals_nudge_counts_and_clears() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Installed;
+        m.entries = vec![
+            versioned_row("w", "0.9.0"),
+            versioned_row("w", "0.10.0"),
+            versioned_row("other", "1.0.0"),
+        ];
+        assert_eq!(m.prune_removals(), 1);
+        // The selected group is `w` — its superseded copy counts.
+        assert_eq!(m.selected_prune_removals(), 1);
+        // `other` is a lone version — no per-group nudge even though
+        // the store-wide count is unchanged.
+        m.sel = 1;
+        assert_eq!(m.selected_prune_removals(), 0);
+        assert_eq!(m.prune_removals(), 1);
+        // The old copy leaves the store → both nudges clear with no
+        // reload bookkeeping.
+        m.entries
+            .retain(|r| r.entry.record.version.as_deref() != Some("0.9.0"));
+        assert_eq!(m.prune_removals(), 0);
+        m.sel = 0;
+        assert_eq!(m.selected_prune_removals(), 0);
     }
 
     /// `sel_key` tracks the group (`@scope/name`), not the rep's

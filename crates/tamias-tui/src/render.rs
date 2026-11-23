@@ -12,6 +12,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap};
 use ratatui::Frame;
+use tamias_core::StoreEntry;
 
 use crate::app::{Detail, Modal, Mode, Model, Pane, PromptKind, SPINNER};
 
@@ -297,10 +298,23 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
     )));
     lines.push(Line::from(""));
     // Stats — one muted line that wraps naturally on narrow frames.
+    // Superseded store versions append the `:prune` nudge (a status
+    // *value*, not a keybind legend — the footer stays the only hint
+    // surface).
+    let prune = m.prune_removals();
+    let prune_note = if prune > 0 {
+        format!(
+            " · {prune} old version{} — :prune",
+            if prune == 1 { "" } else { "s" }
+        )
+    } else {
+        String::new()
+    };
     lines.push(Line::from(Span::styled(
         format!(
-            "{} installed · registry {} · store {} · cache {}",
+            "{} installed{} · registry {} · store {} · cache {}",
             m.entries.len(),
+            prune_note,
             m.reg_target_label,
             m.ctx.store_root.display(),
             m.ctx.cache_root.display()
@@ -851,7 +865,10 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
 /// `versions_sel` is `Some(i)` while the versions-focus mode is
 /// active ([`Model::versions_focused`]) — row `i` gets the table's
 /// `Indexed(238)` row highlight plus an accent `›` marker, and the
-/// footer hint switches to the focus keys.
+/// footer hint switches to the focus keys. It marks the Registry
+/// `── versions ──` list or the Installed `── installed versions ──`
+/// list (`installed_versions`, semver-desc store members — row 0 is
+/// the `· current` semver-max).
 ///
 /// The fourth return value is the body line index of the focused
 /// version row (`None` unless focus is active and the list landed) —
@@ -863,6 +880,7 @@ fn page_parts(
     registry_target: &str,
     installed_ver: Option<&str>,
     versions_sel: Option<usize>,
+    installed_versions: &[StoreEntry],
 ) -> (String, Line<'static>, Vec<Line<'static>>, Option<usize>) {
     let label = detail.label();
     // Header — bold label then muted/bracketed chips; the trust chip
@@ -1005,6 +1023,50 @@ fn page_parts(
                         "{err} — `:remove <name>` deletes it; reinstall repairs"
                     )),
                 ]));
+            }
+            // installed versions — every store copy of this package,
+            // semver-desc (`installed_versions` comes from the live
+            // entries, so `:prune`/installs reshape it); row 0 is the
+            // `· current` semver-max the Installed pane groups on.
+            // `v` focuses the list for exact-version reinstall.
+            if !installed_versions.is_empty() {
+                body.push(Line::from(""));
+                body.push(rule("installed versions"));
+                let rows_start = body.len();
+                versions_row = versions_sel
+                    .filter(|&s| s < installed_versions.len())
+                    .map(|s| rows_start + s);
+                for (i, v) in installed_versions.iter().enumerate() {
+                    // `record.version` when the install was versioned;
+                    // unversioned copies show the sha12 the store
+                    // label falls back to (same as `installed_labels`).
+                    let ver = v.record.version.clone().unwrap_or_else(|| {
+                        let sha = v
+                            .record
+                            .resolved
+                            .strip_prefix("sha256:")
+                            .unwrap_or(&v.record.resolved);
+                        sha.chars().take(12).collect()
+                    });
+                    let current = i == 0;
+                    let line = if versions_sel == Some(i) {
+                        let mut spans = vec![
+                            Span::styled("› ", Style::default().fg(ACCENT)),
+                            Span::raw(ver),
+                        ];
+                        if current {
+                            spans.push(Span::styled("  · current", Style::default().fg(MUTED)));
+                        }
+                        Line::from(spans).style(Style::default().bg(Color::Indexed(238)))
+                    } else {
+                        let mut spans = vec![Span::raw(format!("  {ver}"))];
+                        if current {
+                            spans.push(Span::styled("  · current", Style::default().fg(MUTED)));
+                        }
+                        Line::from(spans)
+                    };
+                    body.push(line);
+                }
             }
             // provenance — last, per the package-page anatomy.
             body.push(Line::from(""));
@@ -1157,9 +1219,18 @@ fn page_parts(
 
 /// The package page's status-bar hint — `draw_status`'s right-side
 /// hint while `detail` is open. `versions_focused` is the caller's
-/// focus state ([`Model::versions_focused`]).
-fn detail_hint(detail: &Detail, versions_focused: bool) -> &'static str {
+/// focus state ([`Model::versions_focused`]); `version_rows` is the
+/// page's pickable-version count ([`Model::versions_len`]) — an
+/// Installed page advertises `v versions` only when the group has
+/// more than one store copy (a lone version keeps `v` = verify).
+fn detail_hint(detail: &Detail, versions_focused: bool, version_rows: usize) -> &'static str {
     match detail {
+        Detail::Installed { .. } if versions_focused => {
+            "installed versions — j/k move · i install · v/esc back · y copy"
+        }
+        Detail::Installed { .. } if version_rows > 1 => {
+            "esc back · j/k scroll · v versions · u/p/x/c/d row · y copy"
+        }
         Detail::Installed { .. } => "esc back · j/k scroll · v/u/p/x/c/d act on the row · y copy",
         Detail::Registry { .. } if versions_focused => {
             "versions — j/k move · i install · v/esc back · y copy"
@@ -1246,11 +1317,18 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
         }
         _ => None,
     };
+    // The Installed page's version list — every store member of the
+    // group, recomputed live so `:prune`/installs reshape it.
+    let installed_versions = match detail {
+        Detail::Installed { .. } => m.installed_page_versions(),
+        _ => Vec::new(),
+    };
     let (title, head, body, versions_row) = page_parts(
         detail,
         &m.reg_target_label,
         installed_ver.as_deref(),
         m.versions_focused().then_some(m.versions_sel),
+        &installed_versions,
     );
     let block = Block::default()
         .borders(Borders::ALL)
@@ -1530,10 +1608,27 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
             Pane::Installed => {
                 if m.detail.is_some() {
                     "package — esc back".to_string()
-                } else if m.filter.is_empty() {
-                    format!("{} installed", m.entries.len())
                 } else {
-                    format!("{}/{} · /{}", m.visible().len(), m.entries.len(), m.filter)
+                    // Superseded copies inside the *selected* group —
+                    // a status value (not a keybind), so `:prune` may
+                    // be named here; disappears when the group is
+                    // down to its newest copy.
+                    let prune = m.selected_prune_removals();
+                    let nudge = if prune > 0 {
+                        format!(" · {prune} old — :prune")
+                    } else {
+                        String::new()
+                    };
+                    if m.filter.is_empty() {
+                        format!("{} installed{nudge}", m.entries.len())
+                    } else {
+                        format!(
+                            "{}/{} · /{}{nudge}",
+                            m.visible().len(),
+                            m.entries.len(),
+                            m.filter
+                        )
+                    }
                 }
             }
             Pane::Registry => {
@@ -1596,7 +1691,7 @@ fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
             // left status text — truncated with `…` to whatever
             // width is left.
             let pane_hint = if let Some(d) = &m.detail {
-                detail_hint(d, m.versions_focused())
+                detail_hint(d, m.versions_focused(), m.versions_len())
             } else {
                 match m.pane {
                     Pane::Home => {
@@ -1805,7 +1900,8 @@ keys — installed pane
   h/←           back — closes the page first, then prev pane
   /             filter installed      F       clear filter
   rows show the latest version per package — · N versions counts
-  the store's other copies; verbs act on the latest entry
+  the store's other copies; Enter's page lists them all and v picks
+  one to reinstall · :prune drops the superseded copies
   :             command line          Tab    complete · esc leave
   L/:log       op-log sidebar         j/k    scroll · g/G ends · q close
   R             reload store          ?       this help
@@ -1816,13 +1912,15 @@ home pane:    landing view — wordmark · stats · recently installed ·
               page · / jumps to registry search · i install by ref
 
 package page:  npm-style page — header chips · description · install
-               command · deps/services/meta · provenance last ·
-               j/k scroll · g/G jump ends · wheel scrolls · y copies
-               the install ref · esc/q/h/← close (back to where
-               Enter was pressed) · l/Tab/1-6 switch panes and close ·
-               registry pages: v focuses versions — j/k/g/G pick · i
-               installs that version · `installed <pkg>@<ver>` line
-               when already in the store
+               command · deps/services/meta · installed versions ·
+               provenance last · j/k scroll · g/G jump ends · wheel
+               scrolls · y copies the install ref · esc/q/h/← close
+               (back to where Enter was pressed) · l/Tab/1-6 switch
+               panes and close · v focuses versions — j/k/g/G pick ·
+               i installs that version (registry siblings / installed
+               store copies — rollback is an exact-version install,
+               not an activate) · `installed <pkg>@<ver>` line when
+               already in the store · old versions: :prune
 
 registry pane:  / search-as-you-type (debounced) · Enter package page ·
                 i install result · :registry <name> target · :search <q>
@@ -1851,7 +1949,7 @@ commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
            :services  :service <verb> <unit>  :run <pkg> [svc]
            :logs <pkg|unit> [-f]  :deploy <name>  :manifest
            :pack <dir> [out]  :publish <dir> [registry]  :registries
-           :sync [--from-lock]
+           :sync [--from-lock]  :prune [--keep N]
            (: line editing — arrows · Home/End · Ctrl-A/E/U/W ·
             Tab completes · Up/Down history)
 mouse:     wheel scrolls (the package page when open) · click row
@@ -1944,7 +2042,12 @@ mod tests {
         installed_ver: Option<&str>,
         versions_sel: Option<usize>,
     ) -> String {
-        let (_, _, body, _) = page_parts(detail, "default", installed_ver, versions_sel);
+        let (_, _, body, _) = page_parts(detail, "default", installed_ver, versions_sel, &[]);
+        lines_text(&body)
+    }
+
+    /// Flatten `page_parts` body lines to plain text.
+    fn lines_text(body: &[Line]) -> String {
         body.iter()
             .map(|l| {
                 l.spans
@@ -1954,6 +2057,18 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    /// `body_text` for an Installed page fed an explicit store-member
+    /// list — what `Model::installed_page_versions` hands `page_parts`
+    /// in the real draw path.
+    fn body_text_installed_versions(
+        detail: &Detail,
+        versions: &[StoreEntry],
+        versions_sel: Option<usize>,
+    ) -> String {
+        let (_, _, body, _) = page_parts(detail, "default", None, versions_sel, versions);
+        lines_text(&body)
     }
 
     /// The versions section's three states: pending placeholder, the
@@ -2039,6 +2154,13 @@ mod tests {
             dir: PathBuf::from("/store").join(name),
             record: rec(name),
         }
+    }
+
+    /// A store entry at an explicit version — `name@<ver>`.
+    fn versioned_entry(name: &str, version: &str) -> StoreEntry {
+        let mut e = entry(name);
+        e.record.version = Some(version.into());
+        e
     }
 
     /// An installed-pane row.
@@ -2783,11 +2905,11 @@ mod tests {
         // The status-bar hint is what versions focus switches — the
         // body itself carries no hint line.
         assert_eq!(
-            detail_hint(&detail, true),
+            detail_hint(&detail, true, 2),
             "versions — j/k move · i install · v/esc back · y copy"
         );
         assert_eq!(
-            detail_hint(&detail, false),
+            detail_hint(&detail, false, 2),
             "esc back · j/k scroll · i install · v versions · y copy"
         );
         assert!(!focused.contains("esc back · j/k scroll"));
@@ -2813,14 +2935,16 @@ mod tests {
             versions: Some(vec![reg_entry("0.9.0"), page.clone(), reg_entry("1.1.0")]),
             versions_err: None,
         };
-        let (_, _, body, row) = page_parts(&detail, "default", None, Some(2));
+        let (_, _, body, row) = page_parts(&detail, "default", None, Some(2), &[]);
         let row = row.expect("focused row index");
         assert!(
             body[row].spans.iter().any(|s| s.content.contains("1.1.0")),
             "row {row} should be the focused 1.1.0 line"
         );
-        assert!(page_parts(&detail, "default", None, None).3.is_none());
-        assert!(page_parts(&detail, "default", None, Some(9)).3.is_none());
+        assert!(page_parts(&detail, "default", None, None, &[]).3.is_none());
+        assert!(page_parts(&detail, "default", None, Some(9), &[])
+            .3
+            .is_none());
         // Pending fetch — no rows, no target.
         let pending = Detail::Registry {
             entry: page.clone(),
@@ -2829,7 +2953,130 @@ mod tests {
             versions: None,
             versions_err: None,
         };
-        assert!(page_parts(&pending, "default", None, Some(0)).3.is_none());
+        assert!(page_parts(&pending, "default", None, Some(0), &[])
+            .3
+            .is_none());
+    }
+
+    /// The Installed page's `── installed versions ──` section lists
+    /// every store copy semver-desc with `· current` on the max; the
+    /// versions-focus cursor marks its row `›` like the Registry
+    /// list, and `versions_row` feeds scroll-into-view.
+    #[test]
+    fn installed_page_versions_section() {
+        let detail = Detail::Installed {
+            entry: versioned_entry("w", "0.10.0"),
+            manifest: None,
+            manifest_err: None,
+        };
+        let versions = vec![
+            versioned_entry("w", "0.10.0"),
+            versioned_entry("w", "0.9.0"),
+        ];
+        let text = body_text_installed_versions(&detail, &versions, None);
+        assert!(text.contains("── installed versions ──"), "{text}");
+        // Semver-desc order — and `· current` rides the max only.
+        let hi = text.find("0.10.0").unwrap();
+        let lo = text.find("0.9.0").unwrap();
+        assert!(hi < lo, "{text}");
+        assert!(text.contains("0.10.0  · current"), "{text}");
+        assert!(!text.contains("0.9.0  · current"), "{text}");
+        // Focused — the `›` marker lands on the picked row.
+        let focused = body_text_installed_versions(&detail, &versions, Some(1));
+        assert!(focused.contains("› 0.9.0"), "{focused}");
+        assert!(focused.contains("  0.10.0  · current"), "{focused}");
+        // `versions_row` is the focused row's body index.
+        let (_, _, body, row) = page_parts(&detail, "default", None, Some(1), &versions);
+        let row = row.expect("focused row index");
+        assert!(
+            body[row].spans.iter().any(|s| s.content.contains("0.9.0")),
+            "row {row} should be the focused 0.9.0 line"
+        );
+        // An empty member list (test-planted detail edge) renders no
+        // section at all.
+        let empty = body_text_installed_versions(&detail, &[], None);
+        assert!(!empty.contains("── installed versions ──"), "{empty}");
+    }
+
+    /// The Installed page's footer hint advertises `v versions` only
+    /// when the group has more than one store copy; focus switches it
+    /// to the pick keys. A lone version keeps the plain row verbs
+    /// (`v` stays verify there).
+    #[test]
+    fn installed_page_hint_states() {
+        let detail = Detail::Installed {
+            entry: versioned_entry("w", "1.0.0"),
+            manifest: None,
+            manifest_err: None,
+        };
+        assert_eq!(
+            detail_hint(&detail, true, 2),
+            "installed versions — j/k move · i install · v/esc back · y copy"
+        );
+        assert_eq!(
+            detail_hint(&detail, false, 2),
+            "esc back · j/k scroll · v versions · u/p/x/c/d row · y copy"
+        );
+        assert_eq!(
+            detail_hint(&detail, false, 1),
+            "esc back · j/k scroll · v/u/p/x/c/d act on the row · y copy"
+        );
+    }
+
+    /// Home's stats strip appends the `· N old versions — :prune`
+    /// nudge only while `plan_prune(keep=1)` has removals; it clears
+    /// the moment the superseded copies leave `entries`.
+    #[test]
+    fn home_stats_prune_nudge() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        // Lone version → no nudge.
+        m.entries = vec![row("solo", false)];
+        let s = screen(&mut m, 120, 30);
+        assert!(!s.contains(":prune"), "{s}");
+        // A superseded copy → the nudge joins the stats line.
+        let mut old = row("w", false);
+        old.entry.record.version = Some("0.9.0".into());
+        let mut new = row("w", false);
+        new.entry.record.version = Some("0.10.0".into());
+        m.entries = vec![old, new, row("solo", false)];
+        let s = screen(&mut m, 120, 30);
+        assert!(s.contains("1 old version — :prune"), "{s}");
+        // The old copy leaves the store → the nudge clears (per-call
+        // recompute — no reload bookkeeping needed).
+        m.entries
+            .retain(|r| r.entry.record.version.as_deref() != Some("0.9.0"));
+        let s = screen(&mut m, 120, 30);
+        assert!(!s.contains(":prune"), "{s}");
+    }
+
+    /// The Installed status value names `:prune` only while the
+    /// *selected* group has superseded copies — it tracks the cursor
+    /// and clears with the entries.
+    #[test]
+    fn installed_status_prune_nudge() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Installed;
+        let mut old = row("w", false);
+        old.entry.record.version = Some("0.9.0".into());
+        let mut new = row("w", false);
+        new.entry.record.version = Some("0.10.0".into());
+        m.entries = vec![old, new, row("solo", false)];
+        // sel 0 = the w group → the status value carries the nudge.
+        let s = screen(&mut m, 100, 24);
+        assert!(s.contains("3 installed"), "{s}");
+        assert!(s.contains("1 old — :prune"), "{s}");
+        // sel 1 = solo (a lone version) → nudge gone.
+        m.sel = 1;
+        let s = screen(&mut m, 100, 24);
+        assert!(!s.contains(":prune"), "{s}");
+        // Back on w with the old copy pruned → still clean.
+        m.sel = 0;
+        m.entries
+            .retain(|r| r.entry.record.version.as_deref() != Some("0.9.0"));
+        let s = screen(&mut m, 100, 24);
+        assert!(!s.contains(":prune"), "{s}");
     }
 
     /// `scroll_to_show` scrolls the minimum to keep `row` inside the
