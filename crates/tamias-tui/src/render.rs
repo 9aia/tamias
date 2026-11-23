@@ -225,6 +225,20 @@ fn trust_badge(tier: Option<&str>) -> Option<Span<'static>> {
     tier.map(|t| Span::styled(format!(" [{t}]"), trust_style(t)))
 }
 
+/// The selection-marker cell the data tables prepend as a narrow
+/// first column — accent `›` on the cursor row, blank elsewhere —
+/// so the cursor reads as clearly as Home's recents and the
+/// versions-focus list (the `Indexed(238)` row bg alone was too
+/// subtle). Row clicks map by display row, so the extra column
+/// doesn't disturb hit-testing.
+fn sel_cell(pos: usize, sel: usize) -> Cell<'static> {
+    if pos == sel {
+        Cell::from(Line::from(Span::styled("›", Style::default().fg(ACCENT))))
+    } else {
+        Cell::from("")
+    }
+}
+
 fn draw_pane(f: &mut Frame, m: &mut Model, area: Rect) {
     match m.pane {
         // The package page replaces whichever pane opened it — the
@@ -404,22 +418,33 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
         m.viewport_top = 0;
         return;
     }
-    let header = Row::new(vec!["PACKAGE", "SERVICE", "UNIT", "STATE", "EXEC"])
+    let header = Row::new(vec!["", "PACKAGE", "SERVICE", "UNIT", "STATE", "EXEC"])
         .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
-    let rows: Vec<Row> = m
-        .svc_rows
-        .iter()
-        .map(|r| {
-            Row::new(vec![
-                r.package.clone(),
-                r.service.clone(),
-                r.unit.clone(),
-                r.state.clone().unwrap_or_else(|| "-".into()),
-                r.exec.clone(),
-            ])
-        })
-        .collect();
+    // The package cell prints once per consecutive same-package run —
+    // `svc_rows` is sorted by package at ingest, so groups are
+    // contiguous; continuation rows leave it blank rather than
+    // repeating the label N times. `svc_sel` still indexes the flat
+    // row list (package lookups read the row, not the cell).
+    let mut rows: Vec<Row> = Vec::with_capacity(m.svc_rows.len());
+    let mut prev_pkg: Option<&str> = None;
+    for (pos, r) in m.svc_rows.iter().enumerate() {
+        let pkg = if prev_pkg == Some(r.package.as_str()) {
+            String::new()
+        } else {
+            r.package.clone()
+        };
+        prev_pkg = Some(r.package.as_str());
+        rows.push(Row::new(vec![
+            sel_cell(pos, m.svc_sel),
+            Cell::from(pkg),
+            Cell::from(r.service.clone()),
+            Cell::from(r.unit.clone()),
+            Cell::from(r.state.clone().unwrap_or_else(|| "-".into())),
+            Cell::from(r.exec.clone()),
+        ]));
+    }
     let widths = [
+        Constraint::Length(2),
         Constraint::Min(14),
         Constraint::Length(12),
         Constraint::Min(14),
@@ -528,22 +553,35 @@ fn draw_manifest(f: &mut Frame, m: &mut Model, area: Rect) {
         m.viewport_top = 0;
         return;
     }
-    let header =
-        Row::new(vec!["#", "REF"]).style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    let header = Row::new(vec!["", "#", "REF"])
+        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = deps
         .iter()
         .enumerate()
-        .map(|(i, d)| Row::new(vec![(i + 1).to_string(), d.clone()]))
+        .map(|(i, d)| {
+            Row::new(vec![
+                sel_cell(i, m.man_sel),
+                Cell::from((i + 1).to_string()),
+                Cell::from(d.clone()),
+            ])
+        })
         .collect();
-    let table = Table::new(rows, [Constraint::Length(4), Constraint::Min(30)])
-        .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" deps — {} ", m.manifest_path.display())),
-        )
-        .style(Style::default().fg(TEXT))
-        .row_highlight_style(Style::default().bg(Color::Indexed(238)));
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(2),
+            Constraint::Length(4),
+            Constraint::Min(30),
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!(" deps — {} ", m.manifest_path.display())),
+    )
+    .style(Style::default().fg(TEXT))
+    .row_highlight_style(Style::default().bg(Color::Indexed(238)));
     let mut state = ratatui::widgets::TableState::default().with_selected(Some(m.man_sel));
     f.render_stateful_widget(table, table_area, &mut state);
     note_table_area(m, table_area, state.offset());
@@ -656,11 +694,12 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     // the fetch sha and full digests live on the package page's
     // provenance section; the table only needs the verify-relevant
     // short form.
-    let header = Row::new(vec!["NAME", "TYPE", "SOURCE", "DIGEST", "SIZE"])
+    let header = Row::new(vec!["", "NAME", "TYPE", "SOURCE", "DIGEST", "SIZE"])
         .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = vis
         .iter()
-        .map(|&i| {
+        .enumerate()
+        .map(|(pos, &i)| {
             let r = &m.entries[i];
             let rec = &r.entry.record;
             // Name cell carries styled spans — the trust badge is
@@ -673,6 +712,7 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
                 name.push(Span::styled(" [sealed]", Style::default().fg(MUTED)));
             }
             Row::new(vec![
+                sel_cell(pos, m.sel),
                 Cell::from(Line::from(name)),
                 Cell::from(rec.kind.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(rec.source_ref.clone()),
@@ -682,6 +722,7 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
         })
         .collect();
     let widths = [
+        Constraint::Length(2),
         Constraint::Min(18),
         Constraint::Length(12),
         Constraint::Min(14),
@@ -1264,11 +1305,11 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     // survives even when a long name pushes the label's `@ver` tail
     // off-screen.
     //
-    // LICENSE drops out below ~72 cols: the five Min/Length minimums
-    // (62 + column spacing) would squeeze DESCRIPTION to nothing, and
+    // LICENSE drops out below ~72 cols: the six Min/Length minimums
+    // (64 + column spacing) would squeeze DESCRIPTION to nothing, and
     // the license still shows on the package page.
     let license_col = area.width >= 72;
-    let mut head = vec!["NAME", "TYPE", "VERSION"];
+    let mut head = vec!["", "NAME", "TYPE", "VERSION"];
     if license_col {
         head.push("LICENSE");
     }
@@ -1301,6 +1342,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
                 ));
             }
             let mut cells = vec![
+                sel_cell(i, m.reg_sel),
                 Cell::from(Line::from(name)),
                 Cell::from(e.kind.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(e.version.clone().unwrap_or_else(|| "-".into())),
@@ -1317,6 +1359,7 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     // DESCRIPTION is the flexible column — it absorbs leftover width
     // and clips on narrow terminals.
     let mut widths = vec![
+        Constraint::Length(2),
         Constraint::Min(18),
         Constraint::Length(10),
         Constraint::Length(9),
@@ -2089,6 +2132,8 @@ mod tests {
         assert!(s.contains("[seal"), "{s}");
         assert!(s.contains("[bad]"), "{s}");
         assert!(s.contains("2.0 KiB"), "{s}");
+        // selection marker column — accent `›` on the cursor row
+        assert!(s.contains("›"), "{s}");
         // filter with no matches
         m.filter = "zzz".into();
         let s = screen(&mut m, 80, 24);
@@ -2124,6 +2169,7 @@ mod tests {
         let s = screen(&mut m, 100, 24);
         assert!(s.contains("w@1.0.0"), "{s}");
         assert!(s.contains("registry — default · /w"), "{s}");
+        assert!(s.contains("›"), "{s}");
     }
 
     #[test]
@@ -2135,18 +2181,40 @@ mod tests {
         m.svc_err = Some("systemctl missing".into());
         let s = screen(&mut m, 80, 24);
         assert!(s.contains("services: systemctl missing"), "{s}");
-        // rows present — error tolerated, table renders
-        m.svc_rows = vec![ServiceRow {
-            package: "pkg@1.0.0".into(),
-            service: "web".into(),
-            unit: "pkg-web".into(),
-            state: Some("active".into()),
-            exec: "/bin/serve --port 9".into(),
-        }];
+        // rows present — error tolerated, table renders. Two
+        // same-package rows exercise the group-blanked package cell
+        // (the label prints once per run); the cursor row carries
+        // the accent `›` marker.
+        m.svc_rows = vec![
+            ServiceRow {
+                package: "pkg@1.0.0".into(),
+                service: "web".into(),
+                unit: "pkg-web".into(),
+                state: Some("active".into()),
+                exec: "/bin/serve --port 9".into(),
+            },
+            ServiceRow {
+                package: "pkg@1.0.0".into(),
+                service: "api".into(),
+                unit: "pkg-api".into(),
+                state: Some("inactive".into()),
+                exec: "/bin/api".into(),
+            },
+            ServiceRow {
+                package: "other@2.0.0".into(),
+                service: "cron".into(),
+                unit: "other-cron".into(),
+                state: None,
+                exec: "/bin/cron".into(),
+            },
+        ];
         m.svc_err = None;
         let s = screen(&mut m, 100, 24);
         assert!(s.contains("pkg-web"), "{s}");
         assert!(s.contains("active"), "{s}");
+        assert!(s.contains("›"), "{s}");
+        assert_eq!(s.matches("pkg@1.0.0").count(), 1, "{s}");
+        assert_eq!(s.matches("other@2.0.0").count(), 1, "{s}");
         // busy → refreshing title + the empty-rows loading hint
         m.svc_rows.clear();
         m.busy = Some("services refresh".into());
@@ -2190,6 +2258,7 @@ mod tests {
         let s = screen(&mut m, 100, 30);
         assert!(s.contains("manifest:"), "{s}");
         assert!(s.contains("./dep-a"), "{s}");
+        assert!(s.contains("›"), "{s}");
         // short terminal → info strip yields, deps-only hint
         let s = screen(&mut m, 80, 10);
         assert!(s.contains("deps"), "{s}");
