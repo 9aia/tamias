@@ -202,7 +202,9 @@ fn draws_installed_and_quits_cleanly() {
     let f = fixture();
     let (mut master, mut child) = spawn_pty(command(&f));
     let d = drain(&mut master);
-    // the fixture entry's label proves the store was read and drawn
+    // the app lands on Home — the fixture entry's label proves both
+    // the recent-installs list and the store read
+    d.wait_for(b"recently installed");
     d.wait_for(b"widget@1.2.3");
     // SGR mouse events (press/release/wheel), a real resize
     // (SIGWINCH → Event::Resize), and a bracketed paste (→ the
@@ -243,7 +245,10 @@ fn filter_and_command_quit() {
     let (mut master, mut child) = spawn_pty(command(&f));
     let d = drain(&mut master);
     d.wait_for(b"widget@1.2.3");
-    // `/wid` filters live, `Enter` keeps it, `esc`-less; then `:` + `q`
+    // `2` → Installed (Home is `1` now); `/wid` filters live, `Enter`
+    // keeps it, `esc`-less; then `:` + `q`
+    d.send("2");
+    std::thread::sleep(Duration::from_millis(300));
     d.send("/wid");
     std::thread::sleep(Duration::from_millis(300));
     d.send("\r");
@@ -264,20 +269,23 @@ fn detail_verify_and_registry_pane() {
     let (mut master, mut child) = spawn_pty(command(&f));
     let d = drain(&mut master);
     d.wait_for(b"widget@1.2.3");
-    // Enter opens the detail view — provenance fields render
+    // `2` → Installed; Enter opens the detail view — provenance
+    // fields render
+    d.send("2");
+    std::thread::sleep(Duration::from_millis(300));
     d.send("\r");
     d.wait_for(b"source:");
     d.wait_for(b"./pkg");
     // esc backs out to the table
     d.send("\x1b");
     std::thread::sleep(Duration::from_millis(300));
-    // `2` → the registry pane's search hint (phase 3) — the hint's
+    // `3` → the registry pane's search hint (phase 3) — the hint's
     // head survives the 80-col truncation
-    d.send("2");
+    d.send("3");
     d.wait_for(b"registry search");
-    // back to installed; `:verify` runs the op on a worker — the
-    // result lands in the log/status stream
-    d.send("1");
+    // back to installed (`2`); `:verify` runs the op on a worker —
+    // the result lands in the log/status stream
+    d.send("2");
     std::thread::sleep(Duration::from_millis(200));
     d.send(":verify widget\r");
     d.wait_for(b"widget@1.2.3: ok");
@@ -297,18 +305,18 @@ fn services_manifest_author_panes() {
     let (mut master, mut child) = spawn_pty(command(&f));
     let d = drain(&mut master);
     d.wait_for(b"widget@1.2.3");
-    // `3` — Services: the fixture package has no provider block, so
+    // `4` — Services: the fixture package has no provider block, so
     // the refresh lands on the empty-state hint. (ratatui diffs
     // cell-by-cell, so needles must be short contiguous runs — the
     // styled hint's "`provider:`" fragment is the reliable one.)
-    d.send("3");
-    d.wait_for(b"provider:");
-    // `4` — Manifest: no project manifest in cwd → the deps table
-    // title carries the default tamias.yaml path.
     d.send("4");
-    d.wait_for(b"tamias.yaml");
-    // `5` — Author: the pane header + key hints render.
+    d.wait_for(b"provider:");
+    // `5` — Manifest: no project manifest in cwd → the deps table
+    // title carries the default tamias.yaml path.
     d.send("5");
+    d.wait_for(b"tamias.yaml");
+    // `6` — Author: the pane header + key hints render.
+    d.send("6");
     d.wait_for(b"author");
     d.wait_for(b"publish");
     // `:manifest` reload + `:registries` report run on the worker.

@@ -1,6 +1,7 @@
 //! The TUI model — panes, cursor, modes, modals, and the store reads
-//! every key maps to. The Installed pane lists `tamias-store-local`
-//! entries with a client-side `/` filter; `Enter` opens the package
+//! every key maps to. The Home pane is the landing view (wordmark,
+//! stats, recently installed); the Installed pane lists
+//! `tamias-store-local` entries with a client-side `/` filter; `Enter` opens the package
 //! page (`Detail`) on either the Installed row or a Registry result;
 //! the Registry pane searches a registry as-you-type; Services,
 //! Manifest, and Author cover provider lifecycle, the project `deps:`
@@ -67,10 +68,13 @@ pub struct Row {
     pub sealed: bool,
 }
 
-/// Which pane the tab bar shows. `ALL` fixes the `1`-`5` jump order
+/// Which pane the tab bar shows. `ALL` fixes the `1`-`6` jump order
 /// and tab labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
+    /// Home — wordmark, stats strip, recently-installed list. The
+    /// landing pane; informational only (no cursor).
+    Home,
     /// Store entries — name/type/source/resolved/digest/size.
     Installed,
     /// Registry search-as-you-type.
@@ -87,6 +91,7 @@ impl Pane {
     /// Tab label.
     pub fn label(self) -> &'static str {
         match self {
+            Pane::Home => "HOME",
             Pane::Installed => "INSTALLED",
             Pane::Registry => "REGISTRY",
             Pane::Services => "SERVICES",
@@ -95,8 +100,9 @@ impl Pane {
         }
     }
 
-    /// Tab order for `h`/`l`, `Tab`/`Shift-Tab`, and `1`-`5`.
-    pub const ALL: [Pane; 5] = [
+    /// Tab order for `h`/`l`, `Tab`/`Shift-Tab`, and `1`-`6`.
+    pub const ALL: [Pane; 6] = [
+        Pane::Home,
         Pane::Installed,
         Pane::Registry,
         Pane::Services,
@@ -559,8 +565,9 @@ fn unit_action_from_word(word: &str) -> Option<tamias_provider::UnitAction> {
 
 /// The whole TUI state.
 pub struct Model {
-    /// Roots the ops run against (cloned into every worker).
-    ctx: Ctx,
+    /// Roots the ops run against (cloned into every worker) —
+    /// `pub(crate)` so the Home pane's stats strip can show them.
+    pub(crate) ctx: Ctx,
     /// Store root the entries were listed from (watcher target).
     store_root: PathBuf,
     /// Every installed entry, sorted by label (as `Store::entries`).
@@ -702,7 +709,7 @@ impl Model {
             store_root,
             entries: Vec::new(),
             load_err: None,
-            pane: Pane::Installed,
+            pane: Pane::Home,
             sel: 0,
             sel_label: None,
             filter: String::new(),
@@ -1100,6 +1107,28 @@ impl Model {
         self.reg_results.get(self.reg_sel)
     }
 
+    /// The installed version label for a `(name, scope)` pair — the
+    /// "already installed" marker registry rows and package pages
+    /// show (`0.2.0`, or the resolved-sha short form when the record
+    /// is unversioned). `None` when no store entry matches; version
+    /// may differ from the registry row's — that's the point.
+    pub fn installed_label_for(&self, name: &str, scope: Option<&str>) -> Option<String> {
+        self.entries.iter().find_map(|r| {
+            let rec = &r.entry.record;
+            if rec.name == name && rec.scope.as_deref() == scope {
+                Some(rec.version.clone().unwrap_or_else(|| {
+                    let sha = rec
+                        .resolved
+                        .strip_prefix("sha256:")
+                        .unwrap_or(&rec.resolved);
+                    sha.chars().take(12).collect()
+                }))
+            } else {
+                None
+            }
+        })
+    }
+
     /// The Services row under the cursor.
     pub fn svc_selected(&self) -> Option<&ServiceRow> {
         self.svc_rows.get(self.svc_sel)
@@ -1157,6 +1186,8 @@ impl Model {
                 }
                 self.man_sel = (self.man_sel as isize + delta).clamp(0, len as isize - 1) as usize;
             }
+            // Home has no cursor — j/k/wheel are no-ops there.
+            Pane::Home => {}
             _ => {
                 let len = self.visible().len();
                 if len == 0 {
@@ -2055,11 +2086,13 @@ impl Model {
                 self.kill_stream();
                 return true;
             }
-            KeyCode::Char('1') => self.switch_pane(Pane::Installed),
-            KeyCode::Char('2') => self.switch_pane(Pane::Registry),
-            KeyCode::Char('3') => self.switch_pane(Pane::Services),
-            KeyCode::Char('4') => self.switch_pane(Pane::Manifest),
-            KeyCode::Char('5') => self.switch_pane(Pane::Author),
+            // `1`-`6` jump to the tab at that position in `Pane::ALL`
+            // (Home is `1`); out-of-range digits fall through.
+            KeyCode::Char(c @ '1'..='9') => {
+                if let Some(p) = Pane::ALL.get(c as usize - '1' as usize) {
+                    self.switch_pane(*p);
+                }
+            }
             KeyCode::Enter if matches!(self.pane, Pane::Installed | Pane::Registry) => {
                 self.toggle_detail()
             }
@@ -2115,16 +2148,28 @@ impl Model {
                 }
             },
             KeyCode::Char('/') => {
-                self.mode = if self.pane == Pane::Registry {
-                    Mode::Search
+                if self.pane == Pane::Home {
+                    // Home has no filter of its own — `/` is the way
+                    // into registry search: switch panes and land in
+                    // Search mode with an empty query.
+                    self.switch_pane(Pane::Registry);
+                    self.reg_query.clear();
+                    self.reg_results.clear();
+                    self.reg_err = None;
+                    self.input.clear();
+                    self.mode = Mode::Search;
                 } else {
-                    Mode::Filter
-                };
-                self.input = if self.pane == Pane::Registry {
-                    self.reg_query.clone()
-                } else {
-                    self.filter.clone()
-                };
+                    self.mode = if self.pane == Pane::Registry {
+                        Mode::Search
+                    } else {
+                        Mode::Filter
+                    };
+                    self.input = if self.pane == Pane::Registry {
+                        self.reg_query.clone()
+                    } else {
+                        self.filter.clone()
+                    };
+                }
             }
             KeyCode::Char(':') => {
                 self.mode = Mode::Command;
@@ -2406,6 +2451,96 @@ mod tests {
             publisher: None,
             file: format!("@s/w/{version}.tgz"),
         }
+    }
+
+    /// Home is the landing pane: `/` jumps into Registry search,
+    /// `i` opens the install-by-ref prompt, `1`-`6` map onto
+    /// `Pane::ALL` positions.
+    #[test]
+    fn home_pane_keys() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            None,
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        assert_eq!(m.pane, Pane::Home);
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        // `/` on Home → Registry pane in Search mode, empty query.
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.pane, Pane::Registry);
+        assert_eq!(m.mode, Mode::Search);
+        assert!(m.reg_query.is_empty());
+        // esc leaves search mode; `1` is Home, `2` Installed, `3`
+        // Registry — digits follow `Pane::ALL` order.
+        m.key(key(KeyCode::Esc));
+        assert_eq!(m.mode, Mode::Normal);
+        m.key(key(KeyCode::Char('1')));
+        assert_eq!(m.pane, Pane::Home);
+        m.key(key(KeyCode::Char('2')));
+        assert_eq!(m.pane, Pane::Installed);
+        // `i` on Home opens the install-by-ref prompt (non-Registry
+        // verb path), not a registry-result install.
+        m.key(key(KeyCode::Char('1')));
+        m.key(key(KeyCode::Char('i')));
+        assert_eq!(m.mode, Mode::Prompt(PromptKind::InstallRef));
+        // j/k on Home are no-ops — the installed cursor stays put.
+        m.key(key(KeyCode::Esc));
+        m.sel = 0;
+        m.key(key(KeyCode::Char('j')));
+        assert_eq!(m.sel, 0);
+        assert_eq!(m.pane, Pane::Home);
+    }
+
+    /// `installed_label_for` matches on (name, scope) regardless of
+    /// version and falls back to the resolved-sha short form.
+    #[test]
+    fn installed_label_for_matches_name_scope() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            None,
+        );
+        let mut m = Model::open(&ctx).unwrap();
+        assert_eq!(m.installed_label_for("w", Some("s")), None);
+        let entry = tamias_core::StoreEntry {
+            dir: tmp.path().join("store/@s/w@0.2.0"),
+            record: tamias_core::StoreRecord {
+                name: "w".into(),
+                scope: Some("s".into()),
+                version: Some("0.2.0".into()),
+                kind: None,
+                description: None,
+                keywords: Vec::new(),
+                homepage: None,
+                repository: None,
+                license: None,
+                authors: Vec::new(),
+                source_ref: "./x".into(),
+                resolved: "sha256:0123456789abcdef".into(),
+                digest: "sha256:d".into(),
+                signature: None,
+                signer: None,
+                trust: None,
+                installed_at: 0,
+            },
+        };
+        m.entries.push(crate::app::Row {
+            entry,
+            size: None,
+            sealed: false,
+        });
+        assert_eq!(
+            m.installed_label_for("w", Some("s")).as_deref(),
+            Some("0.2.0")
+        );
+        // scope and name must both match — no cross-talk.
+        assert_eq!(m.installed_label_for("w", None), None);
+        assert_eq!(m.installed_label_for("other", Some("s")), None);
     }
 
     /// `Msg::Versions` applies only to the page whose entry label it
