@@ -211,9 +211,15 @@ fn draw_pane(f: &mut Frame, m: &mut Model, area: Rect) {
 /// [`Model::recent_installed`] ordering the `home_sel` cursor walks).
 /// The highlighted row gets the versions-focus treatment — accent
 /// `›` marker + `Indexed(238)` row background — and `Enter` opens its
-/// package page via the Installed pane. Clicks don't hit-test here
-/// (`board_area` stays empty); the wheel still scrolls the cursor.
+/// package page via the Installed pane.
+///
+/// The recents block is pinned to the bottom of the inner area and
+/// rendered without wrapping, so each row is exactly one display
+/// line — that's what lets `Model::home_area` map a mouse click to a
+/// `recent_installed()` index. The wrapping header Paragraph takes
+/// whatever height is left above it.
 fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
+    m.home_area = Rect::default();
     let mut lines: Vec<Line> = Vec::new();
     // Wordmark — accent dot + bold white name; the crate version
     // rides beside it, the tagline on its own muted line.
@@ -262,13 +268,15 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
             Span::styled(right, Style::default().fg(MUTED)),
         ]));
     }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
+    // The recents block — section header plus one line per row (or
+    // the empty-state hint). Kept out of `lines` so it renders in its
+    // own fixed-height chunk below.
+    let mut tail: Vec<Line> = vec![Line::from(Span::styled(
         "recently installed",
         Style::default().fg(ACCENT),
-    )));
+    ))];
     if m.entries.is_empty() {
-        lines.push(Line::from(Span::styled(
+        tail.push(Line::from(Span::styled(
             "  nothing installed yet — `i` install by ref · `/` search · `:` commands",
             Style::default().fg(MUTED),
         )));
@@ -296,19 +304,42 @@ fn draw_home(f: &mut Frame, m: &mut Model, area: Rect) {
                 ));
             }
             let line = Line::from(spans);
-            lines.push(if cursor {
+            tail.push(if cursor {
                 line.style(Style::default().bg(Color::Indexed(238)))
             } else {
                 line
             });
         }
     }
-    f.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: true })
-            .block(Block::default().borders(Borders::ALL).title(" home ")),
-        area,
-    );
+    let block = Block::default().borders(Borders::ALL).title(" home ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.height == 0 || inner.width == 0 {
+        m.board_area = Rect::default();
+        m.viewport_top = 0;
+        return;
+    }
+    // Pin the tail to the bottom — `Min(0)` header above it. The tail
+    // Paragraph gets no `wrap`, so each `Line` is exactly one display
+    // row (long labels clip instead of wrapping onto the next row).
+    let tail_h = (tail.len() as u16).min(inner.height);
+    let chunks = Layout::vertical([Constraint::Min(0), Constraint::Length(tail_h)]).split(inner);
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: true }), chunks[0]);
+    f.render_widget(Paragraph::new(tail), chunks[1]);
+    // Data rows start one line below the "recently installed" header;
+    // height is the rows actually rendered (clipped on short frames).
+    let shown = chunks[1]
+        .height
+        .saturating_sub(1)
+        .min(m.recent_installed().len() as u16);
+    if shown > 0 {
+        m.home_area = Rect {
+            x: chunks[1].x,
+            y: chunks[1].y.saturating_add(1),
+            width: chunks[1].width,
+            height: shown,
+        };
+    }
     m.board_area = Rect::default();
     m.viewport_top = 0;
 }
@@ -1103,8 +1134,17 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
     // page's provenance). VERSION stays a column so the version
     // survives even when a long name pushes the label's `@ver` tail
     // off-screen.
-    let header = Row::new(vec!["NAME", "TYPE", "VERSION", "LICENSE", "DESCRIPTION"])
-        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    //
+    // LICENSE drops out below ~72 cols: the five Min/Length minimums
+    // (62 + column spacing) would squeeze DESCRIPTION to nothing, and
+    // the license still shows on the package page.
+    let license_col = area.width >= 72;
+    let mut head = vec!["NAME", "TYPE", "VERSION"];
+    if license_col {
+        head.push("LICENSE");
+    }
+    head.push("DESCRIPTION");
+    let header = Row::new(head).style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = m
         .reg_results
         .iter()
@@ -1122,25 +1162,31 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
                     Style::default().fg(MUTED),
                 ));
             }
-            Row::new(vec![
+            let mut cells = vec![
                 Cell::from(Line::from(name)),
                 Cell::from(e.kind.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(e.version.clone().unwrap_or_else(|| "-".into())),
-                Cell::from(e.license.clone().unwrap_or_else(|| "-".into())),
-                Cell::from(e.description.clone().unwrap_or_else(|| "-".into())),
-            ])
+            ];
+            if license_col {
+                cells.push(Cell::from(e.license.clone().unwrap_or_else(|| "-".into())));
+            }
+            cells.push(Cell::from(
+                e.description.clone().unwrap_or_else(|| "-".into()),
+            ));
+            Row::new(cells)
         })
         .collect();
     // DESCRIPTION is the flexible column — it absorbs leftover width
-    // and clips on narrow terminals; LICENSE stays a Min column so it
-    // survives degradation alongside NAME.
-    let widths = [
+    // and clips on narrow terminals.
+    let mut widths = vec![
         Constraint::Min(18),
         Constraint::Length(10),
         Constraint::Length(9),
-        Constraint::Min(11),
-        Constraint::Min(14),
     ];
+    if license_col {
+        widths.push(Constraint::Min(11));
+    }
+    widths.push(Constraint::Min(14));
     let title = format!(" registry — {} · /{} ", m.reg_target_label, m.reg_query);
     let table = Table::new(rows, widths)
         .header(header)
