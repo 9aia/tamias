@@ -4,8 +4,10 @@
 //! `tamias-store-local` entries with a client-side `/` filter; `Enter` opens the package
 //! page (`Detail`) on either the Installed row or a Registry result;
 //! the Registry pane searches a registry as-you-type; Services,
-//! Manifest, and Author cover provider lifecycle, the project `deps:`
-//! form, and pack/publish authoring.
+//! Project, and Publish cover provider lifecycle, the project `deps:`
+//! form, and pack/publish authoring. (`Pane::Manifest`/`Pane::Author`
+//! keep their enum names — only the tab labels and docs say
+//! PROJECT/PUBLISH.)
 //!
 //! Mutations never run on the event loop: [`Model::spawn`] hands a
 //! [`Job`] to a worker thread that calls the same library functions
@@ -98,8 +100,8 @@ impl Pane {
             Pane::Installed => "INSTALLED",
             Pane::Registry => "REGISTRY",
             Pane::Services => "SERVICES",
-            Pane::Manifest => "MANIFEST",
-            Pane::Author => "AUTHOR",
+            Pane::Manifest => "PROJECT",
+            Pane::Author => "PUBLISH",
         }
     }
 
@@ -127,10 +129,10 @@ pub enum PromptKind {
     InstallRef,
     /// `:registry <name>` — the search/install target override.
     RegistryTarget,
-    /// Manifest pane `a` — a dep ref to install + record (`tamias
+    /// Project pane `a` — a dep ref to install + record (`tamias
     /// add` equivalent).
     AddDep,
-    /// Manifest pane `e` — a new ref replacing dep `old`.
+    /// Project pane `e` — a new ref replacing dep `old`.
     SetDep {
         /// The dep ref being replaced.
         old: String,
@@ -141,9 +143,9 @@ pub enum PromptKind {
         /// Store label being deployed.
         name: String,
     },
-    /// Author pane `p` — `bundle pack` spec: `dir [out.tgz]`.
+    /// Publish pane `p` — `bundle pack` spec: `dir [out.tgz]`.
     PackSpec,
-    /// Author pane `P` — `publish` spec: `dir [registry]`.
+    /// Publish pane `P` — `publish` spec: `dir [registry]`.
     PublishSpec,
 }
 
@@ -398,7 +400,7 @@ enum Cmd {
     /// `:manifest` — (re)load the project manifest.
     Manifest,
     /// `:sync [--from-lock]` — reconcile the project dep set
-    /// (`--from-lock` treats `tamias.lock` as the spec; Manifest pane
+    /// (`--from-lock` treats `tamias.lock` as the spec; Project pane
     /// `s`/`S` too).
     Sync {
         /// Install `tamias.lock` entries verbatim.
@@ -815,7 +817,7 @@ pub struct Model {
     /// kills it; quitting the app kills it too.
     pub stream_child: Option<Arc<Mutex<Child>>>,
 
-    // --- manifest pane (phase 5) ---
+    // --- project pane (phase 5) ---
     /// The project manifest path the deps form edits.
     pub manifest_path: PathBuf,
     /// The parsed project manifest (`deps:` editable; the rest is
@@ -826,7 +828,7 @@ pub struct Model {
     /// Cursor into `project.deps`.
     pub man_sel: usize,
 
-    // --- author pane (phase 6) ---
+    // --- publish pane (phase 6) ---
     /// Configured registry names for the publish picker — loaded on
     /// pane entry (`ops::registry_names`).
     pub author_regs: Vec<(String, String)>,
@@ -938,7 +940,7 @@ impl Model {
         self.load_manifest();
     }
 
-    /// (Re)read the project manifest for the Manifest pane — a tiny
+    /// (Re)read the project manifest for the Project pane — a tiny
     /// file read, cheap enough for the event loop (same posture as the
     /// detail view's `entry.manifest()`). Runs on every reload so
     /// dep edits — ours or another `tamias add`'s — show up without a
@@ -1441,10 +1443,10 @@ impl Model {
             // Services entry marks the table stale — `tick` fires the
             // refresh once the worker frees up.
             Pane::Services => self.svc_stale = true,
-            // Manifest entry re-reads the project manifest — a tiny
+            // Project entry re-reads the project manifest — a tiny
             // file read, same posture as the detail view.
             Pane::Manifest => self.load_manifest(),
-            // Author entry refreshes the configured-registry list.
+            // Publish entry refreshes the configured-registry list.
             Pane::Author => self.author_regs = ops::registry_names(&self.ctx),
             _ => {}
         }
@@ -2044,7 +2046,7 @@ impl Model {
         }
     }
 
-    // --- Manifest pane verbs ---
+    // --- Project pane verbs ---
 
     /// `a`/`x`/`d`/`e`/`s` on the deps form — add/remove/set-ref/sync.
     fn man_verb(&mut self, key: char) {
@@ -2080,9 +2082,9 @@ impl Model {
         }
     }
 
-    // --- Author pane verbs ---
+    // --- Publish pane verbs ---
 
-    /// `p`/`P`/`r`/`R` on the Author pane — pack/publish/registries.
+    /// `p`/`P`/`r`/`R` on the Publish pane — pack/publish/registries.
     fn author_verb(&mut self, key: char) {
         match key {
             'p' => {
@@ -2676,18 +2678,18 @@ impl Model {
             KeyCode::Char('i') => self.verb_install(),
             // Services-pane verbs route through `svc_verb` — the keys
             // don't collide with Installed's (pane-gated). `!` is
-            // restart: `r` stays exclusive to the Author pane's
+            // restart: `r` stays exclusive to the Publish pane's
             // registries report so the key keeps one meaning app-wide.
             KeyCode::Char(
                 c @ ('s' | 'S' | '!' | 'e' | 'E' | 'd' | 'x' | 't' | 'T' | 'n' | 'R'),
             ) if self.pane == Pane::Services => self.svc_verb(c),
-            // Manifest pane: add/remove/edit dep + sync + reload.
+            // Project pane: add/remove/edit dep + sync + reload.
             KeyCode::Char(c @ ('a' | 'x' | 'd' | 'e' | 's' | 'R'))
                 if self.pane == Pane::Manifest =>
             {
                 self.man_verb(c)
             }
-            // Author pane: pack/publish/registries.
+            // Publish pane: pack/publish/registries.
             KeyCode::Char(c @ ('p' | 'P' | 'r' | 'R')) if self.pane == Pane::Author => {
                 self.author_verb(c)
             }

@@ -8,8 +8,8 @@
 //! `v`/`u`/`p`/`x`/`c`/`d`/`i` run the same library calls
 //! `tamias-serve`/the CLI use on worker threads (confirm + consent
 //! modals, streamed phase log); the Registry pane searches a registry
-//! as-you-type and `i` installs a result. The Services, Manifest, and
-//! Author panes cover provider lifecycle, the project `deps:` form,
+//! as-you-type and `i` installs a result. The Services, Project, and
+//! Publish panes cover provider lifecycle, the project `deps:` form,
 //! and pack/publish authoring. Terminal
 //! discipline mirrors `myco-tui`: alternate screen, raw mode, a
 //! drop guard, a panic hook, mouse capture, and a `notify` watcher

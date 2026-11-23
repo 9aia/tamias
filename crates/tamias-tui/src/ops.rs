@@ -839,7 +839,7 @@ fn provider_uninstall(
     Ok(Outcome::Text(format!("uninstalled {name}")))
 }
 
-/// The project manifest the Manifest pane edits — `./tamias.yaml`
+/// The project manifest the Project pane edits — `./tamias.yaml`
 /// first (the file `tamias add` writes), then an existing
 /// `./tamias.yml`; a lone `tamias.toml` is refused because
 /// [`Manifest::save`] always writes YAML. Missing entirely → the
@@ -946,7 +946,7 @@ fn set_dep(
 }
 
 /// `tamias sync` — the shared [`tamias_install::sync_project`] over
-/// the project the Manifest pane edits (same [`project_manifest`]
+/// the project the Project pane edits (same [`project_manifest`]
 /// discovery, so `tamias.toml`-only projects get the same refusal).
 /// `from_lock` swaps the spec to `tamias.lock` itself — the manifest
 /// isn't even required then. Per-dep outcomes stream to the log; any
@@ -1094,7 +1094,7 @@ pub fn registry_names(ctx: &Ctx) -> Vec<(String, String)> {
     out
 }
 
-/// `:registries`/the Author pane's list — names + kinds, one per
+/// `:registries`/the Publish pane's list — names + kinds, one per
 /// line, defaults annotated.
 fn registries(ctx: &Ctx) -> Result<Outcome, Error> {
     let rows = registry_names(ctx);
