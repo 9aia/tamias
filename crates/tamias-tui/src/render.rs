@@ -1277,7 +1277,14 @@ fn draw_log_overlay(f: &mut Frame, m: &mut Model, area: Rect) {
 fn draw_status(f: &mut Frame, m: &Model, area: Rect) {
     let left = if let Some(busy) = &m.busy {
         let frame = SPINNER[(m.tick_n as usize) % SPINNER.len()];
-        format!("{frame} {busy}")
+        // Busy doesn't swallow the status toast — a "busy — still
+        // running" refusal or a finished job's summary stays visible
+        // next to the spinner (`fit_width` truncates the tail).
+        if m.status.is_empty() {
+            format!("{frame} {busy}")
+        } else {
+            format!("{frame} {busy} · {}", m.status)
+        }
     } else if !m.status.is_empty() {
         m.status.clone()
     } else {

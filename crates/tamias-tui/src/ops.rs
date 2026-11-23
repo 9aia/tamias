@@ -199,7 +199,7 @@ impl Job {
             Self::Remove(n) => format!("remove {n}"),
             Self::Update { name, .. } => format!("update {name}"),
             Self::UpdateAll { .. } => "update all".to_string(),
-            Self::Pin { name, .. } => format!("pin {name}"),
+            Self::Pin { name, reference } => format!("pin {name} → {reference}"),
             Self::CacheClean { all } => {
                 if *all {
                     "cache clean --all".to_string()
@@ -252,6 +252,30 @@ impl Job {
     #[must_use]
     pub fn is_stream(&self) -> bool {
         matches!(self, Self::RunService { .. } | Self::Logs { .. })
+    }
+
+    /// Does this job mutate the store or provider state the panes
+    /// show? `Done` uses it to decide the post-job store `reload` +
+    /// services-refresh — read-only jobs (verify, doctor, search,
+    /// registries, cache clean, pack, publish, stream exits,
+    /// services refresh itself) skip both.
+    #[must_use]
+    pub fn mutates(&self) -> bool {
+        matches!(
+            self,
+            Self::Install { .. }
+                | Self::Remove(_)
+                | Self::Update { .. }
+                | Self::UpdateAll { .. }
+                | Self::Pin { .. }
+                | Self::AddDep { .. }
+                | Self::RemoveDep { .. }
+                | Self::SetDep { .. }
+                | Self::Sync { .. }
+                | Self::ProviderDeploy { .. }
+                | Self::ProviderUninstall { .. }
+                | Self::UnitAction { .. }
+        )
     }
 
     /// The same job with bundled-driver consent granted — what the

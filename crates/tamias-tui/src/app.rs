@@ -545,18 +545,6 @@ fn parse_command(cmd: &str) -> Result<Cmd, String> {
     }
 }
 
-/// Display word for a [`tamias_provider::UnitAction`] — confirm-modal
-/// titles and `:service` feedback.
-fn unit_action_word(action: tamias_provider::UnitAction) -> &'static str {
-    match action {
-        tamias_provider::UnitAction::Start => "start",
-        tamias_provider::UnitAction::Stop => "stop",
-        tamias_provider::UnitAction::Restart => "restart",
-        tamias_provider::UnitAction::Enable => "enable",
-        tamias_provider::UnitAction::Disable => "disable",
-    }
-}
-
 /// `:service <verb>` word → action (`parse_command` already
 /// whitelists, this is the typed bridge).
 fn unit_action_from_word(word: &str) -> Option<tamias_provider::UnitAction> {
@@ -569,6 +557,15 @@ fn unit_action_from_word(word: &str) -> Option<tamias_provider::UnitAction> {
         "disable" => A::Disable,
         _ => return None,
     })
+}
+
+/// Ctrl/Alt chords are never verb or text input — Shift is fine
+/// (it arrives as the shifted char itself, e.g. `Char('G')` +
+/// `SHIFT`). Ctrl-C force-quit is handled before this gate in
+/// [`Model::key`].
+fn chorded(k: &KeyEvent) -> bool {
+    k.modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
 
 /// The whole TUI state.
@@ -652,6 +649,10 @@ pub struct Model {
     work_rx: Receiver<Msg>,
     /// The running job's label (`None` = idle) — drives the spinner.
     pub busy: Option<String>,
+    /// The running [`Job`] itself — `Done` arms read it to decide
+    /// whether the store/services views need a refresh (read-only
+    /// jobs skip both). Cleared alongside `busy`.
+    busy_job: Option<Job>,
     /// Op log — phase lines, warnings, results; the log strip shows
     /// the tail.
     pub log: VecDeque<String>,
@@ -707,8 +708,9 @@ pub struct Model {
     pub svc_rows: Vec<ServiceRow>,
     /// Cursor into `svc_rows`.
     pub svc_sel: usize,
-    /// Services rows are stale — pane entry, unit mutations, and
-    /// `:services` set it; `tick` turns it into a refresh job.
+    /// Services rows are stale — pane entry, unit mutations,
+    /// `:services`, and mutating-job completions set it; `tick`
+    /// turns it into a refresh job from any pane.
     pub svc_stale: bool,
     /// Last services-refresh failure.
     pub svc_err: Option<String>,
@@ -768,6 +770,7 @@ impl Model {
             work_tx,
             work_rx,
             busy: None,
+            busy_job: None,
             log: VecDeque::new(),
             modal: None,
             detail: None,
@@ -786,7 +789,10 @@ impl Model {
             search_inflight: None,
             svc_rows: Vec::new(),
             svc_sel: 0,
-            svc_stale: true,
+            // Lazy: pane entry, `:services`, unit mutations, and
+            // mutating-job completions set it — `tick` fires the
+            // refresh wherever the user happens to be.
+            svc_stale: false,
             svc_err: None,
             stream_child: None,
             manifest_path: PathBuf::from("tamias.yaml"),
@@ -878,9 +884,10 @@ impl Model {
         }
         self.drain_work();
         // A stale Services table becomes a refresh job — pane entry,
-        // unit mutations, and `:services` all set the flag; `busy`
-        // gates it so refreshes never queue behind ops.
-        if self.pane == Pane::Services && self.svc_stale && self.busy.is_none() {
+        // unit mutations, `:services`, and mutating-job completions
+        // all set the flag; `busy` serializes it so refreshes never
+        // queue behind ops, and the refresh runs from any pane.
+        if self.svc_stale && self.busy.is_none() {
             self.svc_stale = false;
             self.spawn(Job::ServicesRefresh);
         }
@@ -945,9 +952,10 @@ impl Model {
             return;
         }
         self.busy = Some(job.label());
+        self.busy_job = Some(job.clone());
         let ctx = self.ctx.clone();
         let tx = self.work_tx.clone();
-        let j = job.clone();
+        let j = job;
         if j.is_stream() {
             // Stream jobs own a child + reader threads; the handle
             // comes back as Msg::StreamChild for `x` to kill.
@@ -985,6 +993,7 @@ impl Model {
                 Msg::Log(line) => self.push_log(line),
                 Msg::Consent(job, reason) => {
                     self.busy = None;
+                    self.busy_job = None;
                     self.modal = Some(Modal::Consent { job, reason });
                 }
                 Msg::StreamChild(child) => {
@@ -1012,15 +1021,33 @@ impl Model {
                     }
                 }
                 Msg::Done(Ok(Outcome::Text(text))) => {
+                    // Only mutating jobs invalidate the store/services
+                    // views — verify/doctor/registries/pack/publish/
+                    // stream exits are read-only and skip the reload.
+                    let mutating = self.busy_job.as_ref().is_some_and(Job::mutates);
                     self.busy = None;
+                    self.busy_job = None;
                     self.stream_child = None;
-                    self.svc_stale = true;
-                    self.push_log(format!("ok — {text}"));
-                    self.say(text);
-                    self.reload();
+                    if mutating {
+                        self.svc_stale = true;
+                    }
+                    // Reports (doctor, registries) arrive `\n`-joined —
+                    // first line to the status bar, every line its own
+                    // log entry instead of one giant wrapped row.
+                    let mut lines = text.lines();
+                    let first = lines.next().unwrap_or("done");
+                    self.push_log(format!("ok — {first}"));
+                    self.say(first.to_string());
+                    for line in lines {
+                        self.push_log(line.to_string());
+                    }
+                    if mutating {
+                        self.reload();
+                    }
                 }
                 Msg::Done(Ok(Outcome::Search { target, results })) => {
                     self.busy = None;
+                    self.busy_job = None;
                     // Drop stale hits — the query moved on while the
                     // search was in flight; the debounce will refire.
                     let fresh = self
@@ -1039,15 +1066,24 @@ impl Model {
                 }
                 Msg::Done(Ok(Outcome::Services(rows))) => {
                     self.busy = None;
+                    self.busy_job = None;
                     self.svc_err = None;
                     self.svc_rows = rows;
                     self.svc_sel = self.svc_sel.min(self.svc_rows.len().saturating_sub(1));
                     self.push_log(format!("services: {} row(s)", self.svc_rows.len()));
                 }
                 Msg::Done(Err(e)) => {
+                    // A failed mutating job may have changed provider
+                    // state before erroring — mark services stale;
+                    // read-only failures (incl. a failed refresh
+                    // itself) must not re-arm the refresh.
+                    let mutating = self.busy_job.as_ref().is_some_and(Job::mutates);
                     self.busy = None;
+                    self.busy_job = None;
                     self.stream_child = None;
-                    self.svc_stale = true;
+                    if mutating {
+                        self.svc_stale = true;
+                    }
                     if self.pane == Pane::Services {
                         self.svc_err = Some(e.clone());
                     }
@@ -1076,8 +1112,15 @@ impl Model {
     }
 
     /// Spawn the current `reg_query` search (skips empty queries —
-    /// the pane shows its hint instead).
+    /// the pane shows its hint instead). While a job holds `busy`,
+    /// `spawn` would refuse and the query would be lost — re-arm the
+    /// debounce instead so [`Model::maybe_search`] retries once the
+    /// job lands.
     fn fire_search(&mut self) {
+        if self.busy.is_some() {
+            self.search_typed_at = Some(Instant::now());
+            return;
+        }
         let query = self.reg_query.trim().to_string();
         if query.is_empty() {
             self.reg_results.clear();
@@ -1453,11 +1496,13 @@ impl Model {
 
     // --- confirms / prompts ---
 
-    /// Open the confirm modal for a mutating job on `name` — the body
+    /// Open the confirm modal for a mutating `job` — the title is the
+    /// job's own label (`install nine:tamias@0.3.0 — sure? [y/n]`), so
+    /// the dialog always names exactly what `y` will mutate. The body
     /// warns about driver teardown when the record's kind isn't
     /// `files` (serve's remove rule, surfaced up front).
-    fn confirm_job(&mut self, verb: &str, job: Job) {
-        // Resolve the entry for the teardown warning + label.
+    fn confirm_job(&mut self, job: Job) {
+        // Resolve the entry for the teardown warning.
         let name = match &job {
             Job::Remove(n) | Job::Update { name: n, .. } | Job::Pin { name: n, .. } => n.clone(),
             _ => String::new(),
@@ -1474,7 +1519,7 @@ impl Model {
             }
         }
         self.modal = Some(Modal::Confirm {
-            title: format!("{verb} — sure? [y/n]"),
+            title: format!("{} — sure? [y/n]", job.label()),
             body,
             job,
         });
@@ -1488,6 +1533,16 @@ impl Model {
             Some(Modal::Consent { job, .. }) => self.spawn(job.with_drivers_allowed()),
             None => {}
         }
+    }
+
+    /// `n`/`esc` on a modal — cancels (the safe default). A declined
+    /// driver-consent install says so on the status bar instead of
+    /// vanishing silently.
+    fn modal_no(&mut self) {
+        if matches!(self.modal, Some(Modal::Consent { .. })) {
+            self.say("install declined — bundled drivers not allowed");
+        }
+        self.modal = None;
     }
 
     /// Run a `p`/`i`/`:registry` prompt's buffer.
@@ -1506,26 +1561,20 @@ impl Model {
                 if text.is_empty() {
                     self.say_err("pin: empty ref");
                 } else {
-                    self.confirm_job(
-                        "pin",
-                        Job::Pin {
-                            name,
-                            reference: text,
-                        },
-                    );
+                    self.confirm_job(Job::Pin {
+                        name,
+                        reference: text,
+                    });
                 }
             }
             PromptKind::InstallRef => {
                 if text.is_empty() {
                     self.say_err("install: empty ref");
                 } else {
-                    self.confirm_job(
-                        "install",
-                        Job::Install {
-                            reference: text,
-                            allow_drivers: false,
-                        },
-                    );
+                    self.confirm_job(Job::Install {
+                        reference: text,
+                        allow_drivers: false,
+                    });
                 }
             }
             PromptKind::RegistryTarget => {
@@ -1545,7 +1594,9 @@ impl Model {
                 if text.is_empty() {
                     self.say_err("add dep: empty ref");
                 } else {
-                    self.spawn(Job::AddDep {
+                    // Same confirm posture as the sibling mutating
+                    // verbs — the title names the ref being added.
+                    self.confirm_job(Job::AddDep {
                         reference: text,
                         allow_drivers: false,
                     });
@@ -1555,23 +1606,17 @@ impl Model {
                 if text.is_empty() {
                     self.say_err("set dep: empty ref");
                 } else {
-                    self.confirm_job(
-                        &format!("set dep {old} → {text}"),
-                        Job::SetDep {
-                            old,
-                            new: text,
-                            allow_drivers: false,
-                        },
-                    );
+                    self.confirm_job(Job::SetDep {
+                        old,
+                        new: text,
+                        allow_drivers: false,
+                    });
                 }
             }
             PromptKind::DeployConfig { name } => {
                 // Empty answer = no driver config, same as `:deploy`.
                 let config = if text.is_empty() { None } else { Some(text) };
-                self.confirm_job(
-                    &format!("deploy {name}"),
-                    Job::ProviderDeploy { name, config },
-                );
+                self.confirm_job(Job::ProviderDeploy { name, config });
             }
             PromptKind::PackSpec => {
                 let mut it = text.split_whitespace();
@@ -1593,13 +1638,10 @@ impl Model {
                 if dir.is_empty() {
                     self.say_err("publish: empty spec — usage: dir [registry]");
                 } else {
-                    self.confirm_job(
-                        &format!("publish {dir}"),
-                        Job::Publish {
-                            dir: dir.to_string(),
-                            registry: registry.map(str::to_string),
-                        },
-                    );
+                    self.confirm_job(Job::Publish {
+                        dir: dir.to_string(),
+                        registry: registry.map(str::to_string),
+                    });
                 }
             }
         }
@@ -1613,13 +1655,10 @@ impl Model {
     fn install_registry_entry(&mut self, entry: RegistryEntry) {
         match ops::entry_install_ref(&self.ctx, &entry, self.reg_target.as_deref()) {
             Ok(reference) => {
-                self.confirm_job(
-                    "install",
-                    Job::Install {
-                        reference,
-                        allow_drivers: false,
-                    },
-                );
+                self.confirm_job(Job::Install {
+                    reference,
+                    allow_drivers: false,
+                });
             }
             Err(e) => self.say_err(format!("{e} — `:registry <name>` picks another target")),
         }
@@ -1771,13 +1810,10 @@ impl Model {
     /// `u` — update the selected entry from its recorded ref.
     fn verb_update(&mut self) {
         if let Some(label) = self.selected_label() {
-            self.confirm_job(
-                "update",
-                Job::Update {
-                    name: label,
-                    allow_drivers: false,
-                },
-            );
+            self.confirm_job(Job::Update {
+                name: label,
+                allow_drivers: false,
+            });
         }
     }
 
@@ -1792,20 +1828,13 @@ impl Model {
     /// `x` — remove confirm (teardown warning for non-`files`).
     fn verb_remove(&mut self) {
         if let Some(label) = self.selected_label() {
-            self.confirm_job("remove", Job::Remove(label));
+            self.confirm_job(Job::Remove(label));
         }
     }
 
     /// `c`/`C` — cache clean confirm (>30d / all).
     fn verb_cache_clean(&mut self, all: bool) {
-        self.confirm_job(
-            if all {
-                "cache clean --all"
-            } else {
-                "cache clean >30d"
-            },
-            Job::CacheClean { all },
-        );
+        self.confirm_job(Job::CacheClean { all });
     }
 
     /// `d` — doctor summary.
@@ -1846,13 +1875,10 @@ impl Model {
             _ => None,
         };
         if let Some(action) = action {
-            self.confirm_job(
-                unit_action_word(action),
-                Job::UnitAction {
-                    unit: row.unit.clone(),
-                    action,
-                },
-            );
+            self.confirm_job(Job::UnitAction {
+                unit: row.unit.clone(),
+                action,
+            });
             return;
         }
         match key {
@@ -1863,12 +1889,9 @@ impl Model {
                 });
             }
             'x' => {
-                self.confirm_job(
-                    &format!("uninstall {}", row.package),
-                    Job::ProviderUninstall {
-                        name: row.package.clone(),
-                    },
-                );
+                self.confirm_job(Job::ProviderUninstall {
+                    name: row.package.clone(),
+                });
             }
             't' => self.spawn(Job::Logs {
                 name: row.package.clone(),
@@ -1904,22 +1927,15 @@ impl Model {
             // `s` reconciles the whole `deps:` set (`tamias sync`) —
             // confirm first like the other mutating verbs. `S` is the
             // lock-spec variant (`tamias sync --from-lock`).
-            's' | 'S' => self.confirm_job(
-                if key == 'S' {
-                    "sync --from-lock"
-                } else {
-                    "sync deps"
-                },
-                Job::Sync {
-                    allow_drivers: false,
-                    from_lock: key == 'S',
-                },
-            ),
+            's' | 'S' => self.confirm_job(Job::Sync {
+                allow_drivers: false,
+                from_lock: key == 'S',
+            }),
             // `d`/`x` both drop the dep (the proposal's two remove
             // keys); `a` adds, `e` edits the ref.
             'x' | 'd' => match self.dep_selected() {
                 Some(dep) => {
-                    self.confirm_job("remove dep", Job::RemoveDep { reference: dep });
+                    self.confirm_job(Job::RemoveDep { reference: dep });
                 }
                 None => self.say_err("no dep selected"),
             },
@@ -1971,42 +1987,33 @@ impl Model {
             Ok(Cmd::Help) => self.mode = Mode::Help,
             Ok(Cmd::Log) => self.open_log(),
             Ok(Cmd::Install(reference)) => {
-                self.confirm_job(
-                    "install",
-                    Job::Install {
-                        reference,
-                        allow_drivers: false,
-                    },
-                );
+                self.confirm_job(Job::Install {
+                    reference,
+                    allow_drivers: false,
+                });
             }
             Ok(Cmd::Remove(name)) => {
-                self.confirm_job("remove", Job::Remove(name));
+                self.confirm_job(Job::Remove(name));
             }
             Ok(Cmd::Verify(name)) => self.spawn(Job::Verify(name)),
             Ok(Cmd::Update(name)) => match name {
-                Some(name) => self.confirm_job(
-                    "update",
-                    Job::Update {
-                        name,
-                        allow_drivers: false,
-                    },
-                ),
+                Some(name) => self.confirm_job(Job::Update {
+                    name,
+                    allow_drivers: false,
+                }),
                 None => {
                     let n = self.entries.len();
                     if n == 0 {
                         self.say_err("nothing installed — `i` installs by ref");
                     } else {
-                        self.confirm_job(
-                            "update all",
-                            Job::UpdateAll {
-                                allow_drivers: false,
-                            },
-                        );
+                        self.confirm_job(Job::UpdateAll {
+                            allow_drivers: false,
+                        });
                     }
                 }
             },
             Ok(Cmd::Pin(name, reference)) => {
-                self.confirm_job("pin", Job::Pin { name, reference });
+                self.confirm_job(Job::Pin { name, reference });
             }
             Ok(Cmd::Search(query)) => {
                 self.switch_pane(Pane::Registry);
@@ -2039,7 +2046,7 @@ impl Model {
                     self.say_err(format!("unknown service verb '{action}'"));
                     return;
                 };
-                self.confirm_job(unit_action_word(action), Job::UnitAction { unit, action });
+                self.confirm_job(Job::UnitAction { unit, action });
             }
             Ok(Cmd::Run { package, service }) => self.spawn(Job::RunService { package, service }),
             Ok(Cmd::Logs { name, follow }) => self.spawn(Job::Logs { name, follow }),
@@ -2067,13 +2074,10 @@ impl Model {
                 if dir.is_empty() {
                     self.say_err("publish: empty spec — usage: dir [registry]");
                 } else {
-                    self.confirm_job(
-                        &format!("publish {dir}"),
-                        Job::Publish {
-                            dir: dir.to_string(),
-                            registry: registry.map(str::to_string),
-                        },
-                    );
+                    self.confirm_job(Job::Publish {
+                        dir: dir.to_string(),
+                        registry: registry.map(str::to_string),
+                    });
                 }
             }
             Ok(Cmd::Registries) => self.spawn(Job::Registries),
@@ -2082,17 +2086,10 @@ impl Model {
                 self.say("manifest reloaded");
             }
             Ok(Cmd::Sync { from_lock }) => {
-                self.confirm_job(
-                    if from_lock {
-                        "sync --from-lock"
-                    } else {
-                        "sync deps"
-                    },
-                    Job::Sync {
-                        allow_drivers: false,
-                        from_lock,
-                    },
-                );
+                self.confirm_job(Job::Sync {
+                    allow_drivers: false,
+                    from_lock,
+                });
             }
             Err(e) if e.is_empty() => {}
             Err(e) => self.say_err(e),
@@ -2144,7 +2141,11 @@ impl Model {
                 self.mode = Mode::Normal;
                 self.cmd_completions.clear();
                 let quit = matches!(self.cmdline.trim(), "q" | "quit" | "q!");
-                if !quit {
+                if quit {
+                    // Same teardown as bare `q`/Ctrl-C — a stream
+                    // child (`run`/`logs -f`) must not outlive quit.
+                    self.kill_stream();
+                } else {
                     self.run_command();
                 }
                 quit
@@ -2168,7 +2169,7 @@ impl Model {
                 self.apply_completion(false);
                 false
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char(c) if !chorded(&k) => {
                 self.cmdline.push(c);
                 self.refresh_completions();
                 false
@@ -2199,7 +2200,7 @@ impl Model {
                 self.rebuild_sel(None, self.sel);
                 false
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char(c) if !chorded(&k) => {
                 self.input.push(c);
                 self.filter = self.input.clone();
                 self.rebuild_sel(None, self.sel);
@@ -2211,6 +2212,8 @@ impl Model {
 
     /// `/` mode keys on Registry — the query edits `reg_query` live;
     /// `tick` debounces the actual search, `Enter` fires it now.
+    /// `esc` only leaves the mode — the query and results are the
+    /// pane's persistent state (pane switches keep them too).
     fn key_search(&mut self, k: KeyEvent) -> bool {
         match k.code {
             KeyCode::Enter => {
@@ -2221,11 +2224,6 @@ impl Model {
             }
             KeyCode::Esc => {
                 self.mode = Mode::Normal;
-                self.input.clear();
-                self.reg_query.clear();
-                self.reg_results.clear();
-                self.reg_err = None;
-                self.search_typed_at = None;
                 false
             }
             KeyCode::Backspace => {
@@ -2234,7 +2232,7 @@ impl Model {
                 self.search_typed_at = Some(Instant::now());
                 false
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char(c) if !chorded(&k) => {
                 self.input.push(c);
                 self.reg_query = self.input.clone();
                 self.search_typed_at = Some(Instant::now());
@@ -2260,7 +2258,7 @@ impl Model {
                 self.prompt_buf.pop();
                 false
             }
-            KeyCode::Char(c) => {
+            KeyCode::Char(c) if !chorded(&k) => {
                 self.prompt_buf.push(c);
                 false
             }
@@ -2270,6 +2268,9 @@ impl Model {
 
     /// `?` overlay — any of `esc`/`?`/`q` closes.
     fn key_help(&mut self, k: KeyEvent) -> bool {
+        if chorded(&k) {
+            return false;
+        }
         match k.code {
             KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
                 self.mode = Mode::Normal;
@@ -2298,6 +2299,9 @@ impl Model {
     /// Everything else is swallowed while the overlay is up (same
     /// posture as `key_help`).
     fn key_log(&mut self, k: KeyEvent) -> bool {
+        if chorded(&k) {
+            return false;
+        }
         match k.code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('L') => {
                 self.mode = Mode::Normal;
@@ -2324,18 +2328,24 @@ impl Model {
     }
 
     /// Modal keys — `y` confirms, `n`/`esc` cancels (default `n`).
-    /// Returns `true` when the key was consumed by the modal.
+    /// Chord-modified chars (Ctrl/Alt) never count — Ctrl+Y must not
+    /// confirm a destructive op. Returns `true` when the key was
+    /// consumed by the modal.
     fn key_modal(&mut self, k: KeyEvent) -> bool {
         if self.modal.is_none() {
             return false;
         }
         match k.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
+            KeyCode::Char('y') | KeyCode::Char('Y') if !chorded(&k) => {
                 self.modal_yes();
                 true
             }
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                self.modal = None;
+            KeyCode::Char('n') | KeyCode::Char('N') if !chorded(&k) => {
+                self.modal_no();
+                true
+            }
+            KeyCode::Esc => {
+                self.modal_no();
                 true
             }
             _ => true, // swallow everything else while a modal is up
@@ -2371,6 +2381,12 @@ impl Model {
             Mode::Help => return self.key_help(k),
             Mode::Log => return self.key_log(k),
             Mode::Normal => {}
+        }
+        // Ctrl/Alt chords never reach the pane verbs below — every
+        // `Char` arm is a plain keystroke (Shift arrives as the
+        // shifted char itself). Ctrl-C already force-quit above.
+        if matches!(k.code, KeyCode::Char(_)) && chorded(&k) {
+            return false;
         }
         match k.code {
             // `q` backs out of an open package page first (same
@@ -2458,8 +2474,8 @@ impl Model {
                     self.sync_sel_label();
                 }
             },
-            KeyCode::Char('/') => {
-                if self.pane == Pane::Home {
+            KeyCode::Char('/') => match self.pane {
+                Pane::Home => {
                     // Home has no filter of its own — `/` is the way
                     // into registry search: switch panes and land in
                     // Search mode with an empty query.
@@ -2469,19 +2485,20 @@ impl Model {
                     self.reg_err = None;
                     self.input.clear();
                     self.mode = Mode::Search;
-                } else {
-                    self.mode = if self.pane == Pane::Registry {
-                        Mode::Search
-                    } else {
-                        Mode::Filter
-                    };
-                    self.input = if self.pane == Pane::Registry {
-                        self.reg_query.clone()
-                    } else {
-                        self.filter.clone()
-                    };
                 }
-            }
+                Pane::Registry => {
+                    self.mode = Mode::Search;
+                    self.input = self.reg_query.clone();
+                }
+                Pane::Installed => {
+                    self.mode = Mode::Filter;
+                    self.input = self.filter.clone();
+                }
+                // The `/` filter only exists on Installed — anywhere
+                // else it would edit hidden state, so say where it
+                // lives instead of silently mutating `self.filter`.
+                _ => self.say("filter is Installed-only — `2` jumps there"),
+            },
             KeyCode::Char(':') => {
                 self.mode = Mode::Command;
                 self.cmdline.clear();
@@ -2508,12 +2525,11 @@ impl Model {
             }
             KeyCode::Char('v') if self.pane == Pane::Installed => self.verb_verify(),
             KeyCode::Char('u') if self.pane == Pane::Installed => self.verb_update(),
-            KeyCode::Char('U') if self.pane == Pane::Installed => self.confirm_job(
-                "update all",
-                Job::UpdateAll {
+            KeyCode::Char('U') if self.pane == Pane::Installed => {
+                self.confirm_job(Job::UpdateAll {
                     allow_drivers: false,
-                },
-            ),
+                })
+            }
             KeyCode::Char('p') if self.pane == Pane::Installed => self.verb_pin(),
             // `x` removes — the same destructive key as Services'
             // uninstall and Manifest's dep removal. (`x` with a live
@@ -3338,5 +3354,270 @@ mod tests {
         m.home_area = Rect::default();
         m.mouse(click(4));
         assert_eq!(m.home_sel, 2);
+    }
+
+    /// A bare model on a temp store — the shared fixture for the
+    /// key/confirm/drain tests below.
+    fn bare_model() -> (tempfile::TempDir, Model) {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Ctx::new(
+            tmp.path().join("store"),
+            tmp.path().join("cache"),
+            tmp.path().join("registry"),
+            Some(tmp.path().join("no-such-config.yml")),
+        );
+        (tmp, Model::open(&ctx).unwrap())
+    }
+
+    /// Ctrl/Alt chords never fire verbs: Ctrl+Y can't confirm a
+    /// modal, Ctrl+Q can't quit, Ctrl+X can't remove — while plain
+    /// and Shift-modified chars still work (Shift arrives as the
+    /// shifted char itself).
+    #[test]
+    fn modifier_chords_do_not_fire_verbs() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code, mods| KeyEvent::new(code, mods);
+        // A confirm modal up: Ctrl+Y is swallowed, `y` confirms.
+        m.modal = Some(Modal::Confirm {
+            title: "remove w — sure? [y/n]".into(),
+            body: Vec::new(),
+            job: Job::Remove("w".into()),
+        });
+        assert!(!m.key(key(KeyCode::Char('y'), KeyModifiers::CONTROL)));
+        assert!(m.modal.is_some());
+        assert!(m.busy.is_none());
+        // Alt+Y likewise; plain `y` is the real confirm.
+        assert!(!m.key(key(KeyCode::Char('y'), KeyModifiers::ALT)));
+        assert!(m.modal.is_some());
+        m.key(key(KeyCode::Char('y'), KeyModifiers::NONE));
+        assert!(m.modal.is_none());
+        assert!(m.busy.is_some());
+        // Ctrl+Q at pane level is not the quit.
+        assert!(!m.key(key(KeyCode::Char('q'), KeyModifiers::CONTROL)));
+        // Ctrl+X on Installed doesn't open the remove confirm.
+        m.busy = None;
+        m.busy_job = None;
+        m.pane = Pane::Installed;
+        m.entries.push(store_row("w", 1));
+        m.key(key(KeyCode::Char('x'), KeyModifiers::CONTROL));
+        assert!(m.modal.is_none());
+        assert!(m.busy.is_none());
+        // Shift+'U' still fires update-all — the shifted char is the
+        // input, SHIFT isn't a chord.
+        m.key(key(KeyCode::Char('U'), KeyModifiers::SHIFT));
+        assert!(matches!(m.modal, Some(Modal::Confirm { .. })));
+    }
+
+    /// Every confirm title names its target — the job's own label —
+    /// and Manifest `a` (AddDep) confirms like its siblings.
+    #[test]
+    fn confirm_title_names_the_target() {
+        let (_tmp, mut m) = bare_model();
+        let title = |m: &Model| match &m.modal {
+            Some(Modal::Confirm { title, .. }) => title.clone(),
+            other => panic!("expected confirm modal, got {other:?}"),
+        };
+        // Install-by-ref prompt.
+        m.mode = Mode::Prompt(PromptKind::InstallRef);
+        m.prompt_buf = "nine:tamias@0.3.0".into();
+        m.run_prompt();
+        assert!(title(&m).contains("nine:tamias@0.3.0"), "{}", title(&m));
+        // `:remove` names the store label.
+        m.modal = None;
+        m.cmdline = "remove w@1.0.0".into();
+        m.run_command();
+        assert!(title(&m).contains("w@1.0.0"), "{}", title(&m));
+        // Manifest add-dep confirms (was a bare spawn) and names the ref.
+        m.modal = None;
+        m.mode = Mode::Prompt(PromptKind::AddDep);
+        m.prompt_buf = "git:x#main".into();
+        m.run_prompt();
+        let t = title(&m);
+        assert!(t.contains("git:x#main"), "{t}");
+        assert!(matches!(
+            m.modal,
+            Some(Modal::Confirm {
+                job: Job::AddDep { .. },
+                ..
+            })
+        ));
+    }
+
+    /// `:q`/`:quit` quit *and* kill a running stream child — same
+    /// teardown as bare `q`/Ctrl-C.
+    #[test]
+    fn colon_quit_kills_stream_child() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        // A real (portable) child — the test binary's own `--list`
+        // exits immediately; `kill` on it is a harmless no-op, what
+        // matters is the handle is taken and logged.
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        m.stream_child = Some(Arc::new(Mutex::new(child)));
+        m.key(key(KeyCode::Char(':')));
+        m.key(key(KeyCode::Char('q')));
+        assert!(m.key(key(KeyCode::Enter)));
+        assert!(m.stream_child.is_none());
+        assert!(m.log.iter().any(|l| l.contains("killed stream")));
+    }
+
+    /// `/` only filters where a filter exists: Installed → Filter,
+    /// Registry → Search, Home → the Registry jump; on the other
+    /// panes it says where the filter lives instead of editing
+    /// hidden state.
+    #[test]
+    fn slash_filter_is_gated_to_installed() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        for pane in [Pane::Services, Pane::Manifest, Pane::Author] {
+            m.pane = pane;
+            m.mode = Mode::Normal;
+            m.filter = "keep".into();
+            m.key(key(KeyCode::Char('/')));
+            assert_eq!(m.mode, Mode::Normal, "{pane:?}");
+            assert_eq!(m.filter, "keep", "{pane:?}");
+            assert!(
+                m.status.contains("Installed-only"),
+                "{pane:?}: {}",
+                m.status
+            );
+        }
+        m.pane = Pane::Installed;
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.mode, Mode::Filter);
+        m.key(key(KeyCode::Esc));
+        m.pane = Pane::Registry;
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.mode, Mode::Search);
+    }
+
+    /// A multi-line `Outcome::Text` (doctor/registries reports) lands
+    /// one line per log entry with the first on the status bar — and
+    /// a read-only job's `Done` skips the store reload + services
+    /// staleness a mutating job would trigger.
+    #[test]
+    fn done_text_splits_lines_and_readonly_skips_reload() {
+        let (tmp, mut m) = bare_model();
+        // A real (empty) store dir — a reload would rebuild
+        // `entries` from it and drop the planted row.
+        std::fs::create_dir_all(tmp.path().join("store")).unwrap();
+        m.entries.push(store_row("ghost", 1));
+        m.busy = Some("doctor".into());
+        m.busy_job = Some(Job::Doctor);
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Text(
+                "store ok\ncache ok\nregistry ok".into(),
+            ))))
+            .unwrap();
+        m.drain_work();
+        assert_eq!(m.status, "store ok");
+        assert!(m.busy.is_none());
+        assert!(m.entries.iter().any(|r| r.entry.record.name == "ghost"));
+        assert!(!m.svc_stale);
+        let tail: Vec<&str> = m.log.iter().rev().take(3).map(String::as_str).collect();
+        assert_eq!(tail, ["registry ok", "cache ok", "ok — store ok"]);
+        // The same Done for a mutating job reloads + marks services.
+        m.entries.push(store_row("ghost", 1));
+        m.busy = Some("remove ghost".into());
+        m.busy_job = Some(Job::Remove("ghost".into()));
+        m.work_tx
+            .send(Msg::Done(Ok(Outcome::Text("removed ghost".into()))))
+            .unwrap();
+        m.drain_work();
+        assert!(m.entries.is_empty());
+        assert!(m.svc_stale);
+    }
+
+    /// `Enter` in registry search while a job holds `busy` doesn't
+    /// lose the query — the debounce re-arms and the search fires
+    /// once the job lands.
+    #[test]
+    fn search_enter_during_busy_rearms_debounce() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Registry;
+        m.busy = Some("install x".into());
+        m.reg_query = "wid".into();
+        m.search_now();
+        assert!(m.search_typed_at.is_some());
+        assert!(m.search_inflight.is_none());
+        // Job lands; the armed debounce fires the pending query.
+        m.busy = None;
+        m.search_typed_at = Some(Instant::now() - SEARCH_DEBOUNCE - Duration::from_millis(1));
+        m.maybe_search();
+        assert!(m.busy.is_some());
+        assert_eq!(m.search_inflight.as_deref(), Some("wid"));
+    }
+
+    /// `:services` (and any other stale marker) refreshes from any
+    /// pane — the Services-pane gate is gone; `busy` still serializes.
+    #[test]
+    fn services_refresh_runs_off_the_services_pane() {
+        let (_tmp, mut m) = bare_model();
+        m.pane = Pane::Home;
+        m.svc_stale = true;
+        m.tick();
+        assert_eq!(m.busy.as_deref(), Some("services refresh"));
+        // A second stale tick while busy queues nothing extra.
+        m.svc_stale = true;
+        m.tick();
+        assert_eq!(m.busy.as_deref(), Some("services refresh"));
+    }
+
+    /// Declining the bundled-driver consent modal is honest — `n`
+    /// and `esc` both land a status line instead of silence.
+    #[test]
+    fn consent_decline_says_so() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let consent = || Modal::Consent {
+            job: Job::Install {
+                reference: "./x".into(),
+                allow_drivers: false,
+            },
+            reason: "ships drivers/".into(),
+        };
+        m.modal = Some(consent());
+        m.key(key(KeyCode::Char('n')));
+        assert!(m.modal.is_none());
+        assert!(m.status.contains("declined"), "{}", m.status);
+        m.modal = Some(consent());
+        m.key(key(KeyCode::Esc));
+        assert!(m.modal.is_none());
+        assert!(m.status.contains("declined"), "{}", m.status);
+        // A plain Confirm cancel stays silent.
+        m.status.clear();
+        m.modal = Some(Modal::Confirm {
+            title: "remove w — sure?".into(),
+            body: Vec::new(),
+            job: Job::Remove("w".into()),
+        });
+        m.key(key(KeyCode::Char('n')));
+        assert!(m.modal.is_none());
+        assert!(!m.status.contains("declined"));
+    }
+
+    /// Search-mode `esc` exits without wiping the query/results —
+    /// they are the pane's persistent state, same as a pane switch.
+    #[test]
+    fn search_esc_keeps_query_and_results() {
+        let (_tmp, mut m) = bare_model();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        m.pane = Pane::Registry;
+        m.reg_query = "wid".into();
+        m.reg_results = vec![reg_entry("1.0.0")];
+        m.reg_err = Some("warn".into());
+        m.key(key(KeyCode::Char('/')));
+        assert_eq!(m.mode, Mode::Search);
+        m.key(key(KeyCode::Esc));
+        assert_eq!(m.mode, Mode::Normal);
+        assert_eq!(m.reg_query, "wid");
+        assert_eq!(m.reg_results.len(), 1);
+        assert_eq!(m.reg_err.as_deref(), Some("warn"));
     }
 }
