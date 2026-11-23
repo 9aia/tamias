@@ -11,6 +11,7 @@ Package & content manager — fetch, store, cache, dispense
 * [`tamias add`↴](#tamias-add)
 * [`tamias sync`↴](#tamias-sync)
 * [`tamias remove`↴](#tamias-remove)
+* [`tamias prune`↴](#tamias-prune)
 * [`tamias list`↴](#tamias-list)
 * [`tamias info`↴](#tamias-info)
 * [`tamias verify`↴](#tamias-verify)
@@ -72,6 +73,7 @@ Package & content manager — fetch, store, cache, dispense
 * `add` — Install a ref and record it in `tamias.yaml` + `tamias.lock`
 * `sync` — Reconcile the cwd project's dep set against the store — install what's missing or drifted. Never removes store entries: the store is global, not project-scoped; `tamias remove` stays the uninstall verb
 * `remove` — Drop a store entry (cache untouched)
+* `prune` — Prune superseded store versions — **dry-run by default**
 * `list` — List installed packages
 * `info` — Show one package's manifest + provenance
 * `verify` — Digest-check a package against its record
@@ -169,6 +171,19 @@ Drop a store entry (cache untouched)
 ###### **Options:**
 
 * `-h, --help` — Print help
+
+## `tamias prune`
+
+Prune superseded store versions — **dry-run by default**. Groups installed entries by package (`@scope/name`) and reports every version older than the newest `keep` semver releases — the store keeps every version ever installed, so this is the explicit garbage-collection verb. Nothing is removed without `--yes`; removals run through the same teardown path as `uninstall` (provider units re-rendered from survivors, bins cleanup, version-aware driver dispatch, store drop). Entries without a semver `version:` are never touched — they are reported as skipped instead. Never runs automatically on `install`/`update`/`sync`: old versions are rollback targets.
+
+**Usage:** `tamias prune [OPTIONS]`
+
+###### **Options:**
+
+* `--keep <KEEP>` — Keep this many newest versions per package
+* `-y, --yes` — Actually remove — without it this is a dry-run report
+* `--json` — JSON output
+* `-h, --help` — Print help (see a summary with '-h')
 
 ## `tamias list`
 
