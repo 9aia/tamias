@@ -32,7 +32,7 @@ pub mod complete;
 mod ops;
 mod render;
 
-use std::io;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -152,6 +152,12 @@ pub fn run(ctx: &Ctx) -> Result<(), String> {
         terminal
             .draw(|f| render::draw(f, &mut model))
             .map_err(|e| format!("draw: {e}"))?;
+        // `y` on a package page queues a clipboard payload — emit
+        // OSC 52 between frames; ratatui only diffs cells, so a raw
+        // escape can't corrupt the buffer.
+        if let Some(text) = model.copy_request.take() {
+            emit_clipboard(&text);
+        }
         if event::poll(Duration::from_millis(250)).map_err(|e| e.to_string())? {
             match event::read().map_err(|e| e.to_string())? {
                 Event::Key(k) if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
@@ -172,6 +178,43 @@ pub fn run(ctx: &Ctx) -> Result<(), String> {
         model.tick();
     }
     Ok(())
+}
+
+/// Write `text` to the terminal clipboard via OSC 52 — the
+/// headless-safe path: no clipboard crate, no `/dev/tty` needed,
+/// the escape rides stdout like any other terminal control.
+/// Terminals without OSC 52 support ignore the sequence, so the
+/// status toast is the UX either way.
+fn emit_clipboard(text: &str) {
+    let seq = format!("\x1b]52;c;{}\x07", b64(text.as_bytes()));
+    let mut out = io::stdout();
+    let _ = out.write_all(seq.as_bytes());
+    let _ = out.flush();
+}
+
+/// Minimal base64 (standard alphabet, `=`-padded) — OSC 52 payloads
+/// need it and a crate for ~20 lines isn't worth the dep.
+fn b64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let n = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 {
+            T[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[n as usize & 63] as char
+        } else {
+            '='
+        });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -195,6 +238,18 @@ mod tests {
         let ctx = Ctx::from_env();
         assert!(!ctx.store_root.as_os_str().is_empty());
         assert!(ctx.config_file.is_none());
+    }
+
+    #[test]
+    fn b64_encodes_standard_padded() {
+        assert_eq!(b64(b""), "");
+        assert_eq!(b64(b"f"), "Zg==");
+        assert_eq!(b64(b"fo"), "Zm8=");
+        assert_eq!(b64(b"foo"), "Zm9v");
+        assert_eq!(b64(b"hello world"), "aGVsbG8gd29ybGQ=");
+        // install refs carry `/`, `:`, `@`, `.` — all inside the
+        // alphabet's plain range, but pin a longer mixed input.
+        assert_eq!(b64(b"./pkg@1.0.0"), "Li9wa2dAMS4wLjA=");
     }
 }
 
