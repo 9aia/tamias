@@ -424,10 +424,12 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
     let header = Row::new(vec!["", "PACKAGE", "SERVICE", "UNIT", "STATE", "EXEC"])
         .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     // The package cell prints once per consecutive same-package run —
-    // `svc_rows` is sorted by package at ingest, so groups are
+    // `svc_rows` arrives sorted by package at ingest, so groups are
     // contiguous; continuation rows leave it blank rather than
-    // repeating the label N times. `svc_sel` still indexes the flat
-    // row list (package lookups read the row, not the cell).
+    // repeating the label N times. Rows are already deduped to one
+    // per unit; `svc_counts` marks how many store entries provide
+    // the unit (`×N`, muted). `svc_sel` still indexes the flat row
+    // list (package lookups read the row, not the cell).
     let mut rows: Vec<Row> = Vec::with_capacity(m.svc_rows.len());
     let mut prev_pkg: Option<&str> = None;
     for (pos, r) in m.svc_rows.iter().enumerate() {
@@ -437,9 +439,17 @@ fn draw_services(f: &mut Frame, m: &mut Model, area: Rect) {
             r.package.clone()
         };
         prev_pkg = Some(r.package.as_str());
+        let mut pkg_spans = vec![Span::raw(pkg)];
+        let providers = m.svc_counts.get(pos).copied().unwrap_or(1);
+        if providers > 1 {
+            pkg_spans.push(Span::styled(
+                format!(" ×{providers}"),
+                Style::default().fg(MUTED),
+            ));
+        }
         rows.push(Row::new(vec![
             sel_cell(pos, m.svc_sel),
-            Cell::from(pkg),
+            Cell::from(Line::from(pkg_spans)),
             Cell::from(r.service.clone()),
             Cell::from(r.unit.clone()),
             Cell::from(r.state.clone().unwrap_or_else(|| "-".into())),
@@ -697,7 +707,9 @@ fn note_table_area(m: &mut Model, area: Rect, offset: usize) {
 }
 
 fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
-    let vis = m.visible();
+    // One row per `(name, scope)` group — the rep is the latest
+    // version; `· N versions` counts the collapsed store copies.
+    let vis = m.visible_rows();
     if let Some(err) = &m.load_err {
         f.render_widget(
             Paragraph::new(format!(
@@ -740,17 +752,24 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
     let rows: Vec<Row> = vis
         .iter()
         .enumerate()
-        .map(|(pos, &i)| {
+        .map(|(pos, &(i, versions))| {
             let r = &m.entries[i];
             let rec = &r.entry.record;
             // Name cell carries styled spans — the trust badge is
-            // colored by tier, `[sealed]` stays muted.
+            // colored by tier, `[sealed]` and `· N versions` stay
+            // muted (the registry pane's collapsed-siblings marker).
             let mut name = vec![Span::raw(r.entry.label())];
             if let Some(badge) = trust_badge(rec.trust.as_deref()) {
                 name.push(badge);
             }
             if r.sealed {
                 name.push(Span::styled(" [sealed]", Style::default().fg(MUTED)));
+            }
+            if versions > 1 {
+                name.push(Span::styled(
+                    format!(" · {versions} versions"),
+                    Style::default().fg(MUTED),
+                ));
             }
             Row::new(vec![
                 sel_cell(pos, m.sel),
@@ -1785,6 +1804,8 @@ keys — installed pane
   l/Tab, 1-6    switch pane — closes an open page too
   h/←           back — closes the page first, then prev pane
   /             filter installed      F       clear filter
+  rows show the latest version per package — · N versions counts
+  the store's other copies; verbs act on the latest entry
   :             command line          Tab    complete · esc leave
   L/:log       op-log sidebar         j/k    scroll · g/G ends · q close
   R             reload store          ?       this help
@@ -1807,10 +1828,12 @@ registry pane:  / search-as-you-type (debounced) · Enter package page ·
                 i install result · :registry <name> target · :search <q>
                 results mark [signed] · installed <ver> · N versions
 
-services pane:  provider services + unit state · s/S start/stop ·
-                ! restart · e/E enable/disable · d deploy · x uninstall
-                t/T journal tail/follow · n foreground run (x kills)
-                Enter opens the package's page · R refresh
+services pane:  provider services + unit state — one row per unit,
+                ×N counts the store entries providing it ·
+                s/S start/stop · ! restart · e/E enable/disable ·
+                d deploy · x uninstall t/T journal tail/follow ·
+                n foreground run (x kills)
+                Enter opens the newest provider's page · R refresh
 
 project pane:   project manifest deps: — a add · d/x remove · e new ref
                 (writes tamias.yaml + tamias.lock like `tamias add`)
@@ -2310,6 +2333,55 @@ mod tests {
         m.svc_stale = true;
         let s = screen(&mut m, 100, 24);
         assert!(s.contains("refreshing"), "{s}");
+    }
+
+    /// One Installed row per `(name, scope)` group — the rep is the
+    /// latest version and `· N versions` counts the collapsed store
+    /// copies (same marker style as registry results).
+    #[test]
+    fn installed_groups_versions_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Installed;
+        let mut old = row("w", false);
+        old.entry.record.version = Some("0.9.0".into());
+        let mut new = row("w", false);
+        new.entry.record.version = Some("0.10.0".into());
+        m.entries = vec![old, new, row("other", false)];
+        let s = screen(&mut m, 100, 24);
+        // semver-max rep (0.10.0 > 0.9.0), the collapsed row gone,
+        // the count marker present.
+        assert!(s.contains("w@0.10.0"), "{s}");
+        assert!(!s.contains("w@0.9.0"), "{s}");
+        // the name cell clips the marker's tail on narrow tables —
+        // the count prefix is enough proof it rendered.
+        assert!(s.contains("· 2 version"), "{s}");
+        assert_eq!(s.matches("other@1.0.0").count(), 1, "{s}");
+    }
+
+    /// The Services package cell marks units provided by several
+    /// store entries with a muted `×N` (the newest provider's label
+    /// still shows — `svc_counts` is parallel to `svc_rows`).
+    #[test]
+    fn services_unit_providers_marker() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Services;
+        m.svc_rows = vec![ServiceRow {
+            package: "pr@1.0.0".into(),
+            service: "campaign".into(),
+            unit: "peregrin-campaign".into(),
+            state: Some("active".into()),
+            exec: "/bin/camp".into(),
+        }];
+        m.svc_counts = vec![3];
+        let s = screen(&mut m, 100, 24);
+        assert!(s.contains("pr@1.0.0"), "{s}");
+        assert!(s.contains("×3"), "{s}");
+        // No counts planted (tests/older paths) → no marker.
+        m.svc_counts.clear();
+        let s = screen(&mut m, 100, 24);
+        assert!(!s.contains('×'), "{s}");
     }
 
     #[test]
