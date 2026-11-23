@@ -79,10 +79,16 @@ pub fn draw(f: &mut Frame, m: &mut Model) {
     if show_status {
         draw_status(f, m, chunks[next]);
     }
-    match &m.mode {
-        Mode::Help => draw_help(f, area),
-        Mode::Filter | Mode::Search | Mode::Command | Mode::Prompt(_) => draw_input(f, m, area),
-        Mode::Normal | Mode::Log => {}
+    // Help scrolls, so it needs `&mut Model` (clamps `help_scroll`,
+    // records the view height/max) — it can't ride the `&m.mode`
+    // match the read-only overlays share.
+    if m.mode == Mode::Help {
+        draw_help(f, m, area);
+    } else {
+        match &m.mode {
+            Mode::Filter | Mode::Search | Mode::Command | Mode::Prompt(_) => draw_input(f, m, area),
+            _ => {}
+        }
     }
     // The log view needs `&mut Model` (it clamps `log_scroll` and
     // reports `log_view_h`/`log_area`), so it can't ride the
@@ -722,10 +728,12 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
 /// Everything the package page renders, built from the [`Detail`]
 /// variant — owned `'static` lines so the borrow on `m.detail` ends
 /// before the frame's scroll offset is clamped. Layout follows the
-/// npm package-page anatomy: bold label + chips, a ≤3-line wrapped
-/// description (pinned strip), the `tamias install` command, then
-/// `── section ──` rules ordered by user value — deps/services/keywords
-/// + meta + versions — with provenance last.
+/// npm package-page anatomy: bold label + chips pinned at the top,
+/// then a scrollable body led by the full description (the old
+/// pinned ≤3-line strip clipped long text with no way to reach the
+/// rest), the `tamias install` command, then `── section ──` rules
+/// ordered by user value — deps/services/keywords + meta + versions —
+/// with provenance last.
 ///
 /// `installed_ver` is the store's version label for the page's
 /// `(name, scope)` when one is installed
@@ -744,22 +752,17 @@ fn kv(key: &str, value: impl Into<String>) -> Line<'static> {
 /// `Indexed(238)` row highlight plus an accent `›` marker, and the
 /// footer hint switches to the focus keys.
 ///
-/// The fifth return value is the body line index of the focused
+/// The fourth return value is the body line index of the focused
 /// version row (`None` unless focus is active and the list landed) —
-/// [`draw_detail`] feeds it to [`scroll_to_show`] so the cursor row
-/// stays on screen past one page of versions.
+/// [`draw_detail`] converts it to display rows for
+/// [`scroll_to_show`] so the cursor row stays on screen past one
+/// page of versions.
 fn page_parts(
     detail: &Detail,
     registry_target: &str,
     installed_ver: Option<&str>,
     versions_sel: Option<usize>,
-) -> (
-    String,
-    Line<'static>,
-    Option<String>,
-    Vec<Line<'static>>,
-    Option<usize>,
-) {
+) -> (String, Line<'static>, Vec<Line<'static>>, Option<usize>) {
     let label = detail.label();
     // Header — bold label then muted/bracketed chips; the trust chip
     // is the one colored span (tier → [`trust_style`]).
@@ -785,9 +788,23 @@ fn page_parts(
         head.push(chip("sealed"));
     }
     let head = Line::from(head);
-    let desc = detail.description().map(str::to_string);
 
     let mut body: Vec<Line> = Vec::new();
+    // Description leads the scrollable body — full text, muted, one
+    // `Line` per source line (the body Paragraph does the wrapping,
+    // so nothing is clipped). It used to be a pinned ≤3-line strip
+    // whose overflow was unreachable.
+    if let Some(d) = detail.description() {
+        if !d.is_empty() {
+            for l in d.lines() {
+                body.push(Line::from(Span::styled(
+                    l.to_string(),
+                    Style::default().fg(MUTED),
+                )));
+            }
+            body.push(Line::from(""));
+        }
+    }
     // Body index of the versions-focus row — set by the Registry
     // arm below; `draw_detail` scrolls it into view.
     let mut versions_row: Option<usize> = None;
@@ -1041,7 +1058,7 @@ fn page_parts(
     // No trailing hint line — the status bar's `detail_hint` is the
     // single hint surface (a body-bottom copy would both duplicate
     // it and scroll away with the content).
-    (label, head, desc, body, versions_row)
+    (label, head, body, versions_row)
 }
 
 /// The package page's status-bar hint — `draw_status`'s right-side
@@ -1105,10 +1122,24 @@ fn wrapped_lines(text: &str, width: u16, max: usize) -> usize {
     lines.min(max)
 }
 
+/// Wrapped display-line count for `lines` at `width` columns —
+/// `Paragraph`'s own `line_count` (the `unstable-rendered-line-info`
+/// feature), i.e. the exact `WordWrapper` math the render path uses
+/// with `Wrap { trim: false }`. Scroll offsets are display rows, so
+/// max-scroll and cursor-row math must count these, never source
+/// `Line`s — a hand-rolled estimate miscounts hard-wrapped tokens
+/// (long digests, URLs) that `WordWrapper` splits mid-word.
+fn wrapped_count(lines: &[Line], width: u16) -> usize {
+    Paragraph::new(lines.to_vec())
+        .wrap(Wrap { trim: false })
+        .line_count(width)
+}
+
 /// The `Enter` package page — npm-inspired anatomy inside the
-/// bordered block. The header and the (≤3-line, wrapped) description
-/// stay pinned; the body — install command, sections, provenance —
-/// scrolls with `j`/`k` via `Model::detail_scroll`.
+/// bordered block. The header (≤3 wrapped lines) stays pinned; the
+/// body — description, install command, sections, provenance —
+/// scrolls with `j`/`k` via `Model::detail_scroll`, counted in
+/// *display* rows (the Paragraph wraps).
 fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
     let Some(detail) = m.detail.as_ref() else {
         return;
@@ -1121,7 +1152,7 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
         }
         _ => None,
     };
-    let (title, head, desc, body, versions_row) = page_parts(
+    let (title, head, body, versions_row) = page_parts(
         detail,
         &m.reg_target_label,
         installed_ver.as_deref(),
@@ -1137,29 +1168,17 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
         m.viewport_top = 0;
         return;
     }
-    // Pinned strips — the header wraps to at most 3 lines, the
-    // description to at most 3 (overflow clips; the body below still
-    // scrolls).
+    // Pinned strip — the header wraps to at most 3 lines; the body
+    // below carries everything else and scrolls.
     let header_text: String = head.spans.iter().map(|s| s.content.as_ref()).collect();
     let header_h = wrapped_lines(&header_text, inner.width, 3).min(inner.height as usize) as u16;
-    let desc_h = match &desc {
-        Some(d) => wrapped_lines(d, inner.width, 3)
-            .min(inner.height.saturating_sub(header_h) as usize) as u16,
-        None => 0,
+    let body_area = Rect {
+        y: inner.y + header_h,
+        height: inner.height.saturating_sub(header_h),
+        ..inner
     };
-    let body_h = inner.height.saturating_sub(header_h).saturating_sub(desc_h);
     let header_area = Rect {
         height: header_h,
-        ..inner
-    };
-    let desc_area = Rect {
-        y: inner.y + header_h,
-        height: desc_h,
-        ..inner
-    };
-    let body_area = Rect {
-        y: inner.y + header_h + desc_h,
-        height: body_h,
         ..inner
     };
     f.render_widget(
@@ -1168,33 +1187,31 @@ fn draw_detail(f: &mut Frame, m: &mut Model, area: Rect) {
             .wrap(Wrap { trim: true }),
         header_area,
     );
-    if let Some(d) = &desc {
-        f.render_widget(
-            Paragraph::new(d.as_str())
-                .wrap(Wrap { trim: true })
-                .style(Style::default().fg(MUTED)),
-            desc_area,
-        );
-    }
-    // Versions focus keeps its cursor row on screen — the body is a
-    // scrolling Paragraph, so aim `detail_scroll` at the row before
-    // the usual max_scroll clamp (body-line approximation, same
-    // posture as the clamp itself under wrapped lines).
+    // Versions focus keeps its cursor row on screen. `versions_row`
+    // is a body *source*-line index while `detail_scroll` counts
+    // display rows — convert both ends of the row through
+    // [`wrapped_count`] (prefix counts give the row's first/last
+    // display row) and aim the scroll at the whole row, minimal
+    // scroll first.
     if let Some(row) = versions_row {
-        m.detail_scroll = scroll_to_show(row, m.detail_scroll, body_area.height as usize);
+        let top = wrapped_count(&body[..row], body_area.width);
+        let bottom = wrapped_count(&body[..=row], body_area.width).saturating_sub(1);
+        let view_h = body_area.height as usize;
+        m.detail_scroll = scroll_to_show(bottom, m.detail_scroll, view_h);
+        m.detail_scroll = scroll_to_show(top, m.detail_scroll, view_h);
     }
-    // Clamp the scroll offset to the body, then render. The max is
-    // recorded for `G` — the model's jump-to-bottom target.
-    let max_scroll = body.len().saturating_sub(body_area.height as usize);
+    // Clamp the scroll offset to the body's *wrapped* height, then
+    // render. The max is recorded for `G` — the model's
+    // jump-to-bottom target.
+    let para = Paragraph::new(body)
+        .style(Style::default().fg(TEXT))
+        .wrap(Wrap { trim: false });
+    let max_scroll = para
+        .line_count(body_area.width)
+        .saturating_sub(body_area.height as usize);
     m.detail_scroll = m.detail_scroll.min(max_scroll);
     m.detail_max_scroll = max_scroll;
-    f.render_widget(
-        Paragraph::new(body)
-            .style(Style::default().fg(TEXT))
-            .wrap(Wrap { trim: false })
-            .scroll((m.detail_scroll as u16, 0)),
-        body_area,
-    );
+    f.render_widget(para.scroll((m.detail_scroll as u16, 0)), body_area);
     m.board_area = Rect::default();
     m.viewport_top = 0;
 }
@@ -1654,7 +1671,7 @@ fn draw_modal(f: &mut Frame, modal: &Modal, area: Rect) {
     );
 }
 
-fn draw_help(f: &mut Frame, area: Rect) {
+fn draw_help(f: &mut Frame, m: &mut Model, area: Rect) {
     // Static text — keep it honest: pane names match `Pane::label`,
     // and `q`/`esc` close an open package page before they quit.
     let text = "\
@@ -1717,28 +1734,41 @@ commands:  :q  :r/:reload  :help  :log  :install <ref>  :remove <name>
             Tab completes · Up/Down history)
 mouse:     wheel scrolls (the package page when open) · click row
            selects · click tab switches (version rows aren't
-           click-selectable — the page is one scrolling block)";
+           click-selectable — the page is one scrolling block)
+
+this help:  j/k · ↑/↓ step · PgUp/PgDn page · g/G jump ends ·
+            wheel scrolls · esc/?/q close — it scrolls too, the
+            bottom third is reachable on short terminals";
     let width = area.width.min(72) as usize;
     let w = (width as u16 + 2).min(area.width);
     // Height counts *wrapped* lines — at narrow widths the static
     // text wraps past a raw `lines().count()` estimate and the box
-    // clipped its own bottom border off-screen.
+    // clipped its own bottom border off-screen. `line_count` is the
+    // widget's own WordWrapper math, so the scroll range below
+    // matches what the Paragraph actually renders.
     let inner_w = w.saturating_sub(2).max(1);
-    let h = (text
-        .lines()
-        .map(|l| wrapped_lines(l, inner_w, usize::MAX))
-        .sum::<usize>()
-        + 2)
-    .min(area.height as usize) as u16;
+    let total = Paragraph::new(text)
+        .wrap(Wrap { trim: false })
+        .line_count(inner_w);
+    let h = (total + 2).min(area.height as usize) as u16;
     let x = area.x + area.width.saturating_sub(w) / 2;
     let y = area.y + area.height.saturating_sub(h) / 2;
     let rect = Rect::new(x, y, w, h);
+    // The box is capped at the frame — when the text is taller than
+    // the screen the Paragraph scrolls inside it (`help_scroll`),
+    // same posture as the package page and the log view.
+    let inner_h = (h.saturating_sub(2)) as usize;
+    m.help_view_h = inner_h;
+    m.help_max_scroll = total.saturating_sub(inner_h);
+    m.help_scroll = m.help_scroll.min(m.help_max_scroll);
+    m.help_area = rect;
     f.render_widget(Clear, rect);
     f.render_widget(
         Paragraph::new(text)
             .block(Block::default().borders(Borders::ALL).title(" help "))
             .style(Style::default().fg(Color::White))
-            .wrap(Wrap { trim: false }),
+            .wrap(Wrap { trim: false })
+            .scroll((m.help_scroll as u16, 0)),
         rect,
     );
 }
@@ -1793,7 +1823,7 @@ mod tests {
         installed_ver: Option<&str>,
         versions_sel: Option<usize>,
     ) -> String {
-        let (_, _, _, body, _) = page_parts(detail, "default", installed_ver, versions_sel);
+        let (_, _, body, _) = page_parts(detail, "default", installed_ver, versions_sel);
         body.iter()
             .map(|l| {
                 l.spans
@@ -2190,7 +2220,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let mut m = model(tmp.path());
         // Installed detail — full manifest: deps/services/meta/
-        // provenance all land; description pins under the header.
+        // provenance all land; the description leads the scrollable
+        // body (no pinned strip — nothing clips).
         m.pane = Pane::Installed;
         m.detail = Some(Detail::Installed {
             entry: entry("w"),
@@ -2198,6 +2229,7 @@ mod tests {
             manifest_err: None,
         });
         let s = screen(&mut m, 100, 30);
+        assert!(s.contains("a widget"), "{s}");
         assert!(s.contains("── deps ──"), "{s}");
         assert!(s.contains("── services ──"), "{s}");
         assert!(s.contains("── meta ──"), "{s}");
@@ -2514,14 +2546,14 @@ mod tests {
             versions: Some(vec![reg_entry("0.9.0"), page.clone(), reg_entry("1.1.0")]),
             versions_err: None,
         };
-        let (_, _, _, body, row) = page_parts(&detail, "default", None, Some(2));
+        let (_, _, body, row) = page_parts(&detail, "default", None, Some(2));
         let row = row.expect("focused row index");
         assert!(
             body[row].spans.iter().any(|s| s.content.contains("1.1.0")),
             "row {row} should be the focused 1.1.0 line"
         );
-        assert!(page_parts(&detail, "default", None, None).4.is_none());
-        assert!(page_parts(&detail, "default", None, Some(9)).4.is_none());
+        assert!(page_parts(&detail, "default", None, None).3.is_none());
+        assert!(page_parts(&detail, "default", None, Some(9)).3.is_none());
         // Pending fetch — no rows, no target.
         let pending = Detail::Registry {
             entry: page.clone(),
@@ -2530,7 +2562,7 @@ mod tests {
             versions: None,
             versions_err: None,
         };
-        assert!(page_parts(&pending, "default", None, Some(0)).4.is_none());
+        assert!(page_parts(&pending, "default", None, Some(0)).3.is_none());
     }
 
     /// `scroll_to_show` scrolls the minimum to keep `row` inside the
@@ -2747,5 +2779,134 @@ mod tests {
         assert!(m.log_area.x > 0);
         assert!(m.log_area.x + m.log_area.width < 40);
         assert!(screen.iter().any(|l| l.contains("log — 10 lines")));
+    }
+
+    /// `wrapped_count` is the widget's own wrap math — empty text,
+    /// plain wraps, multi-line input, and hard-split overlong tokens
+    /// (digests, URLs) that a whitespace-only estimate undercounts.
+    #[test]
+    fn wrapped_count_matches_render_wrap() {
+        assert_eq!(wrapped_count(&[], 10), 0);
+        assert_eq!(wrapped_count(&[Line::from("")], 10), 1);
+        assert_eq!(wrapped_count(&[Line::from("aaa bbb")], 7), 1);
+        assert_eq!(wrapped_count(&[Line::from("aaa bbb")], 6), 2);
+        // Two source lines count independently.
+        assert_eq!(
+            wrapped_count(&[Line::from("aaa bbb"), Line::from("cc")], 6),
+            3
+        );
+        // An unbroken token wider than the column hard-wraps — the
+        // whole reason scroll math uses `line_count` instead of a
+        // word estimate.
+        let long = Line::from("x".repeat(25));
+        assert!(wrapped_count(std::slice::from_ref(&long), 10) > 1);
+        assert_eq!(wrapped_count(&[long], 30), 1);
+    }
+
+    /// The package page's description leads the scrollable body —
+    /// full text, multi-line safe, nothing pinned-and-clipped.
+    #[test]
+    fn detail_description_lives_in_scroll_body() {
+        let mut e = entry("w");
+        e.record.description = Some(format!("first line\n{}", "tail ".repeat(40)));
+        let d = Detail::Installed {
+            entry: e,
+            manifest: None,
+            manifest_err: None,
+        };
+        let text = body_text(&d);
+        // First body content is the description, whole — including
+        // past the 3 lines the old pinned strip showed.
+        assert!(text.starts_with("first line\ntail tail"), "{text}");
+        assert!(text.contains(&"tail ".repeat(30).trim_end().to_string()));
+        // The install command still follows it.
+        assert!(text.contains("tamias install ./w"));
+    }
+
+    /// `detail_max_scroll` counts *wrapped* display rows: a long
+    /// description wraps onto many rows at narrow widths, and the
+    /// provenance tail must still be reachable at max scroll.
+    #[test]
+    fn detail_scroll_covers_wrapped_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Installed;
+        let mut e = entry("w");
+        e.record.description = Some(format!("{} TAIL-MARK", "word ".repeat(80)));
+        m.detail = Some(Detail::Installed {
+            entry: e,
+            manifest: None,
+            manifest_err: None,
+        });
+        let _ = screen(&mut m, 50, 20);
+        assert!(m.detail_max_scroll > 0);
+        // Scrolled to the bottom, the last provenance line renders.
+        m.detail_scroll = m.detail_max_scroll;
+        let s = screen(&mut m, 50, 20);
+        assert!(s.contains("/store/w"), "{s}");
+        // And the description's tail is reachable — it's body content
+        // now, not a clipped pin.
+        m.detail_scroll = 0;
+        let s = screen(&mut m, 50, 20);
+        assert!(s.contains("TAIL-MARK"), "{s}");
+    }
+
+    /// Versions focus scrolls by display row: with more versions
+    /// than fit, `draw_detail` aims `detail_scroll` at the focused
+    /// row's wrapped position so the `›` cursor stays on screen.
+    #[test]
+    fn detail_versions_focus_scrolls_cursor_into_view() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut m = model(tmp.path());
+        m.pane = Pane::Registry;
+        let page = reg_entry("1.0.0");
+        let versions: Vec<RegistryEntry> =
+            (0..30).map(|i| reg_entry(&format!("{i}.0.0"))).collect();
+        m.detail = Some(Detail::Registry {
+            entry: page,
+            install_ref: None,
+            install_err: None,
+            versions: Some(versions),
+            versions_err: None,
+        });
+        m.versions_focus = true;
+        m.versions_sel = 29;
+        let s = screen(&mut m, 80, 20);
+        assert!(m.detail_scroll > 0, "scroll={}", m.detail_scroll);
+        assert!(s.contains("› 29.0.0"), "{s}");
+    }
+
+    /// The `?` overlay scrolls: on a short terminal the bottom of
+    /// the text is unreachable without it — `help_scroll` (fed by
+    /// j/k/G/wheel) brings the last line into view, and `draw_help`
+    /// reports the view height/max for the key handler.
+    #[test]
+    fn help_overlay_scrolls_to_bottom() {
+        let mut m = log_model(0);
+        m.mode = Mode::Help;
+        let screen = frame_text(&mut m, 80, 24);
+        // ~60 wrapped lines can't fit a 22-row inner box — the
+        // scroll range must be positive and the hit rect recorded.
+        assert!(m.help_max_scroll > 0, "max={}", m.help_max_scroll);
+        assert!(m.help_area.height > 0);
+        assert!(screen.iter().any(|l| l.contains("keys — installed pane")));
+        assert!(!screen
+            .iter()
+            .any(|l| l.contains("bottom third is reachable")));
+        m.help_scroll = m.help_max_scroll;
+        let screen = frame_text(&mut m, 80, 24);
+        assert!(
+            screen
+                .iter()
+                .any(|l| l.contains("bottom third is reachable")),
+            "{}",
+            screen.join("\n")
+        );
+        // Back to the top.
+        m.help_scroll = 0;
+        let screen = frame_text(&mut m, 80, 24);
+        assert!(screen.iter().any(|l| l.contains("keys — installed pane")));
+        // Tiny terminal — clamps, no panic.
+        let _ = frame_text(&mut m, 30, 6);
     }
 }

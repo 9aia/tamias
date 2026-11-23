@@ -23,7 +23,10 @@ tamias-registry-open.workspace = true
 tamias-provider.workspace = true
 tamias-publish.workspace = true
 tamias-shell.workspace = true
-ratatui.workspace = true
+# `unstable-rendered-line-info` exposes `Paragraph::line_count` — the
+# scroll math in render.rs must count *wrapped* display rows, and only
+# the widget's own WordWrapper knows them exactly.
+ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 crossterm.workspace = true
 notify = "8.2.2"
 
