@@ -1898,7 +1898,7 @@ impl Model {
             return;
         };
         if !self.open_label_detail(&label) {
-            self.say("package not in the installed list — `R` refreshes services");
+            self.say("package not in the installed list — `:services` refreshes");
         }
     }
 
@@ -2490,7 +2490,7 @@ impl Model {
                 None => {
                     let n = self.entries.len();
                     if n == 0 {
-                        self.say_err("nothing installed — `i` installs by ref");
+                        self.say_err("nothing installed — `:install <ref>` installs by ref");
                     } else {
                         self.confirm_job(Job::UpdateAll {
                             allow_drivers: false,
@@ -3391,7 +3391,7 @@ impl Model {
                 | 'E' | 't' | 'T' | 'n' | 'R' | 'a' | 'r'),
             ) => {
                 self.say(format!(
-                    "no '{c}' on {} — ? lists the keys",
+                    "no '{c}' on {} — `:help` lists the keys",
                     self.pane.label()
                 ));
             }

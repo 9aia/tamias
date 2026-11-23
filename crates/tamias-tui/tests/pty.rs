@@ -315,7 +315,7 @@ fn services_project_publish_panes() {
     // title carries the default tamias.yaml path.
     d.send("5");
     d.wait_for(b"tamias.yaml");
-    // `6` — Publish: the pane header + key hints render.
+    // `6` — Publish: the pane header + footer hints render.
     d.send("6");
     d.wait_for(b"publish");
     d.wait_for(b"pack");
