@@ -575,7 +575,11 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
         return;
     }
 
-    let header = Row::new(vec!["NAME", "TYPE", "SOURCE", "RESOLVED", "DIGEST", "SIZE"])
+    // RESOLVED and DIGEST collapse to one compact DIGEST column —
+    // the fetch sha and full digests live on the package page's
+    // provenance section; the table only needs the verify-relevant
+    // short form.
+    let header = Row::new(vec!["NAME", "TYPE", "SOURCE", "DIGEST", "SIZE"])
         .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = vis
         .iter()
@@ -595,18 +599,16 @@ fn draw_installed(f: &mut Frame, m: &mut Model, area: Rect) {
                 Cell::from(Line::from(name)),
                 Cell::from(rec.kind.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(rec.source_ref.clone()),
-                Cell::from(short_sha(&rec.resolved)),
                 Cell::from(short_sha(&rec.digest)),
                 Cell::from(r.size.map_or("-".into(), human_size)),
             ])
         })
         .collect();
     let widths = [
-        Constraint::Min(16),
+        Constraint::Min(18),
         Constraint::Length(12),
         Constraint::Min(14),
-        Constraint::Length(14),
-        Constraint::Length(14),
+        Constraint::Length(13),
         Constraint::Length(9),
     ];
     let table = Table::new(rows, widths)
@@ -1083,16 +1085,14 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
         m.viewport_top = 0;
         return;
     }
-    let header = Row::new(vec![
-        "NAME",
-        "SCOPE",
-        "TYPE",
-        "VERSION",
-        "LICENSE",
-        "DIGEST",
-        "DESCRIPTION",
-    ])
-    .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
+    // NAME's label already carries `@scope/name@version` — SCOPE and
+    // DIGEST columns were pure noise (scope prefixes the label where
+    // truncation can't reach it; the digest lives on the package
+    // page's provenance). VERSION stays a column so the version
+    // survives even when a long name pushes the label's `@ver` tail
+    // off-screen.
+    let header = Row::new(vec!["NAME", "TYPE", "VERSION", "LICENSE", "DESCRIPTION"])
+        .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
     let rows: Vec<Row> = m
         .reg_results
         .iter()
@@ -1112,26 +1112,22 @@ fn draw_registry(f: &mut Frame, m: &mut Model, area: Rect) {
             }
             Row::new(vec![
                 Cell::from(Line::from(name)),
-                Cell::from(e.scope.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(e.kind.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(e.version.clone().unwrap_or_else(|| "-".into())),
                 Cell::from(e.license.clone().unwrap_or_else(|| "-".into())),
-                Cell::from(short_sha(&e.digest)),
                 Cell::from(e.description.clone().unwrap_or_else(|| "-".into())),
             ])
         })
         .collect();
     // DESCRIPTION is the flexible column — it absorbs leftover width
-    // and clips on narrow terminals; LICENSE stays a fixed narrow
-    // column so it survives degradation.
+    // and clips on narrow terminals; LICENSE stays a Min column so it
+    // survives degradation alongside NAME.
     let widths = [
+        Constraint::Min(18),
+        Constraint::Length(10),
+        Constraint::Length(9),
+        Constraint::Min(11),
         Constraint::Min(14),
-        Constraint::Length(10),
-        Constraint::Length(10),
-        Constraint::Length(8),
-        Constraint::Length(10),
-        Constraint::Length(12),
-        Constraint::Min(12),
     ];
     let title = format!(" registry — {} · /{} ", m.reg_target_label, m.reg_query);
     let table = Table::new(rows, widths)

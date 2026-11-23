@@ -76,7 +76,8 @@ pub enum Pane {
     /// landing pane; `j`/`k` cursor + `Enter` opens a package page
     /// via the Installed pane — see [`Model::open_home_detail`]).
     Home,
-    /// Store entries — name/type/source/resolved/digest/size.
+    /// Store entries — name/type/source/digest/size (full resolved +
+    /// digest shas live on the package page's provenance section).
     Installed,
     /// Registry search-as-you-type.
     Registry,
