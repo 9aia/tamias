@@ -49,14 +49,19 @@ provenance:
   - refs/sturn/wal/feat-serve-driver-ops
   - refs/sturn/wal/main
   - refs/sturn/wal/pl-025
+  - refs/sturn/wal/pl-026
+  - refs/sturn/wal/pl-032
   - refs/sturn/wal/sealed-packs
+  - refs/sturn/wal/store-prune
   - refs/sturn/wal/t042
   - refs/sturn/wal/t8-3-cli-surface
   - refs/sturn/wal/t8-6-binary-distribution
   - refs/sturn/wal/tamias
   - refs/sturn/wal/tamias-io002
   - refs/sturn/wal/tamias-metadata
+  - refs/sturn/wal/tamias-tui-home
   - refs/sturn/wal/tamias-xtask-test-fix
+  - refs/sturn/wal/tui-home
   - refs/sturn/ws/devin-p024
   hashes:
   - c15c0f76f96a60b81cba6b4da1033160e90a04e9
@@ -91,15 +96,20 @@ provenance:
   - 871c21bc71cd04c86713d9159513f0885c48eb13
   - 87bca97ac7d537af04003f26852c2a220afba0ab
   - e732a42687ab95a8de835b1833620b62445c4f26
+  - 2524a2acce38aa224932555d9dbadf59b2ca0638
+  - 1b19623d4baca90bf289b35a9edcd8d4db5b2e2d
   - 29c1db0ce4628fb294c168ef7a01166f70f4e9a3
+  - 724cde880d4879af2fb24a799a80d68f0c031f4e
   - e7ed750a13f2d1f34aaccffc351a77d26b6dd76a
   - 556695b9190378fc2a0061057b38f31dd8a988d1
   - 96a9778feccc8eacea586ede09ca8a9bd1c4557b
   - fd2eca58aa054cb9368081f183c118e6d6d92fb7
   - 21c92171c34188115ddaa88ece5a724392948a1f
   - d94c61f34efac15d43336f61fb7e20ba2364175d
+  - f9b8c75259b4e50dcd79a5e4a8b8c0542c151840
   - 75f581ed6829529e4b83898232e45f343da79f52
+  - 0a1d96d5b4cf2b1f81f51be03d8cfc5e4584805c
   - 6485ef1cbb9ac691cfd02df9c73938110af699f6
-  commit_sha: dda9fd329bc6c733b593257f89678365c7929c58
-  generated_at: '1795398321'
+  commit_sha: 7044f5bdc31ac282b6720bcf9988630cf9c5bcbf
+  generated_at: '1795528503'
   generator: kuda-template/0.1.4

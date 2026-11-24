@@ -1,7 +1,9 @@
 name: tamias
-root: /home/luis/.local/share/decoupling-chief/worktrees/pl-025/tamias
+root: /home/luis/GitHub/9aia/workspace/repos/tamias
 purpose: '*Package & content manager for the agent factory — fetch, store,'
 modules:
+- docs
+- project
 - sturn-wal
 - tamias
 - tamias-bin
@@ -46,8 +48,8 @@ modules:
 commands:
 - cargo check
 - cargo test --workspace
-tree_digest: d85cd04b969fcd099f5562f2a75f4d7dbf2add0c
-files_total: 180
+tree_digest: a798d92f490df1502df1393a739b433fadfce784
+files_total: 243
 provenance:
   files:
   - Cargo.toml
@@ -93,17 +95,17 @@ provenance:
   - fuzz/Cargo.toml
   - xtask/Cargo.toml
   hashes:
-  - 10af23ccfcc7b6173635296b55da917af56667a3
+  - a08cf222d64d1756877aa1cf2e99615a13c6e8ea
   - 8bbe5cfd5138fd30c1589ca7b43ee437a6e001a5
   - 445a59764f2c95491158650a1cbdd66a63271be3
   - d3af5c2636a8492ae8561db2d7eabe89a24c1deb
   - 95adcd142d2c55cd9d4e27639ed03ca898bbca04
   - 5b9a61b04a88f684b5ffe12c51bd26d10effcc7a
-  - d9d11446fb24d9d0d850fee3387b1a7649b408cd
+  - 5d530ebdf56b390b219ba4c0c878135207bd7301
   - 632480163263ef27edab2d729003066436e1a9d5
   - e2354bf66bcc103954918876c89f75663f28633e
   - ea0b53562003a16213fbdc77d5703be0e3914475
-  - 62cb802a5bec85084acbbd27e225c8dec1e3c40a
+  - 3d6543d3b1c2240951bee6cd9e50232e563d0bfa
   - cf266e216f76188736f30f53afcff0fdf41e03bd
   - 9b196142e638dc4f51ba315bf6345a621278d1cf
   - 30b23ec3aaf291ff59a4bc44e82dfc174c17fb38
@@ -112,7 +114,7 @@ provenance:
   - a60598cde4a7ffbb54204b99b25a4baa66247642
   - c6358d2291d6856b31c1b35a536c9089cea6486a
   - 8162f54710e782799c63f837f0390b5d09514c95
-  - c25db321c302a1735c7b30ee64ed311398d9962c
+  - 9747a606414059116a03f7f2c174946eeda8e597
   - 2c1262867cc3f0e373d39cbb9512ba3af218fced
   - 27a46246625517af42b3de909638c8510ef61bdd
   - 4f714bbab201b2a39c74f752ad5126919e1ccbb3
@@ -132,9 +134,9 @@ provenance:
   - b72ecdfc35205627f0652e893fcaa0e5558afc3b
   - 11e5afcee2642dd5e6031549c4c19e03372969fc
   - 371a0d2a29dd41b3a5c93b1a96fc6aea0ea11cfe
-  - b6a235087c38037ce9ad4db4bddbfe7ee52a710d
+  - 46132d037e9aa4790bc15202fdf44007644623a4
   - 57ca36cf313852cc8f22ea5be173bded5d2f1ed6
   - f62c8bf5f2849fe1b7c68c4d37121f63802e4ec1
-  commit_sha: dda9fd329bc6c733b593257f89678365c7929c58
-  generated_at: '1795398321'
+  commit_sha: 7044f5bdc31ac282b6720bcf9988630cf9c5bcbf
+  generated_at: '1795528503'
   generator: kuda/0.1.0

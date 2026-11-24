@@ -20,7 +20,7 @@ api:
 - name: DRVENV
   kind: const
   file: crates/tamias-install/src/lib.rs
-  line: 1026
+  line: 1056
   module: tamias-install
 - name: DepOutcome
   kind: type
@@ -40,7 +40,7 @@ api:
 - name: EnvGuard
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 1035
+  line: 1065
   module: tamias-install
 - name: ExtParent
   kind: type
@@ -60,7 +60,7 @@ api:
 - name: IncludeResolution
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 689
+  line: 719
   module: tamias-install
 - name: IncludeState
   kind: type
@@ -70,7 +70,7 @@ api:
 - name: InstallPlan
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 727
+  line: 757
   module: tamias-install
 - name: MAX_EXTENDS_DEPTH
   kind: const
@@ -95,17 +95,17 @@ api:
 - name: PlanManifest
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 672
+  line: 702
   module: tamias-install
 - name: PlannedInclude
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 704
+  line: 734
   module: tamias-install
 - name: PlannedService
   kind: type
   file: crates/tamias-install/src/lib.rs
-  line: 714
+  line: 744
   module: tamias-install
 - name: Progress
   kind: type
@@ -140,7 +140,7 @@ api:
 - name: allow
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1355
+  line: 1385
   module: tamias-install
 - name: as_str
   kind: function
@@ -150,7 +150,7 @@ api:
 - name: bad_ref_and_missing_manifest_fail
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1927
+  line: 1957
   module: tamias-install
 - name: consent
   kind: module
@@ -160,17 +160,17 @@ api:
 - name: consent_env
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1238
+  line: 1268
   module: tamias-install
 - name: consent_gate_and_surface_hints
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1178
+  line: 1208
   module: tamias-install
 - name: consent_memory_skips_reprompt_for_identical_bytes
   kind: function
   file: crates/tamias-install/src/lib.rs
-  line: 1249
+  line: 1279
   module: tamias-install
 - name: consent_path
   kind: function
@@ -257,8 +257,8 @@ provenance:
   - ee8d6763ab4fc04a6bdd00a690e31db67bba55e9
   - 6e296d597cb9c661e107658a60b7602c1036323e
   - e5a8987da13014dd6b8b8b1eafc62fc09fdcaf22
-  - 4fccc4aa49af8b54a40e0292fe4eaf9e06007d97
+  - 4138a2cbe254ca893b913eb37108b2691aa9b3c8
   - bd22a393ffae872ac5ed9a9400f447fd6598e32a
-  commit_sha: dda9fd329bc6c733b593257f89678365c7929c58
-  generated_at: '1795398321'
+  commit_sha: 7044f5bdc31ac282b6720bcf9988630cf9c5bcbf
+  generated_at: '1795528503'
   generator: kuda-template/0.1.4

@@ -32,6 +32,11 @@ api:
   file: crates/tamias-bin/src/lib.rs
   line: 46
   module: tamias-bin
+- name: SurvivorRedeploy
+  kind: type
+  file: crates/tamias-bin/src/lib.rs
+  line: 1165
+  module: tamias-bin
 - name: TOOLS_BIN
   kind: const
   file: crates/tamias-bin/src/lib.rs
@@ -80,7 +85,7 @@ api:
 - name: collision_warns_and_last_deploy_wins
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1400
+  line: 1483
   module: tamias-bin
 - name: conflict
   kind: function
@@ -105,7 +110,7 @@ api:
 - name: deploy_destroy_round_trip
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1321
+  line: 1404
   module: tamias-bin
 - name: dest_ownership
   kind: function
@@ -125,12 +130,12 @@ api:
 - name: entry
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1193
+  line: 1276
   module: tamias-bin
 - name: foreign_file_conflicts_without_force
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1442
+  line: 1629
   module: tamias-bin
 - name: links_into_alias
   kind: function
@@ -145,7 +150,7 @@ api:
 - name: manifest_with
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1219
+  line: 1302
   module: tamias-bin
 - name: materialize_payload
   kind: function
@@ -165,7 +170,7 @@ api:
 - name: payload_decl
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1200
+  line: 1283
   module: tamias-bin
 - name: place_payload
   kind: function
@@ -185,24 +190,19 @@ api:
 - name: platform_rule_errors_only_when_dirs_miss_host
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1229
+  line: 1312
   module: tamias-bin
 - name: record
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 1171
+  line: 1254
   module: tamias-bin
-- name: remove_dest
+- name: redeploy_survivor_bins
   kind: function
   file: crates/tamias-bin/src/lib.rs
-  line: 588
+  line: 1208
   module: tamias-bin
-- name: resolve_payload_bin
-  kind: function
-  file: crates/tamias-bin/src/lib.rs
-  line: 323
-  module: tamias-bin
-api_omitted: 12
+api_omitted: 16
 deps:
 - tamias-core
 - tamias-driver
@@ -218,7 +218,7 @@ provenance:
   - crates/tamias-bin/src/lib.rs
   hashes:
   - 445a59764f2c95491158650a1cbdd66a63271be3
-  - 29dc1a8f8e6e473127706a5f9f1677077b4705f0
-  commit_sha: dda9fd329bc6c733b593257f89678365c7929c58
-  generated_at: '1795398321'
+  - ca4fcc0eeeac10d0e1657cfa7d88a2aa148ff8e7
+  commit_sha: 7044f5bdc31ac282b6720bcf9988630cf9c5bcbf
+  generated_at: '1795528503'
   generator: kuda-template/0.1.4
