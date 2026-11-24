@@ -135,6 +135,9 @@ fn dispatch(req: &Request) -> Response {
         Request::Submit { .. } => {
             Response::err("tamias-driver-tamias is read-only and implements no forms")
         }
+        // `invoke` — the manifest declares no actions; `ok:false`
+        // is the convention hosts read.
+        Request::Invoke { .. } => Response::err("tamias-driver-tamias implements no actions"),
         // `jobs`/`notifications` — the manifest declares no
         // `contributes.jobs`/`contributes.notifications` slots, so
         // there is no feed to answer; `ok:false` is the "no feed"
