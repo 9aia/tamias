@@ -11,9 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tamias_config::{Config, ConfigFormat, Registry as ConfigRegistry, CONFIG_ENV};
-use tamias_config_toml::TomlFormat;
-use tamias_config_yml::YmlFormat;
+use tamias_config::{Config, Registry as ConfigRegistry, CONFIG_ENV};
 use tamias_core::{payload_root, Error, Manifest};
 use tamias_registry::{parse_registry_ref, PublishOutcome, Registry, RegistryEntry, RegistryRef};
 use tamias_registry_cf::HttpRegistry;
@@ -360,21 +358,18 @@ fn user_config_dir() -> Option<PathBuf> {
 /// The user-level config file under an explicit dir — first `tamias.*`
 /// in `dir`, same [`tamias_config::CONFIG_NAMES`] order as project
 /// discovery. Split from [`user_config`] so tests don't touch env.
-fn user_config_in(
-    dir: &Path,
-    formats: &[&dyn ConfigFormat],
-) -> Result<Option<(PathBuf, Config)>, Error> {
-    tamias_config::load_in(dir, formats)
+fn user_config_in(dir: &Path) -> Result<Option<(PathBuf, Config)>, Error> {
+    tamias_config::load_in(dir)
 }
 
 /// The user-level config file — first `tamias.*` under
 /// [`user_config_dir`], same [`tamias_config::CONFIG_NAMES`] order as
 /// project discovery.
-fn user_config(formats: &[&dyn ConfigFormat]) -> Result<Option<(PathBuf, Config)>, Error> {
+fn user_config() -> Result<Option<(PathBuf, Config)>, Error> {
     let Some(dir) = user_config_dir() else {
         return Ok(None);
     };
-    user_config_in(&dir, formats)
+    user_config_in(&dir)
 }
 
 /// The config file registry management verbs read/write — `file`,
@@ -386,19 +381,18 @@ fn user_config(formats: &[&dyn ConfigFormat]) -> Result<Option<(PathBuf, Config)
 /// a project `tamias.yml` rather than silently editing the global
 /// config (pass `--file ~/.config/tamias/tamias.toml` for that).
 pub fn config_target(file: Option<&Path>) -> Result<(PathBuf, Config), Error> {
-    let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
     let explicit = file
         .map(Path::to_path_buf)
         .or_else(|| std::env::var_os(CONFIG_ENV).map(PathBuf::from));
     if let Some(path) = explicit {
         let config = if path.is_file() {
-            tamias_config::load_file(&path, &formats)?
+            tamias_config::load_file(&path)?
         } else {
             Config::default()
         };
         return Ok((path, config));
     }
-    Ok(match tamias_config::load_in(Path::new("."), &formats)? {
+    Ok(match tamias_config::load_in(Path::new("."))? {
         Some(found) => found,
         None => (PathBuf::from("tamias.yml"), Config::default()),
     })
@@ -417,21 +411,18 @@ pub fn config_target(file: Option<&Path>) -> Result<(PathBuf, Config), Error> {
 /// Unlike the CLI's warn-and-ignore reader this propagates parse
 /// errors — callers that want CLI semantics catch and warn.
 pub fn load_config(file: Option<&Path>) -> Result<Config, Error> {
-    let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
     let explicit = file
         .map(Path::to_path_buf)
         .or_else(|| std::env::var_os(CONFIG_ENV).map(PathBuf::from));
     if let Some(path) = explicit {
         return Ok(if path.is_file() {
-            tamias_config::load_file(&path, &formats)?
+            tamias_config::load_file(&path)?
         } else {
             Config::default()
         });
     }
-    let mut merged = user_config(&formats)?
-        .map(|(_, config)| config)
-        .unwrap_or_default();
-    if let Some((_, project)) = tamias_config::load_in(Path::new("."), &formats)? {
+    let mut merged = user_config()?.map(|(_, config)| config).unwrap_or_default();
+    if let Some((_, project)) = tamias_config::load_in(Path::new("."))? {
         merged.overlay(&project);
     }
     Ok(merged)
@@ -440,10 +431,9 @@ pub fn load_config(file: Option<&Path>) -> Result<Config, Error> {
 /// Render `config` back to `path`'s format and write it — the only
 /// write path for `add_registry`/`remove_registry`.
 fn write_config(path: &Path, config: &Config) -> Result<(), Error> {
-    let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
-    let format = tamias_config::format_for(path, &formats)
+    let format = tamias_config::format_for(path)
         .ok_or_else(|| Error::Failed(format!("no config format for {}", path.display())))?;
-    let text = format.render(config)?;
+    let text = format.render(config).map_err(Error::Failed)?;
     std::fs::write(path, text).map_err(Error::io(format!("write {}", path.display())))
 }
 
@@ -792,15 +782,14 @@ mod tests {
     #[test]
     fn user_config_in_finds_tamias_files() {
         let tmp = tempfile::tempdir().unwrap();
-        let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
-        assert!(user_config_in(tmp.path(), &formats).unwrap().is_none());
+        assert!(user_config_in(tmp.path()).unwrap().is_none());
         // TOML is claimed too — the user file may be either standard
         std::fs::write(
             tmp.path().join("tamias.toml"),
             "[registries.org]\nkind = \"cf\"\nurl = \"https://reg.example\"\n",
         )
         .unwrap();
-        let (path, config) = user_config_in(tmp.path(), &formats).unwrap().unwrap();
+        let (path, config) = user_config_in(tmp.path()).unwrap().unwrap();
         assert_eq!(path, tmp.path().join("tamias.toml"));
         assert_eq!(
             config.registries["org"].url.as_deref(),

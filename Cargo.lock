@@ -2211,6 +2211,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "scarab-config"
+version = "0.1.0"
+source = "git+ssh://git@github.com/9aia/scarab.git?rev=a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1#a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "scarab-config-toml"
+version = "0.1.0"
+source = "git+ssh://git@github.com/9aia/scarab.git?rev=a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1#a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1"
+dependencies = [
+ "scarab-config",
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "scarab-config-yaml"
+version = "0.1.0"
+source = "git+ssh://git@github.com/9aia/scarab.git?rev=a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1#a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1"
+dependencies = [
+ "scarab-config",
+ "serde",
+ "serde_yaml_ng",
+]
+
+[[package]]
 name = "schemars"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2578,8 +2606,6 @@ dependencies = [
  "tamias-bin",
  "tamias-cache-local",
  "tamias-config",
- "tamias-config-toml",
- "tamias-config-yml",
  "tamias-core",
  "tamias-deploy",
  "tamias-deploy-cf",
@@ -2637,27 +2663,12 @@ dependencies = [
 name = "tamias-config"
 version = "0.3.0"
 dependencies = [
+ "scarab-config",
+ "scarab-config-toml",
+ "scarab-config-yaml",
  "serde",
  "tamias-core",
  "tempfile",
-]
-
-[[package]]
-name = "tamias-config-toml"
-version = "0.3.0"
-dependencies = [
- "tamias-config",
- "tamias-core",
- "toml",
-]
-
-[[package]]
-name = "tamias-config-yml"
-version = "0.3.0"
-dependencies = [
- "serde_yaml_ng",
- "tamias-config",
- "tamias-core",
 ]
 
 [[package]]
@@ -2825,8 +2836,6 @@ version = "0.3.0"
 dependencies = [
  "serde_json",
  "tamias-config",
- "tamias-config-toml",
- "tamias-config-yml",
  "tamias-core",
  "tamias-publish",
  "tamias-registry",

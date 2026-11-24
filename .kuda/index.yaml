@@ -11,8 +11,6 @@ modules:
 - tamias-cache-cf
 - tamias-cache-local
 - tamias-config
-- tamias-config-toml
-- tamias-config-yml
 - tamias-core
 - tamias-deploy
 - tamias-deploy-cf
@@ -48,8 +46,8 @@ modules:
 commands:
 - cargo check
 - cargo test --workspace
-tree_digest: a798d92f490df1502df1393a739b433fadfce784
-files_total: 243
+tree_digest: f024e455ff3fca8a9e4b95a0ccc2adc8e72ddf1f
+files_total: 239
 provenance:
   files:
   - Cargo.toml
@@ -60,8 +58,6 @@ provenance:
   - crates/tamias-cache-local/Cargo.toml
   - crates/tamias-cli/Cargo.toml
   - crates/tamias-config/Cargo.toml
-  - crates/tamias-config-toml/Cargo.toml
-  - crates/tamias-config-yml/Cargo.toml
   - crates/tamias-core/Cargo.toml
   - crates/tamias-deploy/Cargo.toml
   - crates/tamias-deploy-cf/Cargo.toml
@@ -95,16 +91,14 @@ provenance:
   - fuzz/Cargo.toml
   - xtask/Cargo.toml
   hashes:
-  - a08cf222d64d1756877aa1cf2e99615a13c6e8ea
+  - 39cad8c59eb7c553a6789452a4e22e1c8a030d6e
   - 8bbe5cfd5138fd30c1589ca7b43ee437a6e001a5
   - 445a59764f2c95491158650a1cbdd66a63271be3
   - d3af5c2636a8492ae8561db2d7eabe89a24c1deb
   - 95adcd142d2c55cd9d4e27639ed03ca898bbca04
   - 5b9a61b04a88f684b5ffe12c51bd26d10effcc7a
-  - 5d530ebdf56b390b219ba4c0c878135207bd7301
-  - 632480163263ef27edab2d729003066436e1a9d5
-  - e2354bf66bcc103954918876c89f75663f28633e
-  - ea0b53562003a16213fbdc77d5703be0e3914475
+  - 0fab9f1d8bd4227c6993f6362bce5d3eb111227b
+  - f7d22e69c14705a884c5eaa556c22874263c3717
   - 3d6543d3b1c2240951bee6cd9e50232e563d0bfa
   - cf266e216f76188736f30f53afcff0fdf41e03bd
   - 9b196142e638dc4f51ba315bf6345a621278d1cf
@@ -119,7 +113,7 @@ provenance:
   - 27a46246625517af42b3de909638c8510ef61bdd
   - 4f714bbab201b2a39c74f752ad5126919e1ccbb3
   - 51ef3679e4e57f8ded9dd6b8fe7be1488e63be2e
-  - 2a1c32c88ad81cf787a4fc0e85ee29ceb850d396
+  - 2c596e56dd9bdde61d648deba398b5f72d31b975
   - b9ed75f88348f0763043c7ed6528251839756ef0
   - dc01851714866bc619be1b91ea503f0c050c8b2c
   - c44122c7d689e10a79ee73c20710d2f647a86a31
@@ -137,6 +131,6 @@ provenance:
   - 46132d037e9aa4790bc15202fdf44007644623a4
   - 57ca36cf313852cc8f22ea5be173bded5d2f1ed6
   - f62c8bf5f2849fe1b7c68c4d37121f63802e4ec1
-  commit_sha: 7044f5bdc31ac282b6720bcf9988630cf9c5bcbf
-  generated_at: '1795528503'
+  commit_sha: 220946c7f8e793489709de73085577b14c21422b
+  generated_at: '1795549318'
   generator: kuda/0.1.0

@@ -28,9 +28,7 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use tamias_cache_local::FetchCache;
-use tamias_config::{ConfigFormat, CONFIG_ENV, CONFIG_NAMES};
-use tamias_config_toml::TomlFormat;
-use tamias_config_yml::YmlFormat;
+use tamias_config::{CONFIG_ENV, CONFIG_NAMES};
 use tamias_core::{short_digest, Error, Lock, Manifest, StoreEntry, StoreRecord};
 use tamias_install::{Progress, Surface};
 use tamias_registry::Registry;
@@ -1145,12 +1143,11 @@ fn registry_get(file: Option<&Path>, name: &str, json: bool) -> Result<(), Error
         if !reg.limits.is_empty() {
             println!(
                 "limits:    {}",
-                YmlFormat
-                    .render(&tamias_config::Config {
-                        limits: reg.limits.clone(),
-                        ..Default::default()
-                    })?
-                    .trim()
+                tamias_config::render_yaml(&tamias_config::Config {
+                    limits: reg.limits.clone(),
+                    ..Default::default()
+                })?
+                .trim()
             );
         }
     }
@@ -1857,15 +1854,14 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
             doctor(&env, json)?;
         }
         Some(Command::Config { file, json }) => {
-            let formats: [&dyn ConfigFormat; 2] = [&YmlFormat, &TomlFormat];
             // `--file` → `TAMIAS_CONFIG` → discovery, same precedence as
             // the registry management verbs.
             let explicit = file
                 .clone()
                 .or_else(|| std::env::var_os(CONFIG_ENV).map(PathBuf::from));
             let (path, config) = match explicit {
-                Some(p) => (Some(p.clone()), tamias_config::load_file(&p, &formats)?),
-                None => match tamias_config::load_in(Path::new("."), &formats)? {
+                Some(p) => (Some(p.clone()), tamias_config::load_file(&p)?),
+                None => match tamias_config::load_in(Path::new("."))? {
                     Some((p, c)) => (Some(p), c),
                     None => (None, tamias_config::Config::default()),
                 },
@@ -1881,7 +1877,7 @@ fn dispatch(cli: Cli, env: Env) -> Result<(), Error> {
                     serde_json::to_string(&value).map_err(|e| Error::Failed(e.to_string()))?
                 );
             } else {
-                println!("{}", YmlFormat.render(&config)?);
+                println!("{}", tamias_config::render_yaml(&config)?);
             }
         }
         Some(Command::Manifest) => {

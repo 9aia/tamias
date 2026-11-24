@@ -15,8 +15,6 @@ documentation.workspace = true
 [dependencies]
 tamias-core.workspace = true
 tamias-config.workspace = true
-tamias-config-yml.workspace = true
-tamias-config-toml.workspace = true
 tamias-registry.workspace = true
 tamias-registry-local.workspace = true
 tamias-registry-cf.workspace = true
