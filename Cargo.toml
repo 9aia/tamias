@@ -5,8 +5,6 @@ members = [
     "crates/tamias-cache",
     "crates/tamias-cache-local",
     "crates/tamias-config",
-    "crates/tamias-config-yml",
-    "crates/tamias-config-toml",
     "crates/tamias-driver",
     "crates/tamias-install",
     "crates/tamias-core",
@@ -68,8 +66,10 @@ tamias = { path = "crates/tamias-cli", version = "0.3.0" }
 tamias-cache = { path = "crates/tamias-cache", version = "0.3.0" }
 tamias-cache-local = { path = "crates/tamias-cache-local", version = "0.3.0" }
 tamias-config = { path = "crates/tamias-config", version = "0.3.0" }
-tamias-config-yml = { path = "crates/tamias-config-yml", version = "0.3.0" }
-tamias-config-toml = { path = "crates/tamias-config-toml", version = "0.3.0" }
+# scarab — config expertise; tamias-config's formats/discovery ride it (P-045)
+scarab-config = { git = "ssh://git@github.com/9aia/scarab.git", rev = "a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1", version = "0.1" }
+scarab-config-toml = { git = "ssh://git@github.com/9aia/scarab.git", rev = "a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1", version = "0.1" }
+scarab-config-yaml = { git = "ssh://git@github.com/9aia/scarab.git", rev = "a68fed26d8cea1bdd6fc7d6927bcc33c85e240c1", version = "0.1" }
 tamias-driver = { path = "crates/tamias-driver", version = "0.3.0" }
 tamias-install = { path = "crates/tamias-install", version = "0.3.0" }
 tamias-core = { path = "crates/tamias-core", version = "0.3.0" }

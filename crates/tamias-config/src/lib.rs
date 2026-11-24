@@ -1,11 +1,14 @@
 #![cfg_attr(coverage, feature(coverage_attribute))]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-//! Config port (`tamias-config`) — the tamias config model + format port.
+//! Config port (`tamias-config`) — the tamias config model + the
+//! loading wiring over scarab's config port (P-045).
 //!
 //! **YAML is the standard** (`tamias.yml` / `tamias.yaml`); TOML
 //! (`tamias.toml`) is the supported alternative that parses into the same
-//! [`Config`]. Format impls live in `tamias-config-yml` /
-//! `tamias-config-toml`; the port never links them.
+//! [`Config`]. Parsing/rendering rides `scarab-config-yaml` /
+//! `scarab-config-toml`'s blanket [`scarab_config::ConfigFormat`]
+//! impls; discovery stays here as the [`CONFIG_NAMES`] filename list
+//! (`yml` before `yaml`, TOML last) plus [`load_in`]/[`load_file`].
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -568,35 +571,31 @@ impl Config {
     }
 }
 
-/// A config file format — parse text → [`Config`], and render back.
-pub trait ConfigFormat: Send + Sync {
-    /// The file extensions this format claims (no leading dot).
-    fn extensions(&self) -> &'static [&'static str];
+/// The standard formats over [`Config`] — scarab's blanket
+/// [`scarab_config::ConfigFormat`] impls (P-045): YAML claims
+/// `yml`/`yaml`, TOML claims `toml`. Parsing/rendering is scarab's;
+/// tamias keeps only the [`Config`] model, the [`CONFIG_NAMES`]
+/// filename list, and the layered-merge policy.
+static FORMATS: [&dyn scarab_config::ConfigFormat<Config>; 2] = [
+    &scarab_config_yaml::YamlFormat,
+    &scarab_config_toml::TomlFormat,
+];
 
-    /// Parse `text`.
-    ///
-    /// # Errors
-    /// Fails on a syntax or type error.
-    fn parse(&self, text: &str) -> Result<Config, Error>;
-
-    /// Render `config` back to this format.
-    ///
-    /// # Errors
-    /// Fails on a serialize error.
-    fn render(&self, config: &Config) -> Result<String, Error>;
+/// The format that claims `path`'s extension, if any — YAML for
+/// `.yml`/`.yaml`, TOML for `.toml`.
+#[must_use]
+pub fn format_for(path: &Path) -> Option<&'static dyn scarab_config::ConfigFormat<Config>> {
+    scarab_config::format_for(path, &FORMATS)
 }
 
-/// The format that claims `path`'s extension, if any.
-#[must_use]
-pub fn format_for<'a>(
-    path: &Path,
-    formats: &'a [&'a dyn ConfigFormat],
-) -> Option<&'a dyn ConfigFormat> {
-    let ext = path.extension().and_then(|e| e.to_str())?;
-    formats
-        .iter()
-        .copied()
-        .find(|f| f.extensions().contains(&ext))
+/// Render `config` in the standard YAML format — the display format
+/// for `tamias config` and `registry get`.
+///
+/// # Errors
+/// Fails on a serialize error.
+pub fn render_yaml(config: &Config) -> Result<String, Error> {
+    scarab_config::ConfigFormat::<Config>::render(&scarab_config_yaml::YamlFormat, config)
+        .map_err(Error::Failed)
 }
 
 /// Load a specific config file, parsing with the format that claims its
@@ -604,28 +603,25 @@ pub fn format_for<'a>(
 ///
 /// # Errors
 /// Fails on a read/parse error or an unclaimed extension.
-pub fn load_file(path: &Path, formats: &[&dyn ConfigFormat]) -> Result<Config, Error> {
-    let format = format_for(path, formats)
+pub fn load_file(path: &Path) -> Result<Config, Error> {
+    let format = format_for(path)
         .ok_or_else(|| Error::Failed(format!("no config format for {}", path.display())))?;
     let text =
         std::fs::read_to_string(path).map_err(Error::io(format!("read {}", path.display())))?;
-    format.parse(&text)
+    format.parse(&text).map_err(Error::Failed)
 }
 
 /// Load the first config file found in `dir` (YAML first — [`CONFIG_NAMES`]).
 ///
 /// # Errors
 /// Fails on a read/parse error; `Ok(None)` when no config file exists.
-pub fn load_in(
-    dir: &Path,
-    formats: &[&dyn ConfigFormat],
-) -> Result<Option<(PathBuf, Config)>, Error> {
+pub fn load_in(dir: &Path) -> Result<Option<(PathBuf, Config)>, Error> {
     for name in CONFIG_NAMES {
         let path = dir.join(name);
         if !path.is_file() {
             continue;
         }
-        let config = load_file(&path, formats)?;
+        let config = load_file(&path)?;
         return Ok(Some((path, config)));
     }
     Ok(None)
@@ -636,47 +632,34 @@ pub fn load_in(
 mod tests {
     use super::*;
 
-    /// A toy format claiming `yml`, parsing `"ok"` to the default.
-    struct Toy;
-    impl ConfigFormat for Toy {
-        fn extensions(&self) -> &'static [&'static str] {
-            &["yml"]
-        }
-        fn parse(&self, text: &str) -> Result<Config, Error> {
-            if text.trim() == "ok" {
-                Ok(Config::default())
-            } else {
-                Err(Error::Failed("bad toy".into()))
-            }
-        }
-        fn render(&self, _config: &Config) -> Result<String, Error> {
-            Ok("ok".into())
-        }
-    }
-
     #[test]
     fn format_for_load_file_and_load_in() {
-        let toy = Toy;
-        let formats: [&dyn ConfigFormat; 1] = [&toy];
-        assert!(format_for(Path::new("a.yml"), &formats).is_some());
-        assert!(format_for(Path::new("a.json"), &formats).is_none());
-        assert!(format_for(Path::new("noext"), &formats).is_none());
+        assert!(format_for(Path::new("a.yml")).is_some());
+        assert!(format_for(Path::new("a.yaml")).is_some());
+        assert!(format_for(Path::new("a.toml")).is_some());
+        assert!(format_for(Path::new("a.json")).is_none());
+        assert!(format_for(Path::new("noext")).is_none());
 
         let dir = tempfile::tempdir().unwrap();
-        assert!(load_in(dir.path(), &formats).unwrap().is_none());
+        assert!(load_in(dir.path()).unwrap().is_none());
 
         let p = dir.path().join("tamias.yml");
-        std::fs::write(&p, "ok").unwrap();
-        let (found, cfg) = load_in(dir.path(), &formats).unwrap().unwrap();
+        std::fs::write(&p, "publish:\n  default: r\n").unwrap();
+        let (found, cfg) = load_in(dir.path()).unwrap().unwrap();
         assert_eq!(found, p);
-        assert_eq!(cfg, Config::default());
+        assert_eq!(cfg.publish.default.as_deref(), Some("r"));
 
-        assert!(load_file(&dir.path().join("x.json"), &formats).is_err());
-        assert!(load_file(&dir.path().join("gone.yml"), &formats).is_err());
-        std::fs::write(&p, "nope").unwrap();
-        assert!(load_in(dir.path(), &formats).is_err());
+        assert!(load_file(&dir.path().join("x.json")).is_err());
+        assert!(load_file(&dir.path().join("gone.yml")).is_err());
+        std::fs::write(&p, "not: [valid").unwrap();
+        assert!(load_in(dir.path()).is_err());
 
-        assert_eq!(toy.render(&Config::default()).unwrap(), "ok");
+        // render_yaml round-trips through load_file
+        let text = render_yaml(&cfg).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let rp = tmp.path().join("tamias.yaml");
+        std::fs::write(&rp, &text).unwrap();
+        assert_eq!(load_file(&rp).unwrap(), cfg);
         let mut c = Config::default();
         c.store.kind = Some("local".into());
         c.publish.default = Some("r".into());

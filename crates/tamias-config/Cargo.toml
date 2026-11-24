@@ -13,6 +13,9 @@ homepage.workspace = true
 documentation.workspace = true
 
 [dependencies]
+scarab-config.workspace = true
+scarab-config-toml.workspace = true
+scarab-config-yaml.workspace = true
 serde.workspace = true
 tamias-core.workspace = true
 

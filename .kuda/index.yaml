@@ -11,8 +11,6 @@ modules:
 - tamias-cache-cf
 - tamias-cache-local
 - tamias-config
-- tamias-config-toml
-- tamias-config-yml
 - tamias-core
 - tamias-deploy
 - tamias-deploy-cf
@@ -48,8 +46,8 @@ modules:
 commands:
 - cargo check
 - cargo test --workspace
-tree_digest: dd8c66cf2ff4bf7814bdcf652ecfafbb6b4954f9
-files_total: 235
+tree_digest: e9b27a076b3680371a014959fb3712461a5d4947
+files_total: 182
 provenance:
   files:
   - Cargo.toml
@@ -60,8 +58,6 @@ provenance:
   - crates/tamias-cache-local/Cargo.toml
   - crates/tamias-cli/Cargo.toml
   - crates/tamias-config/Cargo.toml
-  - crates/tamias-config-toml/Cargo.toml
-  - crates/tamias-config-yml/Cargo.toml
   - crates/tamias-core/Cargo.toml
   - crates/tamias-deploy/Cargo.toml
   - crates/tamias-deploy-cf/Cargo.toml
@@ -95,17 +91,15 @@ provenance:
   - fuzz/Cargo.toml
   - xtask/Cargo.toml
   hashes:
-  - f81d71a2376cab90d985fdca13502b30e272d26c
+  - 445ac1d84d47eb259adeea53c8dde7e1697b7556
   - 8bbe5cfd5138fd30c1589ca7b43ee437a6e001a5
   - 445a59764f2c95491158650a1cbdd66a63271be3
   - d3af5c2636a8492ae8561db2d7eabe89a24c1deb
   - 95adcd142d2c55cd9d4e27639ed03ca898bbca04
   - 5b9a61b04a88f684b5ffe12c51bd26d10effcc7a
-  - 0e9a52d8e060fd49c8d6a24772282474eb62993d
-  - 632480163263ef27edab2d729003066436e1a9d5
-  - e2354bf66bcc103954918876c89f75663f28633e
-  - ea0b53562003a16213fbdc77d5703be0e3914475
-  - 62cb802a5bec85084acbbd27e225c8dec1e3c40a
+  - 0fab9f1d8bd4227c6993f6362bce5d3eb111227b
+  - f7d22e69c14705a884c5eaa556c22874263c3717
+  - 3d6543d3b1c2240951bee6cd9e50232e563d0bfa
   - cf266e216f76188736f30f53afcff0fdf41e03bd
   - 9b196142e638dc4f51ba315bf6345a621278d1cf
   - 30b23ec3aaf291ff59a4bc44e82dfc174c17fb38
@@ -114,12 +108,12 @@ provenance:
   - a60598cde4a7ffbb54204b99b25a4baa66247642
   - c6358d2291d6856b31c1b35a536c9089cea6486a
   - 8162f54710e782799c63f837f0390b5d09514c95
-  - c25db321c302a1735c7b30ee64ed311398d9962c
+  - 9747a606414059116a03f7f2c174946eeda8e597
   - 2c1262867cc3f0e373d39cbb9512ba3af218fced
   - 27a46246625517af42b3de909638c8510ef61bdd
   - 4f714bbab201b2a39c74f752ad5126919e1ccbb3
   - 51ef3679e4e57f8ded9dd6b8fe7be1488e63be2e
-  - 2a1c32c88ad81cf787a4fc0e85ee29ceb850d396
+  - 2c596e56dd9bdde61d648deba398b5f72d31b975
   - b9ed75f88348f0763043c7ed6528251839756ef0
   - dc01851714866bc619be1b91ea503f0c050c8b2c
   - c44122c7d689e10a79ee73c20710d2f647a86a31
@@ -134,9 +128,9 @@ provenance:
   - b72ecdfc35205627f0652e893fcaa0e5558afc3b
   - 11e5afcee2642dd5e6031549c4c19e03372969fc
   - 371a0d2a29dd41b3a5c93b1a96fc6aea0ea11cfe
-  - b6a235087c38037ce9ad4db4bddbfe7ee52a710d
+  - 46132d037e9aa4790bc15202fdf44007644623a4
   - 57ca36cf313852cc8f22ea5be173bded5d2f1ed6
   - f62c8bf5f2849fe1b7c68c4d37121f63802e4ec1
-  commit_sha: 59bfeb8644ba2218d2c97f572e06172bb111ec93
-  generated_at: '1794977521'
+  commit_sha: 5464556b58bd43ee5bb2e48e02804686e04c87da
+  generated_at: '1795522263'
   generator: kuda/0.1.0

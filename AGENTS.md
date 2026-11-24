@@ -61,7 +61,7 @@ domain (no I/O); ports are traits, impls are separate crates;
 | Crate | Role |
 | --- | --- |
 | `crates/tamias-core` | package, ref grammar, manifest, records, digest, store-prune planning — pure |
-| `crates/tamias-config` + `-yml`/`-toml` | config model + format port — YAML (`tamias.yml`) is the standard, TOML the alternative |
+| `crates/tamias-config` | config model + loading over `scarab-config*` (P-045) — YAML (`tamias.yml`) is the standard, TOML the alternative |
 | `crates/tamias-source` + `-fs`/`-git`/`-http`/`-cf`/`-registry` | ref grammar + source port (`resolve`→`fetch`) + impls (`cf:` = Cloudflare registry refs, `-registry` = named-registry `<label>:<pkg>@<ver>` refs) |
 | `crates/tamias-store` + `-local`/`-cf` | install store port + impls (`-cf` scaffolded) |
 | `crates/tamias-cache` + `-local`/`-cf` | content-addressed fetch cache (`-cf` scaffolded) |
