@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0] - 2026-11-23
+
+### Added
+
+- **cli,tui:** tamias prune — explicit store GC for superseded versions (`68bf1d7`)
+
+### Fixed
+
+- **bins:** redeploy surviving sibling bins after store entry drops (`e894758`)
+
 ## [0.2.0] - 2026-11-16
 
 ### Added

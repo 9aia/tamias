@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0] - 2026-11-23
+
+### Fixed
+
+- **bins:** redeploy surviving sibling bins after store entry drops (`e894758`)
+
 ## [0.2.1] - 2026-11-16
 
 ## [0.2.0] - 2026-11-16

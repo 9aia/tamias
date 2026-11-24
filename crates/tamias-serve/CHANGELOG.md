@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0] - 2026-11-23
+
+### Added
+
+- **serve:** standalone tamias-serve binary — lean server install, no TUI (`88cd2b5`)
+- **serve:** driver.* ops — proxy tamias-driver-* binaries over the wire (`50d546e`)
+
 ## [0.2.1] - 2026-11-16
 
 ## [0.2.0] - 2026-11-16
