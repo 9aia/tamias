@@ -12,8 +12,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
-use tamias_core::Error;
+use tamias_core::{output_with_timeout, Error};
 
 // The service spec + shared helpers live in the `tamias-deploy` port —
 // every local backend (this one, `tamias-deploy-windows`, …) renders
@@ -253,6 +254,31 @@ pub fn journalctl_args(names: &[String], lines: u32, follow: bool) -> Result<Vec
     Ok(args)
 }
 
+/// `enabled=<is-enabled> active=<is-active>` one-line probe for
+/// status surfaces — `is-enabled`/`is-active` exit non-zero on
+/// disabled/inactive units, so each leg reports `unknown` on spawn
+/// failure or timeout rather than throwing. Accepts the unit base
+/// name or the full `<name>.service` spelling; each probe is bounded
+/// at 3s. Runs `systemctl` directly (not through [`Runner`]) because
+/// it captures stdout.
+#[must_use]
+pub fn unit_status(name: &str) -> String {
+    let name = name.strip_suffix(".service").unwrap_or(name);
+    let unit = format!("{name}.service");
+    let probe = |args: &[&str]| -> String {
+        let mut cmd = Command::new("systemctl");
+        cmd.args(args);
+        output_with_timeout(&mut cmd, Duration::from_secs(3))
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_else(|_| "unknown".into())
+    };
+    format!(
+        "enabled={} active={}",
+        probe(&["--user", "is-enabled", &unit]),
+        probe(&["--user", "is-active", &unit])
+    )
+}
+
 /// A valid unit base name: `[A-Za-z0-9_.@-]`, no separators, no `..`,
 /// not `.`/`..`. The name becomes both a filename (`<name>.service`)
 /// and a `systemctl` argument, so anything outside this set is rejected.
@@ -414,11 +440,18 @@ pub fn render_unit(spec: &ServiceSpec) -> String {
     unit
 }
 
-/// `$XDG_CONFIG_HOME/systemd/user` → `~/.config/systemd/user`.
-fn unit_dir() -> PathBuf {
+/// `$XDG_CONFIG_HOME/systemd/user` → `~/.config/systemd/user` — the
+/// default per-user unit dir [`LocalDeploy::new`] manages. Public so
+/// consumers that need the path without a deployer (status surfaces,
+/// legacy-unit cleanup) don't re-derive it.
+#[must_use]
+pub fn unit_dir() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(|d| PathBuf::from(d).join("systemd/user"))
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config/systemd/user")))
+        .or_else(|| {
+            std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join(".config/systemd/user"))
+        })
         .unwrap_or_else(|| PathBuf::from(".config/systemd/user"))
 }
 
@@ -728,6 +761,18 @@ mod tests {
     #[test]
     fn default_uses_new() {
         let _ = LocalDeploy::default();
+    }
+
+    #[test]
+    fn unit_status_reports_both_legs() {
+        // Host-dependent — a nonexistent unit still yields the
+        // `enabled=… active=…` shape (legs report `unknown` only when
+        // systemctl itself can't run).
+        let line = unit_status("tamias-covtest-nonexistent");
+        assert!(line.starts_with("enabled="), "{line}");
+        assert!(line.contains(" active="), "{line}");
+        // The `.service` spelling is accepted too.
+        assert_eq!(unit_status("tamias-covtest-nonexistent.service"), line);
     }
 
     #[test]

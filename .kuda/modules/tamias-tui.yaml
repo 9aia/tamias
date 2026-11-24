@@ -5,22 +5,22 @@ api:
 - name: ACCENT
   kind: const
   file: crates/tamias-tui/src/render.rs
-  line: 21
+  line: 15
   module: tamias-tui
 - name: ALL
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 116
+  line: 99
   module: tamias-tui
 - name: ArgKind
   kind: type
   file: crates/tamias-tui/src/complete.rs
-  line: 33
+  line: 31
   module: tamias-tui
 - name: Base
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 695
+  line: 665
   module: tamias-tui
 - name: CACHE_MAX_AGE
   kind: const
@@ -30,57 +30,32 @@ api:
 - name: CLEAN_ARGS
   kind: const
   file: crates/tamias-tui/src/complete.rs
-  line: 250
-  module: tamias-tui
-- name: CMD_COMPLETION_CAP
-  kind: const
-  file: crates/tamias-tui/src/app.rs
-  line: 62
-  module: tamias-tui
-- name: CMD_HIST_CAP
-  kind: const
-  file: crates/tamias-tui/src/app.rs
-  line: 58
+  line: 238
   module: tamias-tui
 - name: Candidate
   kind: type
   file: crates/tamias-tui/src/complete.rs
-  line: 20
+  line: 18
   module: tamias-tui
 - name: Cmd
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 356
+  line: 332
   module: tamias-tui
 - name: Ctx
   kind: type
   file: crates/tamias-tui/src/lib.rs
-  line: 52
+  line: 49
   module: tamias-tui
 - name: Detail
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 239
+  line: 215
   module: tamias-tui
 - name: Drained
   kind: type
   file: crates/tamias-tui/tests/pty.rs
   line: 128
-  module: tamias-tui
-- name: ENV_LOCK
-  kind: const
-  file: crates/tamias-tui/src/lib.rs
-  line: 269
-  module: tamias-tui
-- name: Edit
-  kind: type
-  file: crates/tamias-tui/src/app.rs
-  line: 643
-  module: tamias-tui
-- name: EnvGuard
-  kind: type
-  file: crates/tamias-tui/src/lib.rs
-  line: 275
   module: tamias-tui
 - name: Fixture
   kind: type
@@ -90,7 +65,7 @@ api:
 - name: Guard
   kind: type
   file: crates/tamias-tui/src/lib.rs
-  line: 116
+  line: 113
   module: tamias-tui
 - name: Job
   kind: type
@@ -100,109 +75,134 @@ api:
 - name: LOGS_FLAGS
   kind: const
   file: crates/tamias-tui/src/complete.rs
-  line: 254
+  line: 242
   module: tamias-tui
 - name: LOG_CAP
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 51
+  line: 47
   module: tamias-tui
 - name: LOG_LINES
   kind: const
   file: crates/tamias-tui/src/ops.rs
-  line: 1177
+  line: 1088
   module: tamias-tui
 - name: MUTED
   kind: const
   file: crates/tamias-tui/src/render.rs
-  line: 25
+  line: 16
   module: tamias-tui
 - name: Modal
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 186
+  line: 162
   module: tamias-tui
 - name: Mode
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 161
+  line: 143
   module: tamias-tui
 - name: Model
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 843
+  line: 561
   module: tamias-tui
 - name: Msg
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 208
+  line: 184
   module: tamias-tui
 - name: Outcome
   kind: type
   file: crates/tamias-tui/src/ops.rs
-  line: 332
+  line: 308
   module: tamias-tui
 - name: Pane
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 84
+  line: 73
   module: tamias-tui
 - name: PromptKind
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 129
+  line: 111
   module: tamias-tui
 - name: RESCAN_TICKS
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 45
-  module: tamias-tui
-- name: RegistryRow
-  kind: type
-  file: crates/tamias-tui/src/ops.rs
-  line: 1101
+  line: 41
   module: tamias-tui
 - name: Row
   kind: type
   file: crates/tamias-tui/src/app.rs
-  line: 70
+  line: 59
   module: tamias-tui
 - name: SEARCH_DEBOUNCE
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 55
+  line: 51
   module: tamias-tui
 - name: SERVICE_ACTIONS
   kind: const
   file: crates/tamias-tui/src/complete.rs
-  line: 244
+  line: 232
   module: tamias-tui
 - name: SPINNER
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 65
+  line: 54
   module: tamias-tui
 - name: STATUS_TTL
   kind: const
   file: crates/tamias-tui/src/app.rs
-  line: 48
+  line: 44
   module: tamias-tui
 - name: SYNC_FLAGS
   kind: const
   file: crates/tamias-tui/src/complete.rs
-  line: 247
+  line: 235
   module: tamias-tui
-- name: T
-  kind: const
-  file: crates/tamias-tui/src/lib.rs
-  line: 198
-  module: tamias-tui
-- name: TEXT
+- name: UNITS
   kind: const
   file: crates/tamias-tui/src/render.rs
-  line: 29
+  line: 119
   module: tamias-tui
-api_omitted: 382
+- name: VERBS
+  kind: const
+  file: crates/tamias-tui/src/complete.rs
+  line: 62
+  module: tamias-tui
+- name: VerbSpec
+  kind: type
+  file: crates/tamias-tui/src/complete.rs
+  line: 51
+  module: tamias-tui
+- name: WARN
+  kind: const
+  file: crates/tamias-tui/src/render.rs
+  line: 17
+  module: tamias-tui
+- name: add_dep
+  kind: function
+  file: crates/tamias-tui/src/ops.rs
+  line: 842
+  module: tamias-tui
+- name: app
+  kind: module
+  file: crates/tamias-tui/src/lib.rs
+  line: 27
+  module: tamias-tui
+- name: apply_completion
+  kind: function
+  file: crates/tamias-tui/src/app.rs
+  line: 1846
+  module: tamias-tui
+- name: arg_candidates
+  kind: function
+  file: crates/tamias-tui/src/complete.rs
+  line: 256
+  module: tamias-tui
+api_omitted: 192
 deps:
 - crossterm
 - notify
@@ -251,14 +251,14 @@ provenance:
   - crates/tamias-tui/src/render.rs
   - crates/tamias-tui/tests/pty.rs
   hashes:
-  - 42a98849ade1bd2cff22a65331451fa0d385120f
-  - a674ba7d7950c4f775635262e92e6c0573389164
-  - c4141f3c63e06d343d9151b5267fc9dbc1ed1103
-  - 2b36454ceacdb71546c598f0535889bfe198b034
+  - b6a235087c38037ce9ad4db4bddbfe7ee52a710d
+  - 58b5b01482f9ef758c268614406a0f31fa900a3d
+  - 0a519f7ed6e89a6c3b4867fc87a8a43e4daeb7d6
+  - cd336e644782c600b4db31e5f62c46b3420c6264
   - 80aee119f04f925cf1deeac8d90ba2f6afd2c444
-  - 3db89be1be17d55846b711d181d9f3dd0ebd69ca
-  - 6a84f354da381c2390761691aef12f5ba4af605a
-  - 54f2302ec42c274d3fe1d3ce55af0bd6f17e4143
-  commit_sha: f3b6e21366b9d047f94bd0c44d83be51b03824cf
-  generated_at: '1795452579'
+  - 5cb9f07d7efde41656afbd5c3e0997a8b15cb25a
+  - 7766929cfdd8aacc9e148690c4001e1c29cdd73c
+  - ce47a9a3c78db016cabc95afbcdb70418f407f9d
+  commit_sha: dda9fd329bc6c733b593257f89678365c7929c58
+  generated_at: '1795398321'
   generator: kuda-template/0.1.4
