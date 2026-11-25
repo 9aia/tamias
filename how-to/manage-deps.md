@@ -43,6 +43,13 @@ left alone (`add` is what creates it).
 `update` re-runs the install path, so a package that ships `drivers/`
 needs `--allow-drivers` (or `TAMIAS_ALLOW_DRIVERS=1`) again.
 
+`update` prunes the superseded same-name store versions of the
+packages it touched by default — old versions stay as rollback
+targets only until then. `--no-prune` opts out per run, and
+`tamias prune` is the explicit garbage-collection verb for the whole
+store: dry-run by default, `--yes` removes, `--keep N` tunes how many
+semver versions survive per package.
+
 ## Sync a fresh checkout
 
 `deps:` + `tamias.lock` are a write-only ledger until you reconcile
@@ -88,7 +95,7 @@ for reproducible restores; use plain `sync` to move with your refs.
 
 The same reconcile is available to embedders as the `sync` op of
 `tamias serve` (`{"op":"sync","locked":…,"from_lock":…,"allow_drivers":…,"dir":…}` —
-`dir` defaults to the server's cwd) and in the TUI's Manifest pane
+`dir` defaults to the server's cwd) and in the TUI's Project pane
 (`s` or `:sync`, behind a confirm).
 
 ## Remove
