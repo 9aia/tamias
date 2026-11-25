@@ -105,7 +105,7 @@ api:
 - name: engine_argv
   kind: function
   file: crates/tamias-driver-tamias/src/main.rs
-  line: 162
+  line: 165
   module: tamias-driver-tamias
 - name: env_cache_root
   kind: function
@@ -190,7 +190,7 @@ api:
 - name: main
   kind: function
   file: crates/tamias-driver-tamias/src/main.rs
-  line: 181
+  line: 184
   module: tamias-driver-tamias
 - name: manifest
   kind: function
@@ -242,12 +242,12 @@ provenance:
   - crates/tamias-driver-tamias/src/views.rs
   - crates/tamias-driver-tamias/tests/conformance.rs
   hashes:
-  - c6358d2291d6856b31c1b35a536c9089cea6486a
+  - 6599941da1d219a10984afe5d553d9742494284a
   - 8e3cc8faff66be7233a710287b83493be76d5ad9
-  - 005573c1d0e47bd6ab208d463c98d3bcbbeac7be
+  - 970df8f44c21bd711bbd1395bf3ec964f41fd1c0
   - 0e017f68f70e3ca7e0a28adf84596a520ee795d4
   - ab3d7377aea3f932223fb2fdcb0d608064e14f1f
   - da6ee25ea49c5751fdf325a58fd3f016205b0c4b
-  commit_sha: 5464556b58bd43ee5bb2e48e02804686e04c87da
-  generated_at: '1795522263'
+  commit_sha: ddc61e5b13d7f0b39ea3bfd950be18b1a48ddc38
+  generated_at: '1795566268'
   generator: kuda-template/0.1.4

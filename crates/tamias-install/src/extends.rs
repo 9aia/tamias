@@ -43,6 +43,7 @@
 
 use std::path::{Path, PathBuf};
 
+use scarab_template::{parse_extends, ParentDecl, PARENTS_DIR, PARENT_DIR};
 use tamias_core::{copy_tree, find_store_entry, Error};
 use tamias_source::expand_path;
 use tamias_source_fs::FsSpec;
@@ -58,14 +59,10 @@ use crate::{install_inner, Env, Progress, Surface};
 /// `DEFAULT_MAX_DEPTH`.
 pub(crate) const MAX_EXTENDS_DEPTH: usize = 8;
 
-/// Payload subdir a single resolved parent materializes into — the
-/// driver (`tamias-driver-template`) discovers it by this name.
-pub(crate) const PARENT_DIR: &str = ".scarab-parent";
-
-/// Payload subdir several resolved parents materialize into — one
-/// numbered child (`0/`, `1/`, …) per `extends` declaration, in
-/// declaration order (lowest precedence first).
-pub(crate) const PARENTS_DIR: &str = ".scarab-parents";
+// The `.scarab-parent`/`.scarab-parents` materialization layout is
+// scarab's blessed convention — `PARENT_DIR`/`PARENTS_DIR` are
+// imported from `scarab-template` so installer and driver share
+// one spelling.
 
 /// `via` schemes tamias can resolve — absent `via` means the ambient
 /// default, which under a tamias install is `tamias-ref`.
@@ -87,20 +84,13 @@ pub(crate) struct ExtParent {
 ///
 /// The `template:` table is driver-owned: tamias re-reads the raw
 /// manifest file (the typed [`tamias_core::Manifest`] drops unknown
-/// keys) and validates only this one field, per the agnostic
-/// composition spec (scarab `COMPOSITION.md`):
-///
-/// - `"<source>"` — one parent, bare string.
-/// - `{"source": "<source>", "via": "<scheme>"}` — one structured
-///   parent (`via` optional; must be a tamias scheme).
-/// - `[<string-or-table>, …]` — several parents, lowest precedence
-///   first. An empty list is an error.
-///
-/// Anything else — non-string sources, empty sources, unknown `via`
-/// schemes — fails.
+/// keys). Declaration *shape* — string | `{source, via}` | list —
+/// is scarab's grammar, parsed by [`parse_extends`]; tamias keeps
+/// only the `via`-scheme allowlist ([`TAMIAS_VIA`]) on top.
 ///
 /// # Errors
-/// Fails on manifest read/parse errors or a malformed `extends`.
+/// Fails on manifest read/parse errors, a malformed `extends`, or a
+/// `via` scheme tamias can't resolve.
 pub(crate) fn parents(dir: &Path) -> Result<Vec<ExtParent>, Error> {
     let Some(path) = tamias_core::Manifest::path_in(dir) else {
         return Ok(Vec::new());
@@ -123,50 +113,16 @@ pub(crate) fn parents(dir: &Path) -> Result<Vec<ExtParent>, Error> {
         serde_json::to_value(table)
             .map_err(|e| Error::Failed(format!("parse {}: {e}", path.display())))?
     };
-    let Some(extends) = value.get("template").and_then(|t| t.get("extends")) else {
-        return Ok(Vec::new());
-    };
-    if extends.is_null() {
-        return Ok(Vec::new());
-    }
-    let items: Vec<serde_json::Value> = match extends {
-        serde_json::Value::Array(items) => items.clone(),
-        other => vec![other.clone()],
-    };
-    if items.is_empty() {
-        return Err(Error::Failed(format!(
-            "{}: template.extends is an empty list — name at least one parent",
-            path.display()
-        )));
-    }
-    items.iter().map(|item| parse_parent(item, &path)).collect()
+    let decls =
+        parse_extends(&value).map_err(|e| Error::Failed(format!("{}: {e}", path.display())))?;
+    decls.iter().map(|d| parse_parent(d, &path)).collect()
 }
 
-/// One `extends` item (string or `{source, via}` map) → [`ExtParent`].
-fn parse_parent(item: &serde_json::Value, path: &Path) -> Result<ExtParent, Error> {
-    let bad = |why: &str| Error::Failed(format!("{}: template.extends {why}", path.display()));
-    let (source, via) = match item {
-        serde_json::Value::String(s) => (s.clone(), None),
-        serde_json::Value::Object(map) => {
-            let source = map.get("source").and_then(|v| v.as_str()).ok_or_else(|| {
-                bad("parent must be a string or {source, via} with a string source")
-            })?;
-            let via = match map.get("via") {
-                None | Some(serde_json::Value::Null) => None,
-                Some(serde_json::Value::String(s)) => Some(s.clone()),
-                Some(_) => return Err(bad("parent 'via' must be a string")),
-            };
-            (source.to_string(), via)
-        }
-        _ => {
-            return Err(bad(
-                "parent must be a string or {source, via} with a string source",
-            ));
-        }
-    };
-    if source.trim().is_empty() {
-        return Err(bad("parent source must be a non-empty string"));
-    }
+/// One parsed [`ParentDecl`] → [`ExtParent`] after the tamias
+/// `via`-scheme allowlist — `None` (ambient default) and the
+/// [`TAMIAS_VIA`] schemes pass; anything else fails the install.
+fn parse_parent(decl: &ParentDecl, path: &Path) -> Result<ExtParent, Error> {
+    let via = decl.via().map(str::to_string);
     if let Some(v) = &via {
         if !TAMIAS_VIA.contains(&v.as_str()) {
             return Err(Error::Failed(format!(
@@ -177,7 +133,10 @@ fn parse_parent(item: &serde_json::Value, path: &Path) -> Result<ExtParent, Erro
             )));
         }
     }
-    Ok(ExtParent { source, via })
+    Ok(ExtParent {
+        source: decl.source().to_string(),
+        via,
+    })
 }
 
 /// Resolve each declared parent to a payload dir and copy it into

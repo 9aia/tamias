@@ -26,6 +26,7 @@ tamias-cache-local.workspace = true
 tamias-driver.workspace = true
 tamias-bin.workspace = true
 tamias-sign.workspace = true
+scarab-template.workspace = true
 tempfile.workspace = true
 tracing.workspace = true
 serde.workspace = true

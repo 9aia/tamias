@@ -45,7 +45,7 @@ api:
 - name: ExtParent
   kind: type
   file: crates/tamias-install/src/extends.rs
-  line: 77
+  line: 74
   module: tamias-install
 - name: FILE_NAME
   kind: const
@@ -75,22 +75,12 @@ api:
 - name: MAX_EXTENDS_DEPTH
   kind: const
   file: crates/tamias-install/src/extends.rs
-  line: 59
+  line: 60
   module: tamias-install
 - name: MAX_INCLUDE_DEPTH
   kind: const
   file: crates/tamias-install/src/include.rs
   line: 43
-  module: tamias-install
-- name: PARENTS_DIR
-  kind: const
-  file: crates/tamias-install/src/extends.rs
-  line: 68
-  module: tamias-install
-- name: PARENT_DIR
-  kind: const
-  file: crates/tamias-install/src/extends.rs
-  line: 63
   module: tamias-install
 - name: PlanManifest
   kind: type
@@ -135,7 +125,7 @@ api:
 - name: TAMIAS_VIA
   kind: const
   file: crates/tamias-install/src/extends.rs
-  line: 72
+  line: 69
   module: tamias-install
 - name: allow
   kind: function
@@ -202,8 +192,19 @@ api:
   file: crates/tamias-install/src/consent.rs
   line: 107
   module: tamias-install
-api_omitted: 107
+- name: corrupt_consent_file_means_no_consent
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 1316
+  module: tamias-install
+- name: deploy_committed_bins
+  kind: function
+  file: crates/tamias-install/src/lib.rs
+  line: 270
+  module: tamias-install
+api_omitted: 105
 deps:
+- scarab-template
 - serde
 - serde_json
 - serde_yaml_ng
@@ -232,6 +233,7 @@ deps:
 - tamias-source-git
 - tamias-source-http
 - tamias-store-local
+- scarab_template
 - tamias-cache-local
 - tamias-source-cf
 - tamias-source-registry
@@ -253,12 +255,12 @@ provenance:
   - crates/tamias-install/src/lib.rs
   - crates/tamias-install/src/sync.rs
   hashes:
-  - 8162f54710e782799c63f837f0390b5d09514c95
+  - 644fbce30a81484c4b366eee59215f9a5af69179
   - ee8d6763ab4fc04a6bdd00a690e31db67bba55e9
-  - 6e296d597cb9c661e107658a60b7602c1036323e
+  - 16bf8b043b8d8a5fdceef5cd7a30aaa3e15fd7c9
   - e5a8987da13014dd6b8b8b1eafc62fc09fdcaf22
   - 4138a2cbe254ca893b913eb37108b2691aa9b3c8
   - bd22a393ffae872ac5ed9a9400f447fd6598e32a
-  commit_sha: 5464556b58bd43ee5bb2e48e02804686e04c87da
-  generated_at: '1795522263'
+  commit_sha: ddc61e5b13d7f0b39ea3bfd950be18b1a48ddc38
+  generated_at: '1795569502'
   generator: kuda-template/0.1.4
