@@ -32,8 +32,6 @@ distribution; every content *meaning* is an adapter.
 | `tamias-bin` | adapter | Declared bins\[] lifecycle — tools/bin/\<triple> payloads, bin-dir deploy/destroy/list |
 | `tamias-cache-cf` | adapter | Cloudflare adapter (P6) |
 | `tamias-cache-local` | adapter | local cache impl — content-addressed fetch cache |
-| `tamias-config-toml` | adapter | TOML config impl |
-| `tamias-config-yml` | adapter | YAML config impl (the standard) — tamias.yml / tamias.yaml |
 | `tamias-deploy-cf` | adapter | Cloudflare deploy impl — the registry Worker + wrangler config |
 | `tamias-deploy-launchd` | adapter | macos deploy impl — manage a per-user launchd agent (LaunchAgents plist + launchctl) |
 | `tamias-deploy-systemd` | adapter | systemd deploy impl — manage a per-user service unit (Linux) |

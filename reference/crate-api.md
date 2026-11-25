@@ -16,8 +16,6 @@ documented at source (doc comments).
 * [tamias-bin](/tamias/api/tamias_bin/index.html) — adapter
 * [tamias-cache-cf](/tamias/api/tamias_cache_cf/index.html) — adapter
 * [tamias-cache-local](/tamias/api/tamias_cache_local/index.html) — adapter
-* [tamias-config-toml](/tamias/api/tamias_config_toml/index.html) — adapter
-* [tamias-config-yml](/tamias/api/tamias_config_yml/index.html) — adapter
 * [tamias-deploy-cf](/tamias/api/tamias_deploy_cf/index.html) — adapter
 * [tamias-deploy-launchd](/tamias/api/tamias_deploy_launchd/index.html) — adapter
 * [tamias-deploy-systemd](/tamias/api/tamias_deploy_systemd/index.html) — adapter

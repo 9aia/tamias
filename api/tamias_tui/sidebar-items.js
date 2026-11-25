@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["run"],"struct":["Ctx"]};
+window.SIDEBAR_ITEMS = {"fn":["run"],"mod":["complete"],"struct":["Ctx"]};
